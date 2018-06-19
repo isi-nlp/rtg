@@ -130,7 +130,7 @@ class AttnRNNDecoder(nn.Module):
 
         # Attentional vector using the RNN hidden state and context vector
         # concatenated together (Luong eq. 5)
-        rnn_output = rnn_output.squeeze(0)  # S=1 x B x N -> B x N
+        # rnn_output = rnn_output.squeeze(0)  # S=1 x B x N -> B x N
         context = context.squeeze(1)  # B x S=1 x N -> B x N
         concat_input = torch.cat((rnn_output, context), 1)
         concat_output = F.tanh(self.concat(concat_input))
@@ -157,7 +157,6 @@ class Seq2Seq(nn.Module):
         dec_hids = enc_hids[:self.dec.n_layers]
         all_dec_outs = torch.zeros(batch.max_y_len, len(batch), self.dec.output_size, device=device)
         for t in range(batch.max_y_len):
-            print('DI, DH, EO ::', dec_inps.size(), dec_hids.size(), enc_outs.size())
             dec_outs, dec_hids, dec_attn = self.dec(dec_inps, dec_hids, enc_outs)
             all_dec_outs[t] = dec_outs
             dec_inps = batch.y_seqs[t]  # Next input is current target
@@ -172,7 +171,7 @@ class Seq2Seq(nn.Module):
         dec_inps = tensor([BOS_TOK_IDX], dtype=torch.long)
         dec_hids = enc_hids[:self.dec.n_layers]
 
-        final_dec_outs = torch.zeros(max_out_len, device=device)
+        final_dec_outs = torch.zeros(max_out_len, dtype=torch.long, device=device)
         for t in range(max_out_len):
             dec_outs, dec_hids, dec_attn = self.dec(dec_inps, dec_hids, enc_outs)
             word_prob, word_idx = F.log_softmax(dec_outs, dim=1).view(-1).max(0)
@@ -289,7 +288,7 @@ class Decoder:
             log.info(f" Input: {i}: {' '.join(in_toks)}")
             in_seq = self.exp.src_field.seq2idx(in_toks)
             out_seq = self.model.decode(in_seq)
-            out_toks = self.exp.tgt_field.idx2tok(out_seq)
+            out_toks = self.exp.tgt_field.idx2seq(out_seq)
             out_line = ' '.join(out_toks)
             log.info(f"Output: {i}: {out_line}")
             out.write(f'{out_line}\n')
