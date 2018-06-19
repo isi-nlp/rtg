@@ -216,21 +216,25 @@ class TranslationExperiment(object):
         else:
             return None, -1
 
+
 class Batch:
 
     pad_value = BLANK_TOK[1]
 
-    def __init__(self, batch: List[Example], sort_dec=True):
+    def __init__(self, batch: List[Example], sort_dec=True, batch_first=True):
+        self.sort_dec = sort_dec
+        self.batch_first = batch_first
         if sort_dec:
             batch = sorted(batch, key=lambda _: len(_.x), reverse=True)
         self._len = len(batch)
         self.max_x_len = len(batch[0].x) if sort_dec else max(len(ex.x) for ex in batch)
         self.x_seqs = torch.full((len(batch), self.max_x_len), fill_value=self.pad_value, dtype=torch.long,
                                  device=device)
-
         for i, ex in enumerate(batch):
             self.x_seqs[i, :len(ex.x)] = tensor(ex.x, dtype=torch.long)
         self.x_len = tensor([len(ex.x) for ex in batch], dtype=torch.long)
+        if not batch_first:
+            self.x_seqs = self.x_seqs.t()   # transpose
 
         if batch[0].y:      # also has y_seq
             self.max_y_len = max(len(ex.y) for ex in batch)
@@ -239,6 +243,8 @@ class Batch:
             self.y_len = tensor([len(ex.y) for ex in batch], dtype=torch.long)
             for i, ex in enumerate(batch):
                 self.y_seqs[i, :len(ex.y)] = tensor(ex.y, dtype=torch.long)
+            if not self.batch_first:
+                self.y_seqs = self.y_seqs.t()  # transpose
 
     def __len__(self):
         return self._len
@@ -246,21 +252,22 @@ class Batch:
 
 class BatchIterable:
 
-    def __init__(self, data_path: str, batch_size: int, sort_dec=True, in_mem=False):
+    def __init__(self, data_path: str, batch_size: int, sort_dec=True, in_mem=False, batch_first=True):
         self.data = TSVData(data_path, in_mem=in_mem)
         self.batch_size = batch_size
         self.sort_dec = sort_dec
+        self.batch_first = batch_first
 
     def read_all(self):
         batch = []
         for ex in self.data:
             batch.append(ex)
             if len(batch) >= self.batch_size:
-                yield Batch(batch, sort_dec=self.sort_dec)
+                yield Batch(batch, sort_dec=self.sort_dec, batch_first=self.batch_first)
                 batch = []
         if batch:
             log.debug(f"\nLast batch, size={len(batch)}")
-            yield Batch(batch, sort_dec=self.sort_dec)
+            yield Batch(batch, sort_dec=self.sort_dec, batch_first=self.batch_first)
 
     def __iter__(self):
         yield from self.read_all()
