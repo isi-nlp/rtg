@@ -50,6 +50,9 @@ class Field:
     def seq2idx(self, toks: List[str]) -> List[int]:
         return [self.tok2idx.get(tok, UNK_TOK[1]) for tok in toks]
 
+    def idx2seq(self, indices: List[int]) -> List[str]:
+        return [self.idx2tok[idx] for idx in indices]
+
     def size(self):
         return len(self.idx2tok)
 
@@ -122,7 +125,7 @@ def tokenize(strs: List[str]) -> List[List[str]]:
     return [s.split() for s in strs]
 
 
-class TranslationExperiment(object):
+class TranslationExperiment:
     def __init__(self, work_dir: str):
         log.info(f"Initializing an experiment. Directory = {work_dir}")
         self.work_dir = work_dir
@@ -257,6 +260,7 @@ class BatchIterable:
         self.batch_size = batch_size
         self.sort_dec = sort_dec
         self.batch_first = batch_first
+        self.mem = list(self.read_all()) if in_mem else None
 
     def read_all(self):
         batch = []
@@ -270,5 +274,5 @@ class BatchIterable:
             yield Batch(batch, sort_dec=self.sort_dec, batch_first=self.batch_first)
 
     def __iter__(self):
-        yield from self.read_all()
+        yield from self.mem if self.mem is not None else self.read_all()
 

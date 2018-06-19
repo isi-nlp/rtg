@@ -1,9 +1,10 @@
 #!/usr/bin/env python
 
+import sys
 import argparse
 from argparse import ArgumentDefaultsHelpFormatter as ArgFormatter
 from tgnmt import TranslationExperiment as Experiment
-from tgnmt.seq2seq import Trainer as Seq2SeqTrainer
+from tgnmt.module.seq2seq import Trainer as Seq2SeqTrainer, Decoder as Seq2SeqDecoder
 
 
 def parse_args():
@@ -32,6 +33,11 @@ def parse_args():
     train.add_argument("-bs", "--batch-size", help="Batch size", type=int, default=256)
     train.add_argument("-km", "--keep-models", type=int, default=4,
                        help="Number of models to keep. Stores one model per epoch")
+
+    decode = tasks.add_parser('decode', formatter_class=ArgFormatter)
+    decode.add_argument("-if", '--input', type=argparse.FileType('r'), default=sys.stdin, help='Input file path. default is STDIN')
+    decode.add_argument("-of", '--output', type=argparse.FileType('w'), default=sys.stdout, help='Output File path. default is STDOUT')
+
     return p.parse_args()
 
 
@@ -41,10 +47,14 @@ def main():
     task = args.pop('task')
     if task == 'prep':
         exp.pre_process(**args)
-    elif task == 'train':
+    else:
         assert exp.has_prepared(), f'Experiment dir {exp.work_dir} is not ready to train. Please run "prep" sub task'
-        trainer = Seq2SeqTrainer(exp)
-        trainer.train(**args)
+        if task == 'train':
+            trainer = Seq2SeqTrainer(exp)
+            trainer.train(**args)
+        elif task == 'decode':
+            decoder = Seq2SeqDecoder(exp)
+            decoder.decode_file(args.pop('input'), args.pop('output'))
 
 
 if __name__ == '__main__':

@@ -1,2 +1,0 @@
-
-from .enc import LSTMEncoder

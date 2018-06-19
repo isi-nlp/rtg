@@ -2,14 +2,15 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-import tqdm
 from tqdm import tqdm
+from typing import List
+
 
 from tgnmt.dataprep import Batch
-from . import TranslationExperiment as Experiment
-from . import device, log
-from . import my_tensor as tensor
-from .dataprep import BatchIterable, BOS_TOK
+from tgnmt import TranslationExperiment as Experiment
+from tgnmt import device, log
+from tgnmt import my_tensor as tensor
+from tgnmt.dataprep import BatchIterable, BOS_TOK
 
 BOS_TOK_IDX = BOS_TOK[1]
 
@@ -38,7 +39,7 @@ class RNNEncoder(nn.Module):
 
 class Attn(nn.Module):
     """
-    Attention
+    Attention model
     Taken from https://github.com/spro/practical-pytorch/blob/master/seq2seq-translation/seq2seq-translation-batched.ipynb
 
     """
@@ -156,10 +157,28 @@ class Seq2Seq(nn.Module):
         dec_hids = enc_hids[:self.dec.n_layers]
         all_dec_outs = torch.zeros(batch.max_y_len, len(batch), self.dec.output_size, device=device)
         for t in range(batch.max_y_len):
+            print('DI, DH, EO ::', dec_inps.size(), dec_hids.size(), enc_outs.size())
             dec_outs, dec_hids, dec_attn = self.dec(dec_inps, dec_hids, enc_outs)
             all_dec_outs[t] = dec_outs
             dec_inps = batch.y_seqs[t]  # Next input is current target
         return all_dec_outs
+
+    def decode(self, seq: List[int], max_out_len=200):
+
+        x_seqs = tensor(seq, dtype=torch.long).view(-1, 1)
+        x_lens = tensor([len(seq)], dtype=torch.long)
+        enc_outs, enc_hids = self.enc(x_seqs, x_lens, None)
+
+        dec_inps = tensor([BOS_TOK_IDX], dtype=torch.long)
+        dec_hids = enc_hids[:self.dec.n_layers]
+
+        final_dec_outs = torch.zeros(max_out_len, device=device)
+        for t in range(max_out_len):
+            dec_outs, dec_hids, dec_attn = self.dec(dec_inps, dec_hids, enc_outs)
+            word_prob, word_idx = F.log_softmax(dec_outs, dim=1).view(-1).max(0)
+            final_dec_outs[t] = word_idx
+            dec_inps[0] = word_idx  # Next input is current output
+        return final_dec_outs
 
 
 class Trainer:
@@ -247,9 +266,30 @@ class Trainer:
                     batch.y_seqs.t().contiguous(),  # -> batch x seq_len
                     batch.y_len
                 )
-                tot_loss += loss
+                tot_loss += loss.item()
                 loss.backward()
                 self.optimizer.step()
 
             log.info(f'Epoch {ep+1} complete.. Training loss in this epoch {tot_loss}...')
             self.exp.store_model(epoch=ep, model=self.model, score=tot_loss, keep=keep_models)
+
+
+class Decoder:
+
+    def __init__(self, exp: Experiment):
+        self.exp = exp
+        last_model, _ = exp.get_last_saved_model()
+        log.debug(f'Loading model {last_model}')
+        self.model = torch.load(last_model)
+        self.model.train(False)
+
+    def decode_file(self, inp, out):
+        for i, line in enumerate(inp):
+            in_toks = line.strip().split()
+            log.info(f" Input: {i}: {' '.join(in_toks)}")
+            in_seq = self.exp.src_field.seq2idx(in_toks)
+            out_seq = self.model.decode(in_seq)
+            out_toks = self.exp.tgt_field.idx2tok(out_seq)
+            out_line = ' '.join(out_toks)
+            log.info(f"Output: {i}: {out_line}")
+            out.write(f'{out_line}\n')
