@@ -1,7 +1,7 @@
 # Tensor 2 Tensor aka Attention is all you need
 # Thanks to http://nlp.seas.harvard.edu/2018/04/03/attention.html
 
-
+import sys
 import numpy as np
 import torch
 import torch.nn as nn
@@ -9,7 +9,8 @@ import torch.nn.functional as F
 import math, copy, time
 from torch.autograd import Variable
 from tqdm import tqdm
-#from tgnmt import device
+from tgnmt import device, log, TranslationExperiment as Experiment
+from tgnmt.dataprep import BatchIterable
 
 
 class EncoderDecoder(nn.Module):
@@ -25,6 +26,7 @@ class EncoderDecoder(nn.Module):
         self.src_embed = src_embed
         self.tgt_embed = tgt_embed
         self.generator = generator
+        self.tgt_vocab = generator.vocab
 
     def forward(self, src, tgt, src_mask, tgt_mask):
         "Take in and process masked src and target sequences."
@@ -36,12 +38,41 @@ class EncoderDecoder(nn.Module):
     def decode(self, memory, src_mask, tgt, tgt_mask):
         return self.decoder(self.tgt_embed(tgt), memory, src_mask, tgt_mask)
 
+    @staticmethod
+    def make_model(src_vocab, tgt_vocab, N=6,
+                   d_model=512, d_ff=2048, h=8, dropout=0.1):
+        "Helper: Construct a model from hyperparameters."
+
+        # args for reconstruction of model
+        args = {'src_vocab': src_vocab, 'tgt_vocab': tgt_vocab,
+                'N': N, 'd_model': d_model, 'd_ff': d_ff, 'h': h,
+                'drop_out': dropout}
+        c = copy.deepcopy
+        attn = MultiHeadedAttention(h, d_model)
+        ff = PositionwiseFeedForward(d_model, d_ff, dropout)
+        position = PositionalEncoding(d_model, dropout)
+        model = EncoderDecoder(
+            Encoder(EncoderLayer(d_model, c(attn), c(ff), dropout), N),
+            Decoder(DecoderLayer(d_model, c(attn), c(attn), c(ff), dropout), N),
+            nn.Sequential(Embeddings(d_model, src_vocab), c(position)),
+            nn.Sequential(Embeddings(d_model, tgt_vocab), c(position)),
+            Generator(d_model, tgt_vocab))
+
+        # This was important from their code.
+        # Initialize parameters with Glorot / fan_avg.
+        for p in model.parameters():
+            if p.dim() > 1:
+                nn.init.xavier_uniform_(p)
+        return model, args
+
 
 class Generator(nn.Module):
     "Define standard linear + softmax generation step."
 
     def __init__(self, d_model, vocab):
         super(Generator, self).__init__()
+        self.d_model = d_model
+        self.vocab = vocab
         self.proj = nn.Linear(d_model, vocab)
 
     def forward(self, x):
@@ -244,65 +275,6 @@ class PositionalEncoding(nn.Module):
         return self.dropout(x)
 
 
-def make_model(src_vocab, tgt_vocab, N=6,
-               d_model=512, d_ff=2048, h=8, dropout=0.1):
-    "Helper: Construct a model from hyperparameters."
-    c = copy.deepcopy
-    attn = MultiHeadedAttention(h, d_model)
-    ff = PositionwiseFeedForward(d_model, d_ff, dropout)
-    position = PositionalEncoding(d_model, dropout)
-    model = EncoderDecoder(
-        Encoder(EncoderLayer(d_model, c(attn), c(ff), dropout), N),
-        Decoder(DecoderLayer(d_model, c(attn), c(attn), c(ff), dropout), N),
-        nn.Sequential(Embeddings(d_model, src_vocab), c(position)),
-        nn.Sequential(Embeddings(d_model, tgt_vocab), c(position)),
-        Generator(d_model, tgt_vocab))
-
-    # This was important from their code.
-    # Initialize parameters with Glorot / fan_avg.
-    for p in model.parameters():
-        if p.dim() > 1:
-            nn.init.xavier_uniform(p)
-    return model
-
-
-class Batch:
-    "Object for holding a batch of data with mask during training."
-
-    def __init__(self, src, trg=None, pad=0):
-        self.src = src
-        self.src_mask = (src != pad).unsqueeze(-2)
-        if trg is not None:
-            self.trg = trg[:, :-1]
-            self.trg_y = trg[:, 1:]
-            self.trg_mask = self.make_std_mask(self.trg, pad)
-            self.ntokens = (self.trg_y != pad).data.sum()
-
-    @staticmethod
-    def make_std_mask(tgt, pad):
-        "Create a mask to hide padding and future words."
-        tgt_mask = (tgt != pad).unsqueeze(-2)
-        tgt_mask = tgt_mask & Variable(
-            subsequent_mask(tgt.size(-1)).type_as(tgt_mask.data))
-        return tgt_mask
-
-
-global max_src_in_batch, max_tgt_in_batch
-
-
-def batch_size_fn(new, count, sofar):
-    "Keep augmenting batch and calculate total number of tokens + padding."
-    global max_src_in_batch, max_tgt_in_batch
-    if count == 1:
-        max_src_in_batch = 0
-        max_tgt_in_batch = 0
-    max_src_in_batch = max(max_src_in_batch, len(new.src))
-    max_tgt_in_batch = max(max_tgt_in_batch, len(new.trg) + 2)
-    src_elements = count * max_src_in_batch
-    tgt_elements = count * max_tgt_in_batch
-    return max(src_elements, tgt_elements)
-
-
 class NoamOpt:
     "Optim wrapper that implements rate."
 
@@ -329,10 +301,10 @@ class NoamOpt:
             step = self._step
         return self.factor * (self.model_size ** (-0.5) * min(step ** (-0.5), step * self.warmup ** (-1.5)))
 
-
-def get_std_opt(model):
-    return NoamOpt(model.src_embed[0].d_model, 2, 4000,
-                   torch.optim.Adam(model.parameters(), lr=0, betas=(0.9, 0.98), eps=1e-9))
+    @staticmethod
+    def get_std_opt(model):
+        return NoamOpt(model.src_embed[0].d_model, 2, 4000,
+                       torch.optim.Adam(model.parameters(), lr=0, betas=(0.9, 0.98), eps=1e-9))
 
 
 class LabelSmoothingOld(nn.Module):
@@ -388,16 +360,6 @@ class LabelSmoothing(nn.Module):
         return loss
 
 
-def data_gen(V, batch, nbatches):
-    "Generate random data for a src-tgt copy task."
-    for i in range(nbatches):
-        data = torch.from_numpy(np.random.randint(1, V, size=(batch, 10)))
-        data[:, 0] = 1
-        src = Variable(data, requires_grad=False)
-        tgt = Variable(data, requires_grad=False)
-        yield Batch(src, tgt, 0)
-
-
 class SimpleLossCompute:
     "A simple loss compute and train function."
 
@@ -410,7 +372,6 @@ class SimpleLossCompute:
         x = self.generator(x)
         scores = x.contiguous().view(-1, x.size(-1))
         truth = y.contiguous().view(-1)
-        norm = norm.item()
         assert norm != 0
         loss = self.criterion(scores, truth) / norm
         loss.backward()
@@ -420,64 +381,60 @@ class SimpleLossCompute:
         return loss.item() * norm
 
 
-def greedy_decode(model, src, src_mask, max_len, start_symbol):
-    memory = model.encode(src, src_mask)
-    ys = torch.ones(1, 1).fill_(start_symbol).type_as(src.data)
-    for i in range(max_len - 1):
-        out = model.decode(memory, src_mask,
-                           Variable(ys),
-                           Variable(subsequent_mask(ys.size(1))
-                                    .type_as(src.data)))
-        prob = model.generator(out[:, -1])
-        _, next_word = torch.max(prob, dim=1)
-        next_word = next_word.data[0]
-        ys = torch.cat([ys,
-                        torch.ones(1, 1).type_as(src.data).fill_(next_word)], dim=1)
-    return ys
+class Trainer:
 
+    def __init__(self, exp: Experiment, lr=0.0001):
+        self.exp = exp
+        args = exp.get_model_args()
+        assert args
+        log.info(f"Creating model with args: {args}")
+        self.model, _ = EncoderDecoder.make_model(**args)
+        self.start_epoch = 0
+        last_model, last_epoch = self.exp.get_last_saved_model()
+        if last_model:
+            self.start_epoch = last_epoch + 1
+            log.info(f"Resuming training from epoch:{self.start_epoch}, model={last_model}")
+            self.model.load_state_dict(torch.load(last_model))
+        self.model = self.model.to(device)
+        adam_opt = torch.optim.Adam(self.model.parameters(), lr=lr, betas=(0.9, 0.98), eps=1e-9)
+        noam_opt = NoamOpt(self.model.src_embed[0].d_model, 1, 400, adam_opt)
 
-def run_epoch(data_iter, model, loss_compute):
-    "Standard Training and Logging Function"
-    start = time.time()
-    total_tokens = 0
-    total_loss = 0
-    tokens = 0
-    for i, batch in tqdm(enumerate(data_iter)):
-        out = model(batch.src, batch.trg, batch.src_mask, batch.trg_mask)
-        loss = loss_compute(out, batch.trg_y, batch.ntokens)
-        total_loss += loss
-        total_tokens += batch.ntokens
-        tokens += batch.ntokens
-        if i % 5 == 1:
-            elapsed = time.time() - start
-            print("Epoch Step: %d Loss: %f Tokens per Sec: %f" % (i, loss / batch.ntokens.float(), tokens / elapsed))
-            start = time.time()
-            tokens = 0
+        criterion = LabelSmoothing(size=self.model.tgt_vocab, padding_idx=0, smoothing=0.1)
+        self.loss_func = SimpleLossCompute(self.model.generator, criterion, noam_opt)
 
-    return total_loss / total_tokens.float().item()
+    def run_epoch(self, data_iter, print_every=50):
+        "Standard Training and Logging Function"
+        start = time.time()
+        total_tokens = 0
+        total_loss = 0.0
+        tokens = 0
+        for i, batch in tqdm(enumerate(data_iter)):
+            out = self.model(batch.x_seqs, batch.y_seqs, batch.x_mask, batch.y_mask)
+            loss = self.loss_func(out, batch.y_seqs, batch.num_y_toks)
+            total_loss += loss
+            total_tokens += batch.num_y_toks
+            tokens += batch.num_y_toks
+            if i % print_every == 1:
+                elapsed = time.time() - start
+                log.info("\nStep: %d Loss: %f Tokens per Sec: %f" %
+                         (i, loss / batch.num_y_toks, tokens / elapsed))
+                start = time.time()
+                tokens = 0
+        score = total_loss / total_tokens
+        return score
 
-
-if __name__ == '__main__':
-
-    # Train the simple copy task.
-    V = 12
-    criterion = LabelSmoothing(size=V, padding_idx=0, smoothing=0.0)
-    model = make_model(V, V, N=2)
-    model_opt = NoamOpt(model.src_embed[0].d_model, 1, 400,
-                        torch.optim.Adam(model.parameters(), lr=0, betas=(0.9, 0.98), eps=1e-9))
-
-    import time
-    for epoch in range(10):
-        print(f"Epoch {epoch}")
-        model.train()
-        run_epoch(data_gen(V, 30, 20), model, SimpleLossCompute(model.generator, criterion, model_opt))
-
-        model.eval()
-        print("Done.. Evaluating ....")
-        src = Variable(torch.LongTensor([[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]]))
-        src_mask = Variable(torch.ones(1, 1, 10))
-        print(greedy_decode(model, src, src_mask, max_len=10, start_symbol=1))
-        # FIXME: running in eval mode crashes with floating point error (no stack trace)
-        #print(run_epoch(data_gen(V, 30, 5), model, SimpleLossCompute(model.generator, criterion, None)))
-
-
+    def train(self, num_epochs: int, batch_size: int, **args):
+        log.info(f'Going to train for {num_epochs} epochs; batch_size={batch_size}')
+        keep_models = args.get('keep_models', 4)    # keep last _ models and delete the old
+        if args.get('resume_train'):
+            num_epochs += self.start_epoch
+        elif num_epochs <= self.start_epoch:
+            raise Exception(f'The model was already trained to {self.start_epoch} epochs. '
+                            f'Please increase epoch or clear the existing models')
+        train_data = BatchIterable(self.exp.train_file, batch_size=batch_size, in_mem=True, batch_first=True)
+        self.model.train()  # Train mode
+        for ep in range(self.start_epoch, num_epochs):
+            log.info(f"Running epoch {ep+1}")
+            loss = self.run_epoch(train_data)
+            log.info(f"Finished epoch {ep+1}")
+            self.exp.store_model(self.start_epoch, self.model.state_dict(), loss, keep=keep_models)
