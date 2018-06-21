@@ -338,8 +338,8 @@ class LabelSmoothing(nn.Module):
         assert 0.0 <= smoothing <= 1.0
         self.padding_idx = padding_idx
         self.criterion = nn.KLDivLoss(size_average=False)
-        one_hot = torch.randn(1, size)
-        one_hot.fill_(smoothing / (size - 2))
+        fill_val = smoothing / (size - 2)
+        one_hot = torch.full(size=(1, size), fill_value=fill_val, device=device)
         one_hot[0][self.padding_idx] = 0
         self.register_buffer('one_hot', one_hot)
         self.confidence = 1.0 - smoothing
