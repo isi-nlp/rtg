@@ -1,7 +1,6 @@
 # Tensor 2 Tensor aka Attention is all you need
 # Thanks to http://nlp.seas.harvard.edu/2018/04/03/attention.html
 
-import sys
 import numpy as np
 import torch
 import torch.nn as nn
@@ -431,7 +430,7 @@ class Trainer:
         elif num_epochs <= self.start_epoch:
             raise Exception(f'The model was already trained to {self.start_epoch} epochs. '
                             f'Please increase epoch or clear the existing models')
-        train_data = BatchIterable(self.exp.train_file, batch_size=batch_size, in_mem=True, batch_first=True)
+        train_data = BatchIterable(self.exp.train_file, batch_size=batch_size, in_mem_recs=False, batch_first=True)
         self.model.train()  # Train mode
         for ep in range(self.start_epoch, num_epochs):
             log.info(f"Running epoch {ep+1}")
