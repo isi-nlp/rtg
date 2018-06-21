@@ -162,22 +162,9 @@ class Seq2Seq(nn.Module):
             dec_inps = batch.y_seqs[t]  # Next input is current target
         return all_dec_outs
 
-    def decode(self, seq: List[int], max_out_len=200):
-
-        x_seqs = tensor(seq, dtype=torch.long).view(-1, 1)
-        x_lens = tensor([len(seq)], dtype=torch.long)
-        enc_outs, enc_hids = self.enc(x_seqs, x_lens, None)
-
-        dec_inps = tensor([BOS_TOK_IDX], dtype=torch.long)
-        dec_hids = enc_hids[:self.dec.n_layers]
-
-        final_dec_outs = torch.zeros(max_out_len, dtype=torch.long, device=device)
-        for t in range(max_out_len):
-            dec_outs, dec_hids, dec_attn = self.dec(dec_inps, dec_hids, enc_outs)
-            word_prob, word_idx = F.log_softmax(dec_outs, dim=1).view(-1).max(0)
-            final_dec_outs[t] = word_idx
-            dec_inps[0] = word_idx  # Next input is current output
-        return final_dec_outs
+    @staticmethod
+    def make_model(src_vocab: int, tgt_vocab: int, model_dim=50):
+        return Seq2Seq(src_vocab, tgt_vocab, model_dim=model_dim)
 
 
 class Trainer:
@@ -273,21 +260,45 @@ class Trainer:
             self.exp.store_model(epoch=ep, model=self.model, score=tot_loss, keep=keep_models)
 
 
-class Decoder:
+class GreedyDecoder:
 
     def __init__(self, exp: Experiment):
         self.exp = exp
-        last_model, _ = exp.get_last_saved_model()
-        log.debug(f'Loading model {last_model}')
-        self.model = torch.load(last_model)
-        self.model.train(False)
+        args = exp.get_model_args()
+        self.model = Seq2Seq.make_model(**args)
+
+        last_check_pt, _ = exp.get_last_saved_model()
+        log.debug(f'Restoring from {last_check_pt}')
+        self.model.load_state_dict(torch.load(last_check_pt))
+        self.model.eval()
+
+    def greedy_decode(self, seq: List[int], max_out_len=200):
+        # [S, 1] <-- [S]
+        x_seqs = tensor(seq, dtype=torch.long).view(-1, 1)
+        # [S]
+        x_lens = tensor([len(seq)], dtype=torch.long)
+        # [S, B=1, d], [S, B=1, d] <-- [S, 1], [S]
+        enc_outs, enc_hids = self.model.enc(x_seqs, x_lens, None)
+        # [1]
+        dec_inps = tensor([BOS_TOK_IDX], dtype=torch.long)
+        # [S=n, B=1, d]
+        dec_hids = enc_hids[:self.model.dec.n_layers]
+        # [S=m]
+        final_dec_outs = torch.zeros(max_out_len, dtype=torch.long, device=device)
+        for t in range(max_out_len):
+
+            dec_outs, dec_hids, dec_attn = self.model.dec(dec_inps, dec_hids, enc_outs)
+            word_prob, word_idx = F.log_softmax(dec_outs, dim=1).view(-1).max(0)
+            final_dec_outs[t] = word_idx
+            dec_inps[0] = word_idx  # Next input is current output
+        return final_dec_outs
 
     def decode_file(self, inp, out):
         for i, line in enumerate(inp):
             in_toks = line.strip().split()
             log.info(f" Input: {i}: {' '.join(in_toks)}")
             in_seq = self.exp.src_field.seq2idx(in_toks)
-            out_seq = self.model.decode(in_seq)
+            out_seq = self.greedy_decode(in_seq)
             out_toks = self.exp.tgt_field.idx2seq(out_seq)
             out_line = ' '.join(out_toks)
             log.info(f"Output: {i}: {out_line}")
