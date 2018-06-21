@@ -16,6 +16,7 @@ class GreedyDecoder:
         self.model, _ = factory(**args)
         log.info(f" Restoring state from {check_pt_file}")
         self.model.load_state_dict(torch.load(check_pt_file))
+        self.model = self.model.to(device)
         self.model.eval()  # turn off training mode
 
     def greedy_decode(self, x_seqs: torch.Tensor, max_len: int):
