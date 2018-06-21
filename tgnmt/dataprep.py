@@ -11,7 +11,6 @@ from typing import List, Dict, Iterator, Tuple, Optional
 RawRecord = Tuple[List[str], List[str]]
 SeqRecord = Tuple[List[int], List[int]]
 
-
 BLANK_TOK = '-BLANK-', 0
 UNK_TOK = '-UNK-', 1
 BOS_TOK = '-BOS-', 2
@@ -188,13 +187,21 @@ class TranslationExperiment:
         log.info("Building target vocabulary")
         self.tgt_field.build_from(y for _, y in train_recs)
         log.info(f"Vocab sizes, source: {self.src_field.size()}, target:{self.tgt_field.size()}")
-        self.src_field.dump_tsv(self.src_field_file)
-        self.tgt_field.dump_tsv(self.tgt_field_file)
 
         self.prep_file(train_recs, self.train_file)
         val_recs = self.read_raw_data(valid_file, truncate, src_len, tgt_len)
         self.prep_file(val_recs, self.valid_file)
-        args = {'src_vocab': self.src_field.size(), 'tgt_vocab': self.tgt_field.size()}
+
+        self.persist_state()
+
+    def persist_state(self):
+        """Writes state of current experiment to the disk"""
+        self.src_field.dump_tsv(self.src_field_file)
+        self.tgt_field.dump_tsv(self.tgt_field_file)
+        args = self.get_model_args()
+        args = args if args else {}
+        args['src_vocab'] = self.src_field.size()
+        args['tgt_vocab'] = self.tgt_field.size()
         self.store_model_args(args)
 
     def store_model(self, epoch: int, model, score: float, keep: int):
