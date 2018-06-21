@@ -2,10 +2,11 @@ import os
 import glob
 import torch
 from . import my_tensor as tensor, device
-
+import json
+import numpy as np
 from tgnmt import log
 from collections import Counter
-from typing import List, Dict, Iterator, Tuple, Iterable
+from typing import List, Dict, Iterator, Tuple, Optional
 
 RawRecord = Tuple[List[str], List[str]]
 SeqRecord = Tuple[List[int], List[int]]
@@ -14,7 +15,7 @@ SeqRecord = Tuple[List[int], List[int]]
 BLANK_TOK = '-BLANK-', 0
 UNK_TOK = '-UNK-', 1
 BOS_TOK = '-BOS-', 2
-EOS_TOK = '-BOS-', 3
+EOS_TOK = '-EOS-', 3
 
 RESERVED_TOKS = [BLANK_TOK, UNK_TOK, BOS_TOK, EOS_TOK]
 
@@ -47,8 +48,13 @@ class Field:
             self.idx2tok.append(tok)
             self.freq.append(inc)
 
-    def seq2idx(self, toks: List[str]) -> List[int]:
-        return [self.tok2idx.get(tok, UNK_TOK[1]) for tok in toks]
+    def seq2idx(self, toks: List[str], add_bos=False, add_eos=False) -> List[int]:
+        seq = [self.tok2idx.get(tok, UNK_TOK[1]) for tok in toks]
+        if add_bos:
+            seq.insert(0, BOS_TOK[1])
+        if add_eos:
+            seq.append(EOS_TOK[1])
+        return seq
 
     def idx2seq(self, indices: List[int]) -> List[str]:
         return [self.idx2tok[idx] for idx in indices]
@@ -134,6 +140,7 @@ class TranslationExperiment:
         for _dir in [self.model_dir, self.data_dir]:
             if not os.path.exists(_dir):
                 os.makedirs(_dir)
+        self.args_file = os.path.join(self.model_dir, 'args.json')
         self.src_field_file = os.path.join(self.data_dir, 'src-field.tsv')
         self.src_field = Field.load_tsv(self.src_field_file) if os.path.exists(self.src_field_file) else None
 
@@ -144,6 +151,9 @@ class TranslationExperiment:
 
     def has_prepared(self):
         return all([self.src_field, self.tgt_field, os.path.exists(self.train_file)])
+
+    def has_trained(self):
+        return self.get_last_saved_model()[0] is not None
 
     def prep_file(self, records: Iterator[RawRecord], path: str):
         seqs = ((self.src_field.seq2idx(sseq), self.tgt_field.seq2idx(tseq)) for sseq, tseq in records)
@@ -184,6 +194,8 @@ class TranslationExperiment:
         self.prep_file(train_recs, self.train_file)
         val_recs = self.read_raw_data(valid_file, truncate, src_len, tgt_len)
         self.prep_file(val_recs, self.valid_file)
+        args = {'src_vocab': self.src_field.size(), 'tgt_vocab': self.tgt_field.size()}
+        self.store_model_args(args)
 
     def store_model(self, epoch: int, model, score: float, keep: int):
         """
@@ -194,7 +206,7 @@ class TranslationExperiment:
         :return:
         """
         """saves model to a given path"""
-        name = f'model-{epoch:03d}-{score:.4f}.pkl'
+        name = f'model_{epoch:03d}_{score:.4f}.pkl'
         path = os.path.join(self.model_dir, name)
         log.info(f"Saving epoch {epoch} to {path}")
         torch.save(model, path)
@@ -202,22 +214,48 @@ class TranslationExperiment:
             log.info(f"Deleting old {old_model} . Keep={keep}")
             os.remove(old_model)
 
-    def list_models(self):
+    def list_models(self) -> List[str]:
         """
         Lists models in descending order of modification time
         :return: list of model paths
         """
-        pat = f'{self.model_dir}/model-*.pkl'
+        pat = f'{self.model_dir}/model_*.pkl'
         paths = glob.glob(pat)
         return sorted(paths, key=lambda p: os.path.getmtime(p), reverse=True)     # sort by descending time
 
-    def get_last_saved_model(self):
+    def get_last_saved_model(self) -> Tuple[Optional[str], int]:
         models = self.list_models()
         if models:
-            _, epoch, score = models[0].replace('.pkl', '').split('-')
+            _, epoch, score = models[0].replace('.pkl', '').split('_')
             return models[0], int(epoch)
         else:
             return None, -1
+
+    def get_model_args(self) -> Optional[Dict]:
+        """
+        Gets args from file
+        :return: args if exists or None otherwise
+        """
+        if not os.path.exists(self.args_file):
+            return None
+        with open(self.args_file, encoding='utf-8') as f:
+            return json.load(f)
+
+    def store_model_args(self, args):
+        """
+        Stores args to args file
+        :param args: args to be stored
+        :return:
+        """
+        with open(self.args_file, 'w', encoding='utf-8') as f:
+            return json.dump(args, f, ensure_ascii=False)
+
+
+def subsequent_mask(size):
+    "Mask out subsequent positions."
+    attn_shape = (1, size, size)
+    subseq_mask = np.triu(np.ones(attn_shape), k=1).astype('uint8')
+    return (torch.from_numpy(subseq_mask) == 0).to(device)
 
 
 class Batch:
@@ -238,7 +276,8 @@ class Batch:
         self.x_len = tensor([len(ex.x) for ex in batch], dtype=torch.long)
         if not batch_first:
             self.x_seqs = self.x_seqs.t()   # transpose
-
+        self.x_mask = (self.x_seqs != self.pad_value).unsqueeze(-2)
+        self.num_x_toks = self.x_len.sum().item()
         if batch[0].y:      # also has y_seq
             self.max_y_len = max(len(ex.y) for ex in batch)
             self.y_seqs = torch.full((len(batch), self.max_y_len), fill_value=self.pad_value, dtype=torch.long,
@@ -248,6 +287,15 @@ class Batch:
                 self.y_seqs[i, :len(ex.y)] = tensor(ex.y, dtype=torch.long)
             if not self.batch_first:
                 self.y_seqs = self.y_seqs.t()  # transpose
+            self.y_mask = self.make_std_mask(self.y_seqs)
+            self.num_y_toks = self.y_len.sum().item()
+
+    @staticmethod
+    def make_std_mask(tgt, pad=pad_value):
+        "Create a mask to hide padding AND future words."
+        tgt_mask = (tgt != pad).unsqueeze(-2)
+        tgt_mask = tgt_mask & subsequent_mask(tgt.size(-1)).type_as(tgt_mask.data)
+        return tgt_mask
 
     def __len__(self):
         return self._len
