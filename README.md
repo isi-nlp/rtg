@@ -29,9 +29,14 @@ export PYTHONPATH=$PWD  # Add directory to PYTHONPATH
 
 Let us build a translator for xxx --> yyy language
 
-Requirements:
- + xxx-yyy.train.tok.tsv : Training corpus: a TSV file with a sentences in xxx language and another in yyy language
- + xxx-yyy.valid.tok.tsv : Validation corpus: a TSV file with a sentences in xxx language and another in yyy language
+Requirements: A dataset
+ + xxx-yyy.train.tok.tsv : Training corpus
+ + xxx-yyy.valid.tok.tsv : Validation corpus
+
+Format: TSV format, i.e., a sentence in xxx language and another in yyy language, separated by a tab (`\t`) character.
+All tokens should be separated by a regular whitespace character.
+Please run a tokenizer on your input. (
+[Here is a good one from mosesdecoder](https://github.com/moses-smt/mosesdecoder/blob/master/scripts/tokenizer/tokenizer.perl) repository)
 
 
 ### Step 1. Prepare an experiment
@@ -115,6 +120,7 @@ Example:
 ```bash
 python -m tgnmt.train work -ne 10 -bs 256
 ```
+This step will store last `k` models to `work/models` directory.
 
 ### Step 3. Decode
 
@@ -143,3 +149,4 @@ Exampple:
 ```bash
 $ cat input.tok.txt | python -m tgnmt.decode work > output.tok.txt
 ```
+This step will pick the most recent model from `work/models` directory and translates the input.
