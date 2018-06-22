@@ -38,7 +38,7 @@ class GreedyDecoder:
         in_seqs = tensor(in_seq, dtype=torch.long).view(1, -1)
 
         out_seqs = self.greedy_decode(in_seqs, max_len=max_len)
-        out_toks = self.exp.tgt_field.idx2seq(out_seqs[0])
+        out_toks = self.exp.tgt_field.idx2seq(out_seqs[0], trunc_eos=True)
         return ' '.join(out_toks)
 
     def decode_file(self, inp, out):

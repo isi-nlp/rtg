@@ -56,8 +56,18 @@ class Field:
             seq.append(EOS_TOK[1])
         return seq
 
-    def idx2seq(self, indices: List[int]) -> List[str]:
-        return [self.idx2tok[idx] for idx in indices]
+    def idx2seq(self, indices: List[int], trunc_eos=False) -> List[str]:
+        """
+        :param indices: sequence of word indices
+        :param trunc_eos: True if the sequence should be truncated at the first occurrence of EOS
+        :return: List of tokens
+        """
+        res = []
+        for idx in indices:
+            if trunc_eos and idx == EOS_TOK[1]:
+                break
+            res.append(self.idx2tok[idx])
+        return res
 
     def size(self):
         return len(self.idx2tok)
