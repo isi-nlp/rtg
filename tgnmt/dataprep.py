@@ -60,17 +60,17 @@ class Field:
 
     def seq2idx(self, toks: List[str], add_bos=True, add_eos=True) -> List[int]:
         """
-        transforms a sequence of words to word indices. If words which doesnt exist in vocabulary appear in the input,
-        they will be replaced with UNK token's index
+        transforms a sequence of words to word indices.
+         If input has tokens which doesnt exist in vocabulary, they will be replaced with UNK token's index.
         :param toks: sequence of tokens which needs to be transformed
-        :param add_bos: prepend BOS token index
-        :param add_eos: append EOS token index
+        :param add_bos: prepend BOS token index. If input already has BOS token then this flag has no effect.
+        :param add_eos: append EOS token index. If input already has EOS token then this flag has no effect.
         :return: List of word indices
         """
         seq = [self.tok2idx.get(tok, UNK_TOK[1]) for tok in toks]
-        if add_bos:
+        if add_bos and seq[0] != BOS_TOK[1]:
             seq.insert(0, BOS_TOK[1])
-        if add_eos:
+        if add_eos and seq[-1] != EOS_TOK[1]:
             seq.append(EOS_TOK[1])
         return seq
 
