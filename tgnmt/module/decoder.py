@@ -53,9 +53,9 @@ class GreedyDecoder:
             log.info(f"INP: {i}: {cols[0]}")
             out_line = self.decode_sentence(input)
             out.write(f'{out_line}\n')
-            log.info(f"OUT: {i}: {out_line}\n")
             if len(cols) > 1:  # assumption: second column is reference
                 log.info(f"REF: {i}: {cols[1]}")
+            log.info(f"OUT: {i}: {out_line}\n")
 
 
 class GreedyDecoderDev(GreedyDecoder):
