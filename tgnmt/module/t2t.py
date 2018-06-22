@@ -1,6 +1,6 @@
 # Tensor 2 Tensor aka Attention is all you need
 # Thanks to http://nlp.seas.harvard.edu/2018/04/03/attention.html
-
+from typing import Iterator
 import numpy as np
 import torch
 import torch.nn as nn
@@ -9,7 +9,7 @@ import math, copy, time
 from torch.autograd import Variable
 from tqdm import tqdm
 from tgnmt import device, log, TranslationExperiment as Experiment
-from tgnmt.dataprep import BatchIterable
+from tgnmt.dataprep import BatchIterable, Batch, Example, subsequent_mask
 
 
 class EncoderDecoder(nn.Module):
@@ -177,13 +177,6 @@ class DecoderLayer(nn.Module):
         x = self.sublayer[0](x, lambda x: self.self_attn(x, x, x, tgt_mask))
         x = self.sublayer[1](x, lambda x: self.src_attn(x, m, m, src_mask))
         return self.sublayer[2](x, self.feed_forward)
-
-
-def subsequent_mask(size):
-    "Mask out subsequent positions."
-    attn_shape = (1, size, size)
-    subseq_mask = np.triu(np.ones(attn_shape), k=1).astype('uint8')
-    return torch.from_numpy(subseq_mask) == 0
 
 
 def attention(query, key, value, mask=None, dropout=None):
@@ -382,18 +375,21 @@ class SimpleLossCompute:
 
 class Trainer:
 
-    def __init__(self, exp: Experiment, lr=0.0001):
-        self.exp = exp
-        args = exp.get_model_args()
-        assert args
-        log.info(f"Creating model with args: {args}")
-        self.model, _ = EncoderDecoder.make_model(**args)
+    def __init__(self, exp: Experiment = None, model: EncoderDecoder=None, lr=0.0001):
         self.start_epoch = 0
-        last_model, last_epoch = self.exp.get_last_saved_model()
-        if last_model:
-            self.start_epoch = last_epoch + 1
-            log.info(f"Resuming training from epoch:{self.start_epoch}, model={last_model}")
-            self.model.load_state_dict(torch.load(last_model))
+        self.exp = exp
+        if model:
+            self.model = model
+        else:
+            args = exp.get_model_args()
+            assert args
+            log.info(f"Creating model with args: {args}")
+            self.model, _ = EncoderDecoder.make_model(**args)
+            last_model, last_epoch = self.exp.get_last_saved_model()
+            if last_model:
+                self.start_epoch = last_epoch + 1
+                log.info(f"Resuming training from epoch:{self.start_epoch}, model={last_model}")
+                self.model.load_state_dict(torch.load(last_model))
         self.model = self.model.to(device)
         adam_opt = torch.optim.Adam(self.model.parameters(), lr=lr, betas=(0.9, 0.98), eps=1e-9)
         noam_opt = NoamOpt(self.model.src_embed[0].d_model, 1, 400, adam_opt)
@@ -401,22 +397,24 @@ class Trainer:
         criterion = LabelSmoothing(size=self.model.tgt_vocab, padding_idx=0, smoothing=0.1)
         self.loss_func = SimpleLossCompute(self.model.generator, criterion, noam_opt)
 
-    def run_epoch(self, data_iter, print_every=50):
+    def run_epoch(self, data_iter: Iterator[Batch], print_every=50):
         "Standard Training and Logging Function"
         start = time.time()
         total_tokens = 0
         total_loss = 0.0
         tokens = 0
         for i, batch in tqdm(enumerate(data_iter)):
+            num_toks = batch.y_toks
             out = self.model(batch.x_seqs, batch.y_seqs, batch.x_mask, batch.y_mask)
-            loss = self.loss_func(out, batch.y_seqs, batch.num_y_toks)
+            # skip the BOS token in  batch.y_seqs
+            loss = self.loss_func(out, batch.y_seqs_nobos, num_toks)
             total_loss += loss
-            total_tokens += batch.num_y_toks
-            tokens += batch.num_y_toks
+            total_tokens += num_toks
+            tokens += num_toks
             if i % print_every == 1:
                 elapsed = time.time() - start
                 log.info("\nStep: %d Loss: %f Tokens per Sec: %f" %
-                         (i, loss / batch.num_y_toks, tokens / elapsed))
+                         (i, loss / num_toks, tokens / elapsed))
                 start = time.time()
                 tokens = 0
         score = total_loss / total_tokens
@@ -424,16 +422,52 @@ class Trainer:
 
     def train(self, num_epochs: int, batch_size: int, **args):
         log.info(f'Going to train for {num_epochs} epochs; batch_size={batch_size}')
-        keep_models = args.get('keep_models', 4)    # keep last _ models and delete the old
+        keep_models = args.get('keep_models', 4)  # keep last _ models and delete the old
         if args.get('resume_train'):
             num_epochs += self.start_epoch
         elif num_epochs <= self.start_epoch:
             raise Exception(f'The model was already trained to {self.start_epoch} epochs. '
                             f'Please increase epoch or clear the existing models')
-        train_data = BatchIterable(self.exp.train_file, batch_size=batch_size, in_mem_recs=False, batch_first=True)
+        train_data = BatchIterable(self.exp.train_file, batch_size=batch_size, in_mem_recs=False)
         self.model.train()  # Train mode
         for ep in range(self.start_epoch, num_epochs):
             log.info(f"Running epoch {ep+1}")
             loss = self.run_epoch(train_data)
             log.info(f"Finished epoch {ep+1}")
-            self.exp.store_model(self.start_epoch, self.model.state_dict(), loss, keep=keep_models)
+            self.exp.store_model(ep, self.model.state_dict(), loss, keep=keep_models)
+            self.start_epoch += 1
+
+
+def dummy_data_gen(V, batch, nbatches):
+    "Generate random data for a src-tgt copy task."
+
+    def make_an_ex():
+        data = np.random.randint(3, V, size=(10,))
+        tgt = V + 2 - data
+        tgt[0] = Batch.bos_val
+        data[0] = Batch.bos_val
+        return Example(data, tgt)
+
+    for i in range(nbatches):
+        exs = [make_an_ex() for _ in range(batch)]
+        yield Batch(exs)
+
+
+if __name__ == '__main__':
+    V = 11
+    criterion = LabelSmoothing(size=V, padding_idx=0, smoothing=0.0)
+    model, _ = EncoderDecoder.make_model(V, V, N=2)
+    from tgnmt.module.decoder import GreedyDecoderDev
+    exp = Experiment('work')
+    trainer = Trainer(exp=exp, model=model)
+    decr = GreedyDecoderDev(model)
+    for epoch in range(10):
+        model.train()
+        trainer.run_epoch(dummy_data_gen(V, 30, 20))
+
+        model.eval()
+        src = torch.LongTensor([[2, 3, 4, 5, 6, 7, 8, 9, 10],
+                                [2, 10, 9, 8, 7, 6, 5, 4, 3]])
+        src_mask = torch.ones(2, 1, 9)
+        res = decr.greedy_decode(src, max_len=10)
+        print(res)

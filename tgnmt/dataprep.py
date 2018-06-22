@@ -1,12 +1,13 @@
-import os
 import glob
-import torch
-from . import my_tensor as tensor, device
 import json
-import numpy as np
-from tgnmt import log
+import os
 from collections import Counter
 from typing import List, Dict, Iterator, Tuple, Optional
+
+import torch
+
+from tgnmt import log
+from . import my_tensor as tensor, device
 
 RawRecord = Tuple[List[str], List[str]]
 SeqRecord = Tuple[List[int], List[int]]
@@ -47,7 +48,7 @@ class Field:
             self.idx2tok.append(tok)
             self.freq.append(inc)
 
-    def seq2idx(self, toks: List[str], add_bos=False, add_eos=False) -> List[int]:
+    def seq2idx(self, toks: List[str], add_bos=True, add_eos=True) -> List[int]:
         seq = [self.tok2idx.get(tok, UNK_TOK[1]) for tok in toks]
         if add_bos:
             seq.insert(0, BOS_TOK[1])
@@ -84,7 +85,7 @@ class Field:
 
 class Example:
 
-    def __init__(self, x: List[int], y: List[int]=None):
+    def __init__(self, x: List[int], y: List[int] = None):
         self.x = x
         self.y = y
 
@@ -117,7 +118,7 @@ class TSVData:
         return len(self.mem)
 
     def __iter__(self) -> Iterator[Example]:
-            yield from self.mem if self.in_mem else self.read_all()
+        yield from self.mem if self.in_mem else self.read_all()
 
 
 def read_tsv(path: str):
@@ -155,7 +156,7 @@ class TranslationExperiment:
         return self.get_last_saved_model()[0] is not None
 
     def prep_file(self, records: Iterator[RawRecord], path: str):
-        seqs = ((self.src_field.seq2idx(sseq), self.tgt_field.seq2idx(tseq)) for sseq, tseq in records)
+        seqs = ((self.src_field.seq2idx(sseq), self.tgt_field.seq2idx(tseq, add_bos=True)) for sseq, tseq in records)
         seqs = ((' '.join(map(str, x)), ' '.join(map(str, y))) for x, y in seqs)
         lines = (f'{x}\t{y}\n' for x, y in seqs)
 
@@ -171,7 +172,7 @@ class TranslationExperiment:
         recs = ((src, tgt) for src, tgt in recs if len(src) > 0 and len(tgt) > 0)
         if truncate:
             recs = ((src[:src_len], tgt[:tgt_len]) for src, tgt in recs)
-        else:   # Filter out longer sentences
+        else:  # Filter out longer sentences
             recs = ((src, tgt) for src, tgt in recs if len(src) <= src_len and len(tgt) <= tgt_len)
         return recs
 
@@ -228,7 +229,7 @@ class TranslationExperiment:
         """
         pat = f'{self.model_dir}/model_*.pkl'
         paths = glob.glob(pat)
-        return sorted(paths, key=lambda p: os.path.getmtime(p), reverse=True)     # sort by descending time
+        return sorted(paths, key=lambda p: os.path.getmtime(p), reverse=True)  # sort by descending time
 
     def get_last_saved_model(self) -> Tuple[Optional[str], int]:
         models = self.list_models()
@@ -259,59 +260,64 @@ class TranslationExperiment:
 
 
 def subsequent_mask(size):
-    "Mask out subsequent positions."
-    attn_shape = (1, size, size)
-    subseq_mask = np.triu(np.ones(attn_shape), k=1).astype('uint8')
-    return (torch.from_numpy(subseq_mask) == 0).to(device)
+    "Mask out subsequent positions. upper diagonal elements should be zero"
+
+    # upper diagonal elements are 1s, lower diagonal and the main diagonal are zeroed
+    triu = torch.triu(torch.ones(size, size, dtype=torch.int8, device=device), diagonal=1)
+    # invert it
+    mask = triu == 0
+    mask = mask.unsqueeze(0)
+    return mask
 
 
 class Batch:
-
     pad_value = BLANK_TOK[1]
+    bos_val = BOS_TOK[1]
+    eos_val = EOS_TOK[1]
 
-    def __init__(self, batch: List[Example], sort_dec=True, batch_first=True):
-        self.sort_dec = sort_dec
-        self.batch_first = batch_first
+    def __init__(self, batch: List[Example], sort_dec=False):
         if sort_dec:
             batch = sorted(batch, key=lambda _: len(_.x), reverse=True)
         self._len = len(batch)
-        self.max_x_len = len(batch[0].x) if sort_dec else max(len(ex.x) for ex in batch)
-        self.x_seqs = torch.full((len(batch), self.max_x_len), fill_value=self.pad_value, dtype=torch.long,
-                                 device=device)
+        self.x_len = tensor([len(e.x) for e in batch])
+        self.x_toks = self.x_len.sum().float().item()
+        self.max_x_len = self.x_len.max()
+        self.x_seqs = torch.full(size=(self._len, self.max_x_len), fill_value=self.pad_value,
+                                 dtype=torch.long, device=device)
         for i, ex in enumerate(batch):
-            self.x_seqs[i, :len(ex.x)] = tensor(ex.x, dtype=torch.long)
-        self.x_len = tensor([len(ex.x) for ex in batch], dtype=torch.long)
-        if not batch_first:
-            self.x_seqs = self.x_seqs.t()   # transpose
-        self.x_mask = (self.x_seqs != self.pad_value).unsqueeze(-2)
-        self.num_x_toks = self.x_len.sum().item()
-        if batch[0].y:      # also has y_seq
-            self.max_y_len = max(len(ex.y) for ex in batch)
-            self.y_seqs = torch.full((len(batch), self.max_y_len), fill_value=self.pad_value, dtype=torch.long,
-                                     device=device)
-            self.y_len = tensor([len(ex.y) for ex in batch], dtype=torch.long)
-            for i, ex in enumerate(batch):
-                self.y_seqs[i, :len(ex.y)] = tensor(ex.y, dtype=torch.long)
-            if not self.batch_first:
-                self.y_seqs = self.y_seqs.t()  # transpose
-            self.y_mask = self.make_std_mask(self.y_seqs)
-            self.num_y_toks = self.y_len.sum().item()
+            self.x_seqs[i, :len(ex.x)] = tensor(ex.x)
+        self.x_mask = (self.x_seqs != self.pad_value).unsqueeze(1)
+        first_y = batch[0].y
+        if first_y is not None:
+            # Some sanity checks
+            assert first_y[0] == self.bos_val, f'Output sequences must begin with BOS token {self.bos_val}'
+            # assert first_y[-1] == self.eos_val, f'Output sequences must end with EOS token {self.eos_val}'
 
-    @staticmethod
-    def make_std_mask(tgt, pad=pad_value):
-        "Create a mask to hide padding AND future words."
-        tgt_mask = (tgt != pad).unsqueeze(-2)
-        tgt_mask = tgt_mask & subsequent_mask(tgt.size(-1)).type_as(tgt_mask.data)
-        return tgt_mask
+            self.y_len = tensor([len(e.y) for e in batch])  # Excluding either BOS or EOS tokens
+            self.y_toks = self.y_len.sum().float().item()
+            self.max_y_len = self.y_len.max()
+            y_seqs = torch.full(size=(self._len, self.max_y_len + 1), fill_value=self.pad_value,
+                                dtype=torch.long, device=device)
+            for i, ex in enumerate(batch):
+                y_seqs[i, :len(ex.y)] = tensor(ex.y)
+            self.y_seqs_nobos = y_seqs[:, 1:]  # predictions
+            self.y_seqs = y_seqs[:, :-1]
+            self.y_mask = self.make_std_mask(self.y_seqs)
 
     def __len__(self):
         return self._len
 
+    @staticmethod
+    def make_std_mask(tgt, pad=pad_value):
+        "Create a mask to hide padding and future words."
+        tgt_mask = (tgt != pad).unsqueeze(1)
+        tgt_mask = tgt_mask & subsequent_mask(tgt.size(-1)).type_as(tgt_mask.data)
+        return tgt_mask
+
 
 class BatchIterable:
 
-    def __init__(self, data_path: str, batch_size: int, sort_dec=True, in_mem_recs=False, in_mem_batch=False,
-                 batch_first=True):
+    def __init__(self, data_path: str, batch_size: int, sort_dec=True, in_mem_recs=False, in_mem_batch=False):
         """
         Iterator for reading training data in batches
         :param data_path: path to TSV file
@@ -319,12 +325,10 @@ class BatchIterable:
         :param sort_dec: should the records within batch be sorted descending order of sequence length?
         :param in_mem_recs: should the raw records be held in memory?
         :param in_mem_batch: Should the batches be held in memory? Use True only if data set is extremely small
-        :param batch_first: Shuld the first dimension be batch instead of sequence length
         """
         self.data = TSVData(data_path, in_mem=in_mem_recs)
         self.batch_size = batch_size
         self.sort_dec = sort_dec
-        self.batch_first = batch_first
         self.mem = list(self.read_all()) if in_mem_batch else None
 
     def read_all(self):
@@ -332,12 +336,11 @@ class BatchIterable:
         for ex in self.data:
             batch.append(ex)
             if len(batch) >= self.batch_size:
-                yield Batch(batch, sort_dec=self.sort_dec, batch_first=self.batch_first)
+                yield Batch(batch, sort_dec=self.sort_dec)
                 batch = []
         if batch:
             log.debug(f"\nLast batch, size={len(batch)}")
-            yield Batch(batch, sort_dec=self.sort_dec, batch_first=self.batch_first)
+            yield Batch(batch, sort_dec=self.sort_dec)
 
     def __iter__(self):
         yield from self.mem if self.mem is not None else self.read_all()
-
