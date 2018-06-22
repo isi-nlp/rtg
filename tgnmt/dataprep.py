@@ -21,6 +21,10 @@ RESERVED_TOKS = [BLANK_TOK, UNK_TOK, BOS_TOK, EOS_TOK]
 
 
 class Field:
+    """
+    An instance of this class holds a vocabulary of a dataset.
+    This class is inspired by the torchtext module's Field class.
+    """
     def __init__(self, name: str, blank=False):
         self.name: str = name
         self.tok2idx: Dict[str, int] = {} if blank else {t: i for t, i in RESERVED_TOKS}
@@ -40,6 +44,12 @@ class Field:
             self.add_token(tok, inc=freq)
 
     def add_token(self, tok: str, inc: int = 1):
+        """
+        Adds token to vocabulary
+        :param tok: token
+        :param inc: frequency in the corpus
+        :return:
+        """
         if tok in self.tok2idx:
             self.freq[self.tok2idx[tok]] += inc
         else:
@@ -49,6 +59,14 @@ class Field:
             self.freq.append(inc)
 
     def seq2idx(self, toks: List[str], add_bos=True, add_eos=True) -> List[int]:
+        """
+        transforms a sequence of words to word indices. If words which doesnt exist in vocabulary appear in the input,
+        they will be replaced with UNK token's index
+        :param toks: sequence of tokens which needs to be transformed
+        :param add_bos: prepend BOS token index
+        :param add_eos: append EOS token index
+        :return: List of word indices
+        """
         seq = [self.tok2idx.get(tok, UNK_TOK[1]) for tok in toks]
         if add_bos:
             seq.insert(0, BOS_TOK[1])
@@ -70,9 +88,17 @@ class Field:
         return res
 
     def size(self):
+        """
+        :return: number of tokens, including reserved
+        """
         return len(self.idx2tok)
 
     def dump_tsv(self, path: str):
+        """
+        Dumps this instance to a TSV file at given path
+        :param path: path to output file
+        :return:
+        """
         with open(path, 'w', encoding='utf-8') as f:
             f.write(f'{self.name}\n')
             for i, (tok, count) in enumerate(zip(self.idx2tok, self.freq)):
@@ -80,6 +106,11 @@ class Field:
 
     @staticmethod
     def load_tsv(path: str):
+        """
+        Loads Field instance from serialized TSV data
+        :param path: path to TSV file which was crated from Field.dump_tsv() method
+        :return: an instance of Field
+        """
         with open(path, 'r', encoding='utf-8') as f:
             name = f.readline()
             field = Field(name, blank=True)
@@ -94,6 +125,9 @@ class Field:
 
 
 class Example:
+    """
+    An object of this class holds an example in sequence to sequence dataset
+    """
 
     def __init__(self, x: List[int], y: List[int] = None):
         self.x = x
@@ -270,8 +304,11 @@ class TranslationExperiment:
 
 
 def subsequent_mask(size):
-    "Mask out subsequent positions. upper diagonal elements should be zero"
-
+    """
+    Mask out subsequent positions. upper diagonal elements should be zero
+    :param size:
+    :return: mask where positions are filled with zero for subsequent positions
+    """
     # upper diagonal elements are 1s, lower diagonal and the main diagonal are zeroed
     triu = torch.triu(torch.ones(size, size, dtype=torch.int8, device=device), diagonal=1)
     # invert it
@@ -281,11 +318,18 @@ def subsequent_mask(size):
 
 
 class Batch:
+    """
+    An object of this class holds a batch of examples
+    """
     pad_value = BLANK_TOK[1]
     bos_val = BOS_TOK[1]
     eos_val = EOS_TOK[1]
 
     def __init__(self, batch: List[Example], sort_dec=False):
+        """
+        :param batch: List fo Examples
+        :param sort_dec: True if the examples be sorted as descending order of their source sequence lengths
+        """
         if sort_dec:
             batch = sorted(batch, key=lambda _: len(_.x), reverse=True)
         self._len = len(batch)
