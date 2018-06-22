@@ -44,10 +44,18 @@ class GreedyDecoder:
     def decode_file(self, inp, out):
         for i, line in enumerate(inp):
             line = line.strip()
-            log.info(f" Input: {i}: {line}")
-            out_line = self.decode_sentence(line)
-            log.info(f"Output: {i}: {out_line}\n")
+            if not line:
+                log.warning(f"line {i+1} was empty. skipping it for now. "
+                            f"Empty lines are problematic when you want line-by-line alignment...")
+                continue
+            cols = line.split('\t')
+            input = cols[0]
+            log.info(f"INP: {i}: {cols[0]}")
+            out_line = self.decode_sentence(input)
             out.write(f'{out_line}\n')
+            log.info(f"OUT: {i}: {out_line}\n")
+            if len(cols) > 1:  # assumption: second column is reference
+                log.info(f"REF: {i}: {cols[1]}")
 
 
 class GreedyDecoderDev(GreedyDecoder):
