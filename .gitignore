@@ -1,6 +1,6 @@
 data
 work
-dummy*
+dummy/
 .idea
 **.pyc.
 __pycache__
