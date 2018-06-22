@@ -7,9 +7,10 @@ At least this one hopes to keep code simple and readable.
 ### Features :
  + RNN based Encoder-Decoder with Attention
  + Easy and interpretable (throw the magics out of this box)
-
+ + "Attention is all you need"
 
 
 ### TODO :
  + Byte Pair Encoding
- + "Attention is all you need"
+ + Multi GPU Parallelism
+
