@@ -1,11 +1,10 @@
 # CLI interface to decode task
-import sys
 import argparse
+import sys
 from argparse import ArgumentDefaultsHelpFormatter as ArgFormatter
 
 from tgnmt import TranslationExperiment as Experiment
-from tgnmt.module.t2t import EncoderDecoder
-from tgnmt.module.decoder import GreedyDecoder
+from tgnmt.module.decoder import Decoder
 
 
 def parse_args():
@@ -17,19 +16,18 @@ def parse_args():
                         help='Input file path. default is STDIN')
     parser.add_argument("-of", '--output', type=argparse.FileType('w'), default=sys.stdout,
                         help='Output File path. default is STDOUT')
-
+    parser.add_argument("-bs", '--beam-size', type=int, default=1,
+                        help='Beam width. width=1 is greedy, higher beam is better approximation but expensive')
     return vars(parser.parse_args())
 
 
 def main():
     args = parse_args()
-    exp = Experiment(args.pop('work_dir'))
+    exp = Experiment(args.pop('work_dir'), read_only=True)
     assert exp.has_prepared(), f'Experiment dir {exp.work_dir} is not ready to train. Please run "prep" sub task'
     assert exp.has_trained(), f'Experiment dir {exp.work_dir} is not ready to decode. Please run "train" sub task'
-    mod_args = exp.get_model_args()
-    last_check_pt, _ = exp.get_last_saved_model()
-    decoder = GreedyDecoder(exp, EncoderDecoder.make_model, args=mod_args, check_pt_file=last_check_pt)
-    return decoder.decode_file(args.pop('input'), args.pop('output'))
+    decoder = Decoder.new(exp)
+    return decoder.decode_file(args.pop('input'), args.pop('output'), **args)
 
 
 if __name__ == '__main__':

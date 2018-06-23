@@ -457,10 +457,10 @@ if __name__ == '__main__':
     V = 11
     criterion = LabelSmoothing(size=V, padding_idx=0, smoothing=0.0)
     model, _ = EncoderDecoder.make_model(V, V, N=2)
-    from tgnmt.module.decoder import GreedyDecoderDev
+    from tgnmt.module.decoder import GreedyDecoder
     exp = Experiment('work')
     trainer = Trainer(exp=exp, model=model)
-    decr = GreedyDecoderDev(model)
+    decr = GreedyDecoder(model, exp=exp)
     for epoch in range(10):
         model.train()
         trainer.run_epoch(dummy_data_gen(V, 30, 20))

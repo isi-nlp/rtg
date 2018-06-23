@@ -84,7 +84,7 @@ class Field:
         for idx in indices:
             if trunc_eos and idx == EOS_TOK[1]:
                 break
-            res.append(self.idx2tok[idx])
+            res.append(self.idx2tok[idx] if idx < len(self.idx2tok) else '-:OutOfIndex:-')
         return res
 
     def size(self):
@@ -176,22 +176,28 @@ def tokenize(strs: List[str]) -> List[List[str]]:
 
 
 class TranslationExperiment:
-    def __init__(self, work_dir: str):
+    def __init__(self, work_dir: str, read_only=False):
         log.info(f"Initializing an experiment. Directory = {work_dir}")
+        self.read_only = read_only
         self.work_dir = work_dir
         self.data_dir = os.path.join(work_dir, 'data')
         self.model_dir = os.path.join(self.work_dir, 'models')
-        for _dir in [self.model_dir, self.data_dir]:
-            if not os.path.exists(_dir):
-                os.makedirs(_dir)
         self.args_file = os.path.join(self.model_dir, 'args.json')
         self.src_field_file = os.path.join(self.data_dir, 'src-field.tsv')
-        self.src_field = Field.load_tsv(self.src_field_file) if os.path.exists(self.src_field_file) else None
-
         self.tgt_field_file = os.path.join(self.data_dir, 'tgt-field.tsv')
-        self.tgt_field = Field.load_tsv(self.tgt_field_file) if os.path.exists(self.tgt_field_file) else None
         self.train_file = os.path.join(self.data_dir, 'train.tsv')
         self.valid_file = os.path.join(self.data_dir, 'valid.tsv')
+
+        if read_only:
+            for _dir in [self.work_dir, self.data_dir, self.model_dir]:
+                assert os.path.isdir(_dir), f'{os.path.realpath(_dir)} doesnt exist'
+        else:
+            for _dir in [self.model_dir, self.data_dir]:
+                if not os.path.exists(_dir):
+                    os.makedirs(_dir)
+
+        self.src_field = Field.load_tsv(self.src_field_file) if os.path.exists(self.src_field_file) else None
+        self.tgt_field = Field.load_tsv(self.tgt_field_file) if os.path.exists(self.tgt_field_file) else None
 
     def has_prepared(self):
         return all([self.src_field, self.tgt_field, os.path.exists(self.train_file)])
@@ -241,6 +247,7 @@ class TranslationExperiment:
 
     def persist_state(self):
         """Writes state of current experiment to the disk"""
+        assert not self.read_only
         self.src_field.dump_tsv(self.src_field_file)
         self.tgt_field.dump_tsv(self.tgt_field_file)
         args = self.get_model_args()
@@ -251,13 +258,14 @@ class TranslationExperiment:
 
     def store_model(self, epoch: int, model, score: float, keep: int):
         """
+        saves model to a given path
         :param epoch: epoch number of model
         :param model: model object itself
         :param score: score of model
         :param keep: number of recent models to keep, older models will be deleted
         :return:
         """
-        """saves model to a given path"""
+        assert not self.read_only
         name = f'model_{epoch:03d}_{score:.4f}.pkl'
         path = os.path.join(self.model_dir, name)
         log.info(f"Saving epoch {epoch} to {path}")
@@ -299,6 +307,7 @@ class TranslationExperiment:
         :param args: args to be stored
         :return:
         """
+        assert not self.read_only
         with open(self.args_file, 'w', encoding='utf-8') as f:
             return json.dump(args, f, ensure_ascii=False)
 
