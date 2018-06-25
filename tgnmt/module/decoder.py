@@ -2,6 +2,10 @@ import torch
 from tgnmt import log, device, my_tensor as tensor
 from tgnmt.dataprep import BLANK_TOK, BOS_TOK, EOS_TOK, subsequent_mask
 from tgnmt.module.t2t import EncoderDecoder
+from typing import List, Tuple
+
+Hypothesis = Tuple[float, List[int]]
+StrHypothesis = Tuple[float, str]
 
 
 class Decoder:
@@ -11,10 +15,11 @@ class Decoder:
     eos_val = EOS_TOK[1]
     default_beam_size = 5
 
-    def __init__(self, model, exp):
+    def __init__(self, model, exp, debug=False):
         self.exp = exp
         self.model = model
         self.model.eval()
+        self.debug = debug
 
     @classmethod
     def new(cls, exp):
@@ -25,7 +30,7 @@ class Decoder:
         model.load_state_dict(torch.load(check_pt_file))
         return cls(model, exp)
 
-    def greedy_decode(self, x_seqs, max_len, **args):
+    def greedy_decode(self, x_seqs, max_len, **args) -> List[Hypothesis]:
         """
         Implements a simple greedy decoder
         :param x_seqs:
@@ -61,13 +66,24 @@ class Decoder:
         selected = x.masked_select(mask)
         return selected.view(-1, x.size(1))
 
-    def beam_decode(self, x_seqs, max_len, beam_size=default_beam_size, num_hyp=None, **args):
+    def beam_decode(self, x_seqs, max_len, beam_size=default_beam_size, num_hyp=None, **args) -> List[List[Hypothesis]]:
+        """
+
+        :param x_seqs: input batch of sequences
+        :param max_len:  maximum length to consider if decoder doesnt produce EOS token
+        :param beam_size: beam size
+        :param num_hyp: number of hypothesis in each beam to return
+        :param args:
+        :return: List of num_hyp Hypothesis for each sequence in the batch.
+         Each hypothesis consists of score and a list of word indexes.
+        """
         """Implements beam decoding"""
         # repeat beam size
         batch_size = x_seqs.size(0)
         assert batch_size == 1  # TODO: test large batches
         if not num_hyp:
             num_hyp = beam_size
+        beam_size = max(beam_size, num_hyp)
 
         # Everything beamed_*  below is the batch repeated beam_size times
         beamed_batch_size = batch_size * beam_size
@@ -168,7 +184,7 @@ class Decoder:
                 result[-1].append((scores[j].item(), beamed_ys[start+indices[j], 1:].squeeze()))
         return result
 
-    def decode_sentence(self, line: str, max_len=20, prepared=False, **args) -> str:
+    def decode_sentence(self, line: str, max_len=20, prepared=False, **args) -> List[StrHypothesis]:
         in_toks = line.strip().split()
         if prepared:
             in_seq = [int(t) for t in in_toks]
@@ -179,17 +195,20 @@ class Decoder:
         else:
             in_seq = self.exp.src_field.seq2idx(in_toks, add_bos=True, add_eos=True)
         in_seqs = tensor(in_seq, dtype=torch.long).view(1, -1)
+        if self.debug:
+            greedy_score, greedy_out = self.greedy_decode(in_seqs, max_len, **args)[0]
+            greedy_toks = self.exp.tgt_field.idx2seq(greedy_out, trunc_eos=True)
+            greedy_out = ' '.join(greedy_toks)
+            log.debug(f'Greedy : score: {greedy_score} :: {greedy_out}')
 
-        greedy_score, greedy_out = self.greedy_decode(in_seqs, max_len, **args)[0]
-        greedy_toks = self.exp.tgt_field.idx2seq(greedy_out, trunc_eos=True)
-        greedy_out = ' '.join(greedy_toks)
-        log.info(f'Greedy : score: {greedy_score} :: {greedy_out}')
-
-        result = self.beam_decode(in_seqs, max_len, **args)[0]
-        for i, (score, beam_toks) in enumerate(result):
+        beams: List[List[Hypothesis]] = self.beam_decode(in_seqs, max_len, **args)
+        beams = beams[0]  # first sentence, the only one we passed to it as input
+        result = []
+        for i, (score, beam_toks) in enumerate(beams):
             out = ' '.join(self.exp.tgt_field.idx2seq(beam_toks, trunc_eos=True))
-            log.info(f"Beam {i}: score:{score} :: {out}")
-        return greedy_out
+            log.debug(f"Beam {i}: score:{score} :: {out}")
+            result.append((score, out))
+        return result
 
     def decode_file(self, inp, out, **args):
         for i, line in enumerate(inp):
@@ -200,9 +219,14 @@ class Decoder:
                 continue
             cols = line.split('\t')
             input = cols[0]
-            log.info(f"INP: {i}: {cols[0]}")
+            log.debug(f"INP: {i}: {cols[0]}")
             if len(cols) > 1:  # assumption: second column is reference
-                log.info(f"REF: {i}: {cols[1]}")
-            out_line = self.decode_sentence(input, **args)
+                log.debug(f"REF: {i}: {cols[1]}")
+            result = self.decode_sentence(input, **args)
+            num_hyp = args['num_hyp']
+            out_line = '\n'.join(f'{hyp}\t{score:.4f}' for score, hyp in result)
             out.write(f'{out_line}\n')
-            log.info(f"OUT: {i}: {out_line}\n")
+            log.debug(f"OUT: {i}: {out_line}\n")
+            if num_hyp > 1:
+                out.write('\n')
+

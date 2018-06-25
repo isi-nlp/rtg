@@ -5,7 +5,6 @@ from argparse import ArgumentDefaultsHelpFormatter as ArgFormatter
 
 from tgnmt import TranslationExperiment as Experiment
 from tgnmt.module.decoder import Decoder
-from tgnmt.utils import add_on_off_arg
 
 
 def parse_args():
@@ -17,8 +16,10 @@ def parse_args():
                         help='Input file path. default is STDIN')
     parser.add_argument("-of", '--output', type=argparse.FileType('w'), default=sys.stdout,
                         help='Output File path. default is STDOUT')
-    parser.add_argument("-bs", '--beam-size', type=int, default=1,
-                        help='Beam width. width=1 is greedy, higher beam is better approximation but expensive')
+    parser.add_argument("-bs", '--beam-size', type=int, default=5,
+                        help='Beam size. beam_size=1 is greedy, higher beam is better approximation but expensive')
+    parser.add_argument("-nh", '--num-hyp', type=int, default=1,
+                        help='Number of hypothesis to output. This should be smaller than beam_size')
     parser.add_argument("--prepared", dest="prepared", action='store_true',
                         help='Each token is a valid integer wich is an index to embedding, so skip indexifying again')
     return vars(parser.parse_args())
