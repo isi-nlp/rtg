@@ -55,11 +55,11 @@ class Decoder:
         return result
 
     @staticmethod
-    def masked_select(tensor, mask):
-        assert tensor.shape[0] == mask.shape[0]
+    def masked_select(x, mask):
+        assert x.shape[0] == mask.shape[0]
         assert mask.shape[1] == 1
-        selected = tensor.masked_select(mask)
-        return selected.view(-1, tensor.size(1))
+        selected = x.masked_select(mask)
+        return selected.view(-1, x.size(1))
 
     def beam_decode(self, x_seqs, max_len, beam_size=default_beam_size, num_hyp=None, **args):
         """Implements beam decoding"""
@@ -161,7 +161,7 @@ class Decoder:
         for i in range(batch_size):
             result.append([])
             start, end = i * beam_size, (i + 1) * beam_size
-            scores, indices = beamed_scores[start:end].sort()
+            scores, indices = beamed_scores[start:end, :].view(-1).sort(descending=True)
             for j in range(beam_size):
                 if len(result[-1]) == num_hyp:
                     continue
