@@ -1,7 +1,8 @@
 #!/usr/bin/env python
 # Generates dummy data for testing
 import random
-from tgnmt.dataprep import RESERVED_TOKS, TranslationExperiment, Field
+from tgnmt.dataprep import RESERVED_TOKS, Field
+from tgnmt import TranslationExperiment
 import argparse
 
 
@@ -39,10 +40,10 @@ class DataGen:
         yield from bi_text
 
     def prepare_experiment(self, exp: TranslationExperiment):
-        exp.src_field, exp.tgt_field = Field('src'), Field('tgt')
+        exp.src_vocab, exp.tgt_vocab = Field('src'), Field('tgt')
         for tok in range(self.min_tok, self.max_tok+1):
-            exp.src_field.add_token(str(tok), -1)
-            exp.tgt_field.add_token(str(tok), -1)
+            exp.src_vocab.add_token(str(tok), -1)
+            exp.tgt_vocab.add_token(str(tok), -1)
 
         exp.prep_file(self.make_bi_text(self.num_train_exs), exp.train_file)
         exp.prep_file(self.make_bi_text(self.num_val_exs), exp.valid_file)

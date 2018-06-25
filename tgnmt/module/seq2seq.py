@@ -178,7 +178,7 @@ class Trainer:
             log.info(f"Resuming training from epoch:{self.start_epoch}, model={last_model}")
             assert type(self.model) is Seq2Seq
         else:
-            self.model = Seq2Seq(exp.src_field.size() + 1, exp.tgt_field.size() + 1)
+            self.model = Seq2Seq(exp.src_vocab.size() + 1, exp.tgt_vocab.size() + 1)
             self.start_epoch = 0
         self.model = self.model.to(device)
         self.optimizer = optim.Adam(self.model.parameters(), lr=lr)
@@ -297,9 +297,9 @@ class GreedyDecoder:
         for i, line in enumerate(inp):
             in_toks = line.strip().split()
             log.info(f" Input: {i}: {' '.join(in_toks)}")
-            in_seq = self.exp.src_field.seq2idx(in_toks)
+            in_seq = self.exp.src_vocab.seq2idx(in_toks)
             out_seq = self.greedy_decode(in_seq)
-            out_toks = self.exp.tgt_field.idx2seq(out_seq)
+            out_toks = self.exp.tgt_vocab.idx2seq(out_seq)
             out_line = ' '.join(out_toks)
             log.info(f"Output: {i}: {out_line}")
             out.write(f'{out_line}\n')

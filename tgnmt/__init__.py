@@ -13,5 +13,6 @@ def my_tensor(*args, **kwargs):
     return torch.tensor(*args, device=device, **kwargs)
 
 
-from .dataprep import Field, BatchIterable, Batch, TranslationExperiment
+from .dataprep import Field, BatchIterable, Batch
+from tgnmt.exp import TranslationExperiment
 from tgnmt.module import seq2seq

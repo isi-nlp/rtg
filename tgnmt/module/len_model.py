@@ -100,7 +100,7 @@ class Trainer:
             self.start_epoch = last_epoch + 1
             log.info(f"Resuming training from epoch:{self.start_epoch}, model={last_model}")
         else:
-            self.model = LengthModel(vocab_size=exp.src_field.size() + 1).to(device)
+            self.model = LengthModel(vocab_size=exp.src_vocab.size() + 1).to(device)
             self.start_epoch = 0
         self.optimizer = optim.SGD(self.model.parameters(), lr=0.05)
         self.loss_func = nn.MSELoss()

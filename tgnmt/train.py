@@ -10,7 +10,7 @@ from tgnmt.module.t2t import Trainer
 def parse_args():
     parser = argparse.ArgumentParser(prog="tgnmt.train", description="Train NMT model",
                                      formatter_class=ArgFormatter)
-    parser.add_argument("work_dir", nargs=1, help="Working directory", type=str)
+    parser.add_argument("work_dir", help="Working directory", type=str)
     parser.add_argument('-mt', '--mod-type', default='t2t', choices=['rnn', 't2t'],
                         help='Type of model: RNN or T2T (aka transformer)')
     parser.add_argument("-ne", "--num-epochs", help="Num epochs", type=int, default=15)

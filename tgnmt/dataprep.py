@@ -1,16 +1,9 @@
-import glob
-import json
 import os
 from collections import Counter
-from typing import List, Dict, Iterator, Tuple, Optional
-
+from typing import List, Dict, Iterator, Tuple, Union
 import torch
-
 from tgnmt import log
 from . import my_tensor as tensor, device
-
-RawRecord = Tuple[List[str], List[str]]
-SeqRecord = Tuple[List[int], List[int]]
 
 BLANK_TOK = '-BLANK-', 0
 UNK_TOK = '-UNK-', 1
@@ -19,29 +12,53 @@ EOS_TOK = '-EOS-', 3
 
 RESERVED_TOKS = [BLANK_TOK, UNK_TOK, BOS_TOK, EOS_TOK]
 
+from tgnmt.bpe import SubwordTextEncoder
+
+RawRecord = Tuple[List[str], List[str]]
+SeqRecord = Tuple[List[int], List[int]]
+TokStream = Union[Iterator[Iterator[str]], Iterator[str]]
+
 
 class Field:
     """
     An instance of this class holds a vocabulary of a dataset.
     This class is inspired by the torchtext module's Field class.
     """
-    def __init__(self, name: str, blank=False):
+
+    num_reserved_toks = len(RESERVED_TOKS)
+
+    def __init__(self, name: str, blank=False, subword_enc: SubwordTextEncoder = None):
+        assert ',' not in name
         self.name: str = name
+        self.subword_enc = subword_enc
         self.tok2idx: Dict[str, int] = {} if blank else {t: i for t, i in RESERVED_TOKS}
         self.idx2tok: List[str] = [] if blank else [t for t, _ in RESERVED_TOKS]
         self.freq: List[int] = [-1 for _ in self.idx2tok]
+        if self.subword_enc:
+            self.build_from_types(self.subword_enc.all_subtoken_strings)
 
-    def build_from(self, stream: Iterator[List[str]], min_freq: int = 1, max_vocab_size: int = 2 ** 24):
-        tok_stream = (tok for seq in stream for tok in seq)  # flatten
+    @staticmethod
+    def get_tok_freq(tok_stream: TokStream, min_freq=1, nested=True):
+        if nested:
+            tok_stream = (tok for seq in tok_stream for tok in seq)  # flatten
         tok_freq = Counter(tok_stream).items()
         if min_freq > 1:
             tok_freq = [(t, f) for t, f in tok_freq if f >= min_freq]
-        tok_freq = sorted(tok_freq, key=lambda x: x[1], reverse=True)
+        return sorted(tok_freq, key=lambda x: x[1], reverse=True)
+
+    def build_from(self, stream: TokStream, min_freq: int = 1, max_vocab_size: int = 2 ** 24):
+        tok_freq = self.get_tok_freq(stream, min_freq=min_freq)
         if len(tok_freq) > max_vocab_size:
             log.info(f'Truncating vocab size from {len(tok_freq)} to {max_vocab_size}')
             tok_freq = tok_freq[:max_vocab_size]
         for tok, freq in tok_freq:
             self.add_token(tok, inc=freq)
+        return self
+
+    def build_from_types(self, types, count=0):
+        for tok in types:
+            self.add_token(tok, count)
+        return self
 
     def add_token(self, tok: str, inc: int = 1):
         """
@@ -58,15 +75,18 @@ class Field:
             self.idx2tok.append(tok)
             self.freq.append(inc)
 
-    def seq2idx(self, toks: List[str], add_bos=True, add_eos=True) -> List[int]:
+    def seq2idx(self, toks: List[str], add_bos=True, add_eos=True, subword_split=True) -> List[int]:
         """
         transforms a sequence of words to word indices.
          If input has tokens which doesnt exist in vocabulary, they will be replaced with UNK token's index.
         :param toks: sequence of tokens which needs to be transformed
         :param add_bos: prepend BOS token index. If input already has BOS token then this flag has no effect.
         :param add_eos: append EOS token index. If input already has EOS token then this flag has no effect.
+        :param subword_split: if subword_encoder is available, split tokens into subwords
         :return: List of word indices
         """
+        if subword_split and self.subword_enc:
+            toks = self.subword_enc.tokens_to_subtokens(toks)
         seq = [self.tok2idx.get(tok, UNK_TOK[1]) for tok in toks]
         if add_bos and seq[0] != BOS_TOK[1]:
             seq.insert(0, BOS_TOK[1])
@@ -85,6 +105,8 @@ class Field:
             if trunc_eos and idx == EOS_TOK[1]:
                 break
             res.append(self.idx2tok[idx] if idx < len(self.idx2tok) else '-:OutOfIndex:-')
+        if self.subword_enc:
+            self.subword_enc.un_split(res)
         return res
 
     def size(self):
@@ -100,7 +122,9 @@ class Field:
         :return:
         """
         with open(path, 'w', encoding='utf-8') as f:
-            f.write(f'{self.name}\n')
+            header = self.name
+            header += ",subwords" if self.subword_enc else ""
+            f.write(f'{header}\n')
             for i, (tok, count) in enumerate(zip(self.idx2tok, self.freq)):
                 f.write(f'{i}\t{tok}\t{count}\n')
 
@@ -112,8 +136,9 @@ class Field:
         :return: an instance of Field
         """
         with open(path, 'r', encoding='utf-8') as f:
-            name = f.readline()
-            field = Field(name, blank=True)
+            parts = f.readline().strip().split(',')
+            subword_mode = len(parts) > 1 and 'subwords' in parts[1:]
+            field = Field(parts[0], blank=True)
             i = 0
             for line in f:
                 idx, tok, count = line.split('\t')
@@ -121,6 +146,9 @@ class Field:
                 assert idx == i, f'expected index {i}, got={idx}'
                 field.add_token(tok, inc=count)
                 i += 1
+            if subword_mode:
+                # TODO: what happens with the reserved tokens ?
+                field.subword_enc = SubwordTextEncoder(subtoks=field.idx2tok)
             return field
 
 
@@ -173,143 +201,6 @@ def read_tsv(path: str):
 
 def tokenize(strs: List[str]) -> List[List[str]]:
     return [s.split() for s in strs]
-
-
-class TranslationExperiment:
-    def __init__(self, work_dir: str, read_only=False):
-        log.info(f"Initializing an experiment. Directory = {work_dir}")
-        self.read_only = read_only
-        self.work_dir = work_dir
-        self.data_dir = os.path.join(work_dir, 'data')
-        self.model_dir = os.path.join(self.work_dir, 'models')
-        self.args_file = os.path.join(self.model_dir, 'args.json')
-        self.src_field_file = os.path.join(self.data_dir, 'src-field.tsv')
-        self.tgt_field_file = os.path.join(self.data_dir, 'tgt-field.tsv')
-        self.train_file = os.path.join(self.data_dir, 'train.tsv')
-        self.valid_file = os.path.join(self.data_dir, 'valid.tsv')
-
-        if read_only:
-            for _dir in [self.work_dir, self.data_dir, self.model_dir]:
-                assert os.path.isdir(_dir), f'{os.path.realpath(_dir)} doesnt exist'
-        else:
-            for _dir in [self.model_dir, self.data_dir]:
-                if not os.path.exists(_dir):
-                    os.makedirs(_dir)
-
-        self.src_field = Field.load_tsv(self.src_field_file) if os.path.exists(self.src_field_file) else None
-        self.tgt_field = Field.load_tsv(self.tgt_field_file) if os.path.exists(self.tgt_field_file) else None
-
-    def has_prepared(self):
-        return all([self.src_field, self.tgt_field, os.path.exists(self.train_file)])
-
-    def has_trained(self):
-        return self.get_last_saved_model()[0] is not None
-
-    def prep_file(self, records: Iterator[RawRecord], path: str):
-        seqs = ((self.src_field.seq2idx(sseq), self.tgt_field.seq2idx(tseq, add_bos=True)) for sseq, tseq in records)
-        seqs = ((' '.join(map(str, x)), ' '.join(map(str, y))) for x, y in seqs)
-        lines = (f'{x}\t{y}\n' for x, y in seqs)
-
-        log.info(f"Storing data at {path}")
-        with open(path, 'w') as f:
-            for line in lines:
-                f.write(line)
-
-    @staticmethod
-    def read_raw_data(path: str, truncate: bool, src_len: int, tgt_len: int) -> Iterator[RawRecord]:
-        """Raw dataset is a simple TSV with source \t target sequence of words"""
-        recs = map(tokenize, read_tsv(path))
-        recs = ((src, tgt) for src, tgt in recs if len(src) > 0 and len(tgt) > 0)
-        if truncate:
-            recs = ((src[:src_len], tgt[:tgt_len]) for src, tgt in recs)
-        else:  # Filter out longer sentences
-            recs = ((src, tgt) for src, tgt in recs if len(src) <= src_len and len(tgt) <= tgt_len)
-        return recs
-
-    def pre_process(self, train_file: str, valid_file: str, src_len: int, tgt_len: int, truncate=False):
-
-        log.info(f'Training file:: {train_file}')
-        # in memory  --  var len lists and sparse dictionary -- should be okay for now
-        train_recs = list(self.read_raw_data(train_file, truncate, src_len, tgt_len))
-        log.info(f'Found {len(train_recs)} records')
-        self.src_field, self.tgt_field = Field('src'), Field('tgt')
-        log.info("Building source vocabulary")
-        self.src_field.build_from(x for x, _ in train_recs)
-        log.info("Building target vocabulary")
-        self.tgt_field.build_from(y for _, y in train_recs)
-        log.info(f"Vocab sizes, source: {self.src_field.size()}, target:{self.tgt_field.size()}")
-
-        self.prep_file(train_recs, self.train_file)
-        val_recs = self.read_raw_data(valid_file, truncate, src_len, tgt_len)
-        self.prep_file(val_recs, self.valid_file)
-
-        self.persist_state()
-
-    def persist_state(self):
-        """Writes state of current experiment to the disk"""
-        assert not self.read_only
-        self.src_field.dump_tsv(self.src_field_file)
-        self.tgt_field.dump_tsv(self.tgt_field_file)
-        args = self.get_model_args()
-        args = args if args else {}
-        args['src_vocab'] = self.src_field.size()
-        args['tgt_vocab'] = self.tgt_field.size()
-        self.store_model_args(args)
-
-    def store_model(self, epoch: int, model, score: float, keep: int):
-        """
-        saves model to a given path
-        :param epoch: epoch number of model
-        :param model: model object itself
-        :param score: score of model
-        :param keep: number of recent models to keep, older models will be deleted
-        :return:
-        """
-        assert not self.read_only
-        name = f'model_{epoch:03d}_{score:.4f}.pkl'
-        path = os.path.join(self.model_dir, name)
-        log.info(f"Saving epoch {epoch} to {path}")
-        torch.save(model, path)
-        for old_model in self.list_models()[keep:]:
-            log.info(f"Deleting old {old_model} . Keep={keep}")
-            os.remove(old_model)
-
-    def list_models(self) -> List[str]:
-        """
-        Lists models in descending order of modification time
-        :return: list of model paths
-        """
-        pat = f'{self.model_dir}/model_*.pkl'
-        paths = glob.glob(pat)
-        return sorted(paths, key=lambda p: os.path.getmtime(p), reverse=True)  # sort by descending time
-
-    def get_last_saved_model(self) -> Tuple[Optional[str], int]:
-        models = self.list_models()
-        if models:
-            _, epoch, score = models[0].replace('.pkl', '').split('_')
-            return models[0], int(epoch)
-        else:
-            return None, -1
-
-    def get_model_args(self) -> Optional[Dict]:
-        """
-        Gets args from file
-        :return: args if exists or None otherwise
-        """
-        if not os.path.exists(self.args_file):
-            return None
-        with open(self.args_file, encoding='utf-8') as f:
-            return json.load(f)
-
-    def store_model_args(self, args):
-        """
-        Stores args to args file
-        :param args: args to be stored
-        :return:
-        """
-        assert not self.read_only
-        with open(self.args_file, 'w', encoding='utf-8') as f:
-            return json.dump(args, f, ensure_ascii=False)
 
 
 def subsequent_mask(size):
