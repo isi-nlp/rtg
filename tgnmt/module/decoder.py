@@ -193,11 +193,11 @@ class Decoder:
             if in_seq[-1] != self.eos_val:
                 in_seq.append(self.eos_val)
         else:
-            in_seq = self.exp.src_field.seq2idx(in_toks, add_bos=True, add_eos=True)
+            in_seq = self.exp.get_vocab('src').seq2idx(in_toks, add_bos=True, add_eos=True)
         in_seqs = tensor(in_seq, dtype=torch.long).view(1, -1)
         if self.debug:
             greedy_score, greedy_out = self.greedy_decode(in_seqs, max_len, **args)[0]
-            greedy_toks = self.exp.tgt_field.idx2seq(greedy_out, trunc_eos=True)
+            greedy_toks = self.exp.get_vocab('tgt').idx2seq(greedy_out, trunc_eos=True)
             greedy_out = ' '.join(greedy_toks)
             log.debug(f'Greedy : score: {greedy_score} :: {greedy_out}')
 
@@ -205,7 +205,7 @@ class Decoder:
         beams = beams[0]  # first sentence, the only one we passed to it as input
         result = []
         for i, (score, beam_toks) in enumerate(beams):
-            out = ' '.join(self.exp.tgt_field.idx2seq(beam_toks, trunc_eos=True))
+            out = ' '.join(self.exp.get_vocab('tgt').idx2seq(beam_toks, trunc_eos=True))
             log.debug(f"Beam {i}: score:{score} :: {out}")
             result.append((score, out))
         return result
