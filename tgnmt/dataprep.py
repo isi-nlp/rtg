@@ -225,11 +225,13 @@ class Batch:
     bos_val = BOS_TOK[1]
     eos_val = EOS_TOK[1]
 
-    def __init__(self, batch: List[Example], sort_dec=False):
+    def __init__(self, batch: List[Example], sort_dec=False, batch_first=True):
         """
         :param batch: List fo Examples
         :param sort_dec: True if the examples be sorted as descending order of their source sequence lengths
+        :param batch_first: first dimension is batch
         """
+        self.batch_first = batch_first
         if sort_dec:
             batch = sorted(batch, key=lambda _: len(_.x), reverse=True)
         self._len = len(batch)
@@ -240,6 +242,8 @@ class Batch:
                                  dtype=torch.long, device=device)
         for i, ex in enumerate(batch):
             self.x_seqs[i, :len(ex.x)] = tensor(ex.x)
+        if not batch_first:      # transpose
+            self.x_seqs = self.x_seqs.t()
         self.x_mask = (self.x_seqs != self.pad_value).unsqueeze(1)
         first_y = batch[0].y
         if first_y is not None:
@@ -249,13 +253,16 @@ class Batch:
 
             self.y_len = tensor([len(e.y) for e in batch])  # Excluding either BOS or EOS tokens
             self.y_toks = self.y_len.sum().float().item()
-            self.max_y_len = self.y_len.max()
+            self.max_y_len = self.y_len.max().item()
             y_seqs = torch.full(size=(self._len, self.max_y_len + 1), fill_value=self.pad_value,
                                 dtype=torch.long, device=device)
             for i, ex in enumerate(batch):
                 y_seqs[i, :len(ex.y)] = tensor(ex.y)
             self.y_seqs_nobos = y_seqs[:, 1:]  # predictions
             self.y_seqs = y_seqs[:, :-1]
+            if not batch_first:    # transpose
+                self.y_seqs = self.y_seqs.t()
+                self.y_seqs_nobos = self.y_seqs_nobos.t()
             self.y_mask = self.make_std_mask(self.y_seqs)
 
     def __len__(self):
@@ -271,7 +278,7 @@ class Batch:
 
 class BatchIterable:
 
-    def __init__(self, data_path: str, batch_size: int, sort_dec=True):
+    def __init__(self, data_path: str, batch_size: int, sort_dec=True, batch_first=True):
         """
         Iterator for reading training data in batches
         :param data_path: path to TSV file
@@ -281,17 +288,18 @@ class BatchIterable:
         self.data = TSVData(data_path)
         self.batch_size = batch_size
         self.sort_dec = sort_dec
+        self.batch_first = batch_first
 
     def read_all(self):
         batch = []
         for ex in self.data:
             batch.append(ex)
             if len(batch) >= self.batch_size:
-                yield Batch(batch, sort_dec=self.sort_dec)
+                yield Batch(batch, sort_dec=self.sort_dec, batch_first=self.batch_first)
                 batch = []
         if batch:
             log.debug(f"\nLast batch, size={len(batch)}")
-            yield Batch(batch, sort_dec=self.sort_dec)
+            yield Batch(batch, sort_dec=self.sort_dec, batch_first=self.batch_first)
 
     def __iter__(self):
         yield from self.read_all()
