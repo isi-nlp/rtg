@@ -8,9 +8,9 @@ import torch.nn.functional as F
 import math, copy, time
 from torch.autograd import Variable
 from tqdm import tqdm
-from tgnmt import device, log, TranslationExperiment as Experiment
+from tgnmt import device, log, TranslationExperiment as Experiment, debug_mode
 from tgnmt.dataprep import BatchIterable, Batch, Example, subsequent_mask
-import gc
+from tgnmt.utils import log_tensor_sizes
 
 
 class EncoderDecoder(nn.Module):
@@ -420,7 +420,9 @@ class Trainer:
                 tokens = 0
             # force free memory
             del batch
-            gc.collect()
+            if debug_mode:
+                log_tensor_sizes()
+
         score = total_loss / total_tokens
         return score
 
