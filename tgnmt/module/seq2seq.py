@@ -3,19 +3,23 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from tqdm import tqdm
-from typing import List
-
+from typing import List, Optional
 
 from tgnmt.dataprep import Batch
 from tgnmt import TranslationExperiment as Experiment
 from tgnmt import device, log
 from tgnmt import my_tensor as tensor
-from tgnmt.dataprep import BatchIterable, BOS_TOK
+from tgnmt.dataprep import BatchIterable, BOS_TOK, BLANK_TOK, EOS_TOK
 
 BOS_TOK_IDX = BOS_TOK[1]
+EOS_TOK_IDX = EOS_TOK[1]
+BLANK_TOK_IDX = BLANK_TOK[1]
 
 
 class RNNEncoder(nn.Module):
+
+    padding_idx = BLANK_TOK_IDX
+
     def __init__(self, input_size, hidden_size, n_layers=2, dropout=0.4):
         super(RNNEncoder, self).__init__()
 
@@ -24,7 +28,7 @@ class RNNEncoder(nn.Module):
         self.n_layers = n_layers
         self.dropout = dropout
 
-        self.embedding = nn.Embedding(input_size, hidden_size)
+        self.embedding = nn.Embedding(input_size, hidden_size, padding_idx=self.padding_idx)
         self.gru = nn.GRU(hidden_size, hidden_size, n_layers, dropout=self.dropout, bidirectional=True)
 
     def forward(self, input_seqs, input_lengths, hidden=None):
@@ -155,7 +159,7 @@ class Seq2Seq(nn.Module):
 
         dec_inps = tensor([BOS_TOK_IDX] * len(batch), dtype=torch.long)
         dec_hids = enc_hids[:self.dec.n_layers]
-        all_dec_outs = torch.zeros(batch.max_y_len, len(batch), self.dec.output_size, device=device)
+        all_dec_outs = torch.zeros((batch.max_y_len, len(batch), self.dec.output_size), device=device)
         for t in range(batch.max_y_len):
             dec_outs, dec_hids, dec_attn = self.dec(dec_inps, dec_hids, enc_outs)
             all_dec_outs[t] = dec_outs
@@ -169,17 +173,21 @@ class Seq2Seq(nn.Module):
 
 class Trainer:
 
-    def __init__(self, exp: Experiment, lr=0.0001):
+    def __init__(self, exp: Experiment, model=None, lr=0.0001):
         self.exp = exp
-        last_model, last_epoch = self.exp.get_last_saved_model()
-        if last_model:
-            self.model = torch.load(last_model)
-            self.start_epoch = last_epoch + 1
-            log.info(f"Resuming training from epoch:{self.start_epoch}, model={last_model}")
-            assert type(self.model) is Seq2Seq
+        self.start_epoch = 0
+        if model:
+            self.model = model
         else:
-            self.model = Seq2Seq(exp.src_vocab.size() + 1, exp.tgt_vocab.size() + 1)
-            self.start_epoch = 0
+            last_model, last_epoch = self.exp.get_last_saved_model()
+            if last_model:
+                self.model = torch.load(last_model)
+                self.start_epoch = last_epoch + 1
+                log.info(f"Resuming training from epoch:{self.start_epoch}, model={last_model}")
+                assert type(self.model) is Seq2Seq
+            else:
+                self.model = Seq2Seq(**exp.get_model_args())
+
         self.model = self.model.to(device)
         self.optimizer = optim.Adam(self.model.parameters(), lr=lr)
 
@@ -190,7 +198,7 @@ class Trainer:
         seq_range_expand = torch.arange(0, max_len, dtype=torch.long, device=device).expand(batch_size, max_len)
         # make lengths vectors to [B x 1] and duplicate columns to [B, S]
         seq_length_expand = lengths.unsqueeze(1).expand_as(seq_range_expand)
-        return seq_range_expand < seq_length_expand # 0 if padding, 1 otherwise
+        return seq_range_expand < seq_length_expand     # 0 if padding, 1 otherwise
 
     @classmethod
     def masked_cross_entropy(cls, logits, target, lengths):
@@ -230,7 +238,7 @@ class Trainer:
     def train(self, num_epochs: int, batch_size: int, **args):
         log.info(f'Going to train for {num_epochs} epochs; batch_size={batch_size}')
 
-        train_data = BatchIterable(self.exp.train_file, batch_size=batch_size, in_mem=True, batch_first=False)
+        train_data = BatchIterable(self.exp.train_file, batch_size=batch_size, batch_first=False)
         # val_data = BatchIterable(self.exp.valid_file, batch_size=batch_size, in_mem=True, batch_first=False)
         keep_models = args.get('keep_models', 4)
         if args.get('resume_train'):
@@ -239,43 +247,49 @@ class Trainer:
             raise Exception(f'The model was already trained to {self.start_epoch} epochs. '
                             f'Please increase epoch or clear the existing models')
         for ep in range(self.start_epoch, num_epochs):
-            tot_loss = 0.0
-            for i, batch in tqdm(enumerate(train_data)):
-                # Step clear gradients
-                self.model.zero_grad()
-                # Step Run forward pass.
-
-                dec_outs = self.model(batch)
-
-                loss = self.masked_cross_entropy(
-                    dec_outs.t().contiguous(),  # -> batch x seq
-                    batch.y_seqs.t().contiguous(),  # -> batch x seq_len
-                    batch.y_len
-                )
-                tot_loss += loss.item()
-                loss.backward()
-                self.optimizer.step()
-
+            tot_loss = self.run_epoch(train_data)
             log.info(f'Epoch {ep+1} complete.. Training loss in this epoch {tot_loss}...')
             self.exp.store_model(epoch=ep, model=self.model, score=tot_loss, keep=keep_models)
+
+    def run_epoch(self, train_data):
+        tot_loss = 0.0
+        for i, batch in tqdm(enumerate(train_data)):
+            # Step clear gradients
+            self.model.zero_grad()
+            # Step Run forward pass.
+            dec_outs = self.model(batch)
+
+            loss = self.masked_cross_entropy(
+                dec_outs.t().contiguous(),  # -> batch x seq
+                batch.y_seqs.t().contiguous(),  # -> batch x seq_len
+                batch.y_len
+            )
+            tot_loss += loss.item()
+            loss.backward()
+            self.optimizer.step()
+        return tot_loss
 
 
 class GreedyDecoder:
 
-    def __init__(self, exp: Experiment):
-        self.exp = exp
-        args = exp.get_model_args()
-        self.model = Seq2Seq.make_model(**args)
+    def __init__(self, exp: Experiment, model: Seq2Seq=None):
 
-        last_check_pt, _ = exp.get_last_saved_model()
-        log.debug(f'Restoring from {last_check_pt}')
-        self.model.load_state_dict(torch.load(last_check_pt))
+        self.exp = exp
+        if model:
+            self.model = model
+        else:
+            args = exp.get_model_args()
+            self.model = Seq2Seq.make_model(**args)
+
+            last_check_pt, _ = exp.get_last_saved_model()
+            log.debug(f'Restoring from {last_check_pt}')
+            self.model.load_state_dict(torch.load(last_check_pt))
         self.model.eval()
 
-    def greedy_decode(self, seq: List[int], max_out_len=200):
+    def greedy_decode(self, seq: List[int], max_out_len=100):
         # [S, 1] <-- [S]
         x_seqs = tensor(seq, dtype=torch.long).view(-1, 1)
-        # [S]
+        # [1]
         x_lens = tensor([len(seq)], dtype=torch.long)
         # [S, B=1, d], [S, B=1, d] <-- [S, 1], [S]
         enc_outs, enc_hids = self.model.enc(x_seqs, x_lens, None)
@@ -286,7 +300,6 @@ class GreedyDecoder:
         # [S=m]
         final_dec_outs = torch.zeros(max_out_len, dtype=torch.long, device=device)
         for t in range(max_out_len):
-
             dec_outs, dec_hids, dec_attn = self.model.dec(dec_inps, dec_hids, enc_outs)
             word_prob, word_idx = F.log_softmax(dec_outs, dim=1).view(-1).max(0)
             final_dec_outs[t] = word_idx
@@ -303,3 +316,23 @@ class GreedyDecoder:
             out_line = ' '.join(out_toks)
             log.info(f"Output: {i}: {out_line}")
             out.write(f'{out_line}\n')
+
+
+if __name__ == '__main__':
+    from tgnmt.dummy import simple_dummy_data_gen as data_gen
+    vocab_size = 12
+    model = Seq2Seq.make_model(12, 12)
+    exp = Experiment("work", read_only=True)
+    trainer = Trainer(exp, model)
+    decoder = GreedyDecoder(exp, model)
+    example = [Batch.bos_val, 4, 5, 6, 7, 8, 9, 10, 11]
+    num_epoch = 10
+    for ep in range(num_epoch):
+        log.info(f"Running epoch {ep+1}")
+        data = data_gen(vocab_size, batch_size=30, n_batches=50)
+        model.train()
+        loss = trainer.run_epoch(train_data=data)
+        log.info(f"Epoch {ep+1} finish. Loss = {loss}")
+        model.eval()
+        out = decoder.greedy_decode(seq=example, max_out_len=15)
+        log.info(f"Prediction {out}")

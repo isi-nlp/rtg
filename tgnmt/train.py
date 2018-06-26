@@ -4,7 +4,8 @@ import argparse
 from argparse import ArgumentDefaultsHelpFormatter as ArgFormatter
 
 from tgnmt import TranslationExperiment as Experiment
-from tgnmt.module.t2t import Trainer
+from tgnmt.module.t2t import Trainer as T2TTrainer
+from tgnmt.module.seq2seq import Trainer as Seq2SeqTrainer
 
 
 def parse_args():
@@ -27,9 +28,7 @@ def main():
     args = parse_args()
     exp = Experiment(args.pop('work_dir'))
     assert exp.has_prepared(), f'Experiment dir {exp.work_dir} is not ready to train. Please run "prep" sub task'
-    if args.get('mod_type') != 't2t':
-        raise Exception('We are focusing on t2t at the moment!')
-    trainer = Trainer(exp)
+    trainer = {'t2t': T2TTrainer, 'rnn': Seq2SeqTrainer}[args.pop('mod_type')](exp)
     return trainer.train(**args)
 
 
