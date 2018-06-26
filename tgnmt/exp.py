@@ -27,10 +27,7 @@ class TranslationExperiment:
         self.train_file = os.path.join(self.data_dir, 'train.tsv')
         self.valid_file = os.path.join(self.data_dir, 'valid.tsv')
 
-        if read_only:
-            for _dir in [self.work_dir, self.data_dir, self.model_dir]:
-                assert os.path.isdir(_dir), f'{os.path.realpath(_dir)} doesnt exist'
-        else:
+        if not read_only:
             for _dir in [self.model_dir, self.data_dir]:
                 if not os.path.exists(_dir):
                     os.makedirs(_dir)
