@@ -449,32 +449,18 @@ class Trainer:
             self.start_epoch += 1
 
 
-def dummy_data_gen(V, batch, nbatches):
-    "Generate random data for a src-tgt copy task."
-
-    def make_an_ex():
-        data = np.random.randint(3, V, size=(10,))
-        tgt = V + 2 - data
-        tgt[0] = Batch.bos_val
-        data[0] = Batch.bos_val
-        return Example(data, tgt)
-
-    for i in range(nbatches):
-        exs = [make_an_ex() for _ in range(batch)]
-        yield Batch(exs)
-
-
 if __name__ == '__main__':
+    from tgnmt.dummy import simple_dummy_data_gen as data_gen
     V = 11
     criterion = LabelSmoothing(size=V, padding_idx=0, smoothing=0.0)
     model, _ = EncoderDecoder.make_model(V, V, N=2)
-    from tgnmt.module.decoder import GreedyDecoder
+    from tgnmt.module.decoder import Decoder
     exp = Experiment('work')
     trainer = Trainer(exp=exp, model=model)
-    decr = GreedyDecoder(model, exp=exp)
+    decr = Decoder(model, exp=exp)
     for epoch in range(10):
         model.train()
-        trainer.run_epoch(dummy_data_gen(V, 30, 20))
+        trainer.run_epoch(data_gen(V, 30, 20))
 
         model.eval()
         src = torch.LongTensor([[2, 3, 4, 5, 6, 7, 8, 9, 10],

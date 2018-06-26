@@ -1,8 +1,9 @@
 #!/usr/bin/env python
 # Generates dummy data for testing
 import random
-from tgnmt.dataprep import RESERVED_TOKS, Field
+from tgnmt.dataprep import RESERVED_TOKS, Field, Batch, Example
 from tgnmt import TranslationExperiment
+import numpy as np
 import argparse
 
 
@@ -48,6 +49,28 @@ class DataGen:
         exp.prep_file(self.make_bi_text(self.num_train_exs), exp.train_file)
         exp.prep_file(self.make_bi_text(self.num_val_exs), exp.valid_file)
         exp.persist_state()
+
+
+def simple_dummy_data_gen(vocab_size, batch_size, n_batches, seq_len=10, n_reserved_toks=Batch.bos_val+1):
+    """
+    "Generate random data for a src-tgt copy task."
+    :param vocab_size: Vocabulary size
+    :param batch_size:
+    :param n_batches: number of batches to produce
+    :param n_reserved_toks:  number of reserved tokens (such as pad, EOS, BOS, UNK etc)
+    :return:
+    """
+
+    def make_an_ex():
+        data = np.random.randint(n_reserved_toks, vocab_size, size=(seq_len,))
+        tgt = vocab_size + (n_reserved_toks - 1) - data
+        tgt[0] = Batch.bos_val
+        data[0] = Batch.bos_val
+        return Example(data, tgt)
+
+    for i in range(n_batches):
+        exs = [make_an_ex() for _ in range(batch_size)]
+        yield Batch(exs, sort_dec=True, batch_first=False)
 
 
 if __name__ == '__main__':
