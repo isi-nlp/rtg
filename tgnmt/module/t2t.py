@@ -438,7 +438,12 @@ class Trainer:
         self.model.train()  # Train mode
         for ep in range(self.start_epoch, num_epochs):
             log.info(f"Running epoch {ep+1}")
-            loss = self.run_epoch(train_data)
+            try:
+                loss = self.run_epoch(train_data)
+            except RuntimeError as e:
+                if 'out of memory' in str(e).lower():
+                    log_tensor_sizes()
+                raise e
             log.info(f"Finished epoch {ep+1}")
             self.exp.store_model(ep, self.model.state_dict(), loss, keep=keep_models)
             self.start_epoch += 1

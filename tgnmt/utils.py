@@ -17,7 +17,7 @@ def log_tensor_sizes(writer=log.info, min_size=1024):
                # or (hasattr(obj, 'data') and torch.is_tensor(obj.data))
                )
     stats = ((reduce(op.mul, obj.size()) if len(obj.size()) > 0 else 0,
-              type(obj), obj.size(), hex(id(obj))) for obj in tensors)
+              obj.type(), tuple(obj.size()), hex(id(obj))) for obj in tensors)
     stats = (x for x in stats if x[0] > min_size)
     sorted_stats = sorted(stats, key=lambda x: x[0])
     lines = (f'{i:4}\t{size:12,}\t{typ}\t{shape}\t{_id}' for i, (size, typ, shape, _id) in enumerate(sorted_stats))
