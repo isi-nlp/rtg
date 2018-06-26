@@ -51,7 +51,8 @@ class TranslationExperiment:
             return json.dump(self.config, fp, ensure_ascii=False)
 
     def has_prepared(self):
-        return all([self.src_vocab, self.tgt_vocab, os.path.exists(self.train_file)])
+        vocab_found = self.shared_vocab is not None or all([self.src_vocab, self.tgt_vocab])
+        return vocab_found and os.path.exists(self.train_file)
 
     def has_trained(self):
         return self.get_last_saved_model()[0] is not None
