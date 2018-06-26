@@ -10,6 +10,7 @@ from torch.autograd import Variable
 from tqdm import tqdm
 from tgnmt import device, log, TranslationExperiment as Experiment
 from tgnmt.dataprep import BatchIterable, Batch, Example, subsequent_mask
+import gc
 
 
 class EncoderDecoder(nn.Module):
@@ -417,6 +418,9 @@ class Trainer:
                          (i, loss / num_toks, tokens / elapsed))
                 start = time.time()
                 tokens = 0
+            # force free memory
+            del batch
+            gc.collect()
         score = total_loss / total_tokens
         return score
 
@@ -428,7 +432,7 @@ class Trainer:
         elif num_epochs <= self.start_epoch:
             raise Exception(f'The model was already trained to {self.start_epoch} epochs. '
                             f'Please increase epoch or clear the existing models')
-        train_data = BatchIterable(self.exp.train_file, batch_size=batch_size, in_mem_recs=False)
+        train_data = BatchIterable(self.exp.train_file, batch_size=batch_size)
         self.model.train()  # Train mode
         for ep in range(self.start_epoch, num_epochs):
             log.info(f"Running epoch {ep+1}")

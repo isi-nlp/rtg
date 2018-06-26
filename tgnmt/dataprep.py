@@ -271,19 +271,16 @@ class Batch:
 
 class BatchIterable:
 
-    def __init__(self, data_path: str, batch_size: int, sort_dec=True, in_mem_recs=False, in_mem_batch=False):
+    def __init__(self, data_path: str, batch_size: int, sort_dec=True):
         """
         Iterator for reading training data in batches
         :param data_path: path to TSV file
         :param batch_size: number of examples per batch
         :param sort_dec: should the records within batch be sorted descending order of sequence length?
-        :param in_mem_recs: should the raw records be held in memory?
-        :param in_mem_batch: Should the batches be held in memory? Use True only if data set is extremely small
         """
-        self.data = TSVData(data_path, in_mem=in_mem_recs)
+        self.data = TSVData(data_path)
         self.batch_size = batch_size
         self.sort_dec = sort_dec
-        self.mem = list(self.read_all()) if in_mem_batch else None
 
     def read_all(self):
         batch = []
@@ -297,4 +294,4 @@ class BatchIterable:
             yield Batch(batch, sort_dec=self.sort_dec)
 
     def __iter__(self):
-        yield from self.mem if self.mem is not None else self.read_all()
+        yield from self.read_all()
