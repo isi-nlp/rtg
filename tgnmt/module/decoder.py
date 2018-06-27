@@ -20,6 +20,7 @@ class Model(ABC):
         model = factr(**mod_args)[0].to(device)
         model.load_state_dict(torch.load(check_pt_file))
         self.model = model
+        self.model.eval()
 
     @abstractmethod
     def encode(self, x_seqs):
@@ -55,7 +56,6 @@ class Decoder:
     def __init__(self, model, exp, debug=False):
         self.exp = exp
         self.model = model
-        self.model.eval()
         self.debug = debug
 
     @classmethod
