@@ -20,7 +20,7 @@ class TranslationExperiment:
         self.work_dir = work_dir
         self.data_dir = os.path.join(work_dir, 'data')
         self.model_dir = os.path.join(self.work_dir, 'models')
-        self.config_file = os.path.join(self.work_dir, 'config.json')
+        self._config_file = os.path.join(self.work_dir, 'config.json')
         self.src_vocab_file = os.path.join(self.data_dir, 'src-vocab.tsv')
         self.tgt_vocab_file = os.path.join(self.data_dir, 'tgt-vocab.tsv')
         self.shared_vocab_file = os.path.join(self.data_dir, 'vocab.tsv')
@@ -35,17 +35,25 @@ class TranslationExperiment:
         self.src_vocab = Field.load_tsv(self.src_vocab_file) if os.path.exists(self.src_vocab_file) else None
         self.tgt_vocab = Field.load_tsv(self.tgt_vocab_file) if os.path.exists(self.tgt_vocab_file) else None
         self.shared_vocab = Field.load_tsv(self.shared_vocab_file) if os.path.exists(self.shared_vocab_file) else None
-        self.config = self.load_config()
+        self._config = self.load_config()
 
     def load_config(self) -> Optional[Dict[str, Any]]:
-        if os.path.exists(self.config_file):
-            with open(self.config_file, encoding='utf-8') as f:
+        if os.path.exists(self._config_file):
+            with open(self._config_file, encoding='utf-8') as f:
                 return json.load(f)
         return None
 
     def store_config(self):
-        with open(self.config_file, 'w', encoding='utf-8') as fp:
-            return json.dump(self.config, fp, ensure_ascii=False)
+        with open(self._config_file, 'w', encoding='utf-8') as fp:
+            return json.dump(self._config, fp, ensure_ascii=False)
+
+    @property
+    def model_type(self) -> Optional[str]:
+        return self._config.get('model_type')
+
+    @model_type.setter
+    def model_type(self, mod_type: str):
+        self._config['model_type'] = mod_type
 
     def has_prepared(self):
         vocab_found = self.shared_vocab is not None or all([self.src_vocab, self.tgt_vocab])
@@ -131,8 +139,8 @@ class TranslationExperiment:
     def persist_state(self):
         """Writes state of current experiment to the disk"""
         assert not self.read_only
-        if self.config is None:
-            self.config = {}
+        if self._config is None:
+            self._config = {}
 
         for vocab, f_path in [(self.src_vocab, self.src_vocab_file),
                               (self.tgt_vocab, self.tgt_vocab_file),
@@ -140,13 +148,13 @@ class TranslationExperiment:
             if vocab is not None:
                 vocab.dump_tsv(f_path)
 
-        args = self.config.get('model_args', {})
-        self.config['model_args'] = args
+        args = self._config.get('model_args', {})
+        self._config['model_args'] = args
         shared_vocab_size = self.shared_vocab.size() if self.shared_vocab else None
         args['src_vocab'] = shared_vocab_size if shared_vocab_size else self.src_vocab.size()
         args['tgt_vocab'] = shared_vocab_size if shared_vocab_size else self.tgt_vocab.size()
-        self.config['shared'] = self.shared_vocab is not None
-        self.config['updated_att'] = datetime.now().isoformat()
+        self._config['shared'] = self.shared_vocab is not None
+        self._config['updated_att'] = datetime.now().isoformat()
         self.store_config()
 
     def store_model(self, epoch: int, model, score: float, keep: int):
@@ -189,4 +197,4 @@ class TranslationExperiment:
         Gets args from file
         :return: args if exists or None otherwise
         """
-        return self.config.get('model_args')
+        return self._config.get('model_args')

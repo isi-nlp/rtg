@@ -20,15 +20,22 @@ def parse_args():
     parser.add_argument("-bs", "--batch-size", help="Batch size", type=int, default=256)
     parser.add_argument("-km", "--keep-models", type=int, default=4,
                         help="Number of models to keep. Stores one model per epoch")
-
     return vars(parser.parse_args())
 
 
 def main():
     args = parse_args()
     exp = Experiment(args.pop('work_dir'))
+    mod_type = args.pop('mod_type')
     assert exp.has_prepared(), f'Experiment dir {exp.work_dir} is not ready to train. Please run "prep" sub task'
-    trainer = {'t2t': T2TTrainer, 'rnn': Seq2SeqTrainer}[args.pop('mod_type')](exp)
+    if exp.has_trained() and exp.model_type and exp.model_type != mod_type:
+        raise Exception(f'Experiment {exp.work_dir} was previously trained with model type "{exp.model_type}". '
+                        f'Please clear models or start a new experiment to train {mod_type}. Or use {exp.model_type}')
+    elif exp.model_type != mod_type:
+        exp.model_type = mod_type
+        exp.store_config()
+
+    trainer = {'t2t': T2TTrainer, 'rnn': Seq2SeqTrainer}[mod_type](exp)
     return trainer.train(**args)
 
 

@@ -1,3 +1,7 @@
 python >= 3.6
 pytorch >= 0.4.0
 tqdm
+
+
+# ignore this, pycharm doesn't know that pytorch provides torch module, so it bugged me to add this line
+torch
