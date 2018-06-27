@@ -5,7 +5,8 @@ log.basicConfig(level=log.DEBUG if debug_mode else log.INFO)
 log.debug(f"NMT_DEBUG={debug_mode}")
 
 import torch
-device = torch.device('cuda:0' if torch.cuda.is_available() and not debug_mode else 'cpu')
+device_name = 'cuda:0' if torch.cuda.is_available() else 'cpu'
+device = torch.device(device_name)
 log.debug(f'device: {device}')
 
 
