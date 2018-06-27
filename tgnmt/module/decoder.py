@@ -2,10 +2,47 @@ import torch
 from tgnmt import log, device, my_tensor as tensor
 from tgnmt.dataprep import BLANK_TOK, BOS_TOK, EOS_TOK, subsequent_mask
 from tgnmt.module.t2t import EncoderDecoder
+from tgnmt.module.seq2seq import Seq2Seq
 from typing import List, Tuple
+from abc import ABC, abstractmethod
+from tgnmt import TranslationExperiment as Experiment
 
 Hypothesis = Tuple[float, List[int]]
 StrHypothesis = Tuple[float, str]
+
+
+class Model(ABC):
+
+    def __init__(self, exp, factr):
+        mod_args = exp.get_model_args()
+        check_pt_file, _ = exp.get_last_saved_model()
+        log.info(f" Restoring state from {check_pt_file}")
+        model = factr(**mod_args)[0].to(device)
+        model.load_state_dict(torch.load(check_pt_file))
+        self.model = model
+
+    @abstractmethod
+    def encode(self, x_seqs):
+        pass
+
+    @abstractmethod
+    def generate_next(self, memory, x_mask, past_ys):
+        pass
+
+
+class TransformerModel(Model):
+    def __init__(self, exp):
+        super(TransformerModel, self).__init__(exp, EncoderDecoder.make_model)
+
+    def encode(self, x_seqs):
+        x_mask = (x_seqs != Decoder.pad_val).unsqueeze(1)
+        memory = self.model.encode(x_seqs, x_mask)
+        return memory, x_mask
+
+    def generate_next(self, memory, x_mask, past_ys):
+        out = self.model.decode(memory, x_mask, past_ys, subsequent_mask(past_ys.size(1)))
+        log_prob = self.model.generator(out[:, -1])
+        return log_prob
 
 
 class Decoder:
@@ -22,12 +59,11 @@ class Decoder:
         self.debug = debug
 
     @classmethod
-    def new(cls, exp):
-        mod_args = exp.get_model_args()
-        check_pt_file, _ = exp.get_last_saved_model()
-        log.info(f" Restoring state from {check_pt_file}")
-        model = EncoderDecoder.make_model(**mod_args)[0].to(device)
-        model.load_state_dict(torch.load(check_pt_file))
+    def new(cls, exp: Experiment):
+        if exp.model_type == 't2t':
+            model = TransformerModel(exp)
+        else:
+            raise NotImplementedError()
         return cls(model, exp)
 
     def greedy_decode(self, x_seqs, max_len, **args) -> List[Hypothesis]:
@@ -37,8 +73,8 @@ class Decoder:
         :param max_len:
         :return:
         """
-        x_mask = (x_seqs != self.pad_val).unsqueeze(1)
-        memory = self.model.encode(x_seqs, x_mask)
+
+        memory, x_mask = self.model.encode(x_seqs)
         batch_size = x_seqs.size(0)
         ys = torch.full(size=(batch_size, 1), fill_value=self.bos_val, dtype=torch.long, device=device)
         scores = torch.zeros(batch_size, device=device)
@@ -47,8 +83,7 @@ class Decoder:
         for i in range(max_len):
             if actives.sum() == 0:  # all sequences Ended
                 break
-            out = self.model.decode(memory, x_mask, ys, subsequent_mask(ys.size(1)))
-            log_prob = self.model.generator(out[:, -1])
+            log_prob = self.model.decode(memory, x_mask, ys)
             max_prob, next_word = torch.max(log_prob, dim=1)
             scores += max_prob
             ys = torch.cat([ys, next_word.view(batch_size, 1)], dim=1)
@@ -87,9 +122,9 @@ class Decoder:
 
         # Everything beamed_*  below is the batch repeated beam_size times
         beamed_batch_size = batch_size * beam_size
+
         beamed_x_seqs = x_seqs.repeat(1, beam_size).view(beamed_batch_size, -1)
-        beamed_x_mask = (beamed_x_seqs != self.pad_val).unsqueeze(1)
-        beamed_memory = self.model.encode(beamed_x_seqs, beamed_x_mask)
+        beamed_memory, beamed_x_mask = self.model(beamed_x_seqs)
 
         beamed_ys = torch.full(size=(beamed_batch_size, 1), fill_value=self.bos_val, dtype=torch.long, device=device)
         beamed_scores = torch.zeros((beamed_batch_size, 1), device=device)
@@ -99,10 +134,10 @@ class Decoder:
         for t in range(1, max_len):
             if beam_active.sum() == 0:
                 break
-            out = self.model.decode(beamed_memory, beamed_x_mask, beamed_ys, subsequent_mask(beamed_ys.size(1)))
-            log_prob = self.model.generator(out[:, -1])  # [batch*beam, Vocab]
-            # broad cast scores along row (broadcast) and sum  log probabilities
+            # [batch*beam, Vocab]
+            log_prob = self.model.decode(beamed_memory, beamed_x_mask, beamed_ys)
 
+            # broad cast scores along row (broadcast) and sum  log probabilities
             next_scores = beamed_scores + beam_active.float() * log_prob  # Zero out inactive beams
 
             top_scores, nxt_idx = next_scores.topk(k=beam_size, dim=-1)  # [batch*beam, beam],[batch*beam, beam]
@@ -206,7 +241,8 @@ class Decoder:
         result = []
         for i, (score, beam_toks) in enumerate(beams):
             out = ' '.join(self.exp.get_vocab('tgt').idx2seq(beam_toks, trunc_eos=True))
-            log.debug(f"Beam {i}: score:{score} :: {out}")
+            if self.debug:
+                log.debug(f"Beam {i}: score:{score} :: {out}")
             result.append((score, out))
         return result
 
