@@ -4,8 +4,9 @@ import argparse
 from argparse import ArgumentDefaultsHelpFormatter as ArgFormatter
 
 from tgnmt import TranslationExperiment as Experiment
-from tgnmt.module.t2t import Trainer as T2TTrainer
 from tgnmt.module.seq2seq import Trainer as Seq2SeqTrainer
+from tgnmt.module.t2t import Trainer as T2TTrainer
+from tgnmt.utils import log_tensor_sizes
 
 
 def parse_args():
@@ -36,7 +37,12 @@ def main():
         exp.store_config()
 
     trainer = {'t2t': T2TTrainer, 'rnn': Seq2SeqTrainer}[mod_type](exp)
-    return trainer.train(**args)
+    try:
+        trainer.train(**args)
+    except RuntimeError as e:
+        if 'out of memory' in str(e).lower():
+            log_tensor_sizes()
+        raise e
 
 
 if __name__ == '__main__':
