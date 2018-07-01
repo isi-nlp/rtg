@@ -10,6 +10,9 @@ from tgnmt import TranslationExperiment as Experiment
 from tgnmt import device, log
 from tgnmt import my_tensor as tensor
 from tgnmt.dataprep import BatchIterable, BOS_TOK, BLANK_TOK, EOS_TOK
+from tgnmt import profile
+import gc
+
 
 BOS_TOK_IDX = BOS_TOK[1]
 EOS_TOK_IDX = EOS_TOK[1]
@@ -43,6 +46,7 @@ class RNNEncoder(nn.Module):
 
 class Attn(nn.Module):
     """
+     FIXME: NOTE: this is very inefficient
     Attention model
     Taken from https://github.com/spro/practical-pytorch/blob/master/seq2seq-translation/seq2seq-translation-batched.ipynb
 
@@ -60,6 +64,7 @@ class Attn(nn.Module):
             self.attn = nn.Linear(self.hidden_size * 2, hidden_size)
             self.v = nn.Parameter(torch.FloatTensor(1, hidden_size, device=device))
 
+    @profile  # Attn
     def forward(self, hidden, encoder_outputs):
         max_len = encoder_outputs.size(0)
         this_batch_size = encoder_outputs.size(1)
@@ -91,8 +96,34 @@ class Attn(nn.Module):
             return energy
 
 
+class GeneralAttn(nn.Module):  # General Attention optimized for batch
+    """
+    Attention mode
+    """
+    def __init__(self, hidden_size):
+        super(GeneralAttn, self).__init__()
+
+        self.hidden_size = hidden_size
+        self.attn = nn.Linear(self.hidden_size, hidden_size)
+
+    @profile  # General Attn
+    def forward(self, hidden, encoder_outs):
+        # hidden      : [B, D]
+        # encoder_out : [S, B, D]
+        #    [B, D] --> [S, B, D] ;; repeat hidden sequence_len times
+        hid = hidden.unsqueeze(0).expand_as(encoder_outs)
+        #  A batched dot product implementation using element wise product followed by sum
+        #    [S, B, D]  --> [S, B]   ;; element wise multiply, then sum along the last dim (i.e. model_dim)
+        weights = (encoder_outs * hid).sum(dim=-1)
+        # [B, S] <-- [S, B]
+        weights = weights.t()
+
+        # Normalize energies to weights in range 0 to 1, resize to B x 1 x S
+        return F.softmax(weights, dim=1).unsqueeze(1)
+
+
 class AttnRNNDecoder(nn.Module):
-    def __init__(self, attn_model, hidden_size, output_size, n_layers=2, dropout=0.1):
+    def __init__(self, attn_model, hidden_size, output_size, n_layers=2, dropout=0.1, padding_idx=Batch.pad_value):
         super(AttnRNNDecoder, self).__init__()
 
         # Keep for reference
@@ -103,7 +134,7 @@ class AttnRNNDecoder(nn.Module):
         self.dropout = dropout
 
         # Define layers
-        self.embedding = nn.Embedding(output_size, hidden_size)
+        self.embedding = nn.Embedding(output_size, hidden_size, padding_idx=padding_idx)
         self.embedding_dropout = nn.Dropout(dropout)
         self.gru = nn.GRU(hidden_size, hidden_size, n_layers, dropout=dropout)
         self.concat = nn.Linear(hidden_size * 2, hidden_size)
@@ -111,8 +142,12 @@ class AttnRNNDecoder(nn.Module):
 
         # Choose attention model
         if attn_model != 'none':
-            self.attn = Attn(attn_model, hidden_size)
+            if attn_model == 'general':
+                self.attn = GeneralAttn(hidden_size)
+            else:
+                self.attn = Attn(attn_model, hidden_size)
 
+    @profile            # AttnRNNDecoder
     def forward(self, input_seq, last_hidden, encoder_outputs):
         # Note: we run this one step at a time
 
@@ -141,7 +176,6 @@ class AttnRNNDecoder(nn.Module):
 
         # Finally predict next token (Luong eq. 6, without softmax)
         output = self.out(concat_output)
-
         # Return final output, hidden state, and attention weights (for visualization)
         return output, hidden, attn_weights
 
@@ -153,42 +187,74 @@ class Seq2Seq(nn.Module):
         self.enc = RNNEncoder(src_vocab, model_dim, n_layers=1)
         self.dec = AttnRNNDecoder('general', model_dim, tgt_vocab, n_layers=1)
 
-    def forward(self, batch: Batch):
+    @profile    # Seq2Seq
+    def forward(self, batch: Batch, k=1):
         assert not batch.batch_first
         enc_outs, enc_hids = self.enc(batch.x_seqs, batch.x_len, None)
 
-        dec_inps = tensor([BOS_TOK_IDX] * len(batch), dtype=torch.long)
+        batch_size = len(batch)
+        dec_inps = tensor([BOS_TOK_IDX] * batch_size, dtype=torch.long)
         dec_hids = enc_hids[:self.dec.n_layers]
+        """
         all_dec_outs = torch.zeros((batch.max_y_len, len(batch), self.dec.output_size), device=device)
+
         for t in range(batch.max_y_len):
             dec_outs, dec_hids, dec_attn = self.dec(dec_inps, dec_hids, enc_outs)
             all_dec_outs[t] = dec_outs
-            dec_inps = batch.y_seqs[t]  # Next input is current target
+            dec_inps = batch.y_seqs[t]      # Next input is current target
+            del dec_attn, dec_outs   # free memory
         return all_dec_outs
+        """
+        """
+        Problem here is, the output vocabulary is usually too big.
+        An output tensor of size [MaxSeqLen x BatchSize x VocabSize] is unrealistic for large BatchSize or MaxSeqLen
+        So, a trick is used. 
+        In reality, we don't really need [MaxSeqLen x BatchSize x VocabSize]
+        In training:
+            We already know which word we are expecting 
+            we need probabilities of desired output word so as to reduce the loss 
+            so a tensor of size [MaxSeqLen x BatchSize x 1] is much smaller    
+        In production or eval:
+            We need top 'k' words' probability. Greedy decoder would set k=1, beam decoder would set k= beam size
+            so a tensor of size [MaxSeqLen x BatchSize x k] is much smaller
+        """
+        # return log probabilities of desired output
+        outp_probs = torch.zeros((batch.max_y_len, batch_size), device=device)
+        for t in range(1, batch.max_y_len):
+            dec_outs, dec_hids, dec_attn = self.dec(dec_inps, dec_hids, enc_outs)
+            decoder_lastt = dec_outs  # last time stamp of decoder
+            word_probs = F.log_softmax(decoder_lastt, dim=-1)
+            expct_word_idx = batch.y_seqs[t]   # expected output;; log probability for these indices should be high
+            expct_word_log_probs = word_probs.gather(dim=1, index=expct_word_idx.view(batch_size, 1))
+            outp_probs[t] = expct_word_log_probs.squeeze()
+            dec_inps = expct_word_idx          # Next input is current target
+            del dec_attn, dec_outs        # free memory
+        return outp_probs
 
     @staticmethod
     def make_model(src_vocab: int, tgt_vocab: int, model_dim=50):
-        return Seq2Seq(src_vocab, tgt_vocab, model_dim=model_dim)
+        args = {'src_vocab': src_vocab, 'tgt_vocab': tgt_vocab, 'model_dim': model_dim}
+        return Seq2Seq(src_vocab, tgt_vocab, model_dim=model_dim), args
 
 
 class Trainer:
 
+    @profile
     def __init__(self, exp: Experiment, model=None, lr=0.0001):
         self.exp = exp
         self.start_epoch = 0
-        if model:
-            self.model = model
-        else:
-            last_model, last_epoch = self.exp.get_last_saved_model()
-            if last_model:
-                self.model = torch.load(last_model)
+        if model is None:
+            model = Seq2Seq(**exp.get_model_args()).to(device)
+            last_check_pt, last_epoch = self.exp.get_last_saved_model()
+            if last_check_pt:
+                log.info(f"Resuming training from epoch:{self.start_epoch}, model={last_check_pt}")
                 self.start_epoch = last_epoch + 1
-                log.info(f"Resuming training from epoch:{self.start_epoch}, model={last_model}")
-                assert type(self.model) is Seq2Seq
-            else:
-                self.model = Seq2Seq(**exp.get_model_args())
-
-        self.model = self.model.to(device)
+                model.load_state_dict(torch.load(last_check_pt))
+        log.info(f"Moving model to device = {device}")
+        self.model = model.to(device=device)
+        self.model.train()
+        del model           # this was on CPU, free that memory
+        gc.collect()        # should the GC cleanup CPU buffers after moving to GPU ?
         self.optimizer = optim.Adam(self.model.parameters(), lr=lr)
 
     @staticmethod
@@ -249,24 +315,34 @@ class Trainer:
         for ep in range(self.start_epoch, num_epochs):
             tot_loss = self.run_epoch(train_data)
             log.info(f'Epoch {ep+1} complete.. Training loss in this epoch {tot_loss}...')
-            self.exp.store_model(epoch=ep, model=self.model, score=tot_loss, keep=keep_models)
+            if keep_models > 0:
+                self.exp.store_model(epoch=ep, model=self.model.state_dict(), score=tot_loss, keep=keep_models)
 
     def run_epoch(self, train_data):
         tot_loss = 0.0
         for i, batch in tqdm(enumerate(train_data)):
             # Step clear gradients
             self.model.zero_grad()
-            # Step Run forward pass.
-            dec_outs = self.model(batch)
 
+            # Step Run forward pass.
+            # dec_outs = self.model(batch)
+            outp_log_probs = self.model(batch)
+            per_tok_loss = -outp_log_probs.t()
+            tok_mask = self.sequence_mask(batch.y_len, batch.max_y_len)
+            loss = (per_tok_loss * tok_mask.float()).sum().float() / batch.y_toks
+            """
             loss = self.masked_cross_entropy(
                 dec_outs.t().contiguous(),  # -> batch x seq
-                batch.y_seqs.t().contiguous(),  # -> batch x seq_len
+                batch.y_seqs.t().contiguous(),   # -> batch x seq_len
                 batch.y_len
             )
+            """
             tot_loss += loss.item()
             loss.backward()
             self.optimizer.step()
+            del batch
+            gc.collect()
+
         return tot_loss
 
 
@@ -320,8 +396,8 @@ class GreedyDecoder:
 
 if __name__ == '__main__':
     from tgnmt.dummy import simple_dummy_data_gen as data_gen
-    vocab_size = 12
-    model = Seq2Seq.make_model(12, 12)
+    vocab_size = 100
+    model = Seq2Seq.make_model(vocab_size, vocab_size)
     exp = Experiment("work", read_only=True)
     trainer = Trainer(exp, model)
     decoder = GreedyDecoder(exp, model)
