@@ -4,6 +4,8 @@ from typing import List, Dict, Iterator, Tuple, Union
 import torch
 from tgnmt import log
 from . import my_tensor as tensor, device
+import math
+import random
 
 BLANK_TOK = '-BLANK-', 0
 UNK_TOK = '-UNK-', 1
@@ -164,15 +166,16 @@ class Example:
 
 class TSVData:
 
-    def __init__(self, path: str, in_mem=False):
+    def __init__(self, path: str, in_mem=False, shuffle=False):
         """
         :param path: path to TSV file have parallel sequences
         :param in_mem: hold data in memory instead of reading from file for subsequent pass.
          Don't use in_mem for large data_sets.
         """
         self.path = path
-        self.in_mem = in_mem
-        self.mem = list(self.read_all()) if in_mem else None
+        self.in_mem = in_mem or shuffle
+        self.shuffle = shuffle
+        self.mem = list(self.read_all()) if self.in_mem else None
 
     @staticmethod
     def _parse(line: str):
@@ -185,12 +188,15 @@ class TSVData:
             yield from recs
 
     def __len__(self):
-        if not self.in_mem:
-            raise RuntimeError('Length is known only when in_mem')
+        if not self.mem:
+            raise RuntimeError('Length is known only when in_mem or shuffle are enabled')
         return len(self.mem)
 
     def __iter__(self) -> Iterator[Example]:
-        yield from self.mem if self.in_mem else self.read_all()
+        if self.shuffle:
+            log.info("shuffling the data...")
+            random.shuffle(self.mem)
+        yield from self.mem if self.mem else self.read_all()
 
 
 def read_tsv(path: str):
@@ -278,14 +284,14 @@ class Batch:
 
 class BatchIterable:
 
-    def __init__(self, data_path: str, batch_size: int, sort_dec=True, batch_first=True):
+    def __init__(self, data_path: str, batch_size: int, sort_dec=True, batch_first=True, shuffle=False):
         """
         Iterator for reading training data in batches
         :param data_path: path to TSV file
         :param batch_size: number of examples per batch
         :param sort_dec: should the records within batch be sorted descending order of sequence length?
         """
-        self.data = TSVData(data_path)
+        self.data = TSVData(data_path, shuffle=shuffle)
         self.batch_size = batch_size
         self.sort_dec = sort_dec
         self.batch_first = batch_first
@@ -303,3 +309,9 @@ class BatchIterable:
 
     def __iter__(self):
         yield from self.read_all()
+
+    def num_items(self):
+        return len(self.data)
+
+    def num_batches(self):
+        return math.ceil(len(self.data) / self.batch_size)

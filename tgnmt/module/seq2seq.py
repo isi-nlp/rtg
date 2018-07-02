@@ -304,7 +304,7 @@ class Trainer:
     def train(self, num_epochs: int, batch_size: int, **args):
         log.info(f'Going to train for {num_epochs} epochs; batch_size={batch_size}')
 
-        train_data = BatchIterable(self.exp.train_file, batch_size=batch_size, batch_first=False)
+        train_data = BatchIterable(self.exp.train_file, batch_size=batch_size, batch_first=False, shuffle=True)
         # val_data = BatchIterable(self.exp.valid_file, batch_size=batch_size, in_mem=True, batch_first=False)
         keep_models = args.get('keep_models', 4)
         if args.get('resume_train'):
@@ -320,7 +320,7 @@ class Trainer:
 
     def run_epoch(self, train_data):
         tot_loss = 0.0
-        for i, batch in tqdm(enumerate(train_data)):
+        for i, batch in tqdm(enumerate(train_data), total=train_data.num_batches()):
             # Step clear gradients
             self.model.zero_grad()
 
