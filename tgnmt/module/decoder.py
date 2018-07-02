@@ -57,21 +57,19 @@ class Decoder:
         self.debug = debug
 
     @classmethod
-    def new(cls, exp: Experiment):
-        mod_args = exp.get_model_args()
-        if exp.model_type == 't2t':
-            model = EncoderDecoder.make_model(**mod_args)[0].to(device)
-            generator = T2TGenerator
-        elif exp.model_type == 'rnn':
-            model = Seq2Seq.make_model(**mod_args)[0].to(device)
-            generator = RnnGenerator
-        else:
-            raise NotImplementedError(f'{exp.model_type} not supported/implemented')
+    def new(cls, exp: Experiment, model=None):
+        generators = {'t2t': T2TGenerator, 'rnn': RnnGenerator}
+        factories = {'t2t': EncoderDecoder.make_model, 'rnn': Seq2Seq.make_model}
+        if model is None:
+            mod_args = exp.get_model_args()
+            factory = factories[exp.model_type]
+            model = factory(**mod_args)[0]
+            check_pt_file, _ = exp.get_last_saved_model()
+            log.info(f" Restoring state from {check_pt_file}")
+            model.load_state_dict(torch.load(check_pt_file))
 
-        check_pt_file, _ = exp.get_last_saved_model()
-        log.info(f" Restoring state from {check_pt_file}")
-        model.load_state_dict(torch.load(check_pt_file))
         model = model.eval().to(device=device)
+        generator = generators[exp.model_type]
 
         def seq_generator(x_seqs, x_lens):
             return generator(model, x_seqs, x_lens)
@@ -81,6 +79,7 @@ class Decoder:
         """
         Implements a simple greedy decoder
         :param x_seqs:
+        :param x_lens: length of x sequences
         :param max_len:
         :return:
         """

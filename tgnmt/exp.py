@@ -53,6 +53,8 @@ class TranslationExperiment:
 
     @model_type.setter
     def model_type(self, mod_type: str):
+        if self._config is None:
+            self._config = {}
         self._config['model_type'] = mod_type
 
     def has_prepared(self):

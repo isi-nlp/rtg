@@ -346,63 +346,18 @@ class Trainer:
         return tot_loss
 
 
-class GreedyDecoder:
-
-    def __init__(self, exp: Experiment, model: Seq2Seq=None):
-
-        self.exp = exp
-        if model:
-            self.model = model
-        else:
-            args = exp.get_model_args()
-            self.model = Seq2Seq.make_model(**args)
-
-            last_check_pt, _ = exp.get_last_saved_model()
-            log.debug(f'Restoring from {last_check_pt}')
-            self.model.load_state_dict(torch.load(last_check_pt))
-        self.model.eval()
-
-    def greedy_decode(self, seq: List[int], max_out_len=100):
-        # [S, 1] <-- [S]
-        x_seqs = tensor(seq, dtype=torch.long).view(-1, 1)
-        # [1]
-        x_lens = tensor([len(seq)], dtype=torch.long)
-        # [S, B=1, d], [S, B=1, d] <-- [S, 1], [S]
-        enc_outs, enc_hids = self.model.enc(x_seqs, x_lens, None)
-        # [1]
-        dec_inps = tensor([BOS_TOK_IDX], dtype=torch.long)
-        # [S=n, B=1, d]
-        dec_hids = enc_hids[:self.model.dec.n_layers]
-        # [S=m]
-        final_dec_outs = torch.zeros(max_out_len, dtype=torch.long, device=device)
-        for t in range(max_out_len):
-            dec_outs, dec_hids, dec_attn = self.model.dec(dec_inps, dec_hids, enc_outs)
-            word_prob, word_idx = F.log_softmax(dec_outs, dim=1).view(-1).max(0)
-            final_dec_outs[t] = word_idx
-            dec_inps[0] = word_idx  # Next input is current output
-        return final_dec_outs
-
-    def decode_file(self, inp, out):
-        for i, line in enumerate(inp):
-            in_toks = line.strip().split()
-            log.info(f" Input: {i}: {' '.join(in_toks)}")
-            in_seq = self.exp.src_vocab.seq2idx(in_toks)
-            out_seq = self.greedy_decode(in_seq)
-            out_toks = self.exp.tgt_vocab.idx2seq(out_seq)
-            out_line = ' '.join(out_toks)
-            log.info(f"Output: {i}: {out_line}")
-            out.write(f'{out_line}\n')
-
-
 if __name__ == '__main__':
     from tgnmt.dummy import simple_dummy_data_gen as data_gen
-    vocab_size = 100
-    model = Seq2Seq.make_model(vocab_size, vocab_size)
+    from tgnmt.module.decoder import Decoder
+    vocab_size = 25
+    model = Seq2Seq.make_model(vocab_size, vocab_size)[0]
     exp = Experiment("work", read_only=True)
-    trainer = Trainer(exp, model)
-    decoder = GreedyDecoder(exp, model)
-    example = [Batch.bos_val, 4, 5, 6, 7, 8, 9, 10, 11]
-    num_epoch = 10
+    exp.model_type = 'rnn'
+    trainer = Trainer(exp, model=model)
+    decoder = Decoder.new(exp, model)
+    x_seqs = tensor([Batch.bos_val, 4, 5, 6, 7, 8, 9, 10, 11]).view(1, -1)
+    x_lens = tensor([x_seqs.size(1)])
+    num_epoch = 20
     for ep in range(num_epoch):
         log.info(f"Running epoch {ep+1}")
         data = data_gen(vocab_size, batch_size=30, n_batches=50)
@@ -410,5 +365,5 @@ if __name__ == '__main__':
         loss = trainer.run_epoch(train_data=data)
         log.info(f"Epoch {ep+1} finish. Loss = {loss}")
         model.eval()
-        out = decoder.greedy_decode(seq=example, max_out_len=15)
+        out = decoder.greedy_decode(x_seqs=x_seqs, x_lens=x_lens, max_len=15)
         log.info(f"Prediction {out}")
