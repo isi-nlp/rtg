@@ -1,5 +1,6 @@
 import torch
-from tgnmt import log, device, my_tensor as tensor
+import torch.nn.functional as F
+from tgnmt import log, device, my_tensor as tensor, debug_mode
 from tgnmt.dataprep import BLANK_TOK, BOS_TOK, EOS_TOK, subsequent_mask
 from tgnmt.module.t2t import EncoderDecoder
 from tgnmt.module.seq2seq import Seq2Seq
@@ -11,39 +12,36 @@ Hypothesis = Tuple[float, List[int]]
 StrHypothesis = Tuple[float, str]
 
 
-class Model(ABC):
+class RnnGenerator:
 
-    def __init__(self, exp, factr):
-        mod_args = exp.get_model_args()
-        check_pt_file, _ = exp.get_last_saved_model()
-        log.info(f" Restoring state from {check_pt_file}")
-        model = factr(**mod_args)[0].to(device)
-        model.load_state_dict(torch.load(check_pt_file))
+    def __init__(self, model, x_seqs, x_lens):
         self.model = model
-        self.model.eval()
+        x_seqs = x_seqs.view(-1, len(x_seqs))  # [S, B]  <- [B, S]
+        # [S, B, d], [S, B, d] <-- [S, B], [B]
+        self.enc_outs, enc_hids = model.enc(x_seqs, x_lens, None)
 
-    @abstractmethod
-    def encode(self, x_seqs):
-        pass
+        # [S, B, d]
+        self.dec_hids = enc_hids[:model.dec.n_layers]
+        self.dec_attn = None
 
-    @abstractmethod
-    def generate_next(self, memory, x_mask, past_ys):
-        pass
+    def generate_next(self, past_ys):
+        last_ys = past_ys[:, -1]
+        next_ys, self.dec_hids, self.dec_attn = self.model.dec(last_ys, self.dec_hids, self.enc_outs)
+        log_probs = F.log_softmax(next_ys, dim=1)
+        return log_probs
 
 
-class TransformerModel(Model):
-    def __init__(self, exp):
-        super(TransformerModel, self).__init__(exp, EncoderDecoder.make_model)
+class T2TGenerator:
 
-    def encode(self, x_seqs):
-        x_mask = (x_seqs != Decoder.pad_val).unsqueeze(1)
-        memory = self.model.encode(x_seqs, x_mask)
-        return memory, x_mask
+    def __init__(self,  model, x_seqs, x_lens=None):
+        self.model = model
+        self.x_mask = (x_seqs != Decoder.pad_val).unsqueeze(1)
+        self.memory = self.model.encode(x_seqs, self.x_mask)
 
-    def generate_next(self, memory, x_mask, past_ys):
-        out = self.model.decode(memory, x_mask, past_ys, subsequent_mask(past_ys.size(1)))
-        log_prob = self.model.generator(out[:, -1])
-        return log_prob
+    def generate_next(self, past_ys):
+        out = self.model.decode(self.memory, self.x_mask, past_ys, subsequent_mask(past_ys.size(1)))
+        log_probs = self.model.generator(out[:, -1])
+        return log_probs
 
 
 class Decoder:
@@ -53,20 +51,33 @@ class Decoder:
     eos_val = EOS_TOK[1]
     default_beam_size = 5
 
-    def __init__(self, model, exp, debug=False):
+    def __init__(self, generator, exp, debug=debug_mode):
         self.exp = exp
-        self.model = model
+        self.generator = generator
         self.debug = debug
 
     @classmethod
     def new(cls, exp: Experiment):
+        mod_args = exp.get_model_args()
         if exp.model_type == 't2t':
-            model = TransformerModel(exp)
+            model = EncoderDecoder.make_model(**mod_args)[0].to(device)
+            generator = T2TGenerator
+        elif exp.model_type == 'rnn':
+            model = Seq2Seq.make_model(**mod_args)[0].to(device)
+            generator = RnnGenerator
         else:
-            raise NotImplementedError()
-        return cls(model, exp)
+            raise NotImplementedError(f'{exp.model_type} not supported/implemented')
 
-    def greedy_decode(self, x_seqs, max_len, **args) -> List[Hypothesis]:
+        check_pt_file, _ = exp.get_last_saved_model()
+        log.info(f" Restoring state from {check_pt_file}")
+        model.load_state_dict(torch.load(check_pt_file))
+        model = model.eval().to(device=device)
+
+        def seq_generator(x_seqs, x_lens):
+            return generator(model, x_seqs, x_lens)
+        return cls(seq_generator, exp)
+
+    def greedy_decode(self, x_seqs, x_lens, max_len, **args) -> List[Hypothesis]:
         """
         Implements a simple greedy decoder
         :param x_seqs:
@@ -74,16 +85,16 @@ class Decoder:
         :return:
         """
 
-        memory, x_mask = self.model.encode(x_seqs)
+        gen = self.generator(x_seqs, x_lens)
         batch_size = x_seqs.size(0)
         ys = torch.full(size=(batch_size, 1), fill_value=self.bos_val, dtype=torch.long, device=device)
         scores = torch.zeros(batch_size, device=device)
 
         actives = ys[:, -1] != self.eos_val
-        for i in range(max_len):
+        for i in range(1, max_len+1):
             if actives.sum() == 0:  # all sequences Ended
                 break
-            log_prob = self.model.decode(memory, x_mask, ys)
+            log_prob = gen.generate_next(ys)
             max_prob, next_word = torch.max(log_prob, dim=1)
             scores += max_prob
             ys = torch.cat([ys, next_word.view(batch_size, 1)], dim=1)
@@ -101,7 +112,7 @@ class Decoder:
         selected = x.masked_select(mask)
         return selected.view(-1, x.size(1))
 
-    def beam_decode(self, x_seqs, max_len, beam_size=default_beam_size, num_hyp=None, **args) -> List[List[Hypothesis]]:
+    def beam_decode(self, x_seqs, x_lens, max_len, beam_size=default_beam_size, num_hyp=None, **args) -> List[List[Hypothesis]]:
         """
 
         :param x_seqs: input batch of sequences
@@ -124,18 +135,19 @@ class Decoder:
         beamed_batch_size = batch_size * beam_size
 
         beamed_x_seqs = x_seqs.repeat(1, beam_size).view(beamed_batch_size, -1)
-        beamed_memory, beamed_x_mask = self.model(beamed_x_seqs)
+        beamed_x_lens = x_lens.view(-1, 1).repeat(1, beam_size).view(beamed_batch_size)
+        generator = self.generator(beamed_x_seqs, beamed_x_lens)
 
         beamed_ys = torch.full(size=(beamed_batch_size, 1), fill_value=self.bos_val, dtype=torch.long, device=device)
         beamed_scores = torch.zeros((beamed_batch_size, 1), device=device)
 
         beam_active = torch.ones((beamed_batch_size, 1), dtype=torch.uint8, device=device)
         # zeros means ended, one means active
-        for t in range(1, max_len):
+        for t in range(1, max_len+1):
             if beam_active.sum() == 0:
                 break
             # [batch*beam, Vocab]
-            log_prob = self.model.decode(beamed_memory, beamed_x_mask, beamed_ys)
+            log_prob = generator.generate_next(beamed_ys)
 
             # broad cast scores along row (broadcast) and sum  log probabilities
             next_scores = beamed_scores + beam_active.float() * log_prob  # Zero out inactive beams
@@ -230,19 +242,20 @@ class Decoder:
         else:
             in_seq = self.exp.get_vocab('src').seq2idx(in_toks, add_bos=True, add_eos=True)
         in_seqs = tensor(in_seq, dtype=torch.long).view(1, -1)
+        in_lens = tensor([len(in_seq)], dtype=torch.long)
         if self.debug:
-            greedy_score, greedy_out = self.greedy_decode(in_seqs, max_len, **args)[0]
+            greedy_score, greedy_out = self.greedy_decode(in_seqs, in_lens, max_len, **args)[0]
             greedy_toks = self.exp.get_vocab('tgt').idx2seq(greedy_out, trunc_eos=True)
             greedy_out = ' '.join(greedy_toks)
-            log.debug(f'Greedy : score: {greedy_score} :: {greedy_out}')
+            log.debug(f'Greedy : score: {greedy_score:.4f} :: {greedy_out}')
 
-        beams: List[List[Hypothesis]] = self.beam_decode(in_seqs, max_len, **args)
+        beams: List[List[Hypothesis]] = self.beam_decode(in_seqs, in_lens, max_len, **args)
         beams = beams[0]  # first sentence, the only one we passed to it as input
         result = []
         for i, (score, beam_toks) in enumerate(beams):
             out = ' '.join(self.exp.get_vocab('tgt').idx2seq(beam_toks, trunc_eos=True))
             if self.debug:
-                log.debug(f"Beam {i}: score:{score} :: {out}")
+                log.debug(f"Beam {i}: score:{score:.4f} :: {out}")
             result.append((score, out))
         return result
 
