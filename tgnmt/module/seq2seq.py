@@ -3,7 +3,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from tqdm import tqdm
-from typing import List, Optional
 
 from tgnmt.dataprep import Batch
 from tgnmt import TranslationExperiment as Experiment
@@ -320,7 +319,7 @@ class Trainer:
 
     def run_epoch(self, train_data):
         tot_loss = 0.0
-        for i, batch in tqdm(enumerate(train_data), total=train_data.num_batches()):
+        for i, batch in tqdm(enumerate(train_data), total=train_data.num_batches):
             # Step clear gradients
             self.model.zero_grad()
 
@@ -347,23 +346,29 @@ class Trainer:
 
 
 if __name__ == '__main__':
-    from tgnmt.dummy import simple_dummy_data_gen as data_gen
+    from tgnmt.dummy import BatchIterable
     from tgnmt.module.decoder import Decoder
     vocab_size = 25
-    model = Seq2Seq.make_model(vocab_size, vocab_size)[0]
     exp = Experiment("work", read_only=True)
     exp.model_type = 'rnn'
-    trainer = Trainer(exp, model=model)
-    decoder = Decoder.new(exp, model)
-    x_seqs = tensor([Batch.bos_val, 4, 5, 6, 7, 8, 9, 10, 11]).view(1, -1)
-    x_lens = tensor([x_seqs.size(1)])
     num_epoch = 20
-    for ep in range(num_epoch):
-        log.info(f"Running epoch {ep+1}")
-        data = data_gen(vocab_size, batch_size=30, n_batches=50)
-        model.train()
-        loss = trainer.run_epoch(train_data=data)
-        log.info(f"Epoch {ep+1} finish. Loss = {loss}")
-        model.eval()
-        out = decoder.greedy_decode(x_seqs=x_seqs, x_lens=x_lens, max_len=15)
-        log.info(f"Prediction {out}")
+    test_x_seqs = tensor([Batch.bos_val, 4, 5, 6, 7, 8, 9, 10, 11]).view(1, -1)
+    test_x_lens = tensor([test_x_seqs.size(1)])
+
+    for reverse in (False, True):
+        # train two models;
+        #  first, just copy the numbers, i.e. y = x
+        #  second, reverse the numbers y=(V + reserved - x)
+        log.info(f"====== REVERSE={reverse}; VOCAB={vocab_size}======")
+        model = Seq2Seq.make_model(vocab_size, vocab_size)[0]
+        trainer = Trainer(exp, model=model)
+        decoder = Decoder.new(exp, model)
+        for ep in range(num_epoch):
+            log.info(f"Running epoch {ep+1}")
+            data = BatchIterable(vocab_size, batch_size=30, n_batches=50, reverse=reverse)
+            model.train()
+            loss = trainer.run_epoch(train_data=data)
+            log.info(f"Epoch {ep+1} finish. Loss = {loss:.4f}")
+            model.eval()
+            out = decoder.greedy_decode(x_seqs=test_x_seqs, x_lens=test_x_lens, max_len=9)[0]
+            log.info(f"Prediction: score:{out[0]:.4f} :: seq: {out[1].data}")

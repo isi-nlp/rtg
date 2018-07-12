@@ -283,6 +283,7 @@ class Batch:
 
 
 class BatchIterable:
+    # TODO: How to specify Type Hint for this as Iterable[Batch] ?
 
     def __init__(self, data_path: str, batch_size: int, sort_dec=True, batch_first=True, shuffle=False):
         """
@@ -310,8 +311,10 @@ class BatchIterable:
     def __iter__(self):
         yield from self.read_all()
 
+    @property
     def num_items(self):
         return len(self.data)
 
+    @property
     def num_batches(self):
         return math.ceil(len(self.data) / self.batch_size)

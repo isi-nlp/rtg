@@ -12,7 +12,8 @@ class DataGen:
     def __init__(self, min_tok=len(RESERVED_TOKS), max_tok=16, min_len=1, max_len=10,
                  num_train_exs=1000, num_val_exs=50):
         """
-        Dummy Dataset for quick testing
+        Dummy Dataset for quick testing. This class is useful for creating a Dummy Experiment on disk.
+        For in memory dummy data, see dummy.BatchIterable
         :param min_tok: smallest legal token
         :param max_tok: largest legal token
         :param min_len: minimum possible sequence length
@@ -51,26 +52,39 @@ class DataGen:
         exp.persist_state()
 
 
-def simple_dummy_data_gen(vocab_size, batch_size, n_batches, seq_len=10, n_reserved_toks=Batch.bos_val+1):
-    """
-    "Generate random data for a src-tgt copy task."
-    :param vocab_size: Vocabulary size
-    :param batch_size:
-    :param n_batches: number of batches to produce
-    :param n_reserved_toks:  number of reserved tokens (such as pad, EOS, BOS, UNK etc)
-    :return:
-    """
+class BatchIterable:
+    # TODO: How to specify Type Hint for this as Iterable[Batch]
+    """Dummy equivalent of dataprep.BatchIterable"""
 
-    def make_an_ex():
-        data = np.random.randint(n_reserved_toks, vocab_size, size=(seq_len,))
-        tgt = vocab_size + (n_reserved_toks - 1) - data
+    def __init__(self, vocab_size, batch_size, n_batches, seq_len=10, n_reserved_toks=Batch.bos_val+1, reverse=True):
+        """
+         "Generate random data for a src-tgt copy task."
+         :param vocab_size: Vocabulary size
+         :param batch_size:
+         :param n_batches: number of batches to produce
+         :param n_reserved_toks:  number of reserved tokens (such as pad, EOS, BOS, UNK etc)
+         :param reverse: reverse the target
+         :return:
+         """
+
+        self.vocab_size = vocab_size
+        self.batch_size = batch_size
+        self.num_batches = n_batches
+        self.seq_len = seq_len
+        self.n_reserved_toks = n_reserved_toks
+        self.reverse = reverse
+
+    def make_an_ex(self):
+        data = np.random.randint(self.n_reserved_toks, self.vocab_size, size=(self.seq_len,))
+        tgt = self.vocab_size + (self.n_reserved_toks - 1) - data if self.reverse else data
         tgt[0] = Batch.bos_val
         data[0] = Batch.bos_val
         return Example(data, tgt)
 
-    for i in range(n_batches):
-        exs = [make_an_ex() for _ in range(batch_size)]
-        yield Batch(exs, sort_dec=True, batch_first=False)
+    def __iter__(self):
+        for i in range(self.num_batches):
+            exs = [self.make_an_ex() for _ in range(self.batch_size)]
+            yield Batch(exs, sort_dec=True, batch_first=False)
 
 
 if __name__ == '__main__':
