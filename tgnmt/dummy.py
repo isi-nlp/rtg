@@ -56,7 +56,8 @@ class BatchIterable:
     # TODO: How to specify Type Hint for this as Iterable[Batch]
     """Dummy equivalent of dataprep.BatchIterable"""
 
-    def __init__(self, vocab_size, batch_size, n_batches, seq_len=10, n_reserved_toks=Batch.bos_val+1, reverse=True):
+    def __init__(self, vocab_size, batch_size, n_batches, seq_len=10, n_reserved_toks=Batch.eos_val+1, reverse=True,
+                 batch_first=False):
         """
          "Generate random data for a src-tgt copy task."
          :param vocab_size: Vocabulary size
@@ -64,6 +65,7 @@ class BatchIterable:
          :param n_batches: number of batches to produce
          :param n_reserved_toks:  number of reserved tokens (such as pad, EOS, BOS, UNK etc)
          :param reverse: reverse the target
+         :param batch_first: first dimension is batch
          :return:
          """
 
@@ -73,6 +75,7 @@ class BatchIterable:
         self.seq_len = seq_len
         self.n_reserved_toks = n_reserved_toks
         self.reverse = reverse
+        self.batch_first = batch_first
 
     def make_an_ex(self):
         data = np.random.randint(self.n_reserved_toks, self.vocab_size, size=(self.seq_len,))
@@ -84,7 +87,7 @@ class BatchIterable:
     def __iter__(self):
         for i in range(self.num_batches):
             exs = [self.make_an_ex() for _ in range(self.batch_size)]
-            yield Batch(exs, sort_dec=True, batch_first=False)
+            yield Batch(exs, sort_dec=True, batch_first=self.batch_first)
 
 
 if __name__ == '__main__':

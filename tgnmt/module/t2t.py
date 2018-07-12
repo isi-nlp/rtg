@@ -1,15 +1,14 @@
 # Tensor 2 Tensor aka Attention is all you need
 # Thanks to http://nlp.seas.harvard.edu/2018/04/03/attention.html
 from typing import Iterator
-import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import math, copy, time
 from torch.autograd import Variable
 from tqdm import tqdm
-from tgnmt import device, log, TranslationExperiment as Experiment, debug_mode
-from tgnmt.dataprep import BatchIterable, Batch, Example, subsequent_mask
+from tgnmt import device, log, TranslationExperiment as Experiment, debug_mode, my_tensor as tensor
+from tgnmt.dataprep import BatchIterable, Batch, subsequent_mask
 from tgnmt.utils import log_tensor_sizes
 
 
@@ -50,13 +49,14 @@ class EncoderDecoder(nn.Module):
         c = copy.deepcopy
         attn = MultiHeadedAttention(h, d_model)
         ff = PositionwiseFeedForward(d_model, d_ff, dropout)
-        position = PositionalEncoding(d_model, dropout)
-        model = EncoderDecoder(
-            Encoder(EncoderLayer(d_model, c(attn), c(ff), dropout), N),
-            Decoder(DecoderLayer(d_model, c(attn), c(attn), c(ff), dropout), N),
-            nn.Sequential(Embeddings(d_model, src_vocab), c(position)),
-            nn.Sequential(Embeddings(d_model, tgt_vocab), c(position)),
-            Generator(d_model, tgt_vocab))
+
+        encoder = Encoder(EncoderLayer(d_model, c(attn), c(ff), dropout), N)
+        decoder = Decoder(DecoderLayer(d_model, c(attn), c(attn), c(ff), dropout), N)
+
+        src_emb = nn.Sequential(Embeddings(d_model, src_vocab), PositionalEncoding(d_model, dropout))
+        tgt_emb = nn.Sequential(Embeddings(d_model, tgt_vocab), PositionalEncoding(d_model, dropout))
+        generator = Generator(d_model, tgt_vocab)
+        model = EncoderDecoder(encoder, decoder, src_emb, tgt_emb, generator)
 
         # This was important from their code.
         # Initialize parameters with Glorot / fan_avg.
@@ -393,7 +393,7 @@ class Trainer:
                 self.model.load_state_dict(torch.load(last_model))
         self.model = self.model.to(device)
         adam_opt = torch.optim.Adam(self.model.parameters(), lr=lr, betas=(0.9, 0.98), eps=1e-9)
-        noam_opt = NoamOpt(self.model.src_embed[0].d_model, 1, 400, adam_opt)
+        noam_opt = NoamOpt(self.model.src_embed[0].d_model, 2, 4000, adam_opt)
 
         criterion = LabelSmoothing(size=self.model.tgt_vocab, padding_idx=0, smoothing=0.1)
         self.loss_func = SimpleLossCompute(self.model.generator, criterion, noam_opt)
@@ -426,6 +426,24 @@ class Trainer:
         score = total_loss / total_tokens
         return score
 
+    def overfit_batch(self, batch, max_iters=100, stop_loss=0.01):
+        """
+        Try to over fit given batch (for testing purpose only, as suggested in
+         https://twitter.com/karpathy/status/1013244313327681536)
+        """
+        tokens = 0
+        loss = float('inf')
+        for i in tqdm(range(max_iters)):
+            num_toks = batch.y_toks
+            out = self.model(batch.x_seqs, batch.y_seqs, batch.x_mask, batch.y_mask)
+            # skip the BOS token in  batch.y_seqs
+            loss = self.loss_func(out, batch.y_seqs_nobos, num_toks)
+            tokens += num_toks
+            if abs(loss) < abs(stop_loss):
+                log.info(f"Stopping early at iter {i}.. Loss = {loss:.4f}")
+                return i, loss
+        return max_iters-1, loss
+
     def train(self, num_epochs: int, batch_size: int, **args):
         log.info(f'Going to train for {num_epochs} epochs; batch_size={batch_size}')
         keep_models = args.get('keep_models', 4)  # keep last _ models and delete the old
@@ -450,21 +468,36 @@ class Trainer:
 
 
 if __name__ == '__main__':
-    from tgnmt.dummy import simple_dummy_data_gen as data_gen
-    V = 11
-    criterion = LabelSmoothing(size=V, padding_idx=0, smoothing=0.0)
-    model, _ = EncoderDecoder.make_model(V, V, N=2)
+    from tgnmt.dummy import BatchIterable
+    V = 14
+    criterion = LabelSmoothing(size=V, padding_idx=Batch.pad_value, smoothing=0.1)
+    model, _ = EncoderDecoder.make_model(V, V, N=6)
     from tgnmt.module.decoder import Decoder
-    exp = Experiment('work')
+    exp = Experiment("work", read_only=True)
+    exp.model_type = 't2t'
     trainer = Trainer(exp=exp, model=model)
-    decr = Decoder(model, exp=exp)
+
+    decr = Decoder.new(exp, model)
+
+    assert 2 == Batch.bos_val
+    src = tensor([[2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
+                  [2, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4]])
+
+    src_lens = tensor(src.size(1))
+
+    def print_res(res):
+        for score, seq in res:
+            log.info(f'{score:.4f} :: {seq}')
+
+    first_batch = list(iter(BatchIterable(V, 50, 1, reverse=False, batch_first=True)))[0]
+    itr, score = trainer.overfit_batch(first_batch, max_iters=500)
+    log.info(f"First Batch: {itr} iters with final loss: {score}")
+
     for epoch in range(10):
         model.train()
-        trainer.run_epoch(data_gen(V, 30, 20))
-
+        loss = trainer.run_epoch(BatchIterable(V, 50, 30, reverse=False, batch_first=True))
+        log.info(f"Epoch {epoch}, training Loss: {loss:.4f}")
         model.eval()
-        src = torch.LongTensor([[2, 3, 4, 5, 6, 7, 8, 9, 10],
-                                [2, 10, 9, 8, 7, 6, 5, 4, 3]])
-        src_mask = torch.ones(2, 1, 9)
-        res = decr.greedy_decode(src, max_len=10)
-        print(res)
+        res = decr.greedy_decode(src, src_lens, max_len=12)
+        print_res(res)
+
