@@ -349,8 +349,7 @@ if __name__ == '__main__':
     from tgnmt.dummy import BatchIterable
     from tgnmt.module.decoder import Decoder
     vocab_size = 25
-    exp = Experiment("work", read_only=True)
-    exp.model_type = 'rnn'
+    exp = Experiment("work", config={'model_type': 'rnn'}, read_only=True)
     num_epoch = 20
     test_x_seqs = tensor([Batch.bos_val, 4, 5, 6, 7, 8, 9, 10, 11]).view(1, -1)
     test_x_lens = tensor([test_x_seqs.size(1)])

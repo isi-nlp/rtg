@@ -473,8 +473,7 @@ if __name__ == '__main__':
     criterion = LabelSmoothing(size=V, padding_idx=Batch.pad_value, smoothing=0.1)
     model, _ = EncoderDecoder.make_model(V, V, N=6)
     from tgnmt.module.decoder import Decoder
-    exp = Experiment("work", read_only=True)
-    exp.model_type = 't2t'
+    exp = Experiment("work", config={'model_type': 't2t'}, read_only=True)
     trainer = Trainer(exp=exp, model=model)
 
     decr = Decoder.new(exp, model)

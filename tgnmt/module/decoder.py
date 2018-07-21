@@ -1,11 +1,10 @@
 import torch
 import torch.nn.functional as F
 from tgnmt import log, device, my_tensor as tensor, debug_mode
-from tgnmt.dataprep import BLANK_TOK, BOS_TOK, EOS_TOK, subsequent_mask
+from tgnmt.dataprep import PAD_TOK, BOS_TOK, EOS_TOK, subsequent_mask
 from tgnmt.module.t2t import EncoderDecoder
 from tgnmt.module.seq2seq import Seq2Seq
 from typing import List, Tuple
-from abc import ABC, abstractmethod
 from tgnmt import TranslationExperiment as Experiment
 
 Hypothesis = Tuple[float, List[int]]
@@ -46,7 +45,7 @@ class T2TGenerator:
 
 class Decoder:
 
-    pad_val = BLANK_TOK[1]
+    pad_val = PAD_TOK[1]
     bos_val = BOS_TOK[1]
     eos_val = EOS_TOK[1]
     default_beam_size = 5
