@@ -1,7 +1,7 @@
 # Yet Another NMT
 
 Yet Another Neural Machine Translation toolkit based on pytorch.
->  **`tgnmt`** is a placeholder.  I will rename it to a presentable name once I have a better alternative.
+>  **`tgnmt`** is a placeholder. I will rename it to a better presentable name once I have it.
 
 
 ### Features working  :
@@ -11,7 +11,7 @@ Yet Another Neural Machine Translation toolkit based on pytorch.
 
 ### Goals:
 + Easy and interpretable code (for those who read code as much as papers)
-  + Should be easy to adopt to new settings (the long term goal)
+  + Should be easy to adapt to new settings (the long term goal)
 + Reproducible experiments, based on config files and experiment directory
 
 
@@ -153,3 +153,10 @@ Exampple:
 $ cat input.tok.txt | python -m tgnmt.decode work > output.tok.txt
 ```
 This step will pick the most recent model from `work/models` directory and translates the input.
+
+
+
+---
+### Authors:
+[See Here](https://github.com/thammegowda/tgnmt/graphs/contributors)
+
