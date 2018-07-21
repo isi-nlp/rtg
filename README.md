@@ -1,20 +1,23 @@
 # Yet Another NMT
 
 Yet Another Neural Machine Translation toolkit based on pytorch.
-This one hopes to keep code simpler and readable.
+>  ** `tgnmt`** is a placeholder.  I will rename it to a presentable name once I have a better alternative.
 
 
-### Features / Currently working :
- + Transformer aka Tensor2Tensor or "Attention is all you need"
- + RNN based Encoder-Decoder with Attention (not fully tested, but on the  TODO list)
- + Easy and interpretable (throw the magics out of this box)
+### Features working  :
+ + [Transformer aka Tensor2Tensor or "Attention is all you need"](https://arxiv.org/abs/1706.03762)
+ + [RNN based Encoder-Decoder](https://papers.nips.cc/paper/5346-sequence-to-sequence-learning-with-neural-networks.pdf) with [Attention](https://nlp.stanford.edu/pubs/emnlp15_attn.pdf)
+ + [sentencepiece](https://github.com/google/sentencepiece) is under the hood
+
+### Goals:
++ Easy and interpretable code (for those who read code as much as papers)
+  + Should be easy to adopt to new settings (the long term goal)
++ Reproducible experiments, based on config files and experiment directory
 
 
-### TODO / Near future:
- + Byte Pair Encoding
+### TODO :
  + Multi GPU Parallelism
- + RNN model full scale testing
- + Beam decoder
+ + Pip installable
 
 
 ### Setup
@@ -30,28 +33,17 @@ export PYTHONPATH=$PWD  # Add directory to PYTHONPATH
 Let us build a translator for xxx --> yyy language
 
 Requirements: A dataset
- + xxx-yyy.train.tok.tsv : Training corpus
- + xxx-yyy.valid.tok.tsv : Validation corpus
+ + train.src, train.tgt : Training corpus
+ + valid.src, valid.tgt : Validation corpus
 
-Format: TSV format, i.e., a sentence in xxx language and another in yyy language, separated by a tab (`\t`) character.
-All tokens should be separated by a regular whitespace character.
-Please run a tokenizer on your input. (
-[Here is a good one from mosesdecoder](https://github.com/moses-smt/mosesdecoder/blob/master/scripts/tokenizer/tokenizer.perl) repository)
-
+No need to do tokenizer, since the `sentencepiece` library takes care of it under the hood.
 
 ### Step 1. Prepare an experiment
-
-```
-$ python -m tgnmt.prep -h
-usage: tgnmt.prep work_dir conf_file
-
-```
-Example:
 
 ```bash
 python -m tgnmt.prep work example.conf.yml
 ```
-Where `example.conf.yml` shall have these configs
+Where `work` is the diretcory to setup experiment, and `example.conf.yml` shall have these configs
 ```yaml
 src_lang: FRA
 tgt_lang: ENG
@@ -60,8 +52,8 @@ prep:
   # Training files
   train_src: data/train.src
   train_tgt: data/train.tgt
-  valid_src: data/val.src
-  valid_tgt: data/val.tgt
+  valid_src: data/valid.src
+  valid_tgt: data/valid.tgt
   src_len: 100
   tgt_len: 100
   truncate: true
@@ -76,13 +68,17 @@ vocab_size: 8000
 test_src:
 test_tgt:
 ```
-This will create:
+The `work` directory will have this structure (which you can inspect and modify if need be):
 
 ```
 work/
  +- data/
  |   +- train.tsv
  |   +- valid.tsv
+ |   +- sentpiece.model
+ |   +- sentpiece.vocab
+ |   +- train.pieces.tsv
+ |   +- valid.pieces.tsv
  +- models/
  +- conf.yml
 ```
@@ -118,7 +114,10 @@ optional arguments:
 Example:
 
 ```bash
-python -m tgnmt.train work -ne 10 -bs 256
+# for rnn
+python -m tgnmt.train work -mt rnn -ne 10 -bs 256
+# for transformer
+python -m tgnmt.train work -mt t2t -ne 10 -bs 256
 ```
 This step will store last `k` models to `work/models` directory.
 

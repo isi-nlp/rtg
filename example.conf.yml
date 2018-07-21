@@ -6,8 +6,8 @@ prep:
   # Training files
   train_src: data/train.src
   train_tgt: data/train.tgt
-  valid_src: data/val.src
-  valid_tgt: data/val.tgt
+  valid_src: data/valid.src
+  valid_tgt: data/valid.tgt
   src_len: 100
   tgt_len: 100
   truncate: true
