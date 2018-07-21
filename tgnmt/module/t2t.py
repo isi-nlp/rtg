@@ -398,13 +398,13 @@ class Trainer:
         criterion = LabelSmoothing(size=self.model.tgt_vocab, padding_idx=0, smoothing=0.1)
         self.loss_func = SimpleLossCompute(self.model.generator, criterion, noam_opt)
 
-    def run_epoch(self, data_iter: Iterator[Batch], print_every=50):
+    def run_epoch(self, data_iter: Iterator[Batch], num_batches=None, print_every=30):
         "Standard Training and Logging Function"
         start = time.time()
         total_tokens = 0
         total_loss = 0.0
         tokens = 0
-        for i, batch in tqdm(enumerate(data_iter)):
+        for i, batch in tqdm(enumerate(data_iter), total=num_batches):
             num_toks = batch.y_toks
             out = self.model(batch.x_seqs, batch.y_seqs, batch.x_mask, batch.y_mask)
             # skip the BOS token in  batch.y_seqs
@@ -412,10 +412,9 @@ class Trainer:
             total_loss += loss
             total_tokens += num_toks
             tokens += num_toks
-            if i % print_every == 1:
+            if i + 1 % print_every == 0:
                 elapsed = time.time() - start
-                log.info("\nStep: %d Loss: %f Tokens per Sec: %f" %
-                         (i, loss / num_toks, tokens / elapsed))
+                log.info(f"Step: {i} Loss: {loss / num_toks:.4f} Tokens per Sec: { tokens / elapsed:.2f}")
                 start = time.time()
                 tokens = 0
             # force free memory
@@ -471,7 +470,7 @@ if __name__ == '__main__':
     from tgnmt.dummy import BatchIterable
     V = 14
     criterion = LabelSmoothing(size=V, padding_idx=Batch.pad_value, smoothing=0.1)
-    model, _ = EncoderDecoder.make_model(V, V, N=6)
+    model, _ = EncoderDecoder.make_model(V, V, N=4, d_model=128, d_ff=256, h=4)
     from tgnmt.module.decoder import Decoder
     exp = Experiment("work", config={'model_type': 't2t'}, read_only=True)
     trainer = Trainer(exp=exp, model=model)
@@ -489,12 +488,13 @@ if __name__ == '__main__':
             log.info(f'{score:.4f} :: {seq}')
 
     first_batch = list(iter(BatchIterable(V, 50, 1, reverse=False, batch_first=True)))[0]
-    itr, score = trainer.overfit_batch(first_batch, max_iters=500)
+    itr, score = trainer.overfit_batch(first_batch, max_iters=100)
     log.info(f"First Batch: {itr} iters with final loss: {score}")
 
-    for epoch in range(10):
+    for epoch in range(15):
         model.train()
-        loss = trainer.run_epoch(BatchIterable(V, 50, 30, reverse=False, batch_first=True))
+        data = BatchIterable(V, 50, 30, reverse=False, batch_first=True)
+        loss = trainer.run_epoch(data, num_batches=data.num_batches)
         log.info(f"Epoch {epoch}, training Loss: {loss:.4f}")
         model.eval()
         res = decr.greedy_decode(src, src_lens, max_len=12)
