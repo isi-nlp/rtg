@@ -8,7 +8,7 @@ import math, copy, time
 from torch.autograd import Variable
 from tqdm import tqdm
 from tgnmt import device, log, TranslationExperiment as Experiment, debug_mode, my_tensor as tensor
-from tgnmt.dataprep import BatchIterable, Batch, subsequent_mask
+from tgnmt.dataprep import BatchIterable, Batch
 from tgnmt.utils import log_tensor_sizes
 
 
@@ -382,7 +382,7 @@ class Trainer:
         if model:
             self.model = model
         else:
-            args = exp.get_model_args()
+            args = exp.model_args
             assert args
             log.info(f"Creating model with args: {args}")
             self.model, _ = EncoderDecoder.make_model(**args)

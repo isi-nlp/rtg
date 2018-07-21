@@ -243,7 +243,7 @@ class Trainer:
         self.exp = exp
         self.start_epoch = 0
         if model is None:
-            model = Seq2Seq(**exp.get_model_args()).to(device)
+            model = Seq2Seq(**exp.model_args).to(device)
             last_check_pt, last_epoch = self.exp.get_last_saved_model()
             if last_check_pt:
                 log.info(f"Resuming training from epoch:{self.start_epoch}, model={last_check_pt}")
