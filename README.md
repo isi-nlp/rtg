@@ -1,7 +1,7 @@
 # Yet Another NMT
 
 Yet Another Neural Machine Translation toolkit based on pytorch.
->  ** `tgnmt`** is a placeholder.  I will rename it to a presentable name once I have a better alternative.
+>  **`tgnmt`** is a placeholder.  I will rename it to a presentable name once I have a better alternative.
 
 
 ### Features working  :
@@ -36,7 +36,11 @@ Requirements: A dataset
  + train.src, train.tgt : Training corpus
  + valid.src, valid.tgt : Validation corpus
 
-No need to do tokenizer, since the `sentencepiece` library takes care of it under the hood.
+No need to run tokenizer, since the `sentencepiece` library takes care of it under the hood.
+However, running a sophisticated tokenizer might have a slightly better results as reported [here](https://github.com/google/sentencepiece/blob/master/doc/experiments.md)
+(I am yet to test that behaviour).
+
+The workflow is of three steps: 1. prepare experiment, 2. train models, 3. decode and test
 
 ### Step 1. Prepare an experiment
 
