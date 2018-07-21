@@ -43,48 +43,48 @@ Please run a tokenizer on your input. (
 
 ```
 $ python -m tgnmt.prep -h
-usage: tgnmt.prep [-h] -tf TRAIN_FILE -vf VALID_FILE [-sl SRC_LEN]
-                  [-tl TGT_LEN] [-tr]
-                  work_dir
+usage: tgnmt.prep work_dir conf_file
 
-prepare NMT experiment
-
-positional arguments:
-  work_dir              Working directory
-
-optional arguments:
-  -h, --help            show this help message and exit
-  -tf TRAIN_FILE, --train-file TRAIN_FILE
-                        Training File. (default: None)
-  -vf VALID_FILE, --valid-file VALID_FILE
-                        Validation File. (default: None)
-  -sl SRC_LEN, --src-len SRC_LEN
-                        Truncate or filter source sentences to this length
-                        (default: 200)
-  -tl TGT_LEN, --tgt-len TGT_LEN
-                        Truncate or filter target sentences to this length
-                        (default: 200)
-  -tr, --truncate       Do select all training sentences and truncate them to
-                        --src-len and --tgt-len values. Default is to exclude
-                        sentences longer than --src-len and --tgt-len
-                        (default: False)
 ```
 Example:
 
 ```bash
-python -m tgnmt.prep work -tf xxx-yyy.train.tok.tsv -vf xxx-yyy.valid.tok.tsv
+python -m tgnmt.prep work example.conf.yml
 ```
-this will create:
+Where `example.conf.yml` shall have these configs
+```yaml
+src_lang: FRA
+tgt_lang: ENG
+
+prep:
+  # Training files
+  train_src: data/train.src
+  train_tgt: data/train.tgt
+  valid_src: data/val.src
+  valid_tgt: data/val.tgt
+  src_len: 100
+  tgt_len: 100
+  truncate: true
+  mono_src: []
+  mono_tgt: []
+
+# vocabulary
+pieces: unigram
+vocab_size: 8000
+
+# Testing
+test_src:
+test_tgt:
+```
+This will create:
 
 ```
 work/
  +- data/
- |   +- src-field.tsv
- |   +- tgt-field.tsv
  |   +- train.tsv
  |   +- valid.tsv
  +- models/
-     +- args.json
+ +- conf.yml
 ```
 
 ### Step 2. Train
