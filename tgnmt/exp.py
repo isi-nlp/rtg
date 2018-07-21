@@ -18,7 +18,7 @@ class TranslationExperiment:
         self.work_dir = work_dir
         self.data_dir = os.path.join(work_dir, 'data')
         self.model_dir = os.path.join(self.work_dir, 'models')
-        self._config_file = os.path.join(self.work_dir, 'conf.yaml')
+        self._config_file = os.path.join(self.work_dir, 'conf.yml')
         self._spm_file = os.path.join(self.data_dir, 'sentpiece.model')
         self._vocab_file = os.path.join(self.data_dir, 'vocab.txt')
         self.train_file = os.path.join(self.data_dir, 'train.tsv')

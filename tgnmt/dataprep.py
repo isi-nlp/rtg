@@ -137,9 +137,9 @@ class Batch:
         self.x_mask = (self.x_seqs != self.pad_value).unsqueeze(1)
         first_y = batch[0].y
         if first_y is not None:
-            # Some sanity checks
-            assert first_y[0] == self.bos_val, f'Output sequences must begin with BOS token {self.bos_val}'
-            # assert first_y[-1] == self.eos_val, f'Output sequences must end with EOS token {self.eos_val}'
+            for ex in batch: # check and inser BOS to output seqs
+                if ex.y[0] != self.bos_val:
+                    ex.y.insert(0, self.bos_val)
 
             self.y_len = tensor([len(e.y) for e in batch])  # Excluding either BOS or EOS tokens
             self.y_toks = self.y_len.sum().float().item()
