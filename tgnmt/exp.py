@@ -1,29 +1,26 @@
 import glob
-import json
+import yaml
 import os
 from datetime import datetime
-from itertools import chain
-from typing import Optional, Dict, Any, Iterator, List, Tuple
-
+from typing import Optional, Dict, Iterator, List, Tuple
 import torch
 
-from tgnmt import Field, log
-from tgnmt.bpe import SubwordTextEncoder
-from tgnmt.dataprep import RawRecord, tokenize, read_tsv, TokStream
+from tgnmt import log, load_conf
+from tgnmt.dataprep import RawRecord, SeqRecord, sent_piece_train
+import sentencepiece as spm
 
 
 class TranslationExperiment:
 
-    def __init__(self, work_dir: str, read_only=False):
+    def __init__(self, work_dir: str, read_only=False, config=None):
         log.info(f"Initializing an experiment. Directory = {work_dir}")
         self.read_only = read_only
         self.work_dir = work_dir
         self.data_dir = os.path.join(work_dir, 'data')
         self.model_dir = os.path.join(self.work_dir, 'models')
-        self._config_file = os.path.join(self.work_dir, 'config.json')
-        self.src_vocab_file = os.path.join(self.data_dir, 'src-vocab.tsv')
-        self.tgt_vocab_file = os.path.join(self.data_dir, 'tgt-vocab.tsv')
-        self.shared_vocab_file = os.path.join(self.data_dir, 'vocab.tsv')
+        self._config_file = os.path.join(self.work_dir, 'conf.yaml')
+        self._spm_file = os.path.join(self.data_dir, 'sentpiece.model')
+        self._vocab_file = os.path.join(self.data_dir, 'vocab.txt')
         self.train_file = os.path.join(self.data_dir, 'train.tsv')
         self.valid_file = os.path.join(self.data_dir, 'valid.tsv')
 
@@ -31,132 +28,95 @@ class TranslationExperiment:
             for _dir in [self.model_dir, self.data_dir]:
                 if not os.path.exists(_dir):
                     os.makedirs(_dir)
-
-        self.src_vocab = Field.load_tsv(self.src_vocab_file) if os.path.exists(self.src_vocab_file) else None
-        self.tgt_vocab = Field.load_tsv(self.tgt_vocab_file) if os.path.exists(self.tgt_vocab_file) else None
-        self.shared_vocab = Field.load_tsv(self.shared_vocab_file) if os.path.exists(self.shared_vocab_file) else None
-        self._config = self.load_config()
-
-    def load_config(self) -> Optional[Dict[str, Any]]:
-        if os.path.exists(self._config_file):
-            with open(self._config_file, encoding='utf-8') as f:
-                return json.load(f)
-        return None
+        if type(config) is str:
+            config = load_conf(config)
+        self.config = config if config else load_conf(self._config_file)
+        self.spm = None
+        if os.path.exists(self._spm_file):
+            self.spm = spm.SentencePieceProcessor()
+            self.spm.Load(self._spm_file)
 
     def store_config(self):
         with open(self._config_file, 'w', encoding='utf-8') as fp:
-            return json.dump(self._config, fp, ensure_ascii=False)
+            return yaml.dump(self.config, fp)
 
     @property
     def model_type(self) -> Optional[str]:
-        return self._config.get('model_type')
+        return self.config.get('model_type')
 
     @model_type.setter
     def model_type(self, mod_type: str):
-        if self._config is None:
-            self._config = {}
-        self._config['model_type'] = mod_type
+        self.config['model_type'] = mod_type
 
     def has_prepared(self):
-        vocab_found = self.shared_vocab is not None or all([self.src_vocab, self.tgt_vocab])
-        return vocab_found and os.path.exists(self.train_file)
+        return self.spm and os.path.exists(self.train_file) and os.path.exists(self.valid_file)
 
     def has_trained(self):
         return self.get_last_saved_model()[0] is not None
 
-    def get_vocab(self, side: str) -> Field:
-        if self.shared_vocab:
-            return self.shared_vocab
-        assert side in ('src', 'tgt')
-        return self.src_vocab if side == 'src' else self.tgt_vocab
-
-    def prep_file(self, records: Iterator[RawRecord], path: str):
-
-        seqs = ((self.get_vocab('src').seq2idx(sseq),
-                 self.get_vocab('tgt').seq2idx(tseq, add_bos=True)) for sseq, tseq in records)
-        seqs = ((' '.join(map(str, x)), ' '.join(map(str, y))) for x, y in seqs)
+    @staticmethod
+    def write_tsv(records: Iterator[SeqRecord], path: str):
+        seqs = ((' '.join(map(str, x)), ' '.join(map(str, y))) for x, y in records)
         lines = (f'{x}\t{y}\n' for x, y in seqs)
-
         log.info(f"Storing data at {path}")
-        with open(path, 'w') as f:
+        with open(path, 'w', encoding='utf-8') as f:
             for line in lines:
                 f.write(line)
 
     @staticmethod
-    def read_raw_data(path: str, truncate: bool, src_len: int, tgt_len: int) -> Iterator[RawRecord]:
-        """Raw dataset is a simple TSV with source \t target sequence of words"""
-        recs = map(tokenize, read_tsv(path))
-        recs = ((src, tgt) for src, tgt in recs if len(src) > 0 and len(tgt) > 0)
+    def read_raw_lines(src_path: str, tgt_path: str) -> Iterator[RawRecord]:
+        with open(src_path) as src_lines, open(tgt_path) as tgt_lines:
+            recs = ((src.strip(), tgt.strip()) for src, tgt in zip(src_lines, tgt_lines))
+            recs = ((src, tgt) for src, tgt in recs if src and tgt)
+            yield from recs
+
+    def read_raw_data(self, src_path: str, tgt_path: str, truncate: bool, src_len: int, tgt_len: int, tokenizer)\
+            -> Iterator[SeqRecord]:
+        recs = self.read_raw_lines(src_path, tgt_path)
+        recs = ((tokenizer(x), tokenizer(y)) for x, y in recs)
         if truncate:
             recs = ((src[:src_len], tgt[:tgt_len]) for src, tgt in recs)
         else:  # Filter out longer sentences
             recs = ((src, tgt) for src, tgt in recs if len(src) <= src_len and len(tgt) <= tgt_len)
         return recs
 
-    @staticmethod
-    def _make_subword_vocb(name: str, tok_stream: TokStream, max_toks: int, min_count: int):
-        tok_freq = Field.get_tok_freq(tok_stream)
-        shared_enc = SubwordTextEncoder.build_to_target_size(target_size=max_toks, token_counts=dict(tok_freq),
-                                                             min_val=min_count, max_val=5 * min_count)
-        subtoks = shared_enc.all_subtoken_strings
-        vocab = Field(name, subword_enc=shared_enc).build_from_types(subtoks)
-        log.info(f"Built subword vocabulary of {vocab.size()} ")
-        return vocab
+    def pre_process(self, args=None):
+        args = args if args else self.config['prep']
 
-    def pre_process(self, train_file: str, valid_file: str, src_len: int, tgt_len: int, truncate=False, min_count=1,
-                    src_types: Optional[int] = None, tgt_types: Optional[int] = None, bpe=False, shared=False):
+        files = [args['train_src'], args['train_tgt']]
+        for val in [args.get('mono_src'), args.get('mono_tgt')]:
+            if val:
+                files.extend(val)
+        sent_piece_train(self.config['pieces'], self.config['vocab_size'], self._spm_file, files)
+        self.spm = spm.SentencePieceProcessor()
+        self.spm.Load(self._spm_file)
 
-        log.info(f'Training file:: {train_file}')
-        # in memory  --  var len lists and sparse dictionary -- should be okay for now
-        train_recs = list(self.read_raw_data(train_file, truncate, src_len, tgt_len))
-        log.info(f'Found {len(train_recs)} records')
-        src_recs = [x for x, _ in train_recs]
-        tgt_recs = [y for _, y in train_recs]
-        if shared:
-            shared_input = chain(src_recs, tgt_recs)
-            if bpe:
-                log.info(f'Going to do shared subword vocabulary of {tgt_types} types')
-                self.shared_vocab = self._make_subword_vocb('shared', shared_input, tgt_types, min_count=min_count)
-            else:
-                log.info(f'Going to do shared vocabulary of {tgt_types} types')
-                self.shared_vocab = Field('shared').build_from(shared_input,
-                                                               min_freq=min_count, max_vocab_size=tgt_types)
-            log.info(f"Shared vocab size: {self.shared_vocab.size()}")
-        else:
-            log.info("Building source and target vocabulary")
-            if bpe:
-                self.src_vocab = self._make_subword_vocb('src', src_recs, max_toks=src_types, min_count=min_count)
-                self.tgt_vocab = self._make_subword_vocb('tgt', tgt_recs, max_toks=tgt_types, min_count=min_count)
-            else:
-                self.src_vocab, self.tgt_vocab = Field('src'), Field('tgt')
-                self.src_vocab.build_from(src_recs, max_vocab_size=src_types)
-                self.tgt_vocab.build_from(tgt_recs, max_vocab_size=tgt_types)
-            log.info(f"Vocab sizes, source: {self.src_vocab.size()}, target:{self.tgt_vocab.size()}")
-        self.prep_file(train_recs, self.train_file)
-        val_recs = self.read_raw_data(valid_file, truncate, src_len, tgt_len)
-        self.prep_file(val_recs, self.valid_file)
+        # create Piece IDs
+        train_recs = self.read_raw_data(args['train_src'], args['train_tgt'], args['truncate'],
+                                        args['src_len'], args['tgt_len'], tokenizer=self.spm.EncodeAsIds)
+        self.write_tsv(train_recs, self.train_file)
+        val_recs = self.read_raw_data(args['valid_src'], args['valid_tgt'], args['truncate'],
+                                      args['src_len'], args['tgt_len'], tokenizer=self.spm.EncodeAsIds)
+        self.write_tsv(val_recs, self.valid_file)
+
+        # Redo again as Pieces
+        train_recs = self.read_raw_data(args['train_src'], args['train_tgt'], args['truncate'],
+                                        args['src_len'], args['tgt_len'], tokenizer=self.spm.EncodeAsPieces)
+        self.write_tsv(train_recs, self.train_file.replace('.tsv', '.pieces.tsv'))
+        val_recs = self.read_raw_data(args['valid_src'], args['valid_tgt'], args['truncate'],
+                                      args['src_len'], args['tgt_len'], tokenizer=self.spm.EncodeAsIds)
+        self.write_tsv(val_recs, self.valid_file.replace('.tsv', '.pieces.tsv'))
+
         # update state on disk
         self.persist_state()
 
     def persist_state(self):
         """Writes state of current experiment to the disk"""
         assert not self.read_only
-        if self._config is None:
-            self._config = {}
-
-        for vocab, f_path in [(self.src_vocab, self.src_vocab_file),
-                              (self.tgt_vocab, self.tgt_vocab_file),
-                              (self.shared_vocab, self.shared_vocab_file)]:
-            if vocab is not None:
-                vocab.dump_tsv(f_path)
-
-        args = self._config.get('model_args', {})
-        self._config['model_args'] = args
-        shared_vocab_size = self.shared_vocab.size() if self.shared_vocab else None
-        args['src_vocab'] = shared_vocab_size if shared_vocab_size else self.src_vocab.size()
-        args['tgt_vocab'] = shared_vocab_size if shared_vocab_size else self.tgt_vocab.size()
-        self._config['shared'] = self.shared_vocab is not None
-        self._config['updated_att'] = datetime.now().isoformat()
+        args = self.config.get('model_args', {})
+        self.config['model_args'] = args
+        args['src_vocab'] = args['tgt_vocab'] = len(self.spm)
+        self.config['updated_at'] = datetime.now().isoformat()
         self.store_config()
 
     def store_model(self, epoch: int, model, score: float, keep: int):
@@ -194,9 +154,10 @@ class TranslationExperiment:
         else:
             return None, -1
 
-    def get_model_args(self) -> Optional[Dict]:
+    @property
+    def model_args(self) -> Optional[Dict]:
         """
         Gets args from file
         :return: args if exists or None otherwise
         """
-        return self._config.get('model_args')
+        return self.config.get('model_args')

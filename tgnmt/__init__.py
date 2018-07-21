@@ -1,5 +1,7 @@
 import os
 import logging as log
+import yaml
+
 debug_mode = os.environ.get('NMT_DEBUG', False)
 log.basicConfig(level=log.DEBUG if debug_mode else log.INFO)
 log.debug(f"NMT_DEBUG={debug_mode}")
@@ -31,7 +33,12 @@ def profile(func, *args):
     return profiler(func, *args)
 
 
-from .dataprep import Field, BatchIterable, Batch
+def load_conf(inp):
+    with open(inp, encoding='utf-8') as fh:
+        return yaml.load(fh)
+
+
+from .dataprep import BatchIterable, Batch
 from tgnmt.exp import TranslationExperiment
 from tgnmt.module import seq2seq
 

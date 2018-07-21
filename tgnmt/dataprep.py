@@ -1,157 +1,23 @@
 import os
-from collections import Counter
-from typing import List, Dict, Iterator, Tuple, Union
+from typing import List, Iterator, Tuple, Union
 import torch
 from tgnmt import log
 from . import my_tensor as tensor, device
 import math
 import random
 
-BLANK_TOK = '-BLANK-', 0
-UNK_TOK = '-UNK-', 1
-BOS_TOK = '-BOS-', 2
-EOS_TOK = '-EOS-', 3
+PAD_TOK = '<pad>', 0
+UNK_TOK = '<unk>', 1
+BOS_TOK = '<s>', 2
+EOS_TOK = '</s>', 3
 
-RESERVED_TOKS = [BLANK_TOK, UNK_TOK, BOS_TOK, EOS_TOK]
+RESERVED_TOKS = [PAD_TOK, UNK_TOK, BOS_TOK, EOS_TOK]
 
-from tgnmt.bpe import SubwordTextEncoder
 
-RawRecord = Tuple[List[str], List[str]]
-SeqRecord = Tuple[List[int], List[int]]
+RawRecord = Tuple[str, str]
+TokRawRecord = Tuple[List[str], List[str]]
+SeqRecord = Tuple[List[Union[int, str]], List[Union[int, str]]]
 TokStream = Union[Iterator[Iterator[str]], Iterator[str]]
-
-
-class Field:
-    """
-    An instance of this class holds a vocabulary of a dataset.
-    This class is inspired by the torchtext module's Field class.
-    """
-
-    num_reserved_toks = len(RESERVED_TOKS)
-
-    def __init__(self, name: str, blank=False, subword_enc: SubwordTextEncoder = None):
-        assert ',' not in name
-        self.name: str = name
-        self.subword_enc = subword_enc
-        self.tok2idx: Dict[str, int] = {} if blank else {t: i for t, i in RESERVED_TOKS}
-        self.idx2tok: List[str] = [] if blank else [t for t, _ in RESERVED_TOKS]
-        self.freq: List[int] = [-1 for _ in self.idx2tok]
-        if self.subword_enc:
-            self.build_from_types(self.subword_enc.all_subtoken_strings)
-
-    @staticmethod
-    def get_tok_freq(tok_stream: TokStream, min_freq=1, nested=True):
-        if nested:
-            tok_stream = (tok for seq in tok_stream for tok in seq)  # flatten
-        tok_freq = Counter(tok_stream).items()
-        if min_freq > 1:
-            tok_freq = [(t, f) for t, f in tok_freq if f >= min_freq]
-        return sorted(tok_freq, key=lambda x: x[1], reverse=True)
-
-    def build_from(self, stream: TokStream, min_freq: int = 1, max_vocab_size: int = 2 ** 24):
-        tok_freq = self.get_tok_freq(stream, min_freq=min_freq)
-        if len(tok_freq) > max_vocab_size:
-            log.info(f'Truncating vocab size from {len(tok_freq)} to {max_vocab_size}')
-            tok_freq = tok_freq[:max_vocab_size]
-        for tok, freq in tok_freq:
-            self.add_token(tok, inc=freq)
-        return self
-
-    def build_from_types(self, types, count=0):
-        for tok in types:
-            self.add_token(tok, count)
-        return self
-
-    def add_token(self, tok: str, inc: int = 1):
-        """
-        Adds token to vocabulary
-        :param tok: token
-        :param inc: frequency in the corpus
-        :return:
-        """
-        if tok in self.tok2idx:
-            self.freq[self.tok2idx[tok]] += inc
-        else:
-            idx = len(self.idx2tok)
-            self.tok2idx[tok] = idx
-            self.idx2tok.append(tok)
-            self.freq.append(inc)
-
-    def seq2idx(self, toks: List[str], add_bos=True, add_eos=True, subword_split=True) -> List[int]:
-        """
-        transforms a sequence of words to word indices.
-         If input has tokens which doesnt exist in vocabulary, they will be replaced with UNK token's index.
-        :param toks: sequence of tokens which needs to be transformed
-        :param add_bos: prepend BOS token index. If input already has BOS token then this flag has no effect.
-        :param add_eos: append EOS token index. If input already has EOS token then this flag has no effect.
-        :param subword_split: if subword_encoder is available, split tokens into subwords
-        :return: List of word indices
-        """
-        if subword_split and self.subword_enc:
-            toks = self.subword_enc.tokens_to_subtokens(toks)
-        seq = [self.tok2idx.get(tok, UNK_TOK[1]) for tok in toks]
-        if add_bos and seq[0] != BOS_TOK[1]:
-            seq.insert(0, BOS_TOK[1])
-        if add_eos and seq[-1] != EOS_TOK[1]:
-            seq.append(EOS_TOK[1])
-        return seq
-
-    def idx2seq(self, indices: List[int], trunc_eos=False) -> List[str]:
-        """
-        :param indices: sequence of word indices
-        :param trunc_eos: True if the sequence should be truncated at the first occurrence of EOS
-        :return: List of tokens
-        """
-        res = []
-        for idx in indices:
-            if trunc_eos and idx == EOS_TOK[1]:
-                break
-            res.append(self.idx2tok[idx] if idx < len(self.idx2tok) else '-:OutOfIndex:-')
-        if self.subword_enc:
-            self.subword_enc.un_split(res)
-        return res
-
-    def size(self):
-        """
-        :return: number of tokens, including reserved
-        """
-        return len(self.idx2tok)
-
-    def dump_tsv(self, path: str):
-        """
-        Dumps this instance to a TSV file at given path
-        :param path: path to output file
-        :return:
-        """
-        with open(path, 'w', encoding='utf-8') as f:
-            header = self.name
-            header += ",subwords" if self.subword_enc else ""
-            f.write(f'{header}\n')
-            for i, (tok, count) in enumerate(zip(self.idx2tok, self.freq)):
-                f.write(f'{i}\t{tok}\t{count}\n')
-
-    @staticmethod
-    def load_tsv(path: str):
-        """
-        Loads Field instance from serialized TSV data
-        :param path: path to TSV file which was crated from Field.dump_tsv() method
-        :return: an instance of Field
-        """
-        with open(path, 'r', encoding='utf-8') as f:
-            parts = f.readline().strip().split(',')
-            subword_mode = len(parts) > 1 and 'subwords' in parts[1:]
-            field = Field(parts[0], blank=True)
-            i = 0
-            for line in f:
-                idx, tok, count = line.split('\t')
-                idx, count = int(idx), int(count)
-                assert idx == i, f'expected index {i}, got={idx}'
-                field.add_token(tok, inc=count)
-                i += 1
-            if subword_mode:
-                # TODO: what happens with the reserved tokens ?
-                field.subword_enc = SubwordTextEncoder(subtoks=field.idx2tok)
-            return field
 
 
 class Example:
@@ -223,11 +89,29 @@ def subsequent_mask(size):
     return mask
 
 
+def sent_piece_train(model_type: str, vocab_size: int, model_prefix: str, files):
+    """
+    Train Sentence Piece Model
+    :param model_type: model type
+    :param vocab_size:
+    :param model_prefix:
+    :param files:
+    :return:
+    """
+    model_prefix = model_prefix.replace('.model', '')
+    import sentencepiece as spm
+    arg = f"--input={','.join(files)} --vocab_size={vocab_size} --model_prefix={model_prefix}" \
+          f" --model_type={model_type} --pad_id={PAD_TOK[1]} --bos_id={BOS_TOK[1]}" \
+          f" --eos_id={EOS_TOK[1]} --unk_id={UNK_TOK[1]}"
+    log.info(f"SPM: {arg}")
+    spm.SentencePieceTrainer.Train(arg)
+
+
 class Batch:
     """
     An object of this class holds a batch of examples
     """
-    pad_value = BLANK_TOK[1]
+    pad_value = PAD_TOK[1]
     bos_val = BOS_TOK[1]
     eos_val = EOS_TOK[1]
 

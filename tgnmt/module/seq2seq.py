@@ -8,19 +8,19 @@ from tgnmt.dataprep import Batch
 from tgnmt import TranslationExperiment as Experiment
 from tgnmt import device, log
 from tgnmt import my_tensor as tensor
-from tgnmt.dataprep import BatchIterable, BOS_TOK, BLANK_TOK, EOS_TOK
+from tgnmt.dataprep import BatchIterable, BOS_TOK, PAD_TOK, EOS_TOK
 from tgnmt import profile
 import gc
 
 
 BOS_TOK_IDX = BOS_TOK[1]
 EOS_TOK_IDX = EOS_TOK[1]
-BLANK_TOK_IDX = BLANK_TOK[1]
+PAD_TOK_IDX = PAD_TOK[1]
 
 
 class RNNEncoder(nn.Module):
 
-    padding_idx = BLANK_TOK_IDX
+    padding_idx = PAD_TOK_IDX
 
     def __init__(self, input_size, hidden_size, n_layers=2, dropout=0.4):
         super(RNNEncoder, self).__init__()
