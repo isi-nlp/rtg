@@ -385,7 +385,11 @@ class Trainer:
             args = exp.model_args
             assert args
             log.info(f"Creating model with args: {args}")
-            self.model, _ = EncoderDecoder.make_model(**args)
+            self.model, args = EncoderDecoder.make_model(**args)
+            if not exp.read_only:
+                exp.model_args = args
+                exp.persist_state()
+
             last_model, last_epoch = self.exp.get_last_saved_model()
             if last_model:
                 self.start_epoch = last_epoch + 1
@@ -455,12 +459,7 @@ class Trainer:
         self.model.train()  # Train mode
         for ep in range(self.start_epoch, num_epochs):
             log.info(f"Running epoch {ep+1}")
-            try:
-                loss = self.run_epoch(train_data)
-            except RuntimeError as e:
-                if 'out of memory' in str(e).lower():
-                    log_tensor_sizes()
-                raise e
+            loss = self.run_epoch(train_data)
             log.info(f"Finished epoch {ep+1}")
             self.exp.store_model(ep, self.model.state_dict(), loss, keep=keep_models)
             self.start_epoch += 1
