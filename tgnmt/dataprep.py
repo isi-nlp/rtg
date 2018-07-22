@@ -5,6 +5,8 @@ from tgnmt import log
 from . import my_tensor as tensor, device
 import math
 import random
+from collections import namedtuple
+from sentencepiece import SentencePieceProcessor, SentencePieceTrainer
 
 PAD_TOK = '<pad>', 0
 UNK_TOK = '<unk>', 1
@@ -20,14 +22,67 @@ SeqRecord = Tuple[List[Union[int, str]], List[Union[int, str]]]
 TokStream = Union[Iterator[Iterator[str]], Iterator[str]]
 
 
-class Example:
-    """
-    An object of this class holds an example in sequence to sequence dataset
-    """
+class Field(SentencePieceProcessor):
+    """A wrapper class for sentence piece trainer and processor"""
 
-    def __init__(self, x: List[int], y: List[int] = None):
-        self.x = x
-        self.y = y
+    def __init__(self, path):
+        super(Field, self).__init__()
+        assert self.load(path)
+
+    def encode_as_ids(self, text: str, add_bos=False, add_eos=False) -> List[int]:
+        ids = super(Field, self).encode_as_ids(text)
+        if add_bos and ids[0] != BOS_TOK[1]:
+            ids.insert(0, BOS_TOK[1])
+        if add_eos and ids[-1] != EOS_TOK[1]:
+            ids.append(BOS_TOK[1])
+        return ids
+
+    def decode_ids(self, ids: List[int], trunc_eos=False) -> str:
+        """
+        convert ids to text
+        :param ids:
+        :param trunc_eos: skip everything after first EOS token in sequence
+        :return:
+        """
+        if trunc_eos:
+            try:
+                ids = ids[:ids.index(EOS_TOK[1])]
+            except ValueError:
+                pass
+        return super(Field, self).decode_ids(ids)
+
+    def tokenize(self, text: str) -> List[str]:
+        return self.encode_as_pieces(text)
+
+    def detokenize(self, tokens: List[str]) -> str:
+        return ''.join(tokens).replace('▁', ' ').strip()
+
+    @staticmethod
+    def train(model_type: str, vocab_size: int, model_path: str, files: Iterator[str]):
+        """
+        Train Sentence Piece Model
+        :param model_type: sentence piece model type: {unigram, BPE, word, char}
+        :param vocab_size: target vocabulary size
+        :param model_path: where to store model
+        :param files: input files
+        :return:
+        """
+        model_prefix = model_path.replace('.model', '')
+        arg = f"--input={','.join(files)} --vocab_size={vocab_size} --model_prefix={model_prefix}" \
+              f" --model_type={model_type} --pad_id={PAD_TOK[1]} --bos_id={BOS_TOK[1]}" \
+              f" --eos_id={EOS_TOK[1]} --unk_id={UNK_TOK[1]}"
+        log.info(f"SPM: {arg}")
+        SentencePieceTrainer.Train(arg)
+        log.info("Training complete")
+        if not model_path.endswith('.model'):
+            model_path += '.model'
+        return Field(model_path)
+
+
+Example = namedtuple('Example', ['x', 'y'])
+"""
+An object of this class holds an example in sequence to sequence dataset
+"""
 
 
 class TSVData:
@@ -89,24 +144,6 @@ def subsequent_mask(size):
     return mask
 
 
-def sent_piece_train(model_type: str, vocab_size: int, model_prefix: str, files):
-    """
-    Train Sentence Piece Model
-    :param model_type: model type
-    :param vocab_size:
-    :param model_prefix:
-    :param files:
-    :return:
-    """
-    model_prefix = model_prefix.replace('.model', '')
-    import sentencepiece as spm
-    arg = f"--input={','.join(files)} --vocab_size={vocab_size} --model_prefix={model_prefix}" \
-          f" --model_type={model_type} --pad_id={PAD_TOK[1]} --bos_id={BOS_TOK[1]}" \
-          f" --eos_id={EOS_TOK[1]} --unk_id={UNK_TOK[1]}"
-    log.info(f"SPM: {arg}")
-    spm.SentencePieceTrainer.Train(arg)
-
-
 class Batch:
     """
     An object of this class holds a batch of examples
@@ -137,9 +174,11 @@ class Batch:
         self.x_mask = (self.x_seqs != self.pad_value).unsqueeze(1)
         first_y = batch[0].y
         if first_y is not None:
-            for ex in batch: # check and inser BOS to output seqs
+            for ex in batch:    # check and insert BOS to output seqs
                 if ex.y[0] != self.bos_val:
                     ex.y.insert(0, self.bos_val)
+                if ex.y[-1] != self.eos_val:
+                    ex.y.append(self.eos_val)
 
             self.y_len = tensor([len(e.y) for e in batch])  # Excluding either BOS or EOS tokens
             self.y_toks = self.y_len.sum().float().item()

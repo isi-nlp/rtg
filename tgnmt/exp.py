@@ -6,8 +6,7 @@ from typing import Optional, Dict, Iterator, List, Tuple
 import torch
 
 from tgnmt import log, load_conf
-from tgnmt.dataprep import RawRecord, SeqRecord, sent_piece_train
-import sentencepiece as spm
+from tgnmt.dataprep import RawRecord, SeqRecord, Field
 
 
 class TranslationExperiment:
@@ -19,8 +18,7 @@ class TranslationExperiment:
         self.data_dir = os.path.join(work_dir, 'data')
         self.model_dir = os.path.join(self.work_dir, 'models')
         self._config_file = os.path.join(self.work_dir, 'conf.yml')
-        self._spm_file = os.path.join(self.data_dir, 'sentpiece.model')
-        self._vocab_file = os.path.join(self.data_dir, 'vocab.txt')
+        self._shared_field_file = os.path.join(self.data_dir, 'sentpiece.shared.model')
         self.train_file = os.path.join(self.data_dir, 'train.tsv')
         self.valid_file = os.path.join(self.data_dir, 'valid.tsv')
 
@@ -31,10 +29,8 @@ class TranslationExperiment:
         if type(config) is str:
             config = load_conf(config)
         self.config = config if config else load_conf(self._config_file)
-        self.spm = None
-        if os.path.exists(self._spm_file):
-            self.spm = spm.SentencePieceProcessor()
-            self.spm.Load(self._spm_file)
+        if os.path.exists(self._shared_field_file):
+            self.shared_field = Field(self._shared_field_file)
 
     def store_config(self):
         with open(self._config_file, 'w', encoding='utf-8') as fp:
@@ -49,7 +45,7 @@ class TranslationExperiment:
         self.config['model_type'] = mod_type
 
     def has_prepared(self):
-        return self.spm and os.path.exists(self.train_file) and os.path.exists(self.valid_file)
+        return self.shared_field and os.path.exists(self.train_file) and os.path.exists(self.valid_file)
 
     def has_trained(self):
         return self.get_last_saved_model()[0] is not None
@@ -87,26 +83,22 @@ class TranslationExperiment:
         for val in [args.get('mono_src'), args.get('mono_tgt')]:
             if val:
                 files.extend(val)
-        sent_piece_train(self.config['pieces'], self.config['vocab_size'], self._spm_file, files)
-        self.spm = spm.SentencePieceProcessor()
-        self.spm.Load(self._spm_file)
+        self.shared_field = Field.train(self.config['pieces'], self.config['vocab_size'], self._shared_field_file, files)
 
         # create Piece IDs
         train_recs = self.read_raw_data(args['train_src'], args['train_tgt'], args['truncate'],
-                                        args['src_len'], args['tgt_len'], tokenizer=self.spm.EncodeAsIds)
+                                        args['src_len'], args['tgt_len'], tokenizer=self.src_vocab.encode_as_ids)
         self.write_tsv(train_recs, self.train_file)
         val_recs = self.read_raw_data(args['valid_src'], args['valid_tgt'], args['truncate'],
-                                      args['src_len'], args['tgt_len'], tokenizer=self.spm.EncodeAsIds)
+                                      args['src_len'], args['tgt_len'], tokenizer=self.tgt_vocab.encode_as_ids)
         self.write_tsv(val_recs, self.valid_file)
-
-        def piece_tokenizer(text): return self.spm.encode_as_pieces(text.encode())  # text should be converted to bytes
 
         # Redo again as Pieces
         train_recs = self.read_raw_data(args['train_src'], args['train_tgt'], args['truncate'],
-                                        args['src_len'], args['tgt_len'], tokenizer=piece_tokenizer)
+                                        args['src_len'], args['tgt_len'], tokenizer=self.src_vocab.tokenize)
         self.write_tsv(train_recs, self.train_file.replace('.tsv', '.pieces.tsv'))
         val_recs = self.read_raw_data(args['valid_src'], args['valid_tgt'], args['truncate'],
-                                      args['src_len'], args['tgt_len'], tokenizer=piece_tokenizer)
+                                      args['src_len'], args['tgt_len'], tokenizer=self.tgt_vocab.tokenize)
         self.write_tsv(val_recs, self.valid_file.replace('.tsv', '.pieces.tsv'))
 
         # update state on disk
@@ -118,7 +110,7 @@ class TranslationExperiment:
         if 'model_args' not in self.config:
             self.config['model_args'] = {}
         args = self.config['model_args']
-        args['src_vocab'] = args['tgt_vocab'] = len(self.spm)
+        args['src_vocab'] = args['tgt_vocab'] = len(self.shared_field)
         self.config['updated_at'] = datetime.now().isoformat()
         self.store_config()
 
@@ -171,3 +163,11 @@ class TranslationExperiment:
         set model args
         """
         self.config['model_args'] = model_args
+
+    @property
+    def src_vocab(self):
+        return self.shared_field
+
+    @property
+    def tgt_vocab(self):
+        return self.shared_field

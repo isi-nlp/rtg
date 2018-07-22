@@ -60,9 +60,8 @@ class Decoder:
         generators = {'t2t': T2TGenerator, 'rnn': RnnGenerator}
         factories = {'t2t': EncoderDecoder.make_model, 'rnn': Seq2Seq.make_model}
         if model is None:
-            mod_args = exp.get_model_args()
             factory = factories[exp.model_type]
-            model = factory(**mod_args)[0]
+            model = factory(**exp.model_args)[0]
             check_pt_file, _ = exp.get_last_saved_model()
             log.info(f" Restoring state from {check_pt_file}")
             model.load_state_dict(torch.load(check_pt_file))
@@ -230,20 +229,20 @@ class Decoder:
         return result
 
     def decode_sentence(self, line: str, max_len=20, prepared=False, **args) -> List[StrHypothesis]:
-        in_toks = line.strip().split()
+        line = line.strip()
         if prepared:
-            in_seq = [int(t) for t in in_toks]
+            in_seq = [int(t) for t in line.split()]
             if in_seq[0] != self.bos_val:
                 in_seq.insert(0, self.bos_val)
             if in_seq[-1] != self.eos_val:
                 in_seq.append(self.eos_val)
         else:
-            in_seq = self.exp.get_vocab('src').seq2idx(in_toks, add_bos=True, add_eos=True)
+            in_seq = self.exp.src_vocab.encode_as_ids(line, add_eos=True, add_bos=True)
         in_seqs = tensor(in_seq, dtype=torch.long).view(1, -1)
         in_lens = tensor([len(in_seq)], dtype=torch.long)
         if self.debug:
             greedy_score, greedy_out = self.greedy_decode(in_seqs, in_lens, max_len, **args)[0]
-            greedy_toks = self.exp.get_vocab('tgt').idx2seq(greedy_out, trunc_eos=True)
+            greedy_toks = self.exp.tgt_vocab.decode_ids(greedy_out, trunc_eos=True)
             greedy_out = ' '.join(greedy_toks)
             log.debug(f'Greedy : score: {greedy_score:.4f} :: {greedy_out}')
 
@@ -251,7 +250,7 @@ class Decoder:
         beams = beams[0]  # first sentence, the only one we passed to it as input
         result = []
         for i, (score, beam_toks) in enumerate(beams):
-            out = ' '.join(self.exp.get_vocab('tgt').idx2seq(beam_toks, trunc_eos=True))
+            out = ' '.join(self.exp.tgt_vocab.decode_ids(beam_toks, trunc_eos=True))
             if self.debug:
                 log.debug(f"Beam {i}: score:{score:.4f} :: {out}")
             result.append((score, out))
