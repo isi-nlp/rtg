@@ -6,3 +6,4 @@ dummy/
 __pycache__
 .ipynb_checkpoints
 tmp**
+.history*

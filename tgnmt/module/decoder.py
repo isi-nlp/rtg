@@ -99,7 +99,7 @@ class Decoder:
 
         result = []
         for i in range(batch_size):
-            result.append((scores[i].item(), ys[i, 1:]))
+            result.append((scores[i].item(), ys[i, 1:].tolist()))
         return result
 
     @staticmethod
@@ -225,7 +225,7 @@ class Decoder:
             for j in range(beam_size):
                 if len(result[-1]) == num_hyp:
                     continue
-                result[-1].append((scores[j].item(), beamed_ys[start+indices[j], 1:].squeeze()))
+                result[-1].append((scores[j].item(), beamed_ys[start+indices[j], 1:].squeeze().tolist()))
         return result
 
     def decode_sentence(self, line: str, max_len=20, prepared=False, **args) -> List[StrHypothesis]:
@@ -242,15 +242,14 @@ class Decoder:
         in_lens = tensor([len(in_seq)], dtype=torch.long)
         if self.debug:
             greedy_score, greedy_out = self.greedy_decode(in_seqs, in_lens, max_len, **args)[0]
-            greedy_toks = self.exp.tgt_vocab.decode_ids(greedy_out, trunc_eos=True)
-            greedy_out = ' '.join(greedy_toks)
+            greedy_out = self.exp.tgt_vocab.decode_ids(greedy_out, trunc_eos=True)
             log.debug(f'Greedy : score: {greedy_score:.4f} :: {greedy_out}')
 
         beams: List[List[Hypothesis]] = self.beam_decode(in_seqs, in_lens, max_len, **args)
         beams = beams[0]  # first sentence, the only one we passed to it as input
         result = []
         for i, (score, beam_toks) in enumerate(beams):
-            out = ' '.join(self.exp.tgt_vocab.decode_ids(beam_toks, trunc_eos=True))
+            out = self.exp.tgt_vocab.decode_ids(beam_toks, trunc_eos=True)
             if self.debug:
                 log.debug(f"Beam {i}: score:{score:.4f} :: {out}")
             result.append((score, out))

@@ -52,7 +52,7 @@ class Field(SentencePieceProcessor):
         return super(Field, self).decode_ids(ids)
 
     def tokenize(self, text: str) -> List[str]:
-        return self.encode_as_pieces(text)
+        return self.encode_as_pieces(text.encode())
 
     def detokenize(self, tokens: List[str]) -> str:
         return ''.join(tokens).replace('▁', ' ').strip()
