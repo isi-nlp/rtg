@@ -18,6 +18,8 @@ def parse_args():
                         help='Output File path. default is STDOUT')
     parser.add_argument("-bs", '--beam-size', type=int, default=5,
                         help='Beam size. beam_size=1 is greedy, higher beam is better approximation but expensive')
+    parser.add_argument("-ml", '--max-len', type=int, default=100,
+                        help='Maximum output sequence length')
     parser.add_argument("-nh", '--num-hyp', type=int, default=1,
                         help='Number of hypothesis to output. This should be smaller than beam_size')
     parser.add_argument("--prepared", dest="prepared", action='store_true',
