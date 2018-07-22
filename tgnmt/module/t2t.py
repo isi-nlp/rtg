@@ -455,11 +455,11 @@ class Trainer:
         elif num_epochs <= self.start_epoch:
             raise Exception(f'The model was already trained to {self.start_epoch} epochs. '
                             f'Please increase epoch or clear the existing models')
-        train_data = BatchIterable(self.exp.train_file, batch_size=batch_size)
+        train_data = BatchIterable(self.exp.train_file, batch_size=batch_size, shuffle=True)
         self.model.train()  # Train mode
         for ep in range(self.start_epoch, num_epochs):
             log.info(f"Running epoch {ep+1}")
-            loss = self.run_epoch(train_data)
+            loss = self.run_epoch(train_data, num_batches=train_data.num_batches)
             log.info(f"Finished epoch {ep+1}")
             self.exp.store_model(ep, self.model.state_dict(), loss, keep=keep_models)
             self.start_epoch += 1

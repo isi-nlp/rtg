@@ -121,7 +121,7 @@ class Decoder:
         :return: List of num_hyp Hypothesis for each sequence in the batch.
          Each hypothesis consists of score and a list of word indexes.
         """
-        """Implements beam decoding"""
+        # TODO: rewrite this, this function is a mess!
         # repeat beam size
         batch_size = x_seqs.size(0)
         assert batch_size == 1  # TODO: test large batches
