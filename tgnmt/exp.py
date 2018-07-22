@@ -29,8 +29,7 @@ class TranslationExperiment:
         if type(config) is str:
             config = load_conf(config)
         self.config = config if config else load_conf(self._config_file)
-        if os.path.exists(self._shared_field_file):
-            self.shared_field = Field(self._shared_field_file)
+        self.shared_field = Field(self._shared_field_file) if os.path.exists(self._shared_field_file) else None
 
     def store_config(self):
         with open(self._config_file, 'w', encoding='utf-8') as fp:
