@@ -12,14 +12,14 @@ from tgnmt.dataprep import BatchIterable, Batch
 from tgnmt.utils import log_tensor_sizes
 
 
-class EncoderDecoder(nn.Module):
+class T2TModel(nn.Module):
     """
     A standard Encoder-Decoder architecture. Base for this and many
     other models.
     """
 
     def __init__(self, encoder, decoder, src_embed, tgt_embed, generator):
-        super(EncoderDecoder, self).__init__()
+        super(T2TModel, self).__init__()
         self.encoder = encoder
         self.decoder = decoder
         self.src_embed = src_embed
@@ -56,7 +56,7 @@ class EncoderDecoder(nn.Module):
         src_emb = nn.Sequential(Embeddings(d_model, src_vocab), PositionalEncoding(d_model, dropout))
         tgt_emb = nn.Sequential(Embeddings(d_model, tgt_vocab), PositionalEncoding(d_model, dropout))
         generator = Generator(d_model, tgt_vocab)
-        model = EncoderDecoder(encoder, decoder, src_emb, tgt_emb, generator)
+        model = T2TModel(encoder, decoder, src_emb, tgt_emb, generator)
 
         # This was important from their code.
         # Initialize parameters with Glorot / fan_avg.
@@ -374,9 +374,9 @@ class SimpleLossCompute:
         return loss.item() * norm
 
 
-class Trainer:
+class T2TTrainer:
 
-    def __init__(self, exp: Experiment = None, model: EncoderDecoder=None, lr=0.0001):
+    def __init__(self, exp: Experiment = None, model: T2TModel=None, lr=0.0001):
         self.start_epoch = 0
         self.exp = exp
         if model:
@@ -385,7 +385,7 @@ class Trainer:
             args = exp.model_args
             assert args
             log.info(f"Creating model with args: {args}")
-            self.model, args = EncoderDecoder.make_model(**args)
+            self.model, args = T2TModel.make_model(**args)
             if not exp.read_only:
                 exp.model_args = args
                 exp.persist_state()
@@ -469,10 +469,10 @@ if __name__ == '__main__':
     from tgnmt.dummy import BatchIterable
     V = 14
     criterion = LabelSmoothing(size=V, padding_idx=Batch.pad_value, smoothing=0.1)
-    model, _ = EncoderDecoder.make_model(V, V, N=4, d_model=128, d_ff=256, h=4)
+    model, _ = T2TModel.make_model(V, V, N=4, d_model=128, d_ff=256, h=4)
     from tgnmt.module.decoder import Decoder
     exp = Experiment("work", config={'model_type': 't2t'}, read_only=True)
-    trainer = Trainer(exp=exp, model=model)
+    trainer = T2TTrainer(exp=exp, model=model)
 
     decr = Decoder.new(exp, model)
 

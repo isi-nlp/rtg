@@ -179,10 +179,10 @@ class AttnRNNDecoder(nn.Module):
         return output, hidden, attn_weights
 
 
-class Seq2Seq(nn.Module):
+class RNNModel(nn.Module):
 
     def __init__(self, src_vocab: int, tgt_vocab: int, model_dim=50):
-        super(Seq2Seq, self).__init__()
+        super(RNNModel, self).__init__()
         self.enc = RNNEncoder(src_vocab, model_dim, n_layers=1)
         self.dec = AttnRNNDecoder('general', model_dim, tgt_vocab, n_layers=1)
 
@@ -233,17 +233,17 @@ class Seq2Seq(nn.Module):
     @staticmethod
     def make_model(src_vocab: int, tgt_vocab: int, model_dim=50):
         args = {'src_vocab': src_vocab, 'tgt_vocab': tgt_vocab, 'model_dim': model_dim}
-        return Seq2Seq(src_vocab, tgt_vocab, model_dim=model_dim), args
+        return RNNModel(src_vocab, tgt_vocab, model_dim=model_dim), args
 
 
-class Trainer:
+class RNNTrainer:
 
     @profile
     def __init__(self, exp: Experiment, model=None, lr=0.0001):
         self.exp = exp
         self.start_epoch = 0
         if model is None:
-            model = Seq2Seq(**exp.model_args).to(device)
+            model = RNNModel(**exp.model_args).to(device)
             last_check_pt, last_epoch = self.exp.get_last_saved_model()
             if last_check_pt:
                 log.info(f"Resuming training from epoch:{self.start_epoch}, model={last_check_pt}")
@@ -252,8 +252,6 @@ class Trainer:
         log.info(f"Moving model to device = {device}")
         self.model = model.to(device=device)
         self.model.train()
-        del model           # this was on CPU, free that memory
-        gc.collect()        # should the GC cleanup CPU buffers after moving to GPU ?
         self.optimizer = optim.Adam(self.model.parameters(), lr=lr)
 
     @staticmethod
@@ -359,8 +357,8 @@ if __name__ == '__main__':
         #  first, just copy the numbers, i.e. y = x
         #  second, reverse the numbers y=(V + reserved - x)
         log.info(f"====== REVERSE={reverse}; VOCAB={vocab_size}======")
-        model = Seq2Seq.make_model(vocab_size, vocab_size)[0]
-        trainer = Trainer(exp, model=model)
+        model = RNNModel.make_model(vocab_size, vocab_size)[0]
+        trainer = RNNTrainer(exp, model=model)
         decoder = Decoder.new(exp, model)
         for ep in range(num_epoch):
             log.info(f"Running epoch {ep+1}")

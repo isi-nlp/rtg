@@ -4,8 +4,8 @@ import argparse
 from argparse import ArgumentDefaultsHelpFormatter as ArgFormatter
 
 from tgnmt import TranslationExperiment as Experiment
-from tgnmt.module.seq2seq import Trainer as Seq2SeqTrainer
-from tgnmt.module.t2t import Trainer as T2TTrainer
+from tgnmt.module.rnn import RNNTrainer as RNNTrainer
+from tgnmt.module.t2t import T2TTrainer
 from tgnmt.utils import log_tensor_sizes
 
 
@@ -36,7 +36,7 @@ def main():
         exp.model_type = mod_type
         exp.store_config()
 
-    trainer = {'t2t': T2TTrainer, 'rnn': Seq2SeqTrainer}[mod_type](exp)
+    trainer = {'t2t': T2TTrainer, 'rnn': RNNTrainer}[mod_type](exp)
     try:
         trainer.train(**args)
     except RuntimeError as e:

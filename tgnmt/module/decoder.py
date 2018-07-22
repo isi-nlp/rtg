@@ -2,8 +2,8 @@ import torch
 import torch.nn.functional as F
 from tgnmt import log, device, my_tensor as tensor, debug_mode
 from tgnmt.dataprep import PAD_TOK, BOS_TOK, EOS_TOK, subsequent_mask
-from tgnmt.module.t2t import EncoderDecoder
-from tgnmt.module.seq2seq import Seq2Seq
+from tgnmt.module.t2t import T2TModel
+from tgnmt.module.rnn import RNNModel
 from typing import List, Tuple
 from tgnmt import TranslationExperiment as Experiment
 
@@ -11,7 +11,7 @@ Hypothesis = Tuple[float, List[int]]
 StrHypothesis = Tuple[float, str]
 
 
-class RnnGenerator:
+class RNNGenerator:
 
     def __init__(self, model, x_seqs, x_lens):
         self.model = model
@@ -57,8 +57,8 @@ class Decoder:
 
     @classmethod
     def new(cls, exp: Experiment, model=None):
-        generators = {'t2t': T2TGenerator, 'rnn': RnnGenerator}
-        factories = {'t2t': EncoderDecoder.make_model, 'rnn': Seq2Seq.make_model}
+        generators = {'t2t': T2TGenerator, 'rnn': RNNGenerator}
+        factories = {'t2t': T2TModel.make_model, 'rnn': RNNModel.make_model}
         if model is None:
             factory = factories[exp.model_type]
             model = factory(**exp.model_args)[0]
