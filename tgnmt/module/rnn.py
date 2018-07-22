@@ -368,4 +368,4 @@ if __name__ == '__main__':
             log.info(f"Epoch {ep+1} finish. Loss = {loss:.4f}")
             model.eval()
             out = decoder.greedy_decode(x_seqs=test_x_seqs, x_lens=test_x_lens, max_len=9)[0]
-            log.info(f"Prediction: score:{out[0]:.4f} :: seq: {out[1].data}")
+            log.info(f"Prediction: score:{out[0]:.4f} :: seq: {out[1]}")

@@ -34,7 +34,7 @@ class BatchIterable:
         tgt = self.vocab_size + (self.n_reserved_toks - 1) - data if self.reverse else data
         tgt[0] = Batch.bos_val
         data[0] = Batch.bos_val
-        return Example(data, tgt)
+        return Example(data.tolist(), tgt.tolist())
 
     def __iter__(self):
         for i in range(self.num_batches):
