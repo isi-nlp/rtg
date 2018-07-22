@@ -49,3 +49,6 @@ def log_tensor_sizes(writer=log.info, min_size=1024):
     log.info("==== Tensors and memories === ")
     for i, l in enumerate(lines):
         writer(l)
+
+    total = sum(rec[0] for rec in sorted_stats)
+    log.info(f'Total Bytes by tensors  bigger than {min_size} is (approx):{total:,}')
