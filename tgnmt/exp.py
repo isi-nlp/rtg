@@ -99,12 +99,14 @@ class TranslationExperiment:
                                       args['src_len'], args['tgt_len'], tokenizer=self.spm.EncodeAsIds)
         self.write_tsv(val_recs, self.valid_file)
 
+        def piece_tokenizer(text): return self.spm.encode_as_pieces(text.encode())  # text should be converted to bytes
+
         # Redo again as Pieces
         train_recs = self.read_raw_data(args['train_src'], args['train_tgt'], args['truncate'],
-                                        args['src_len'], args['tgt_len'], tokenizer=self.spm.EncodeAsPieces)
+                                        args['src_len'], args['tgt_len'], tokenizer=piece_tokenizer)
         self.write_tsv(train_recs, self.train_file.replace('.tsv', '.pieces.tsv'))
         val_recs = self.read_raw_data(args['valid_src'], args['valid_tgt'], args['truncate'],
-                                      args['src_len'], args['tgt_len'], tokenizer=self.spm.EncodeAsIds)
+                                      args['src_len'], args['tgt_len'], tokenizer=piece_tokenizer)
         self.write_tsv(val_recs, self.valid_file.replace('.tsv', '.pieces.tsv'))
 
         # update state on disk
