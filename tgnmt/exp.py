@@ -115,8 +115,9 @@ class TranslationExperiment:
     def persist_state(self):
         """Writes state of current experiment to the disk"""
         assert not self.read_only
-        args = self.config.get('model_args', {})
-        self.config['model_args'] = args
+        if 'model_args' not in self.config:
+            self.config['model_args'] = {}
+        args = self.config['model_args']
         args['src_vocab'] = args['tgt_vocab'] = len(self.spm)
         self.config['updated_at'] = datetime.now().isoformat()
         self.store_config()
@@ -163,3 +164,10 @@ class TranslationExperiment:
         :return: args if exists or None otherwise
         """
         return self.config.get('model_args')
+
+    @model_args.setter
+    def model_args(self, model_args):
+        """
+        set model args
+        """
+        self.config['model_args'] = model_args
