@@ -45,7 +45,7 @@ class EncoderDecoder(nn.Module):
         # args for reconstruction of model
         args = {'src_vocab': src_vocab, 'tgt_vocab': tgt_vocab,
                 'N': N, 'd_model': d_model, 'd_ff': d_ff, 'h': h,
-                'drop_out': dropout}
+                'dropout': dropout}
         c = copy.deepcopy
         attn = MultiHeadedAttention(h, d_model)
         ff = PositionwiseFeedForward(d_model, d_ff, dropout)
