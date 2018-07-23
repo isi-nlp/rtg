@@ -9,6 +9,8 @@ from rtg import TranslationExperiment as Experiment
 from rtg import device, log
 from rtg import my_tensor as tensor
 from rtg.dataprep import BatchIterable, BOS_TOK, PAD_TOK, EOS_TOK
+from rtg.utils import Optims
+
 import gc
 
 BOS_TOK_IDX = BOS_TOK[1]
@@ -201,7 +203,7 @@ class RNNModel(nn.Module):
 
 class RNNTrainer:
 
-    def __init__(self, exp: Experiment, model=None, lr=0.0001):
+    def __init__(self, exp: Experiment, model=None, optim='ADAM', **optim_args):
         self.exp = exp
         self.start_epoch = 0
         if model is None:
@@ -212,11 +214,14 @@ class RNNTrainer:
                 self.start_epoch = last_epoch + 1
                 model.load_state_dict(torch.load(last_check_pt))
             exp.model_args = args
-            exp.persist_state()
         log.info(f"Moving model to device = {device}")
         self.model = model.to(device=device)
         self.model.train()
-        self.optimizer = optim.Adam(self.model.parameters(), lr=lr)
+        optim_args['lr'] = optim_args.get('lr', 0.001)
+        self.optimizer = Optims[optim].new(self.model.parameters(), **optim_args)
+        self.exp.optim_args = optim, optim_args
+        if not exp.read_only:
+            self.exp.persist_state()
 
     @staticmethod
     def sequence_mask(lengths, max_len):
@@ -267,8 +272,8 @@ class RNNTrainer:
 
         train_data = BatchIterable(self.exp.train_file, batch_size=batch_size, batch_first=False, shuffle=True)
         # val_data = BatchIterable(self.exp.valid_file, batch_size=batch_size, in_mem=True, batch_first=False)
-        keep_models = args.get('keep_models', 4)
-        if args.get('resume_train'):
+        keep_models = args.pop('keep_models', 4)
+        if args.pop('resume_train'):
             num_epochs += self.start_epoch
         elif num_epochs <= self.start_epoch:
             raise Exception(f'The model was already trained to {self.start_epoch} epochs. '
@@ -312,7 +317,7 @@ if __name__ == '__main__':
     from rtg.module.decoder import Decoder
 
     vocab_size = 25
-    exp = Experiment("work", config={'model_type': 'rnn'}, read_only=True)
+    exp = Experiment("tmp.work", config={'model_type': 'rnn'}, read_only=True)
     num_epoch = 20
     test_x_seqs = tensor([Batch.bos_val, 4, 5, 6, 7, 8, 9, 10, 11]).view(1, -1)
     test_x_lens = tensor([test_x_seqs.size(1)])

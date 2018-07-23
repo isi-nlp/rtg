@@ -33,7 +33,7 @@ class TranslationExperiment:
 
     def store_config(self):
         with open(self._config_file, 'w', encoding='utf-8') as fp:
-            return yaml.dump(self.config, fp)
+            return yaml.dump(self.config, fp, default_flow_style=False)
 
     @property
     def model_type(self) -> Optional[str]:
@@ -162,6 +162,26 @@ class TranslationExperiment:
         set model args
         """
         self.config['model_args'] = model_args
+
+    @property
+    def optim_args(self) -> Tuple[Optional[str], Dict]:
+        """
+        Gets optimizer args from file
+        :return: optimizer args if exists or None otherwise
+        """
+        opt_conf = self.config.get('optim')
+        if opt_conf:
+            return opt_conf.get('name'), opt_conf.get('args')
+        else:
+            return None, {}
+
+    @optim_args.setter
+    def optim_args(self, optim_args: Tuple[str, Dict]):
+        """
+        set optimizer args
+        """
+        name, args = optim_args
+        self.config['optim'] = {'name': name, 'args': args}
 
     @property
     def src_vocab(self):

@@ -6,7 +6,7 @@ from argparse import ArgumentDefaultsHelpFormatter as ArgFormatter
 from rtg import TranslationExperiment as Experiment
 from rtg.module.rnn import RNNTrainer as RNNTrainer
 from rtg.module.t2t import T2TTrainer
-from rtg.utils import log_tensor_sizes
+from rtg.utils import log_tensor_sizes, Optims
 
 
 def parse_args():
@@ -21,6 +21,10 @@ def parse_args():
     parser.add_argument("-bs", "--batch-size", help="Batch size", type=int, default=256)
     parser.add_argument("-km", "--keep-models", type=int, default=4,
                         help="Number of models to keep. Stores one model per epoch")
+    parser.add_argument("-op", "--optim", type=str, default='ADAM', choices=Optims.names(), help="Name of optimizer")
+    parser.add_argument("-oa", "--optim-args", type=str, default='lr=0.01',
+                        help="Comma separated key1=val1,key2=val2 args to optimizer. Example: lr=0.01 "
+                             "The arguments depends on the choice of --optim")
     return vars(parser.parse_args())
 
 
@@ -36,7 +40,13 @@ def main():
         exp.model_type = mod_type
         exp.store_config()
 
-    trainer = {'t2t': T2TTrainer, 'rnn': RNNTrainer}[mod_type](exp)
+    _, optim_args = exp.optim_args
+    if args.get('optim_args'):
+        # convert key1=val1,key2=val2 format to dictionary
+        pairs = [x.strip() for x in args.pop('optim_args').split(',')]
+        pairs = [pair.split('=') for pair in pairs if pair]
+        optim_args.update({k.strip(): float(v) for k, v in pairs})
+    trainer = {'t2t': T2TTrainer, 'rnn': RNNTrainer}[mod_type](exp, args.pop('optim'), optim_args)
     try:
         trainer.train(**args)
     except RuntimeError as e:
@@ -47,3 +57,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+

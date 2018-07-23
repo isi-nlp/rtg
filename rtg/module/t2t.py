@@ -9,7 +9,7 @@ from torch.autograd import Variable
 from tqdm import tqdm
 from rtg import device, log, TranslationExperiment as Experiment, debug_mode, my_tensor as tensor
 from rtg.dataprep import BatchIterable, Batch
-from rtg.utils import log_tensor_sizes
+from rtg.utils import log_tensor_sizes, Optims
 
 
 class T2TModel(nn.Module):
@@ -380,7 +380,7 @@ class SimpleLossCompute:
 
 class T2TTrainer:
 
-    def __init__(self, exp: Experiment = None, model: T2TModel = None, lr=0.0001):
+    def __init__(self, exp: Experiment = None, model: T2TModel = None, optim='ADAM', **optim_args):
         self.start_epoch = 0
         self.exp = exp
         if model:
@@ -390,9 +390,7 @@ class T2TTrainer:
             assert args
             log.info(f"Creating model with args: {args}")
             self.model, args = T2TModel.make_model(**args)
-            if not exp.read_only:
-                exp.model_args = args
-                exp.persist_state()
+            exp.model_args = args
 
             last_model, last_epoch = self.exp.get_last_saved_model()
             if last_model:
@@ -400,11 +398,19 @@ class T2TTrainer:
                 log.info(f"Resuming training from epoch:{self.start_epoch}, model={last_model}")
                 self.model.load_state_dict(torch.load(last_model))
         self.model = self.model.to(device)
-        adam_opt = torch.optim.Adam(self.model.parameters(), lr=lr, betas=(0.9, 0.98), eps=1e-9)
-        noam_opt = NoamOpt(self.model.src_embed[0].d_model, 2, 4000, adam_opt)
+        # making optimizer
+        optim_args['lr'] = optim_args.get('lr', 0.001)
+        optim_args['betas'] = optim_args.get('betas', [0.9, 0.98])
+        optim_args['eps'] = optim_args.get('eps', 1e-9)
+
+        inner_opt = Optims[optim].new(self.model.parameters(), **optim_args)
+        noam_opt = NoamOpt(self.model.src_embed[0].d_model, 2, 4000, inner_opt)
 
         criterion = LabelSmoothing(size=self.model.tgt_vocab, padding_idx=0, smoothing=0.1)
         self.loss_func = SimpleLossCompute(self.model.generator, criterion, noam_opt)
+        self.exp.optim_args = optim, optim_args
+        if not self.exp.read_only:
+            self.exp.persist_state()
 
     def run_epoch(self, data_iter: Iterator[Batch], num_batches=None, print_every=30):
         "Standard Training and Logging Function"
@@ -485,7 +491,6 @@ if __name__ == '__main__':
     assert 2 == Batch.bos_val
     src = tensor([[2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
                   [2, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4]])
-
     src_lens = tensor(src.size(1))
 
 
