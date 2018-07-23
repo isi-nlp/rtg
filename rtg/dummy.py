@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # Generates dummy data for testing
-from tgnmt.dataprep import Batch, Example
+from rtg.dataprep import Batch, Example
 import numpy as np
 
 

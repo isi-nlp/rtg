@@ -1,5 +1,5 @@
 import gc
-from tgnmt import log
+from rtg import log
 import torch
 from functools import reduce
 import operator as op

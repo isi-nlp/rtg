@@ -3,12 +3,12 @@ import argparse
 import sys
 from argparse import ArgumentDefaultsHelpFormatter as ArgFormatter
 
-from tgnmt import TranslationExperiment as Experiment
-from tgnmt.module.decoder import Decoder
+from rtg import TranslationExperiment as Experiment
+from rtg.module.decoder import Decoder
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(prog="tgnmt.decode", description="Decode using NMT model",
+    parser = argparse.ArgumentParser(prog="rtg.decode", description="Decode using NMT model",
                                      formatter_class=ArgFormatter)
     parser.add_argument("work_dir", help="Working directory", type=str)
 

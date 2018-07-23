@@ -1,7 +1,7 @@
 import os
 from typing import List, Iterator, Tuple, Union
 import torch
-from tgnmt import log
+from rtg import log
 from . import my_tensor as tensor, device
 import math
 import random

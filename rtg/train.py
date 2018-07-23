@@ -3,14 +3,14 @@
 import argparse
 from argparse import ArgumentDefaultsHelpFormatter as ArgFormatter
 
-from tgnmt import TranslationExperiment as Experiment
-from tgnmt.module.rnn import RNNTrainer as RNNTrainer
-from tgnmt.module.t2t import T2TTrainer
-from tgnmt.utils import log_tensor_sizes
+from rtg import TranslationExperiment as Experiment
+from rtg.module.rnn import RNNTrainer as RNNTrainer
+from rtg.module.t2t import T2TTrainer
+from rtg.utils import log_tensor_sizes
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(prog="tgnmt.train", description="Train NMT model",
+    parser = argparse.ArgumentParser(prog="rtg.train", description="Train NMT model",
                                      formatter_class=ArgFormatter)
     parser.add_argument("work_dir", help="Working directory", type=str)
     parser.add_argument('-mt', '--mod-type', default='t2t', choices=['rnn', 't2t'],

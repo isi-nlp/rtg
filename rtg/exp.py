@@ -5,8 +5,8 @@ from datetime import datetime
 from typing import Optional, Dict, Iterator, List, Tuple
 import torch
 
-from tgnmt import log, load_conf
-from tgnmt.dataprep import RawRecord, SeqRecord, Field
+from rtg import log, load_conf
+from rtg.dataprep import RawRecord, SeqRecord, Field
 
 
 class TranslationExperiment:

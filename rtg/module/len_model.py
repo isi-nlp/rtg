@@ -4,17 +4,17 @@ import torch.optim as optim
 import tqdm
 from tqdm import tqdm
 
-from tgnmt import TranslationExperiment as Experiment
-from tgnmt import device, log
-from tgnmt import my_tensor as tensor
-from tgnmt.dataprep import BatchIterable
+from rtg import TranslationExperiment as Experiment
+from rtg import device, log
+from rtg import my_tensor as tensor
+from rtg.dataprep import BatchIterable
 
 import torch
 import torch.nn as nn
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
-from tgnmt import device
-from tgnmt.dataprep import Batch
+from rtg import device
+from rtg.dataprep import Batch
 
 
 class LSTMEncoder(nn.Module):

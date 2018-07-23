@@ -1,10 +1,11 @@
-# Yet Another NMT
+# RTG
 
-Yet Another Neural Machine Translation toolkit based on pytorch.
->  **`tgnmt`** is a placeholder. I will rename it to a better presentable name once I have it.
+RTG is a Neural Machine Translation toolkit based on pytorch.
+RTG stands for Reader-Translator-Generator when it is noun, and read-translate-generate when it is a verb.
+This toolkit is meant for MT/NLG/NLU research.
+<small>NOTE: It has no relation to the [regular tree grammar](https://en.wikipedia.org/wiki/Regular_tree_grammar))</small>
 
-
-### Features working  :
+### What is working  :
  + [Transformer aka Tensor2Tensor or "Attention is all you need"](https://arxiv.org/abs/1706.03762)
  + [RNN based Encoder-Decoder](https://papers.nips.cc/paper/5346-sequence-to-sequence-learning-with-neural-networks.pdf) with [Attention](https://nlp.stanford.edu/pubs/emnlp15_attn.pdf)
  + [sentencepiece](https://github.com/google/sentencepiece) is under the hood
@@ -17,14 +18,18 @@ Yet Another Neural Machine Translation toolkit based on pytorch.
 
 ### TODO :
  + Multi GPU Parallelism
- + Pip installable
+ + Pip installable with proper versions management
 
+
+### Known Issues
+ + Large Transformer (aka t2t) models cannot be fit into single GPU at the moment, some more simplifications and 
+ optimizations are coming on the way.   
 
 ### Setup
 
 ```bash
-git clone git@github.com:thammegowda/tgnmt.git
-cd tgnmt                # go to the code
+git clone git@github.com:thammegowda/rtg.git
+cd rtg                # go to the code
 export PYTHONPATH=$PWD  # Add directory to PYTHONPATH
 ```
 
@@ -45,7 +50,7 @@ The workflow is of three steps: 1. prepare experiment, 2. train models, 3. decod
 ### Step 1. Prepare an experiment
 
 ```bash
-python -m tgnmt.prep work example.conf.yml
+python -m rtg.prep work example.conf.yml
 ```
 Where `work` is the diretcory to setup experiment, and `example.conf.yml` shall have these configs
 ```yaml
@@ -90,8 +95,8 @@ work/
 ### Step 2. Train
 
 ```
-$ python -m tgnmt.train -h
-usage: tgnmt.train [-h] [-mt {rnn,t2t}] [-ne NUM_EPOCHS] [-re]
+$ python -m rtg.train -h
+usage: rtg.train [-h] [-mt {rnn,t2t}] [-ne NUM_EPOCHS] [-re]
                    [-bs BATCH_SIZE] [-km KEEP_MODELS]
                    work_dir
 
@@ -119,17 +124,17 @@ Example:
 
 ```bash
 # for rnn
-python -m tgnmt.train work -mt rnn -ne 10 -bs 256
+python -m rtg.train work -mt rnn -ne 10 -bs 512
 # for transformer
-python -m tgnmt.train work -mt t2t -ne 10 -bs 256
+python -m rtg.train work -mt t2t -ne 10 -bs 128
 ```
 This step will store last `k` models to `work/models` directory.
 
 ### Step 3. Decode
 
 ```
-$ python -m tgnmt.decode -h
-usage: tgnmt.decode [-h] [-if INPUT] [-of OUTPUT] work_dir
+$ python -m rtg.decode -h
+usage: rtg.decode [-h] [-if INPUT] [-of OUTPUT] work_dir
 
 Decode using NMT model
 
@@ -147,16 +152,21 @@ optional arguments:
                         <_io.TextIOWrapper name='<stdout>' mode='w'
                         encoding='UTF-8'>)
 ```
-Exampple:
+Example:
 
 ```bash
-$ cat input.tok.txt | python -m tgnmt.decode work > output.tok.txt
+$ cat input.tok.txt | python -m rtg.decode work > output.tok.txt
 ```
 This step will pick the most recent model from `work/models` directory and translates the input.
 
 
-
 ---
 ### Authors:
-[See Here](https://github.com/thammegowda/tgnmt/graphs/contributors)
+[See Here](https://github.com/thammegowda/rtg/graphs/contributors)
+
+
+### Credits / Thanks
++ OpenNMT and the Harvard NLP team for [Annotated transformer](http://nlp.seas.harvard.edu/2018/04/03/attention.html), I learned a lot from their work
++ [My team at USC ISI](https://www.isi.edu/research_groups/nlg/people) for everything else
+
 

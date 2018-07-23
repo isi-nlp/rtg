@@ -3,13 +3,13 @@
 import argparse
 from argparse import ArgumentDefaultsHelpFormatter as ArgFormatter
 
-from tgnmt import TranslationExperiment as Experiment
+from rtg import TranslationExperiment as Experiment
 
 piece_types = ('unigram', 'bpe', 'char', 'word')
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(prog="tgnmt.prep", description="prepare NMT experiment",
+    parser = argparse.ArgumentParser(prog="rtg.prep", description="prepare NMT experiment",
                                      formatter_class=ArgFormatter)
     parser.add_argument("work_dir", help="Working directory", type=str)
     parser.add_argument("conf_file", help="Config File", type=str)

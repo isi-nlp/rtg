@@ -4,11 +4,11 @@ import torch.nn.functional as F
 import torch.optim as optim
 from tqdm import tqdm
 
-from tgnmt.dataprep import Batch
-from tgnmt import TranslationExperiment as Experiment
-from tgnmt import device, log
-from tgnmt import my_tensor as tensor
-from tgnmt.dataprep import BatchIterable, BOS_TOK, PAD_TOK, EOS_TOK
+from rtg.dataprep import Batch
+from rtg import TranslationExperiment as Experiment
+from rtg import device, log
+from rtg import my_tensor as tensor
+from rtg.dataprep import BatchIterable, BOS_TOK, PAD_TOK, EOS_TOK
 import gc
 
 BOS_TOK_IDX = BOS_TOK[1]
@@ -308,8 +308,8 @@ class RNNTrainer:
 
 
 if __name__ == '__main__':
-    from tgnmt.dummy import BatchIterable
-    from tgnmt.module.decoder import Decoder
+    from rtg.dummy import BatchIterable
+    from rtg.module.decoder import Decoder
 
     vocab_size = 25
     exp = Experiment("work", config={'model_type': 'rnn'}, read_only=True)

@@ -7,9 +7,9 @@ import torch.nn.functional as F
 import math, copy, time
 from torch.autograd import Variable
 from tqdm import tqdm
-from tgnmt import device, log, TranslationExperiment as Experiment, debug_mode, my_tensor as tensor
-from tgnmt.dataprep import BatchIterable, Batch
-from tgnmt.utils import log_tensor_sizes
+from rtg import device, log, TranslationExperiment as Experiment, debug_mode, my_tensor as tensor
+from rtg.dataprep import BatchIterable, Batch
+from rtg.utils import log_tensor_sizes
 
 
 class T2TModel(nn.Module):
@@ -470,12 +470,12 @@ class T2TTrainer:
 
 
 if __name__ == '__main__':
-    from tgnmt.dummy import BatchIterable
+    from rtg.dummy import BatchIterable
 
     V = 14
     criterion = LabelSmoothing(size=V, padding_idx=Batch.pad_value, smoothing=0.1)
     model, _ = T2TModel.make_model(V, V, n_layers=4, hid_size=128, ff_size=256, n_heads=4)
-    from tgnmt.module.decoder import Decoder
+    from rtg.module.decoder import Decoder
 
     exp = Experiment("work", config={'model_type': 't2t'}, read_only=True)
     trainer = T2TTrainer(exp=exp, model=model)

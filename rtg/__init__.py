@@ -38,8 +38,8 @@ def load_conf(inp):
         return yaml.load(fh)
 
 
-from tgnmt.dataprep import BatchIterable, Batch
-from tgnmt.exp import TranslationExperiment
-from tgnmt.module import rnn, t2t, decoder
+from rtg.dataprep import BatchIterable, Batch
+from rtg.exp import TranslationExperiment
+from rtg.module import rnn, t2t, decoder
 
 

@@ -1,11 +1,11 @@
 import torch
 import torch.nn.functional as F
-from tgnmt import log, device, my_tensor as tensor, debug_mode
-from tgnmt.dataprep import PAD_TOK, BOS_TOK, EOS_TOK, subsequent_mask
-from tgnmt.module.t2t import T2TModel
-from tgnmt.module.rnn import RNNModel
+from rtg import log, device, my_tensor as tensor, debug_mode
+from rtg.dataprep import PAD_TOK, BOS_TOK, EOS_TOK, subsequent_mask
+from rtg.module.t2t import T2TModel
+from rtg.module.rnn import RNNModel
 from typing import List, Tuple
-from tgnmt import TranslationExperiment as Experiment
+from rtg import TranslationExperiment as Experiment
 
 Hypothesis = Tuple[float, List[int]]
 StrHypothesis = Tuple[float, str]
