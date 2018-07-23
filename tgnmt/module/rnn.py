@@ -9,9 +9,7 @@ from tgnmt import TranslationExperiment as Experiment
 from tgnmt import device, log
 from tgnmt import my_tensor as tensor
 from tgnmt.dataprep import BatchIterable, BOS_TOK, PAD_TOK, EOS_TOK
-from tgnmt import profile
 import gc
-
 
 BOS_TOK_IDX = BOS_TOK[1]
 EOS_TOK_IDX = EOS_TOK[1]
@@ -19,93 +17,41 @@ PAD_TOK_IDX = PAD_TOK[1]
 
 
 class RNNEncoder(nn.Module):
-
     padding_idx = PAD_TOK_IDX
 
-    def __init__(self, input_size, hidden_size, n_layers=2, dropout=0.4):
+    def __init__(self, src_vocab, hid_size: int, emb_size: int, n_layers: int,
+                 dropout: float, rnn_type: str):
         super(RNNEncoder, self).__init__()
-
-        self.input_size = input_size
-        self.hidden_size = hidden_size
+        self.src_vocab = src_vocab
+        self.hid_size = hid_size
         self.n_layers = n_layers
-        self.dropout = dropout
-
-        self.embedding = nn.Embedding(input_size, hidden_size, padding_idx=self.padding_idx)
-        self.gru = nn.GRU(hidden_size, hidden_size, n_layers, dropout=self.dropout, bidirectional=True)
+        self.emb_size = emb_size
+        self.dropout_rate = dropout
+        self.rnn_type = rnn_type
+        self.embedding = nn.Embedding(src_vocab, emb_size, padding_idx=self.padding_idx)
+        self.rnn = {'lstm': nn.LSTM, 'gru': nn.GRU}[rnn_type.lower()](
+            emb_size, hid_size, n_layers, dropout=self.dropout_rate, bidirectional=True)
 
     def forward(self, input_seqs, input_lengths, hidden=None):
         # Note: we run this all at once (over multiple batches of multiple sequences)
         embedded = self.embedding(input_seqs)
         packed = torch.nn.utils.rnn.pack_padded_sequence(embedded, input_lengths)
-        outputs, hidden = self.gru(packed, hidden)
+        outputs, hidden = self.rnn(packed, hidden)
         outputs, output_lengths = torch.nn.utils.rnn.pad_packed_sequence(outputs)  # unpack (back to padded)
-        outputs = outputs[:, :, :self.hidden_size] + outputs[:, :, self.hidden_size:]  # Sum bidirectional outputs
+        outputs = outputs[:, :, :self.hid_size] + outputs[:, :, self.hid_size:]  # Sum bidirectional outputs
         return outputs, hidden
-
-
-class Attn(nn.Module):
-    """
-     FIXME: NOTE: this is very inefficient
-    Attention model
-    Taken from https://github.com/spro/practical-pytorch/blob/master/seq2seq-translation/seq2seq-translation-batched.ipynb
-
-    """
-    def __init__(self, method, hidden_size):
-        super(Attn, self).__init__()
-
-        self.method = method
-        self.hidden_size = hidden_size
-
-        if self.method == 'general':
-            self.attn = nn.Linear(self.hidden_size, hidden_size)
-
-        elif self.method == 'concat':
-            self.attn = nn.Linear(self.hidden_size * 2, hidden_size)
-            self.v = nn.Parameter(torch.FloatTensor(1, hidden_size, device=device))
-
-    @profile  # Attn
-    def forward(self, hidden, encoder_outputs):
-        max_len = encoder_outputs.size(0)
-        this_batch_size = encoder_outputs.size(1)
-        # Create variable to store attention energies
-        attn_energies = torch.zeros(this_batch_size, max_len, device=device)  # B x S
-
-        # For each batch of encoder outputs
-        for b in range(this_batch_size):
-            # Calculate energy for each encoder output
-            for i in range(max_len):
-                attn_energies[b, i] = self.score(hidden[b], encoder_outputs[i, b])
-
-        # Normalize energies to weights in range 0 to 1, resize to 1 x B x S
-        return F.softmax(attn_energies, dim=1).unsqueeze(1)
-
-    def score(self, hidden, encoder_output):
-        if self.method == 'dot':
-            energy = hidden.dot(encoder_output)
-            return energy
-
-        elif self.method == 'general':
-            energy = self.attn(encoder_output)
-            energy = hidden.dot(energy)
-            return energy
-
-        elif self.method == 'concat':
-            energy = self.attn(torch.cat((hidden, encoder_output), 1))
-            energy = self.v.dot(energy)
-            return energy
 
 
 class GeneralAttn(nn.Module):  # General Attention optimized for batch
     """
     Attention mode
     """
-    def __init__(self, hidden_size):
+
+    def __init__(self, hid_size):
         super(GeneralAttn, self).__init__()
+        self.hid_size = hid_size
+        self.attn = nn.Linear(self.hid_size, hid_size)
 
-        self.hidden_size = hidden_size
-        self.attn = nn.Linear(self.hidden_size, hidden_size)
-
-    @profile  # General Attn
     def forward(self, hidden, encoder_outs):
         # hidden      : [B, D]
         # encoder_out : [S, B, D]
@@ -122,31 +68,24 @@ class GeneralAttn(nn.Module):  # General Attention optimized for batch
 
 
 class AttnRNNDecoder(nn.Module):
-    def __init__(self, attn_model, hidden_size, output_size, n_layers=2, dropout=0.1, padding_idx=Batch.pad_value):
+    def __init__(self, tgt_vocab, hid_size: int, emb_size: int, n_layers: int, dropout: float, rnn_type: str,
+                 padding_idx=Batch.pad_value):
         super(AttnRNNDecoder, self).__init__()
-
         # Keep for reference
-        self.attn_model = attn_model
-        self.hidden_size = hidden_size
-        self.output_size = output_size
+        self.hidden_size = hid_size
+        self.output_size = tgt_vocab
         self.n_layers = n_layers
-        self.dropout = dropout
+        self.dropout_rate = dropout
 
         # Define layers
-        self.embedding = nn.Embedding(output_size, hidden_size, padding_idx=padding_idx)
+        self.embedding = nn.Embedding(tgt_vocab, hid_size, padding_idx=padding_idx)
         self.embedding_dropout = nn.Dropout(dropout)
-        self.gru = nn.GRU(hidden_size, hidden_size, n_layers, dropout=dropout)
-        self.concat = nn.Linear(hidden_size * 2, hidden_size)
-        self.out = nn.Linear(hidden_size, output_size)
+        self.rnn = {'lstm': nn.LSTM, 'gru': nn.GRU}[rnn_type.lower()](
+            emb_size, hid_size, n_layers, dropout=self.dropout_rate, bidirectional=False)
+        self.concat = nn.Linear(hid_size * 2, hid_size)
+        self.out = nn.Linear(hid_size, tgt_vocab)
+        self.attn = GeneralAttn(hid_size)
 
-        # Choose attention model
-        if attn_model != 'none':
-            if attn_model == 'general':
-                self.attn = GeneralAttn(hidden_size)
-            else:
-                self.attn = Attn(attn_model, hidden_size)
-
-    @profile            # AttnRNNDecoder
     def forward(self, input_seq, last_hidden, encoder_outputs):
         # Note: we run this one step at a time
 
@@ -157,7 +96,7 @@ class AttnRNNDecoder(nn.Module):
         embedded = embedded.view(1, batch_size, self.hidden_size)  # S=1 x B x N
 
         # Get current hidden state from input word and last hidden state
-        rnn_output, hidden = self.gru(embedded, last_hidden)
+        rnn_output, hidden = self.rnn(embedded, last_hidden)
         # [B x N ] <- [S=1 x B x N]
         rnn_output = rnn_output.squeeze(0)
 
@@ -181,19 +120,34 @@ class AttnRNNDecoder(nn.Module):
 
 class RNNModel(nn.Module):
 
-    def __init__(self, src_vocab: int, tgt_vocab: int, model_dim=50):
+    def __init__(self, src_vocab: int, tgt_vocab: int, emb_size: int, hid_size: int, enc_layers: int,
+                 dec_layers: int, rnn_type: str, dropout: float):
         super(RNNModel, self).__init__()
-        self.enc = RNNEncoder(src_vocab, model_dim, n_layers=1)
-        self.dec = AttnRNNDecoder('general', model_dim, tgt_vocab, n_layers=1)
+        self.enc = RNNEncoder(src_vocab, hid_size=hid_size, emb_size=emb_size, n_layers=enc_layers,
+                              dropout=dropout, rnn_type=rnn_type)
+        self.dec = AttnRNNDecoder(tgt_vocab, hid_size=hid_size, emb_size=emb_size, n_layers=dec_layers,
+                                  dropout=dropout, rnn_type=rnn_type)
+        self.rnn_type = rnn_type
+        self.hid_size = hid_size
 
-    @profile    # Seq2Seq
-    def forward(self, batch: Batch, k=1):
+    def enc_to_dec_state(self, enc_hids):
+        # Note: Considering the below two mis matches, we need to carefully pass the encoder state to decoder
+        # 1. Encoder is Bidirectional, but decoder is unidirectional, so encoder's hidden state is 2x the decoder state
+        # 2. GRU has only the `h` tensor, but LSTM has both `h` and `c` tensors
+        if self.rnn_type.lower() == 'gru':
+            return enc_hids[:self.dec.n_layers]
+        elif self.rnn_type == 'lstm':
+            return enc_hids[0][:self.dec.n_layers], enc_hids[1][:self.dec.n_layers]
+        # TODO: Just picking the first few rows may not be the best flow of states
+
+    def forward(self, batch: Batch):
         assert not batch.batch_first
         enc_outs, enc_hids = self.enc(batch.x_seqs, batch.x_len, None)
 
         batch_size = len(batch)
         dec_inps = tensor([BOS_TOK_IDX] * batch_size, dtype=torch.long)
-        dec_hids = enc_hids[:self.dec.n_layers]
+        dec_hids = self.enc_to_dec_state(enc_hids)
+
         """
         all_dec_outs = torch.zeros((batch.max_y_len, len(batch), self.dec.output_size), device=device)
 
@@ -223,32 +177,42 @@ class RNNModel(nn.Module):
             dec_outs, dec_hids, dec_attn = self.dec(dec_inps, dec_hids, enc_outs)
             decoder_lastt = dec_outs  # last time stamp of decoder
             word_probs = F.log_softmax(decoder_lastt, dim=-1)
-            expct_word_idx = batch.y_seqs[t]   # expected output;; log probability for these indices should be high
+            expct_word_idx = batch.y_seqs[t]  # expected output;; log probability for these indices should be high
             expct_word_log_probs = word_probs.gather(dim=1, index=expct_word_idx.view(batch_size, 1))
             outp_probs[t] = expct_word_log_probs.squeeze()
-            dec_inps = expct_word_idx          # Next input is current target
-            del dec_attn, dec_outs        # free memory
+            dec_inps = expct_word_idx  # Next input is current target
+            del dec_attn, dec_outs  # free memory
         return outp_probs
 
     @staticmethod
-    def make_model(src_vocab: int, tgt_vocab: int, model_dim=50):
-        args = {'src_vocab': src_vocab, 'tgt_vocab': tgt_vocab, 'model_dim': model_dim}
-        return RNNModel(src_vocab, tgt_vocab, model_dim=model_dim), args
+    def make_model(src_vocab: int, tgt_vocab: int, emb_size: int=300, hid_size: int=300,
+                   enc_layers: int=2, dec_layers: int=2, dropout: float=0.4, rnn_type: str='lstm'):
+        args = {'src_vocab': src_vocab,
+                'tgt_vocab': tgt_vocab,
+                'emb_size': emb_size,
+                'hid_size': hid_size,
+                'enc_layers': enc_layers,
+                'dec_layers': dec_layers,
+                'rnn_type': rnn_type
+                }
+        return RNNModel(src_vocab, tgt_vocab, emb_size=emb_size, hid_size=hid_size, enc_layers=enc_layers,
+                        dec_layers=dec_layers, rnn_type=rnn_type, dropout=dropout), args
 
 
 class RNNTrainer:
 
-    @profile
     def __init__(self, exp: Experiment, model=None, lr=0.0001):
         self.exp = exp
         self.start_epoch = 0
         if model is None:
-            model = RNNModel(**exp.model_args).to(device)
+            model, args = RNNModel.make_model(**exp.model_args)
             last_check_pt, last_epoch = self.exp.get_last_saved_model()
             if last_check_pt:
                 log.info(f"Resuming training from epoch:{self.start_epoch}, model={last_check_pt}")
                 self.start_epoch = last_epoch + 1
                 model.load_state_dict(torch.load(last_check_pt))
+            exp.model_args = args
+            exp.persist_state()
         log.info(f"Moving model to device = {device}")
         self.model = model.to(device=device)
         self.model.train()
@@ -261,7 +225,7 @@ class RNNTrainer:
         seq_range_expand = torch.arange(0, max_len, dtype=torch.long, device=device).expand(batch_size, max_len)
         # make lengths vectors to [B x 1] and duplicate columns to [B, S]
         seq_length_expand = lengths.unsqueeze(1).expand_as(seq_range_expand)
-        return seq_range_expand < seq_length_expand     # 0 if padding, 1 otherwise
+        return seq_range_expand < seq_length_expand  # 0 if padding, 1 otherwise
 
     @classmethod
     def masked_cross_entropy(cls, logits, target, lengths):
@@ -346,6 +310,7 @@ class RNNTrainer:
 if __name__ == '__main__':
     from tgnmt.dummy import BatchIterable
     from tgnmt.module.decoder import Decoder
+
     vocab_size = 25
     exp = Experiment("work", config={'model_type': 'rnn'}, read_only=True)
     num_epoch = 20
@@ -357,7 +322,8 @@ if __name__ == '__main__':
         #  first, just copy the numbers, i.e. y = x
         #  second, reverse the numbers y=(V + reserved - x)
         log.info(f"====== REVERSE={reverse}; VOCAB={vocab_size}======")
-        model = RNNModel.make_model(vocab_size, vocab_size)[0]
+        model, args = RNNModel.make_model(vocab_size, vocab_size, enc_layers=2, dec_layers=2, rnn_type='lstm')
+        log.info(f"Model args:: {args}")
         trainer = RNNTrainer(exp, model=model)
         decoder = Decoder.new(exp, model)
         for ep in range(num_epoch):

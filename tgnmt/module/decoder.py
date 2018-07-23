@@ -20,7 +20,7 @@ class RNNGenerator:
         self.enc_outs, enc_hids = model.enc(x_seqs, x_lens, None)
 
         # [S, B, d]
-        self.dec_hids = enc_hids[:model.dec.n_layers]
+        self.dec_hids = model.enc_to_dec_state(enc_hids)
         self.dec_attn = None
 
     def generate_next(self, past_ys):
