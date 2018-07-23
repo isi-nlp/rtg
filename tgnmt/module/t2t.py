@@ -38,24 +38,28 @@ class T2TModel(nn.Module):
         return self.decoder(self.tgt_embed(tgt), memory, src_mask, tgt_mask)
 
     @staticmethod
-    def make_model(src_vocab, tgt_vocab, N=6,
-                   d_model=512, d_ff=2048, h=8, dropout=0.1):
+    def make_model(src_vocab, tgt_vocab, n_layers=4, hid_size=512, ff_size=512, n_heads=4, dropout=0.1):
         "Helper: Construct a model from hyperparameters."
 
         # args for reconstruction of model
-        args = {'src_vocab': src_vocab, 'tgt_vocab': tgt_vocab,
-                'N': N, 'd_model': d_model, 'd_ff': d_ff, 'h': h,
-                'dropout': dropout}
+        args = {'src_vocab': src_vocab,
+                'tgt_vocab': tgt_vocab,
+                'n_layers': n_layers,
+                'hid_size': hid_size,
+                'ff_size': ff_size,
+                'n_heads': n_heads,
+                'dropout': dropout
+                }
         c = copy.deepcopy
-        attn = MultiHeadedAttention(h, d_model)
-        ff = PositionwiseFeedForward(d_model, d_ff, dropout)
+        attn = MultiHeadedAttention(n_heads, hid_size)
+        ff = PositionwiseFeedForward(hid_size, ff_size, dropout)
 
-        encoder = Encoder(EncoderLayer(d_model, c(attn), c(ff), dropout), N)
-        decoder = Decoder(DecoderLayer(d_model, c(attn), c(attn), c(ff), dropout), N)
+        encoder = Encoder(EncoderLayer(hid_size, c(attn), c(ff), dropout), n_layers)
+        decoder = Decoder(DecoderLayer(hid_size, c(attn), c(attn), c(ff), dropout), n_layers)
 
-        src_emb = nn.Sequential(Embeddings(d_model, src_vocab), PositionalEncoding(d_model, dropout))
-        tgt_emb = nn.Sequential(Embeddings(d_model, tgt_vocab), PositionalEncoding(d_model, dropout))
-        generator = Generator(d_model, tgt_vocab)
+        src_emb = nn.Sequential(Embeddings(hid_size, src_vocab), PositionalEncoding(hid_size, dropout))
+        tgt_emb = nn.Sequential(Embeddings(hid_size, tgt_vocab), PositionalEncoding(hid_size, dropout))
+        generator = Generator(hid_size, tgt_vocab)
         model = T2TModel(encoder, decoder, src_emb, tgt_emb, generator)
 
         # This was important from their code.
@@ -376,7 +380,7 @@ class SimpleLossCompute:
 
 class T2TTrainer:
 
-    def __init__(self, exp: Experiment = None, model: T2TModel=None, lr=0.0001):
+    def __init__(self, exp: Experiment = None, model: T2TModel = None, lr=0.0001):
         self.start_epoch = 0
         self.exp = exp
         if model:
@@ -445,7 +449,7 @@ class T2TTrainer:
             if abs(loss) < abs(stop_loss):
                 log.info(f"Stopping early at iter {i}.. Loss = {loss:.4f}")
                 return i, loss
-        return max_iters-1, loss
+        return max_iters - 1, loss
 
     def train(self, num_epochs: int, batch_size: int, **args):
         log.info(f'Going to train for {num_epochs} epochs; batch_size={batch_size}')
@@ -467,10 +471,12 @@ class T2TTrainer:
 
 if __name__ == '__main__':
     from tgnmt.dummy import BatchIterable
+
     V = 14
     criterion = LabelSmoothing(size=V, padding_idx=Batch.pad_value, smoothing=0.1)
-    model, _ = T2TModel.make_model(V, V, N=4, d_model=128, d_ff=256, h=4)
+    model, _ = T2TModel.make_model(V, V, n_layers=4, hid_size=128, ff_size=256, n_heads=4)
     from tgnmt.module.decoder import Decoder
+
     exp = Experiment("work", config={'model_type': 't2t'}, read_only=True)
     trainer = T2TTrainer(exp=exp, model=model)
 
@@ -482,9 +488,11 @@ if __name__ == '__main__':
 
     src_lens = tensor(src.size(1))
 
+
     def print_res(res):
         for score, seq in res:
             log.info(f'{score:.4f} :: {seq}')
+
 
     first_batch = list(iter(BatchIterable(V, 50, 1, reverse=False, batch_first=True)))[0]
     itr, score = trainer.overfit_batch(first_batch, max_iters=100)
@@ -498,4 +506,3 @@ if __name__ == '__main__':
         model.eval()
         res = decr.greedy_decode(src, src_lens, max_len=12)
         print_res(res)
-
