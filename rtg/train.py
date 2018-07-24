@@ -46,7 +46,7 @@ def main():
         pairs = [x.strip() for x in args.pop('optim_args').split(',')]
         pairs = [pair.split('=') for pair in pairs if pair]
         optim_args.update({k.strip(): float(v) for k, v in pairs})
-    trainer = {'t2t': T2TTrainer, 'rnn': RNNTrainer}[mod_type](exp, args.pop('optim'), optim_args)
+    trainer = {'t2t': T2TTrainer, 'rnn': RNNTrainer}[mod_type](exp, optim=args.pop('optim'), **optim_args)
     try:
         trainer.train(**args)
     except RuntimeError as e:
