@@ -292,6 +292,9 @@ class NoamOpt:
         self._rate = rate
         self.optimizer.step()
 
+    def zero_grad(self):
+        self.optimizer.zero_grad()
+
     def rate(self, step=None):
         "Implement `lrate` above"
         if step is None:
@@ -360,21 +363,21 @@ class LabelSmoothing(nn.Module):
 class SimpleLossCompute:
     "A simple loss compute and train function."
 
-    def __init__(self, generator, criterion, opt=None):
+    def __init__(self, generator, criterion, opt):
         self.generator = generator
         self.criterion = criterion
         self.opt = opt
 
-    def __call__(self, x, y, norm):
+    def __call__(self, x, y, norm, train_mode=True):
         x = self.generator(x)
         scores = x.contiguous().view(-1, x.size(-1))
         truth = y.contiguous().view(-1)
         assert norm != 0
         loss = self.criterion(scores, truth) / norm
-        loss.backward()
-        if self.opt is not None:
+        if train_mode:  # dont do this for validation set
+            loss.backward()
             self.opt.step()
-            self.opt.optimizer.zero_grad()
+            self.opt.zero_grad()
         return loss.item() * norm
 
 
@@ -412,29 +415,34 @@ class T2TTrainer:
         if not self.exp.read_only:
             self.exp.persist_state()
 
-    def run_epoch(self, data_iter: Iterator[Batch], num_batches=None, print_every=30):
-        "Standard Training and Logging Function"
+    def run_epoch(self, data_iter: Iterator[Batch], num_batches=None, print_every=30, train_mode=True):
+        """
+        :param data_iter: data iterator
+        :param num_batches: number of batches in the iterator, None if dont know
+        :param print_every: How often the progress be logged?
+        :param train_mode: is it a training or validation mode
+        :return:
+        """
         start = time.time()
         total_tokens = 0
         total_loss = 0.0
         tokens = 0
-        for i, batch in tqdm(enumerate(data_iter), total=num_batches):
+        self.model.train(train_mode)
+        for i, batch in tqdm(enumerate(data_iter), total=num_batches, unit=' batch'):
             num_toks = batch.y_toks
             out = self.model(batch.x_seqs, batch.y_seqs, batch.x_mask, batch.y_mask)
             # skip the BOS token in  batch.y_seqs
-            loss = self.loss_func(out, batch.y_seqs_nobos, num_toks)
+            loss = self.loss_func(out, batch.y_seqs_nobos, num_toks, train_mode)
             total_loss += loss
             total_tokens += num_toks
             tokens += num_toks
             if i + 1 % print_every == 0:
                 elapsed = time.time() - start
-                log.info(f"Step: {i} Loss: {loss / num_toks:.4f} Tokens per Sec: { tokens / elapsed:.2f}")
+                log.info(f"Step: {i} Loss: {loss / num_toks:.4f} Tokens per Sec: {tokens / elapsed:.2f}")
                 start = time.time()
                 tokens = 0
             # force free memory
             del batch
-            if debug_mode:
-                log_tensor_sizes()
 
         score = total_loss / total_tokens
         return score
@@ -466,21 +474,23 @@ class T2TTrainer:
             raise Exception(f'The model was already trained to {self.start_epoch} epochs. '
                             f'Please increase epoch or clear the existing models')
         train_data = BatchIterable(self.exp.train_file, batch_size=batch_size, shuffle=True)
+        val_data = BatchIterable(self.exp.valid_file, batch_size=batch_size, shuffle=True)
         self.model.train()  # Train mode
         for ep in range(self.start_epoch, num_epochs):
-            log.info(f"Running epoch {ep+1}")
-            loss = self.run_epoch(train_data, num_batches=train_data.num_batches)
-            log.info(f"Finished epoch {ep+1}")
-            self.exp.store_model(ep, self.model.state_dict(), loss, keep=keep_models)
+            log.info(f"Running epoch:: {ep}")
+            train_loss = self.run_epoch(train_data, num_batches=train_data.num_batches, train_mode=True)
+            val_loss = self.run_epoch(val_data, num_batches=val_data.num_batches, train_mode=False)
+            log.info(f"Finished epoch {ep+1}. Training Loss {train_loss}, Validation Loss:{val_loss}")
+            self.exp.store_model(ep, self.model.state_dict(), train_score=train_loss,  val_score=val_loss,
+                                 keep=keep_models)
             self.start_epoch += 1
 
 
-if __name__ == '__main__':
+def __test_model__():
     from rtg.dummy import BatchIterable
 
-    V = 14
-    criterion = LabelSmoothing(size=V, padding_idx=Batch.pad_value, smoothing=0.1)
-    model, _ = T2TModel.make_model(V, V, n_layers=4, hid_size=128, ff_size=256, n_heads=4)
+    vocab_size = 14
+    model, _ = T2TModel.make_model(vocab_size, vocab_size, n_layers=4, hid_size=128, ff_size=256, n_heads=4)
     from rtg.module.decoder import Decoder
 
     exp = Experiment("work", config={'model_type': 't2t'}, read_only=True)
@@ -493,21 +503,21 @@ if __name__ == '__main__':
                   [2, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4]])
     src_lens = tensor(src.size(1))
 
-
     def print_res(res):
         for score, seq in res:
             log.info(f'{score:.4f} :: {seq}')
 
-
-    first_batch = list(iter(BatchIterable(V, 50, 1, reverse=False, batch_first=True)))[0]
-    itr, score = trainer.overfit_batch(first_batch, max_iters=100)
-    log.info(f"First Batch: {itr} iters with final loss: {score}")
-
-    for epoch in range(15):
+    val_data = list(BatchIterable(vocab_size, 50, 5, reverse=False, batch_first=True))
+    for epoch in range(50):
         model.train()
-        data = BatchIterable(V, 50, 30, reverse=False, batch_first=True)
-        loss = trainer.run_epoch(data, num_batches=data.num_batches)
-        log.info(f"Epoch {epoch}, training Loss: {loss:.4f}")
+        train_data = BatchIterable(vocab_size, 30, 20, reverse=False, batch_first=True)
+        train_loss = trainer.run_epoch(train_data, num_batches=train_data.num_batches, train_mode=True)
+        val_loss = trainer.run_epoch(val_data, num_batches=len(val_data), train_mode=True)
+        log.info(f"Epoch {epoch}, training Loss: {train_loss:.4f} \t validation loss:{val_loss:.4f}")
         model.eval()
         res = decr.greedy_decode(src, src_lens, max_len=12)
         print_res(res)
+
+
+if __name__ == '__main__':
+    __test_model__()

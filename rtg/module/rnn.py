@@ -271,7 +271,7 @@ class RNNTrainer:
         log.info(f'Going to train for {num_epochs} epochs; batch_size={batch_size}')
 
         train_data = BatchIterable(self.exp.train_file, batch_size=batch_size, batch_first=False, shuffle=True)
-        # val_data = BatchIterable(self.exp.valid_file, batch_size=batch_size, in_mem=True, batch_first=False)
+        val_data = BatchIterable(self.exp.valid_file, batch_size=batch_size, batch_first=True, shuffle=False)
         keep_models = args.pop('keep_models', 4)
         if args.pop('resume_train'):
             num_epochs += self.start_epoch
@@ -279,44 +279,49 @@ class RNNTrainer:
             raise Exception(f'The model was already trained to {self.start_epoch} epochs. '
                             f'Please increase epoch or clear the existing models')
         for ep in range(self.start_epoch, num_epochs):
-            tot_loss = self.run_epoch(train_data)
-            log.info(f'Epoch {ep+1} complete.. Training loss in this epoch {tot_loss}...')
+            train_loss = self.run_epoch(train_data, train_mode=True)
+            log.info(f'Epoch {ep+1} complete.. Training loss in this epoch {train_loss}...')
+            val_loss = self.run_epoch(val_data, train_mode=False)
+            log.info(f'Validation of {ep+1} complete.. Validation loss in this epoch {val_loss}...')
             if keep_models > 0:
-                self.exp.store_model(epoch=ep, model=self.model.state_dict(), score=tot_loss, keep=keep_models)
+                self.exp.store_model(epoch=ep, model=self.model.state_dict(), train_score=train_loss,
+                                     val_score=val_loss, keep=keep_models)
 
-    def run_epoch(self, train_data):
+    def run_epoch(self, data_iter, num_batches=None, train_mode=True):
+        """
+        run a pass over data set
+        :param data_iter: batched data set
+        :param num_batches: number of batches in the dataset (for tqdm progress bar), None if unknown
+        :param train_mode: is it training mode (False if validation mode)
+        :return: total loss
+        """
         tot_loss = 0.0
-        for i, batch in tqdm(enumerate(train_data), total=train_data.num_batches):
+        self.model.train(train_mode)
+        for i, batch in tqdm(enumerate(data_iter), total=num_batches, unit='batch'):
             # Step clear gradients
             self.model.zero_grad()
-
             # Step Run forward pass.
-            # dec_outs = self.model(batch)
             outp_log_probs = self.model(batch)
             per_tok_loss = -outp_log_probs.t()
             tok_mask = self.sequence_mask(batch.y_len, batch.max_y_len)
             loss = (per_tok_loss * tok_mask.float()).sum().float() / batch.y_toks
-            """
-            loss = self.masked_cross_entropy(
-                dec_outs.t().contiguous(),  # -> batch x seq
-                batch.y_seqs.t().contiguous(),   # -> batch x seq_len
-                batch.y_len
-            )
-            """
             tot_loss += loss.item()
-            loss.backward()
-            self.optimizer.step()
+
+            if train_mode:
+                loss.backward()
+                self.optimizer.step()
+                self.optimizer.zero_grad()
             del batch
             gc.collect()
 
         return tot_loss
 
 
-if __name__ == '__main__':
+def __test_model__():
     from rtg.dummy import BatchIterable
     from rtg.module.decoder import Decoder
 
-    vocab_size = 25
+    vocab_size = 30
     exp = Experiment("tmp.work", config={'model_type': 'rnn'}, read_only=True)
     num_epoch = 20
     test_x_seqs = tensor([Batch.bos_val, 4, 5, 6, 7, 8, 9, 10, 11]).view(1, -1)
@@ -331,12 +336,17 @@ if __name__ == '__main__':
         log.info(f"Model args:: {args}")
         trainer = RNNTrainer(exp, model=model)
         decoder = Decoder.new(exp, model)
+        val_data = list(BatchIterable(vocab_size, batch_size=30, n_batches=5, reverse=reverse))
         for ep in range(num_epoch):
             log.info(f"Running epoch {ep+1}")
             data = BatchIterable(vocab_size, batch_size=30, n_batches=50, reverse=reverse)
-            model.train()
-            loss = trainer.run_epoch(train_data=data)
-            log.info(f"Epoch {ep+1} finish. Loss = {loss:.4f}")
+            train_loss = trainer.run_epoch(data_iter=data, num_batches=data.num_batches, train_mode=True)
+            val_loss = trainer.run_epoch(data_iter=val_data, num_batches=len(val_data), train_mode=False)
+            log.info(f"Epoch {ep+1} finish. Loss = {train_loss:.4f}, Validation loss={val_loss:.4f}")
             model.eval()
             out = decoder.greedy_decode(x_seqs=test_x_seqs, x_lens=test_x_lens, max_len=9)[0]
             log.info(f"Prediction: score:{out[0]:.4f} :: seq: {out[1]}")
+
+
+if __name__ == '__main__':
+    __test_model__()

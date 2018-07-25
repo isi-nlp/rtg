@@ -113,23 +113,27 @@ class TranslationExperiment:
         self.config['updated_at'] = datetime.now().isoformat()
         self.store_config()
 
-    def store_model(self, epoch: int, model, score: float, keep: int):
+    def store_model(self, epoch: int, model, train_score: float, val_score: float, keep: int):
         """
         saves model to a given path
         :param epoch: epoch number of model
         :param model: model object itself
-        :param score: score of model
+        :param train_score: score of model on training split
+        :param val_score: score of model on validation split
         :param keep: number of recent models to keep, older models will be deleted
         :return:
         """
         assert not self.read_only
-        name = f'model_{epoch:03d}_{score:.4f}.pkl'
+        name = f'model_{epoch:03d}_{train_score:.4f}_{val_score:.4f}_.pkl'
         path = os.path.join(self.model_dir, name)
         log.info(f"Saving epoch {epoch} to {path}")
         torch.save(model, path)
         for old_model in self.list_models()[keep:]:
             log.info(f"Deleting old {old_model} . Keep={keep}")
             os.remove(old_model)
+        with open(os.path.join(self.model_dir, 'scores.tsv'), 'a', encoding='utf-8') as f:
+            cols = [str(epoch), datetime.now().isoformat(), name, f'{train_score:.4f}', f'{val_score:.4f}']
+            f.write('\n'.join(cols) + '\n')
 
     def list_models(self) -> List[str]:
         """
@@ -143,7 +147,7 @@ class TranslationExperiment:
     def get_last_saved_model(self) -> Tuple[Optional[str], int]:
         models = self.list_models()
         if models:
-            _, epoch, score = models[0].replace('.pkl', '').split('_')
+            _, epoch, train_score, valid_score = models[0].replace('.pkl', '').split('_')
             return models[0], int(epoch)
         else:
             return None, -1
