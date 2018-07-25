@@ -278,14 +278,18 @@ class RNNTrainer:
         elif num_epochs <= self.start_epoch:
             raise Exception(f'The model was already trained to {self.start_epoch} epochs. '
                             f'Please increase epoch or clear the existing models')
+        losses = []
         for ep in range(self.start_epoch, num_epochs):
             train_loss = self.run_epoch(train_data, train_mode=True)
             log.info(f'Epoch {ep+1} complete.. Training loss in this epoch {train_loss}...')
             val_loss = self.run_epoch(val_data, train_mode=False)
             log.info(f'Validation of {ep+1} complete.. Validation loss in this epoch {val_loss}...')
+            losses.append((ep, train_loss, val_loss))
             if keep_models > 0:
                 self.exp.store_model(epoch=ep, model=self.model.state_dict(), train_score=train_loss,
                                      val_score=val_loss, keep=keep_models)
+        summary = '\n'.join(f'{ep:02}\t{tl:.4f}\t{vl:.4f}' for ep, tl, vl in losses)
+        log.info(f"==Summary==:\nEpoch\t TrainLoss \t ValidnLoss \n {summary}")
 
     def run_epoch(self, data_iter, num_batches=None, train_mode=True):
         """

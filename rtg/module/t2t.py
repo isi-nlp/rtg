@@ -475,6 +475,7 @@ class T2TTrainer:
                             f'Please increase epoch or clear the existing models')
         train_data = BatchIterable(self.exp.train_file, batch_size=batch_size, shuffle=True)
         val_data = BatchIterable(self.exp.valid_file, batch_size=batch_size, shuffle=True)
+        losses = []
         self.model.train()  # Train mode
         for ep in range(self.start_epoch, num_epochs):
             log.info(f"Running epoch:: {ep}")
@@ -484,6 +485,9 @@ class T2TTrainer:
             self.exp.store_model(ep, self.model.state_dict(), train_score=train_loss,  val_score=val_loss,
                                  keep=keep_models)
             self.start_epoch += 1
+            losses.append((ep, train_loss, val_loss))
+        summary = '\n'.join(f'{ep:02}\t{tl:.4f}\t{vl:.4f}' for ep, tl, vl in losses)
+        log.info(f"==Summary==:\nEpoch\t TrainLoss \t ValidnLoss \n {summary}")
 
 
 def __test_model__():
