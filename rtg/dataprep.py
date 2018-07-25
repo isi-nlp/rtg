@@ -152,6 +152,9 @@ class Batch:
     bos_val = BOS_TOK[1]
     eos_val = EOS_TOK[1]
 
+    _x_attrs = ['x_len', 'x_seqs', 'x_mask']
+    _y_attrs = ['y_len', 'y_seqs', 'y_seqs_nobos', 'y_mask']
+
     def __init__(self, batch: List[Example], sort_dec=False, batch_first=True):
         """
         :param batch: List fo Examples
@@ -165,15 +168,20 @@ class Batch:
         self.x_len = tensor([len(e.x) for e in batch])
         self.x_toks = self.x_len.sum().float().item()
         self.max_x_len = self.x_len.max()
+
+        # create x_seqs on CPU RAM and move to GPU at once
         self.x_seqs = torch.full(size=(self._len, self.max_x_len), fill_value=self.pad_value,
-                                 dtype=torch.long, device=device)
+                                 dtype=torch.long)
         for i, ex in enumerate(batch):
-            self.x_seqs[i, :len(ex.x)] = tensor(ex.x)
+            self.x_seqs[i, :len(ex.x)] = torch.tensor(ex.x, dtype=torch.long)
+        self.x_seqs = self.x_seqs.to(device)
         if not batch_first:      # transpose
             self.x_seqs = self.x_seqs.t()
+
         self.x_mask = (self.x_seqs != self.pad_value).unsqueeze(1)
         first_y = batch[0].y
-        if first_y is not None:
+        self.has_y = first_y is not None
+        if self.has_y:
             for ex in batch:    # check and insert BOS to output seqs
                 if ex.y[0] != self.bos_val:
                     ex.y.insert(0, self.bos_val)
@@ -184,9 +192,10 @@ class Batch:
             self.y_toks = self.y_len.sum().float().item()
             self.max_y_len = self.y_len.max().item()
             y_seqs = torch.full(size=(self._len, self.max_y_len + 1), fill_value=self.pad_value,
-                                dtype=torch.long, device=device)
+                                dtype=torch.long)
             for i, ex in enumerate(batch):
-                y_seqs[i, :len(ex.y)] = tensor(ex.y)
+                y_seqs[i, :len(ex.y)] = torch.tensor(ex.y, dtype=torch.long)
+            self.y_seqs = self.y_seqs.to(device)
             self.y_seqs_nobos = y_seqs[:, 1:]  # predictions
             self.y_seqs = y_seqs[:, :-1]
             if not batch_first:    # transpose
@@ -196,6 +205,14 @@ class Batch:
 
     def __len__(self):
         return self._len
+
+    def to(self, device):
+        """Move this batch to given device"""
+        for name in self._x_attrs:
+            setattr(self, name, getattr(self, name).to(device))
+        if self.has_y:
+            for name in self._y_attrs:
+                setattr(self, name, getattr(self, name).to(device))
 
     @staticmethod
     def make_std_mask(tgt, pad=pad_value):

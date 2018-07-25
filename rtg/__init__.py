@@ -9,6 +9,8 @@ log.debug(f"NMT_DEBUG={debug_mode}")
 import torch
 device_name = 'cuda:0' if torch.cuda.is_available() else 'cpu'
 device = torch.device(device_name)
+cpu_device = torch.device('cpu')
+
 log.debug(f'device: {device}')
 profiler = None
 if os.environ.get('NMT_PROFILER') == 'memory':
