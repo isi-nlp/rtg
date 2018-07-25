@@ -6,6 +6,7 @@ from functools import reduce
 import operator as op
 from enum import Enum
 import inspect
+import gzip
 
 # Size of each element in tensor
 tensor_size = {
@@ -69,3 +70,35 @@ class Optims(Enum):
     def names():
         return list(Optims.__members__.keys())
 
+
+class IO:
+    """File opener and automatic closer"""
+
+    def __init__(self, path, mode='r', encoding=None, errors=None):
+        self.path = path
+        self.mode = mode
+        self.fd = None
+        self.encoding = encoding if encoding else 'utf-8' if 't' in mode else None
+        self.errors = errors if errors else 'replace'
+
+    def __enter__(self):
+
+        if self.path.endswith(".gz"):   # gzip mode
+            self.fd = gzip.open(self.path, self.mode, encoding=self.encoding, errors=self.errors)
+        else:
+            if 'b' in self.mode:  # binary mode doesnt take encoding or errors
+                self.fd = open(self.path, self.mode)
+            else:
+                self.fd = open(self.path, self.mode, encoding=self.encoding, errors=self.errors)
+        return self.fd
+
+    def __exit__(self, _type, value, traceback):
+        self.fd.close()
+
+    @classmethod
+    def reader(cls, path, text=True):
+        return cls(path, 'rt' if text else 'rb')
+
+    @classmethod
+    def writer(cls, path, text=True, append=False):
+        return cls(path, ('a' if append else 'w') + ('t' if text else 'b'))

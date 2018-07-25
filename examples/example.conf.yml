@@ -13,11 +13,9 @@ prep:
   truncate: true
   mono_src: []
   mono_tgt: []
+  # make human readable split files
+  text_pieces: false
 
 # vocabulary
 pieces: unigram
 vocab_size: 8000
-
-# Testing
-test_src:
-test_tgt:

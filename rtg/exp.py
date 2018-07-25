@@ -7,6 +7,7 @@ import torch
 
 from rtg import log, load_conf
 from rtg.dataprep import RawRecord, SeqRecord, Field
+from rtg.utils import IO
 
 
 class TranslationExperiment:
@@ -19,8 +20,8 @@ class TranslationExperiment:
         self.model_dir = os.path.join(self.work_dir, 'models')
         self._config_file = os.path.join(self.work_dir, 'conf.yml')
         self._shared_field_file = os.path.join(self.data_dir, 'sentpiece.shared.model')
-        self.train_file = os.path.join(self.data_dir, 'train.tsv')
-        self.valid_file = os.path.join(self.data_dir, 'valid.tsv')
+        self.train_file = os.path.join(self.data_dir, 'train.tsv.gz')
+        self.valid_file = os.path.join(self.data_dir, 'valid.tsv.gz')
 
         if not read_only:
             for _dir in [self.model_dir, self.data_dir]:
@@ -32,7 +33,7 @@ class TranslationExperiment:
         self.shared_field = Field(self._shared_field_file) if os.path.exists(self._shared_field_file) else None
 
     def store_config(self):
-        with open(self._config_file, 'w', encoding='utf-8') as fp:
+        with IO.writer(self._config_file) as fp:
             return yaml.dump(self.config, fp, default_flow_style=False)
 
     @property
@@ -54,13 +55,13 @@ class TranslationExperiment:
         seqs = ((' '.join(map(str, x)), ' '.join(map(str, y))) for x, y in records)
         lines = (f'{x}\t{y}\n' for x, y in seqs)
         log.info(f"Storing data at {path}")
-        with open(path, 'w', encoding='utf-8') as f:
+        with IO.writer(path) as f:
             for line in lines:
                 f.write(line)
 
     @staticmethod
     def read_raw_lines(src_path: str, tgt_path: str) -> Iterator[RawRecord]:
-        with open(src_path) as src_lines, open(tgt_path) as tgt_lines:
+        with IO.reader(src_path) as src_lines, IO.reader(tgt_path) as tgt_lines:
             recs = ((src.strip(), tgt.strip()) for src, tgt in zip(src_lines, tgt_lines))
             recs = ((src, tgt) for src, tgt in recs if src and tgt)
             yield from recs
@@ -92,13 +93,14 @@ class TranslationExperiment:
                                       args['src_len'], args['tgt_len'], tokenizer=self.tgt_vocab.encode_as_ids)
         self.write_tsv(val_recs, self.valid_file)
 
-        # Redo again as Pieces
-        train_recs = self.read_raw_data(args['train_src'], args['train_tgt'], args['truncate'],
-                                        args['src_len'], args['tgt_len'], tokenizer=self.src_vocab.tokenize)
-        self.write_tsv(train_recs, self.train_file.replace('.tsv', '.pieces.tsv'))
-        val_recs = self.read_raw_data(args['valid_src'], args['valid_tgt'], args['truncate'],
-                                      args['src_len'], args['tgt_len'], tokenizer=self.tgt_vocab.tokenize)
-        self.write_tsv(val_recs, self.valid_file.replace('.tsv', '.pieces.tsv'))
+        if args.get('text_files'):
+            # Redo again as plain text files
+            train_recs = self.read_raw_data(args['train_src'], args['train_tgt'], args['truncate'],
+                                            args['src_len'], args['tgt_len'], tokenizer=self.src_vocab.tokenize)
+            self.write_tsv(train_recs, self.train_file.replace('.tsv', '.pieces.tsv'))
+            val_recs = self.read_raw_data(args['valid_src'], args['valid_tgt'], args['truncate'],
+                                          args['src_len'], args['tgt_len'], tokenizer=self.tgt_vocab.tokenize)
+            self.write_tsv(val_recs, self.valid_file.replace('.tsv', '.pieces.tsv'))
 
         # update state on disk
         self.persist_state()
@@ -131,7 +133,7 @@ class TranslationExperiment:
         for old_model in self.list_models()[keep:]:
             log.info(f"Deleting old {old_model} . Keep={keep}")
             os.remove(old_model)
-        with open(os.path.join(self.model_dir, 'scores.tsv'), 'a', encoding='utf-8') as f:
+        with IO.writer(os.path.join(self.model_dir, 'scores.tsv'), append=True) as f:
             cols = [str(epoch), datetime.now().isoformat(), name, f'{train_score:.4f}', f'{val_score:.4f}']
             f.write('\n'.join(cols) + '\n')
 
