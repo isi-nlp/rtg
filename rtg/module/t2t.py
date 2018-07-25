@@ -7,9 +7,9 @@ import torch.nn.functional as F
 import math, copy, time
 from torch.autograd import Variable
 from tqdm import tqdm
-from rtg import device, log, TranslationExperiment as Experiment, debug_mode, my_tensor as tensor
+from rtg import device, log, TranslationExperiment as Experiment, my_tensor as tensor
 from rtg.dataprep import BatchIterable, Batch
-from rtg.utils import log_tensor_sizes, Optims
+from rtg.utils import Optims
 
 
 class T2TModel(nn.Module):
@@ -400,6 +400,9 @@ class T2TTrainer:
                 self.start_epoch = last_epoch + 1
                 log.info(f"Resuming training from epoch:{self.start_epoch}, model={last_model}")
                 self.model.load_state_dict(torch.load(last_model))
+        if torch.cuda.device_count() > 1:
+            log.info(f"GPUs : {torch.cuda.device_count()}")
+            self.model = nn.DataParallel(model, dim=0)
         self.model = self.model.to(device)
         # making optimizer
         optim_args['lr'] = optim_args.get('lr', 0.001)
@@ -429,6 +432,7 @@ class T2TTrainer:
         tokens = 0
         self.model.train(train_mode)
         for i, batch in tqdm(enumerate(data_iter), total=num_batches, unit=' batch'):
+            batch = batch.to(device)
             num_toks = batch.y_toks
             out = self.model(batch.x_seqs, batch.y_seqs, batch.x_mask, batch.y_mask)
             # skip the BOS token in  batch.y_seqs
