@@ -3,6 +3,7 @@ from typing import List, Iterator, Tuple, Union
 import torch
 from rtg import log
 from . import my_tensor as tensor, device
+from rtg.utils import IO
 import math
 import random
 from collections import namedtuple
@@ -103,7 +104,7 @@ class TSVData:
         return [int(t) for t in line.split()]
 
     def read_all(self) -> Iterator[Example]:
-        with open(self.path) as lines:
+        with IO.reader(self.path) as lines:
             recs = (line.split('\t') for line in lines)
             recs = (Example(self._parse(rec[0]), self._parse(rec[1])) for rec in recs)
             yield from recs
@@ -122,7 +123,7 @@ class TSVData:
 
 def read_tsv(path: str):
     assert os.path.exists(path)
-    with open(path, encoding='utf-8') as f:
+    with IO.reader(path) as f:
         yield from (line.split('\t') for line in f)
 
 

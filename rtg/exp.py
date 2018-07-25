@@ -93,13 +93,14 @@ class TranslationExperiment:
                                       args['src_len'], args['tgt_len'], tokenizer=self.tgt_vocab.encode_as_ids)
         self.write_tsv(val_recs, self.valid_file)
 
-        # Redo again as Pieces
-        train_recs = self.read_raw_data(args['train_src'], args['train_tgt'], args['truncate'],
-                                        args['src_len'], args['tgt_len'], tokenizer=self.src_vocab.tokenize)
-        self.write_tsv(train_recs, self.train_file.replace('.tsv', '.pieces.tsv'))
-        val_recs = self.read_raw_data(args['valid_src'], args['valid_tgt'], args['truncate'],
-                                      args['src_len'], args['tgt_len'], tokenizer=self.tgt_vocab.tokenize)
-        self.write_tsv(val_recs, self.valid_file.replace('.tsv', '.pieces.tsv'))
+        if args.get('text_files'):
+            # Redo again as plain text files
+            train_recs = self.read_raw_data(args['train_src'], args['train_tgt'], args['truncate'],
+                                            args['src_len'], args['tgt_len'], tokenizer=self.src_vocab.tokenize)
+            self.write_tsv(train_recs, self.train_file.replace('.tsv', '.pieces.tsv'))
+            val_recs = self.read_raw_data(args['valid_src'], args['valid_tgt'], args['truncate'],
+                                          args['src_len'], args['tgt_len'], tokenizer=self.tgt_vocab.tokenize)
+            self.write_tsv(val_recs, self.valid_file.replace('.tsv', '.pieces.tsv'))
 
         # update state on disk
         self.persist_state()
