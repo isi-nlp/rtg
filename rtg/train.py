@@ -15,14 +15,14 @@ def parse_args():
     parser.add_argument("work_dir", help="Working directory", type=str)
     parser.add_argument('-mt', '--mod-type', default='t2t', choices=['rnn', 't2t'],
                         help='Type of model: RNN or T2T (aka transformer)')
-    parser.add_argument("-ne", "--num-epochs", help="Num epochs", type=int, default=15)
+    parser.add_argument("-ne", "--num-epochs", help="Num epochs", type=int, default=30)
     parser.add_argument("-re", "--resume", action='store_true', dest='resume_train',
                         help="Resume Training. adds --num-epochs more epochs to the most recent model in work-dir", )
     parser.add_argument("-bs", "--batch-size", help="Batch size", type=int, default=256)
-    parser.add_argument("-km", "--keep-models", type=int, default=4,
+    parser.add_argument("-km", "--keep-models", type=int, default=10,
                         help="Number of models to keep. Stores one model per epoch")
     parser.add_argument("-op", "--optim", type=str, default='ADAM', choices=Optims.names(), help="Name of optimizer")
-    parser.add_argument("-oa", "--optim-args", type=str, default='lr=0.01',
+    parser.add_argument("-oa", "--optim-args", type=str, default='lr=0.001',
                         help="Comma separated key1=val1,key2=val2 args to optimizer. Example: lr=0.01 "
                              "The arguments depends on the choice of --optim")
     return vars(parser.parse_args())
