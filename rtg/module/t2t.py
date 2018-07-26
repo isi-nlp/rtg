@@ -307,30 +307,6 @@ class NoamOpt:
                        torch.optim.Adam(model.parameters(), lr=0, betas=(0.9, 0.98), eps=1e-9))
 
 
-class LabelSmoothingOld(nn.Module):
-    # NOTE: this one doesnt run on pytorch 0.4.0 and
-    "Implement label smoothing. "
-
-    def __init__(self, size, padding_idx, smoothing=0.0):
-        super(LabelSmoothingOld, self).__init__()
-        self.criterion = nn.KLDivLoss(size_average=False)
-        self.padding_idx = padding_idx
-        self.confidence = 1.0 - smoothing
-        self.smoothing = smoothing
-        self.size = size
-
-    def forward(self, x, target):
-        assert x.size(1) == self.size
-        true_dist = x.data.clone()
-        true_dist.fill_(self.smoothing / (self.size - 2))
-        true_dist.scatter_(1, target.data.unsqueeze(1), self.confidence)
-        true_dist[:, self.padding_idx] = 0
-        mask = target.data != self.padding_idx  # Return a tensor of 1 if not padding, 0 if padding
-        assert mask.size() == true_dist.size()
-        true_dist = torch.mul(true_dist, mask)  # zero out padding
-        return self.criterion(x, Variable(true_dist, requires_grad=False))
-
-
 class LabelSmoothing(nn.Module):
     def __init__(self, size: int, padding_idx: int, smoothing=0.0):
         super(LabelSmoothing, self).__init__()
@@ -357,7 +333,9 @@ class LabelSmoothing(nn.Module):
             log_likelihood.index_fill_(0, mask, 0)
             smoothed_truth.index_fill_(0, mask, 0)
         loss = self.criterion(x, Variable(smoothed_truth, requires_grad=False))
-        return loss
+        # loss is a scalar value (0-dim )
+        # but data parallel expects tensors (for gathering along a dim), so doing this
+        return loss.unsqueeze(0)
 
 
 class SimpleLossCompute:
@@ -381,6 +359,57 @@ class SimpleLossCompute:
         return loss.item() * norm
 
 
+class MultiGPULossFunction:
+    """Loss function that """
+    def __init__(self, generator, criterion, devices, opt, chunk_size=16):
+        assert len(devices) > 1
+        # Send out to different gpus.
+        self.generator = generator
+        self.criterion = nn.parallel.replicate(criterion, devices=devices)
+        self.opt = opt
+        self.device_ids = devices
+        self.chunk_size = chunk_size
+        self.generator = nn.parallel.replicate(self.generator, devices=self.device_ids)
+
+    def __call__(self, outs, targets, norm, train_mode=True):
+        total_loss = 0.0
+        scattered_outs = nn.parallel.scatter(outs, target_gpus=self.device_ids)
+        out_grad = [[] for _ in scattered_outs]
+        targets = nn.parallel.scatter(targets, target_gpus=self.device_ids)
+
+        # Divide generating into chunks.
+        chunk_size = self.chunk_size
+        for i in range(0, scattered_outs[0].size(1), chunk_size):
+            # Predict distributions
+            out_column = [[Variable(o[:, i: i+chunk_size].data, requires_grad=train_mode)]
+                          for o in scattered_outs]
+            gen = nn.parallel.parallel_apply(self.generator, out_column)
+
+            # Compute loss.
+            y = [(g.contiguous().view(-1, g.size(-1)), t[:, i:i + chunk_size].contiguous().view(-1))
+                 for g, t in zip(gen, targets)]
+            loss = nn.parallel.parallel_apply(self.criterion, y)
+            # Sum and norm loss
+            chunk_loss = nn.parallel.gather(loss, target_device=self.device_ids[0]).sum() / norm
+            total_loss += chunk_loss.item()
+
+            # Backprop loss to output of transformer
+            if train_mode:
+                chunk_loss.backward()
+                for j, l in enumerate(loss):
+                    out_grad[j].append(out_column[j][0].grad.data.clone())
+
+        # Backprop all loss through transformer.
+        if train_mode:
+            out_grad = [Variable(torch.cat(og, dim=1)) for og in out_grad]
+            o1 = outs
+            o2 = nn.parallel.gather(out_grad, target_device=self.device_ids[0])
+            o1.backward(gradient=o2)
+            self.opt.step()
+            self.opt.zero_grad()
+        return total_loss * norm
+
+
 class T2TTrainer:
 
     def __init__(self, exp: Experiment = None, model: T2TModel = None, optim='ADAM', **optim_args):
@@ -400,53 +429,64 @@ class T2TTrainer:
                 self.start_epoch = last_epoch + 1
                 log.info(f"Resuming training from epoch:{self.start_epoch}, model={last_model}")
                 self.model.load_state_dict(torch.load(last_model))
-        if torch.cuda.device_count() > 1:
-            log.info(f"GPUs : {torch.cuda.device_count()}")
-            self.model = nn.DataParallel(model, dim=0)
-        self.model = self.model.to(device)
+
         # making optimizer
         optim_args['lr'] = optim_args.get('lr', 0.001)
         optim_args['betas'] = optim_args.get('betas', [0.9, 0.98])
         optim_args['eps'] = optim_args.get('eps', 1e-9)
 
-        inner_opt = Optims[optim].new(self.model.parameters(), **optim_args)
-        noam_opt = NoamOpt(self.model.src_embed[0].d_model, 2, 4000, inner_opt)
+        generator = self.model.generator
+        warm_up_steps = 2000
+        chunk_size = 16
+        smoothing = 0.1
+        noam_factor = 2
+        criterion = LabelSmoothing(size=generator.vocab, padding_idx=Batch.pad_value, smoothing=smoothing)
 
-        criterion = LabelSmoothing(size=self.model.tgt_vocab, padding_idx=0, smoothing=0.1)
-        self.loss_func = SimpleLossCompute(self.model.generator, criterion, noam_opt)
+        self.model = self.model.to(device)
+        if torch.cuda.device_count() > 1:  # Multi GPU mode
+            device_ids = list(range(torch.cuda.device_count()))
+            log.info(f"Going to use {torch.cuda.device_count()} GPUs ::: {device_ids}")
+            self.model = nn.DataParallel(self.model, dim=0, device_ids=device_ids)
+            inner_opt = Optims[optim].new(self.model.parameters(), **optim_args)
+            noam_opt = NoamOpt(generator.d_model, noam_factor, warm_up_steps, inner_opt)
+            self.loss_func = MultiGPULossFunction(generator, criterion, devices=device_ids,
+                                                  opt=noam_opt, chunk_size=chunk_size)
+        else:  # single GPU or the CPU mode
+            log.info(f"Going to use {torch.cuda.device_count()} GPUs ")
+            inner_opt = Optims[optim].new(self.model.parameters(), **optim_args)
+            noam_opt = NoamOpt(generator.d_model, 2, warm_up_steps, inner_opt)
+            self.loss_func = SimpleLossCompute(self.model.generator, criterion, noam_opt)
+
         self.exp.optim_args = optim, optim_args
         if not self.exp.read_only:
             self.exp.persist_state()
 
-    def run_epoch(self, data_iter: Iterator[Batch], num_batches=None, print_every=30, train_mode=True):
+    def run_epoch(self, data_iter: Iterator[Batch], num_batches=None, print_every=10, train_mode=True):
         """
         :param data_iter: data iterator
         :param num_batches: number of batches in the iterator, None if dont know
-        :param print_every: How often the progress be logged?
+        :param print_every: How often the loss progress be updated on progress bar?
         :param train_mode: is it a training or validation mode
         :return:
         """
         start = time.time()
         total_tokens = 0
         total_loss = 0.0
-        tokens = 0
         self.model.train(train_mode)
-        for i, batch in tqdm(enumerate(data_iter), total=num_batches, unit=' batch'):
-            batch = batch.to(device)
-            num_toks = batch.y_toks
-            out = self.model(batch.x_seqs, batch.y_seqs, batch.x_mask, batch.y_mask)
-            # skip the BOS token in  batch.y_seqs
-            loss = self.loss_func(out, batch.y_seqs_nobos, num_toks, train_mode)
-            total_loss += loss
-            total_tokens += num_toks
-            tokens += num_toks
-            if i + 1 % print_every == 0:
+        with tqdm(data_iter, total=num_batches, unit='batch') as data_bar:
+            for i, batch in enumerate(data_bar):
+                batch = batch.to(device)
+                num_toks = batch.y_toks
+                out = self.model(batch.x_seqs, batch.y_seqs, batch.x_mask, batch.y_mask)
+                # skip the BOS token in  batch.y_seqs
+                loss = self.loss_func(out, batch.y_seqs_nobos, num_toks, train_mode)
+                total_loss += loss
+                total_tokens += num_toks
                 elapsed = time.time() - start
-                log.info(f"Step: {i} Loss: {loss / num_toks:.4f} Tokens per Sec: {tokens / elapsed:.2f}")
+                data_bar.set_postfix_str(f'Loss:{loss / num_toks:.4f}, {int(num_toks / elapsed)}toks/s', refresh=False)
                 start = time.time()
-                tokens = 0
-            # force free memory
-            del batch
+                # force free memory
+                del batch
 
         score = total_loss / total_tokens
         return score

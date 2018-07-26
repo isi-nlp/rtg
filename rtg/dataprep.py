@@ -196,9 +196,9 @@ class Batch:
                                 dtype=torch.long)
             for i, ex in enumerate(batch):
                 y_seqs[i, :len(ex.y)] = torch.tensor(ex.y, dtype=torch.long)
-            self.y_seqs = self.y_seqs.to(device)
-            self.y_seqs_nobos = y_seqs[:, 1:]  # predictions
-            self.y_seqs = y_seqs[:, :-1]
+
+            self.y_seqs_nobos = y_seqs[:, 1:].to(device)  # predictions
+            self.y_seqs = y_seqs[:, :-1].to(device)
             if not batch_first:    # transpose
                 self.y_seqs = self.y_seqs.t()
                 self.y_seqs_nobos = self.y_seqs_nobos.t()
@@ -214,6 +214,7 @@ class Batch:
         if self.has_y:
             for name in self._y_attrs:
                 setattr(self, name, getattr(self, name).to(device))
+        return self
 
     @staticmethod
     def make_std_mask(tgt, pad=pad_value):
