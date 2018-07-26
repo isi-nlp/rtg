@@ -214,6 +214,9 @@ class RNNTrainer:
                 self.start_epoch = last_epoch + 1
                 model.load_state_dict(torch.load(last_check_pt))
             exp.model_args = args
+
+        if torch.cuda.device_count() > 1:
+            raise RuntimeError('Multi GPU is not yet supported. Please export CUDA_VISIBLE_DEVICES to a single GPU id')
         log.info(f"Moving model to device = {device}")
         self.model = model.to(device=device)
         self.model.train()
@@ -302,6 +305,7 @@ class RNNTrainer:
         tot_loss = 0.0
         self.model.train(train_mode)
         for i, batch in tqdm(enumerate(data_iter), total=num_batches, unit='batch'):
+            batch = batch.to(device)
             # Step clear gradients
             self.model.zero_grad()
             # Step Run forward pass.
