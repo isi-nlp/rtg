@@ -260,8 +260,8 @@ class PositionalEncoding(nn.Module):
 
         # Compute the positional encodings once in log space.
         pe = torch.zeros(max_len, d_model)
-        position = torch.arange(0, max_len).unsqueeze(1)
-        div_term = torch.exp(torch.arange(0, d_model, 2) * -(math.log(10000.0) / d_model))
+        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2, dtype=torch.float) * -(math.log(10000.0) / d_model))
         pe[:, 0::2] = torch.sin(position * div_term)
         pe[:, 1::2] = torch.cos(position * div_term)
         pe = pe.unsqueeze(0)
@@ -510,9 +510,12 @@ class T2TTrainer:
             log.info(f"Running epoch:: {ep}")
             train_loss = self.run_epoch(train_data, num_batches=train_data.num_batches, train_mode=True)
             val_loss = self.run_epoch(val_data, num_batches=val_data.num_batches, train_mode=False)
-            log.info(f"Finished epoch {ep+1}. Training Loss {train_loss}, Validation Loss:{val_loss}")
-            self.exp.store_model(ep, self.model.state_dict(), train_score=train_loss,  val_score=val_loss,
-                                 keep=keep_models)
+            log.info(f"Finished epoch {ep}. Training Loss {train_loss}, Validation Loss:{val_loss}")
+
+            # Unwrap model state from DataParallel and persist
+            state = (self.model.module if isinstance(self.model, nn.DataParallel) else self.model)
+            self.exp.store_model(ep, state.state_dict(), train_score=train_loss,
+                                 val_score=val_loss, keep=keep_models)
             self.start_epoch += 1
             losses.append((ep, train_loss, val_loss))
         summary = '\n'.join(f'{ep:02}\t{tl:.4f}\t{vl:.4f}' for ep, tl, vl in losses)
