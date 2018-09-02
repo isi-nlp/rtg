@@ -351,7 +351,7 @@ class SimpleLossCompute:
         scores = x.contiguous().view(-1, x.size(-1))
         truth = y.contiguous().view(-1)
         assert norm != 0
-        loss = self.criterion(scores, truth) / norm
+        loss = self.criterion(scores, truth).sum() / norm
         if train_mode:  # dont do this for validation set
             loss.backward()
             self.opt.step()
@@ -359,55 +359,46 @@ class SimpleLossCompute:
         return loss.item() * norm
 
 
-class MultiGPULossFunction:
-    """Loss function that """
-    def __init__(self, generator, criterion, devices, opt, chunk_size=16):
-        assert len(devices) > 1
-        # Send out to different gpus.
-        self.generator = generator
-        self.criterion = nn.parallel.replicate(criterion, devices=devices)
-        self.opt = opt
-        self.device_ids = devices
-        self.chunk_size = chunk_size
-        self.generator = nn.parallel.replicate(self.generator, devices=self.device_ids)
+class MultiGPULossFunction(SimpleLossCompute):
+    """
+    Loss function that uses Multiple GPUs
+    TODO: generate outputs in chunks
+    """
+    def __init__(self, generator, criterion, devices, opt, out_device=None):
+        super(MultiGPULossFunction, self).__init__(generator, criterion, opt)
+        self.multi_gpu = False
+        if len(devices) > 1:
+            self.multi_gpu = True
+            self.device_ids = devices
+            self.out_device = out_device if out_device is not None else devices[0]
+            # Send out to different gpus.
+            self.criterion = nn.parallel.replicate(criterion, devices=devices)
+            self.generator = nn.parallel.replicate(generator, devices=self.device_ids)
 
     def __call__(self, outs, targets, norm, train_mode=True):
-        total_loss = 0.0
-        scattered_outs = nn.parallel.scatter(outs, target_gpus=self.device_ids)
-        out_grad = [[] for _ in scattered_outs]
-        targets = nn.parallel.scatter(targets, target_gpus=self.device_ids)
+        if not self.multi_gpu:
+            # let the parent class deal with this
+            return super(MultiGPULossFunction, self).__call__(outs, targets, norm, train_mode)
 
-        # Divide generating into chunks.
-        chunk_size = self.chunk_size
-        for i in range(0, scattered_outs[0].size(1), chunk_size):
-            # Predict distributions
-            out_column = [[Variable(o[:, i: i+chunk_size].data, requires_grad=train_mode)]
-                          for o in scattered_outs]
-            gen = nn.parallel.parallel_apply(self.generator, out_column)
-
-            # Compute loss.
-            y = [(g.contiguous().view(-1, g.size(-1)), t[:, i:i + chunk_size].contiguous().view(-1))
-                 for g, t in zip(gen, targets)]
-            loss = nn.parallel.parallel_apply(self.criterion, y)
-            # Sum and norm loss
-            chunk_loss = nn.parallel.gather(loss, target_device=self.device_ids[0]).sum() / norm
-            total_loss += chunk_loss.item()
-
-            # Backprop loss to output of transformer
-            if train_mode:
-                chunk_loss.backward()
-                for j, l in enumerate(loss):
-                    out_grad[j].append(out_column[j][0].grad.data.clone())
-
-        # Backprop all loss through transformer.
+        batch_dim = 0
+        assert outs.shape[batch_dim] == targets.shape[batch_dim]
+        sct_outs = nn.parallel.scatter(outs, target_gpus=self.device_ids, dim=batch_dim)
+        sct_tgts = nn.parallel.scatter(targets, target_gpus=self.device_ids, dim=batch_dim)
+        assert len(sct_outs) == len(sct_tgts)
+        sct_generators = self.generator[:len(sct_outs)]
+        sct_criteria = self.criterion[:len(sct_outs)]
+        sct_preds = nn.parallel.parallel_apply(sct_generators, sct_outs)
+        pairs = [(pred.contiguous().view(-1, pred.size(-1)),
+                  tgt.contiguous().view(-1)) for pred, tgt in zip(sct_preds, sct_tgts)]
+        sct_losses = nn.parallel.parallel_apply(sct_criteria, pairs)
+        sent_losses = nn.parallel.gather(sct_losses, target_device=self.out_device, dim=batch_dim)
+        total_loss = (sent_losses.sum() / norm)
+        total_loss_val = total_loss.item()
         if train_mode:
-            out_grad = [Variable(torch.cat(og, dim=1)) for og in out_grad]
-            o1 = outs
-            o2 = nn.parallel.gather(out_grad, target_device=self.device_ids[0])
-            o1.backward(gradient=o2)
+            total_loss.backward()
             self.opt.step()
             self.opt.zero_grad()
-        return total_loss * norm
+        return total_loss_val * norm
 
 
 class T2TTrainer:
@@ -437,26 +428,20 @@ class T2TTrainer:
 
         generator = self.model.generator
         warm_up_steps = 2000
-        chunk_size = 16
         smoothing = 0.1
         noam_factor = 2
         criterion = LabelSmoothing(size=generator.vocab, padding_idx=Batch.pad_value, smoothing=smoothing)
 
         self.model = self.model.to(device)
-        if torch.cuda.device_count() > 1:  # Multi GPU mode
-            device_ids = list(range(torch.cuda.device_count()))
-            log.info(f"Going to use {torch.cuda.device_count()} GPUs ::: {device_ids}")
+        device_ids = list(range(torch.cuda.device_count()))
+        log.info(f"Going to use {torch.cuda.device_count()} GPUs ; ids:{device_ids}")
+        if len(device_ids) > 1:
+            # Multi GPU mode
             self.model = nn.DataParallel(self.model, dim=0, device_ids=device_ids)
-            inner_opt = Optims[optim].new(self.model.parameters(), **optim_args)
-            noam_opt = NoamOpt(generator.d_model, noam_factor, warm_up_steps, inner_opt)
-            self.loss_func = MultiGPULossFunction(generator, criterion, devices=device_ids,
-                                                  opt=noam_opt, chunk_size=chunk_size)
-        else:  # single GPU or the CPU mode
-            log.info(f"Going to use {torch.cuda.device_count()} GPUs ")
-            inner_opt = Optims[optim].new(self.model.parameters(), **optim_args)
-            noam_opt = NoamOpt(generator.d_model, 2, warm_up_steps, inner_opt)
-            self.loss_func = SimpleLossCompute(self.model.generator, criterion, noam_opt)
 
+        inner_opt = Optims[optim].new(self.model.parameters(), **optim_args)
+        noam_opt = NoamOpt(generator.d_model, noam_factor, warm_up_steps, inner_opt)
+        self.loss_func = MultiGPULossFunction(generator, criterion, devices=device_ids, opt=noam_opt)
         self.exp.optim_args = optim, optim_args
         if not self.exp.read_only:
             self.exp.persist_state()
