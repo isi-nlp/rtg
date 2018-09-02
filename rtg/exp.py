@@ -126,7 +126,7 @@ class TranslationExperiment:
         :return:
         """
         assert not self.read_only
-        name = f'model_{epoch:03d}_{train_score:.4f}_{val_score:.4f}_.pkl'
+        name = f'model_{epoch:03d}_{train_score:.4f}_{val_score:.4f}.pkl'
         path = os.path.join(self.model_dir, name)
         log.info(f"Saving epoch {epoch} to {path}")
         torch.save(model, path)
@@ -135,7 +135,7 @@ class TranslationExperiment:
             os.remove(old_model)
         with IO.writer(os.path.join(self.model_dir, 'scores.tsv'), append=True) as f:
             cols = [str(epoch), datetime.now().isoformat(), name, f'{train_score:.4f}', f'{val_score:.4f}']
-            f.write('\n'.join(cols) + '\n')
+            f.write('\t'.join(cols) + '\n')
 
     def list_models(self) -> List[str]:
         """
