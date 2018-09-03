@@ -342,7 +342,7 @@ def __test_model__():
         log.info(f"====== REVERSE={reverse}; VOCAB={vocab_size}======")
         model, args = RNNModel.make_model(vocab_size, vocab_size, enc_layers=2, dec_layers=2, rnn_type='lstm')
         log.info(f"Model args:: {args}")
-        trainer = RNNTrainer(exp, model=model)
+        trainer = RNNTrainer(exp, model=model, lr=0.0001)
         decoder = Decoder.new(exp, model)
         val_data = list(BatchIterable(vocab_size, batch_size=30, n_batches=5, reverse=reverse))
         for ep in range(num_epoch):

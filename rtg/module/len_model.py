@@ -31,7 +31,7 @@ class LSTMEncoder(nn.Module):
         :param pad_idx: input index that is used for padding
         :param dropout: dropout rate for RNN
         :param last_step_only: return the last step output only; default returns all the time steps
-        :param num_layers: number of layers in RNN
+        :param num_layers: number of n_layers in RNN
         :param num_directions: bidirectional = 2, uni directional = 1
         """
         super(LSTMEncoder, self).__init__()

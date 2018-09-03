@@ -537,7 +537,7 @@ def __test_model__():
     assert 2 == Batch.bos_val
     src = tensor([[2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
                   [2, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4]])
-    src_lens = tensor(src.size(1))
+    src_lens = tensor([src.size(1)] * src.size(0))
 
     def print_res(res):
         for score, seq in res:
@@ -548,7 +548,7 @@ def __test_model__():
         model.train()
         train_data = BatchIterable(vocab_size, 30, 20, reverse=False, batch_first=True)
         train_loss = trainer.run_epoch(train_data, num_batches=train_data.num_batches, train_mode=True)
-        val_loss = trainer.run_epoch(val_data, num_batches=len(val_data), train_mode=True)
+        val_loss = trainer.run_epoch(val_data, num_batches=len(val_data), train_mode=False)
         log.info(f"Epoch {epoch}, training Loss: {train_loss:.4f} \t validation loss:{val_loss:.4f}")
         model.eval()
         res = decr.greedy_decode(src, src_lens, max_len=12)

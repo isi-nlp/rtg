@@ -30,6 +30,21 @@ class RNNGenerator:
         return log_probs
 
 
+class Seq2SeqGenerator:
+
+    def __init__(self, model, x_seqs, x_lens):
+        self.model = model
+        # [S, B, d], [S, B, d] <-- [S, B], [B]
+        self.enc_outs, enc_hids = model.enc(x_seqs, x_lens, None)
+        # [S, B, d]
+        self.dec_hids = model.enc_to_dec_state(enc_hids)
+
+    def generate_next(self, past_ys):
+        last_ys = past_ys[:, -1]
+        log_probs, self.dec_hids = self.model.dec(self.enc_outs, last_ys, self.dec_hids)
+        return log_probs
+
+
 class T2TGenerator:
 
     def __init__(self,  model, x_seqs, x_lens=None):
@@ -57,7 +72,7 @@ class Decoder:
 
     @classmethod
     def new(cls, exp: Experiment, model=None):
-        generators = {'t2t': T2TGenerator, 'rnn': RNNGenerator}
+        generators = {'t2t': T2TGenerator, 'rnn': RNNGenerator, 'seq2seq': Seq2SeqGenerator}
         factories = {'t2t': T2TModel.make_model, 'rnn': RNNModel.make_model}
         if model is None:
             factory = factories[exp.model_type]
