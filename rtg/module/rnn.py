@@ -104,7 +104,7 @@ class AttnRNNDecoder(nn.Module):
 
         # Calculate attention from current RNN state and all encoder outputs;
         # apply to encoder outputs to get weighted average
-        attn_weights = self.attn(rnn_output, encoder_outputs)
+        attn_weights = self.attn(rnn_output, encoder_outputs)        # B x 1 x S
         context = attn_weights.bmm(encoder_outputs.transpose(0, 1))  # B x S=1 x N
 
         # Attentional vector using the RNN hidden state and context vector

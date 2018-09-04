@@ -41,7 +41,7 @@ class Seq2SeqGenerator:
 
     def generate_next(self, past_ys):
         last_ys = past_ys[:, -1]
-        log_probs, self.dec_hids = self.model.dec(self.enc_outs, last_ys, self.dec_hids)
+        log_probs, self.dec_hids, _ = self.model.dec(self.enc_outs, last_ys, self.dec_hids)
         return log_probs
 
 

@@ -1,5 +1,6 @@
 import torch
 from torch import nn
+import time
 
 import torch.nn.functional as F
 
@@ -83,7 +84,9 @@ class SeqDecoder(nn.Module):
         self.prev_emb_node = prev_emb_node
         self.generator = generator
         self.n_layers = n_layers
-        self.rnn_node = nn.LSTM(self.prev_emb_node.emb_size, self.generator.vec_size,
+        self.inp_size = self.prev_emb_node.emb_size
+        self.hid_size = self.generator.vec_size
+        self.rnn_node = nn.LSTM(self.inp_size, self.hid_size,
                                 num_layers=self.n_layers, bidirectional=False, batch_first=True)
 
     def forward(self, enc_outs, prev_out, last_hidden):
@@ -96,12 +99,78 @@ class SeqDecoder(nn.Module):
         embedded = self.prev_emb_node(prev_out).view(batch_size, 1, self.prev_emb_node.emb_size)
         # Get current hidden state from input word and last hidden state
         rnn_output, hidden = self.rnn_node(embedded, last_hidden)
+
         # [B x N ] <- [B x S=1 x N]
         rnn_output = rnn_output.squeeze(1)
         # Finally predict next token
         next_word_distr = self.generator(rnn_output)
         # Return final output, hidden state, and attention weights (for visualization)
-        return next_word_distr, hidden
+        return next_word_distr, hidden, None
+
+
+class GeneralAttn(nn.Module):
+    """
+    Attention model
+    """
+
+    def __init__(self, hid_size):
+        super(GeneralAttn, self).__init__()
+        self.inp_size = hid_size
+        self.out_size = hid_size
+        self.attn = nn.Linear(self.inp_size, self.out_size)
+
+    def forward(self, this_rnn_out, encoder_outs):
+        # hidden      : [B, D]
+        # encoder_out : [B, S, D]
+        #    [B, D] --> [B, S, D] ;; repeat hidden sequence_len times
+        this_run_out = this_rnn_out.unsqueeze(1).expand_as(encoder_outs)
+        #  A batched dot product implementation using element wise product followed by sum
+        #    [B, S]  <-- [B, S, D]
+        # element wise multiply, then sum along the last dim (i.e. model_dim)
+        weights = (encoder_outs * this_run_out).sum(dim=-1)
+
+        # Normalize energies to weights in range 0 to 1
+        return F.softmax(weights, dim=1)
+
+
+class AttnSeqDecoder(SeqDecoder):
+    def __init__(self, prev_emb_node: Embedder, generator: Generator, n_layers: int):
+        super(AttnSeqDecoder, self).__init__(prev_emb_node, generator, n_layers)
+        self.attn = GeneralAttn(self.hid_size)
+        self.merge = nn.Linear(self.hid_size + self.attn.out_size, self.hid_size)
+
+    def forward(self, enc_outs, prev_out, last_hidden):
+        # Note: we run this one step at a time
+
+        # Get the embedding of the current input word (last output word)
+        batch_size = prev_out.size(0)
+        embedded = self.prev_emb_node(prev_out)
+        embedded = embedded.view(batch_size, 1, self.prev_emb_node.emb_size)
+
+        # Get current hidden state from input word and last hidden state
+        rnn_output, hidden = self.rnn_node(embedded, last_hidden)
+        # [B x N ] <- [B x S=1 x  N]
+        rnn_output = rnn_output.squeeze(1)
+
+        # Calculate attention from current RNN state and all encoder outputs;
+        # apply to encoder outputs to get weighted average
+        attn_weights = self.attn(rnn_output, enc_outs)  # B x S
+        #   attn_weights : B x S     --> B x 1 x S
+        #   enc_outs     : B x S x N
+        # Batch multiply : [B x 1 x S] [B x S x N] --> [B x 1 x N]
+        context = attn_weights.unsqueeze(1).bmm(enc_outs)
+
+        # Attentional vector using the RNN hidden state and context vector
+        # concatenated together (Luong eq. 5)
+        # rnn_output = rnn_output.squeeze(0)  # S=1 x B x N -> B x N
+        context = context.squeeze(1)  # B x S=1 x N -> B x N
+        concat_input = torch.cat((rnn_output, context), 1)
+        concat_output = torch.tanh(self.merge(concat_input))
+
+        # predict next token
+        output_probs = self.generator(concat_output)
+        # Return final output, hidden state, and attention weights (for visualization)
+        return output_probs, hidden, attn_weights
 
 
 class Seq2Seq(nn.Module):
@@ -119,8 +188,9 @@ class Seq2Seq(nn.Module):
             #    -> [num_layers, 2, batch_size, hid // 2]
             #    -> [num_layers, batch_size, hid]
             #
-            return [hc.view(self.enc.n_layers, 2, batch_size, self.enc.out_size // 2)
-                        .view(self.enc.n_layers, batch_size, self.enc.out_size) for hc in enc_state]
+            return [
+                hc.view(self.enc.n_layers, 2, batch_size, self.enc.out_size // 2)
+                    .view(self.enc.n_layers, batch_size, self.enc.out_size) for hc in enc_state]
         return enc_state
 
     def forward(self, batch: Batch):
@@ -129,18 +199,25 @@ class Seq2Seq(nn.Module):
         enc_outs, enc_hids = self.enc(batch.x_seqs, batch.x_len, None)
         dec_inps = tensor([[BOS_TOK_IDX]] * batch_size, dtype=torch.long)
         dec_hids = self.enc_to_dec_state(enc_hids)
-        outp_probs = torch.zeros((batch.max_y_len-1, batch_size), device=device)
+        """
+        t_dim = 1
+        lastt_idx = (batch.x_len - 1).view(-1, 1).expand(-1, self.enc.out_size).unsqueeze(t_dim)
+        lastt_out = enc_outs.gather(dim=t_dim, index=lastt_idx).squeeze(t_dim)
+        lastt_out = lastt_out.expand(self.dec.n_layers, batch_size, self.dec.generator.vec_size)
+        dec_hids = (lastt_out, lastt_out)   # copy enc output to h and c of LSTM
+        """
+        outp_probs = torch.zeros((batch.max_y_len - 1, batch_size), device=device)
 
         for t in range(1, batch.max_y_len):
-            word_probs, dec_hids = self.dec(enc_outs, dec_inps, dec_hids)
+            word_probs, dec_hids, _ = self.dec(enc_outs, dec_inps, dec_hids)
 
             # expected output;; log probability for these indices should be high
             expct_word_idx = batch.y_seqs[:, t].view(batch_size, 1)
             expct_word_log_probs = word_probs.gather(dim=1, index=expct_word_idx)
-            outp_probs[t-1] = expct_word_log_probs.squeeze()
+            outp_probs[t - 1] = expct_word_log_probs.squeeze()
 
             # Randomly switch between gold and the prediction next word
-            if random.choice((True, False)):
+            if random.choice((False, True)):
                 dec_inps = expct_word_idx  # Next input is current target
             else:
                 pred_word_idx = word_probs.argmax(dim=1)
@@ -163,15 +240,52 @@ class Seq2Seq(nn.Module):
         tgt_embedder = Embedder(tgt_lang, tgt_vocab, emb_size)
         tgt_generator = Generator(tgt_lang, vec_size=hid_size, vocab_size=tgt_vocab)
         enc = SeqEncoder(src_embedder, hid_size, n_layers=n_layers, bidirectional=False)
-        dec = SeqDecoder(tgt_embedder, tgt_generator, n_layers=n_layers)
+        # dec = SeqDecoder(tgt_embedder, tgt_generator, n_layers=n_layers)
+        dec = AttnSeqDecoder(tgt_embedder, tgt_generator, n_layers=n_layers)
 
         model = Seq2Seq(enc, dec)
-        # This was important from their code.
         # Initialize parameters with Glorot / fan_avg.
         for p in model.parameters():
             if p.dim() > 1:
                 nn.init.xavier_uniform_(p)
         return model, args
+
+
+class NoamOpt:
+    "Optim wrapper that implements rate."
+
+    def __init__(self, model_size, factor, warmup, optimizer):
+        self.optimizer = optimizer
+        self._step = 0
+        self.warmup = warmup
+        self.factor = factor
+        self.model_size = model_size
+        self._rate = 0
+
+    def step(self):
+        "Update parameters and rate"
+        self._step += 1
+        rate = self.rate()
+        for p in self.optimizer.param_groups:
+            p['lr'] = rate
+        self._rate = rate
+        self.optimizer.step()
+        return rate
+
+    def zero_grad(self):
+        self.optimizer.zero_grad()
+
+    def rate(self, step=None):
+        "Implement `lrate` above"
+        if step is None:
+            step = self._step
+        return self.factor * (
+                    self.model_size ** (-0.5) * min(step ** (-0.5), step * self.warmup ** (-1.5)))
+
+    @staticmethod
+    def get_std_opt(model):
+        return NoamOpt(model.src_embed[0].d_model, 2, 4000,
+                       torch.optim.Adam(model.parameters(), lr=0, betas=(0.9, 0.98), eps=1e-9))
 
 
 class Seq2SeqTrainer:
@@ -193,8 +307,10 @@ class Seq2SeqTrainer:
         log.info(f"Moving model to device = {device}")
         self.model = model.to(device=device)
         self.model.train()
+        warmup = optim_args.pop('warmup_steps', 2000)
         optim_args['lr'] = optim_args.get('lr', 0.001)
-        self.optimizer = Optims[optim].new(self.model.parameters(), **optim_args)
+        optimizer = Optims[optim].new(self.model.parameters(), **optim_args)
+        self.optimizer = NoamOpt(model.dec.generator.vec_size * 2, 2, warmup, optimizer)
         self.exp.optim_args = optim, optim_args
         if not exp.read_only:
             self.exp.persist_state()
@@ -245,23 +361,29 @@ class Seq2SeqTrainer:
         :return: total loss
         """
         tot_loss = 0.0
+        start = time.time()
         self.model.train(train_mode)
-        for i, batch in tqdm(enumerate(data_iter), total=num_batches, unit='batch'):
-            batch = batch.to(device)
-            # Step clear gradients
-            self.model.zero_grad()
-            # Step Run forward pass.
-            outp_log_probs = self.model(batch)
-            tok_mask = self.sequence_mask(batch.y_len, batch.max_y_len-1)
-            per_tok_loss = -outp_log_probs
-            loss = (per_tok_loss * tok_mask.float()).sum().float() / batch.y_toks
-            tot_loss += loss.item()
-
-            if train_mode:
-                loss.backward()
-                self.optimizer.step()
-                self.optimizer.zero_grad()
-            del batch
+        with tqdm(data_iter, total=num_batches, unit='batch') as data_bar:
+            for i, batch in enumerate(data_bar):
+                batch = batch.to(device)
+                # Step clear gradients
+                self.model.zero_grad()
+                # Step Run forward pass.
+                outp_log_probs = self.model(batch)
+                tok_mask = self.sequence_mask(batch.y_len, batch.max_y_len - 1)
+                per_tok_loss = -outp_log_probs
+                loss = (per_tok_loss * tok_mask.float()).sum().float() / batch.y_toks
+                tot_loss += loss.item()
+                learn_rate = ""
+                if train_mode:
+                    loss.backward()
+                    learn_rate = self.optimizer.step()
+                    self.optimizer.zero_grad()
+                    learn_rate = f'LR={learn_rate:g}'
+                elapsed = time.time() - start
+                bar_msg = f'Loss:{loss:.4f}, {int(batch.y_toks/elapsed)}toks/s {learn_rate}'
+                data_bar.set_postfix_str(bar_msg, refresh=False)
+                del batch
         return tot_loss
 
     def overfit_batch(self, batch, max_iters=200):
@@ -271,7 +393,7 @@ class Seq2SeqTrainer:
             batch.to(device)
             self.model.zero_grad()
             outp_log_probs = self.model(batch)
-            tok_mask = self.sequence_mask(batch.y_len, batch.max_y_len-1)
+            tok_mask = self.sequence_mask(batch.y_len, batch.max_y_len - 1)
             per_tok_loss = -outp_log_probs
             loss = (per_tok_loss * tok_mask.float()).sum().float() / batch.y_toks
             loss_value = loss.item()
@@ -287,14 +409,21 @@ class Seq2SeqTrainer:
 
 
 class BiNMT(nn.Module):
-    pass
+
+    def __init__(self, lang1: Seq2Seq, lang2: Seq2Seq):
+        super().__init__()
+        self.lang1 = lang1
+        self.lang2 = lang2
+
+    def forward(self, *input):
+        pass
 
 
 def __test_model__():
     from rtg.dummy import BatchIterable
     from rtg.module.decoder import Decoder
 
-    vocab_size = 15
+    vocab_size = 20
     exp = Experiment("tmp.work", config={'model_type': 'seq2seq'}, read_only=True)
     num_epoch = 100
 
@@ -309,12 +438,7 @@ def __test_model__():
         log.info(f"====== REVERSE={reverse}; VOCAB={vocab_size}======")
         model, args = Seq2Seq.make_model('DummyA', 'DummyB', vocab_size, vocab_size,
                                          emb_size=100, hid_size=100, n_layers=2)
-        trainer = Seq2SeqTrainer(exp=exp, model=model, lr=0.01)
-
-        if False:
-            batch_1 = list(BatchIterable(vocab_size, 50, 5, reverse=reverse, batch_first=True))[0]
-            trainer.overfit_batch(batch_1, max_iters=1000)
-            continue
+        trainer = Seq2SeqTrainer(exp=exp, model=model, lr=0.01, warmup_steps=1000)
 
         decr = Decoder.new(exp, model)
         assert 2 == Batch.bos_val
@@ -326,14 +450,15 @@ def __test_model__():
         val_data = list(BatchIterable(vocab_size, 50, 5, reverse=reverse, batch_first=True))
         for epoch in range(num_epoch):
             model.train()
-            train_data = BatchIterable(vocab_size, 30, 50, reverse=reverse, batch_first=True)
+            train_data = BatchIterable(vocab_size, 30, 50, seq_len=12, reverse=reverse,
+                                       batch_first=True)
             train_loss = trainer.run_epoch(train_data, num_batches=train_data.num_batches,
                                            train_mode=True)
             val_loss = trainer.run_epoch(val_data, num_batches=len(val_data), train_mode=False)
             log.info(
                 f"Epoch {epoch}, training Loss: {train_loss:.4f} \t validation loss:{val_loss:.4f}")
             model.eval()
-            res = decr.greedy_decode(src, src_lens, max_len=12)
+            res = decr.greedy_decode(src, src_lens, max_len=17)
             print_res(res)
 
 
