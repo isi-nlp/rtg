@@ -48,10 +48,11 @@ class Generator(nn.Module):
 
 class SeqEncoder(nn.Module):
 
-    def __init__(self, emb_node: Embedder, out_size: int, n_layers: int,
+    def __init__(self, embedder: Embedder, out_size: int, n_layers: int,
                  bidirectional: bool = True):
         super().__init__()
-        self.emb_node = emb_node
+        self.emb = embedder
+        self.emb_size = self.emb.emb_size
         self.out_size = out_size
         self.n_layers = n_layers
         self.bidirectional = bidirectional
@@ -60,14 +61,15 @@ class SeqEncoder(nn.Module):
         if self.bidirectional:
             assert self.out_size % 2 == 0
             out_size = out_size // 2
-        self.rnn_node = nn.LSTM(self.emb_node.emb_size, out_size, num_layers=self.n_layers,
+        self.rnn_node = nn.LSTM(self.emb_size, out_size, num_layers=self.n_layers,
                                 bidirectional=self.bidirectional, batch_first=True)
 
-    def forward(self, input_seqs: torch.Tensor, input_lengths, hidden=None):
+    def forward(self, input_seqs: torch.Tensor, input_lengths, hidden=None, pre_embedded=False):
         assert len(input_seqs) == len(input_lengths)
         batch_size, seq_len = input_seqs.shape
+        embedded = input_seqs if pre_embedded else self.emb(input_seqs)
+        embedded = embedded.view(batch_size, seq_len, self.emb_size)
 
-        embedded = self.emb_node(input_seqs).view(batch_size, seq_len, self.emb_node.emb_size)
         packed = nn.utils.rnn.pack_padded_sequence(embedded, input_lengths, batch_first=True)
         outputs, hidden = self.rnn_node(packed, hidden)
         outputs, output_lengths = nn.utils.rnn.pad_packed_sequence(outputs, batch_first=True,
@@ -81,31 +83,35 @@ class SeqDecoder(nn.Module):
 
     def __init__(self, prev_emb_node: Embedder, generator: Generator, n_layers: int):
         super(SeqDecoder, self).__init__()
-        self.prev_emb_node = prev_emb_node
+        self.prev_emb = prev_emb_node
         self.generator = generator
         self.n_layers = n_layers
-        self.inp_size = self.prev_emb_node.emb_size
+        self.emb_size = self.prev_emb.emb_size
         self.hid_size = self.generator.vec_size
-        self.rnn_node = nn.LSTM(self.inp_size, self.hid_size,
+        self.rnn_node = nn.LSTM(self.emb_size, self.hid_size,
                                 num_layers=self.n_layers, bidirectional=False, batch_first=True)
 
-    def forward(self, enc_outs, prev_out, last_hidden):
+    def forward(self, enc_outs, prev_out, last_hidden, gen_probs=True):
         # Note: we run this one step at a time
 
         # Get the embedding of the current input word (last output word)
         batch_size = prev_out.size(0)
         assert len(enc_outs) == batch_size
         # S=B x 1 x N
-        embedded = self.prev_emb_node(prev_out).view(batch_size, 1, self.prev_emb_node.emb_size)
+        embedded = self.prev_emb(prev_out).view(batch_size, 1, self.prev_emb.emb_size)
         # Get current hidden state from input word and last hidden state
         rnn_output, hidden = self.rnn_node(embedded, last_hidden)
 
         # [B x N ] <- [B x S=1 x N]
         rnn_output = rnn_output.squeeze(1)
-        # Finally predict next token
-        next_word_distr = self.generator(rnn_output)
-        # Return final output, hidden state, and attention weights (for visualization)
-        return next_word_distr, hidden, None
+
+        if gen_probs:
+            # Finally predict next token
+            next_word_distr = self.generator(rnn_output)
+            # Return final output, hidden state, and attention weights (for visualization)
+            return next_word_distr, hidden, None
+        else:
+            return rnn_output, hidden, None
 
 
 class GeneralAttn(nn.Module):
@@ -139,13 +145,13 @@ class AttnSeqDecoder(SeqDecoder):
         self.attn = GeneralAttn(self.hid_size)
         self.merge = nn.Linear(self.hid_size + self.attn.out_size, self.hid_size)
 
-    def forward(self, enc_outs, prev_out, last_hidden):
+    def forward(self, enc_outs, prev_out, last_hidden, gen_probs=True):
         # Note: we run this one step at a time
 
         # Get the embedding of the current input word (last output word)
         batch_size = prev_out.size(0)
-        embedded = self.prev_emb_node(prev_out)
-        embedded = embedded.view(batch_size, 1, self.prev_emb_node.emb_size)
+        embedded = self.prev_emb(prev_out)
+        embedded = embedded.view(batch_size, 1, self.prev_emb.emb_size)
 
         # Get current hidden state from input word and last hidden state
         rnn_output, hidden = self.rnn_node(embedded, last_hidden)
@@ -167,18 +173,52 @@ class AttnSeqDecoder(SeqDecoder):
         concat_input = torch.cat((rnn_output, context), 1)
         concat_output = torch.tanh(self.merge(concat_input))
 
-        # predict next token
-        output_probs = self.generator(concat_output)
-        # Return final output, hidden state, and attention weights (for visualization)
-        return output_probs, hidden, attn_weights
+        if gen_probs:
+            # predict next token
+            output_probs = self.generator(concat_output)
+            # Return final output, hidden state, and attention weights (for visualization)
+            return output_probs, hidden, attn_weights
+        else:
+            return concat_output, hidden, attn_weights
+
+
+class Seq2SeqBridge(nn.Module):
+    """Vector to Vector (a slightly different setup than seq2seq
+    starts with a decoder, then an encoder (short-circuits (or skips) embedder and generator)
+    """
+
+    def __init__(self, dec: SeqDecoder, enc: SeqEncoder):
+        super().__init__()
+        self.dec = dec
+        self.enc = enc
+
+    def forward(self, enc_outs, enc_hids, max_len):
+        assert len(enc_outs) == len(enc_hids) == len(max_len)
+        batch_size = len(enc_outs)
+
+        dec_inps = tensor([[BOS_TOK_IDX]] * batch_size, dtype=torch.long)
+        dec_hids = self.enc_to_dec_state(enc_hids)
+        result = torch.zeros((batch_size, max_len, self.dec.hid_size), device=device)
+
+        for t in range(max_len):
+            dec_outs, dec_hids, _ = self.dec(enc_outs, dec_inps, dec_hids, gen_probs=False)
+            result[:, t, :] = dec_outs
+
+        # TODO: check how hidden state flows
+        enc_outs, enc_hids = self.enc(result, [max_len] * batch_size, pre_embedded=True)
+        return enc_outs, enc_hids
 
 
 class Seq2Seq(nn.Module):
 
-    def __init__(self, enc: SeqEncoder, dec: SeqDecoder):
+    def __init__(self, enc: SeqEncoder, dec: SeqDecoder, bridge:Seq2SeqBridge=None):
         super(Seq2Seq, self).__init__()
         self.enc = enc
         self.dec = dec
+        # since no linear projects, all sizes must be same
+        assert aeq(enc.out_size, enc.emb_size, dec.hid_size, dec.emb_size)
+        self.model_dim = self.enc.out_size
+        self.bridge = bridge
 
     def enc_to_dec_state(self, enc_state):
         if self.enc.bidirectional:
@@ -197,6 +237,10 @@ class Seq2Seq(nn.Module):
         assert batch.batch_first
         batch_size = len(batch)
         enc_outs, enc_hids = self.enc(batch.x_seqs, batch.x_len, None)
+        if self.bridge:
+            # used in BiNMT to make a cycle, such as Enc1 -> [[Dec2 -> Enc2]] -> Dec2
+            _enc_outs, _enc_hids = enc_outs, enc_hids
+            enc_outs, enc_hids = self.bridge(enc_outs, enc_hids, batch.y_len)
         dec_inps = tensor([[BOS_TOK_IDX]] * batch_size, dtype=torch.long)
         dec_hids = self.enc_to_dec_state(enc_hids)
         """
@@ -239,7 +283,7 @@ class Seq2Seq(nn.Module):
         src_embedder = Embedder(src_lang, src_vocab, emb_size)
         tgt_embedder = Embedder(tgt_lang, tgt_vocab, emb_size)
         tgt_generator = Generator(tgt_lang, vec_size=hid_size, vocab_size=tgt_vocab)
-        enc = SeqEncoder(src_embedder, hid_size, n_layers=n_layers, bidirectional=False)
+        enc = SeqEncoder(src_embedder, hid_size, n_layers=n_layers, bidirectional=True)
         # dec = SeqDecoder(tgt_embedder, tgt_generator, n_layers=n_layers)
         dec = AttnSeqDecoder(tgt_embedder, tgt_generator, n_layers=n_layers)
 
@@ -251,8 +295,83 @@ class Seq2Seq(nn.Module):
         return model, args
 
 
+def aeq(*items):
+    for i in items[1:]:
+        if items[0] != i:
+            return False
+    return True
+
+
+class BiNMT(nn.Module):
+    """
+    Bi directional NMT that can be trained with monolingual data
+    """
+
+    def __init__(self, enc1: SeqEncoder, dec1: SeqDecoder, enc2: SeqEncoder, dec2: SeqDecoder):
+        super().__init__()
+        self.enc1, self.dec1 = enc1, dec1
+        self.enc2, self.dec2 = enc2, dec2
+
+        # check that sizes are compatible
+        # since no linear projects at the moment, all sizes must be same
+        assert aeq(enc1.out_size, enc2.out_size, dec1.emb_size, dec2.emb_size,
+                   dec1.hid_size, dec2.hid_size)
+        self.model_dim = enc1.out_size
+
+        self.paths = {
+            'E1D1': Seq2Seq(enc1, dec1),   # ENC1 --> DEC1
+            'E2D2': Seq2Seq(enc2, dec2),   # ENC2 --> DEC2
+            # ENC1 --> DEC2 --> ENC2 --> DEC1
+            'E1D2E2D1': Seq2Seq(enc1, dec1, bridge=Seq2SeqBridge(dec2, enc2)),
+            # ENC2 --> DEC1 --> ENC1 --> DEC2
+            'E2D1E1D2': Seq2Seq(enc2, dec2, bridge=Seq2SeqBridge(dec1, enc1))
+        }
+        # TODO: parallel data when available (semi supervised)
+        # 1. ENC1 --> DEC2
+        # 2. ENC2 --> DEC1
+
+    def forward(self, batch: Batch, path: str):
+        if path not in self.paths:
+            raise Exception(f'path={path} is unsupported. Valid options:{self.paths.keys()}')
+        return self.paths[path](batch)
+
+    @staticmethod
+    def make_model(src_lang, tgt_lang, src_vocab: int, tgt_vocab: int, emb_size: int = 300,
+                   hid_size: int = 300, n_layers: int = 2):
+        args = {
+            'src_lang': src_lang,
+            'tgt_lang': tgt_lang,
+            'src_vocab': src_vocab,
+            'tgt_vocab': tgt_vocab,
+            'emb_size': emb_size,
+            'hid_size': hid_size,
+            'n_layers': n_layers
+        }
+        src_embedder = Embedder(src_lang, src_vocab, emb_size)
+        tgt_embedder = Embedder(tgt_lang, tgt_vocab, emb_size)
+
+        src_generator = Generator(src_lang, vec_size=hid_size, vocab_size=src_vocab)
+        tgt_generator = Generator(tgt_lang, vec_size=hid_size, vocab_size=tgt_vocab)
+
+        src_enc = SeqEncoder(src_embedder, hid_size, n_layers=n_layers, bidirectional=True)
+        tgt_enc = SeqEncoder(tgt_embedder, hid_size, n_layers=n_layers, bidirectional=True)
+
+        # dec = SeqDecoder(tgt_embedder, tgt_generator, n_layers=n_layers)
+        src_dec = AttnSeqDecoder(src_embedder, src_generator, n_layers=n_layers)
+        tgt_dec = AttnSeqDecoder(tgt_embedder, tgt_generator, n_layers=n_layers)
+
+        model = BiNMT(src_enc, src_dec, tgt_enc, tgt_dec)
+        # Initialize parameters with Glorot / fan_avg.
+        for p in model.parameters():
+            if p.dim() > 1:
+                nn.init.xavier_uniform_(p)
+        return model, args
+
+
 class NoamOpt:
-    "Optim wrapper that implements rate."
+
+    """Optim wrapper that implements rate."""
+    # taken from Tensor2Tensor/Transformer model. Thanks to Alexander Rush of HarvardNLP
 
     def __init__(self, model_size, factor, warmup, optimizer):
         self.optimizer = optimizer
@@ -288,13 +407,19 @@ class NoamOpt:
                        torch.optim.Adam(model.parameters(), lr=0, betas=(0.9, 0.98), eps=1e-9))
 
 
-class Seq2SeqTrainer:
+class NMTTrainer:
 
     def __init__(self, exp: Experiment, model=None, optim='ADAM', **optim_args):
         self.exp = exp
         self.start_epoch = 0
+
         if model is None:
-            model, args = Seq2Seq.make_model(**exp.model_args)
+            if exp.model_type == 'seq2seq':
+                model, args = Seq2Seq.make_model(**exp.model_args)
+            elif exp.model_type == 'binmt':
+                model, args = BiNMT.make_model(**exp.model_args)
+            else:
+                raise Exception(f'Unsupported type {exp.model_type}; expected: seq2seq or binmt')
             last_check_pt, last_epoch = self.exp.get_last_saved_model()
             if last_check_pt:
                 log.info(f"Resuming training from epoch:{self.start_epoch}, model={last_check_pt}")
@@ -310,7 +435,8 @@ class Seq2SeqTrainer:
         warmup = optim_args.pop('warmup_steps', 2000)
         optim_args['lr'] = optim_args.get('lr', 0.001)
         optimizer = Optims[optim].new(self.model.parameters(), **optim_args)
-        self.optimizer = NoamOpt(model.dec.generator.vec_size * 2, 2, warmup, optimizer)
+        self.optimizer = NoamOpt(model.model_dim * 2, 2, warmup, optimizer)
+        optim_args['warmup_steps'] = warmup
         self.exp.optim_args = optim, optim_args
         if not exp.read_only:
             self.exp.persist_state()
@@ -369,6 +495,7 @@ class Seq2SeqTrainer:
                 # Step clear gradients
                 self.model.zero_grad()
                 # Step Run forward pass.
+                # FIXME path E1D1
                 outp_log_probs = self.model(batch)
                 tok_mask = self.sequence_mask(batch.y_len, batch.max_y_len - 1)
                 per_tok_loss = -outp_log_probs
@@ -408,18 +535,7 @@ class Seq2SeqTrainer:
                 break
 
 
-class BiNMT(nn.Module):
-
-    def __init__(self, lang1: Seq2Seq, lang2: Seq2Seq):
-        super().__init__()
-        self.lang1 = lang1
-        self.lang2 = lang2
-
-    def forward(self, *input):
-        pass
-
-
-def __test_model__():
+def __test_seq2seq_model__():
     from rtg.dummy import BatchIterable
     from rtg.module.decoder import Decoder
 
@@ -438,7 +554,50 @@ def __test_model__():
         log.info(f"====== REVERSE={reverse}; VOCAB={vocab_size}======")
         model, args = Seq2Seq.make_model('DummyA', 'DummyB', vocab_size, vocab_size,
                                          emb_size=100, hid_size=100, n_layers=2)
-        trainer = Seq2SeqTrainer(exp=exp, model=model, lr=0.01, warmup_steps=1000)
+        trainer = NMTTrainer(exp=exp, model=model, lr=0.01, warmup_steps=1000)
+
+        decr = Decoder.new(exp, model)
+        assert 2 == Batch.bos_val
+
+        def print_res(res):
+            for score, seq in res:
+                log.info(f'{score:.4f} :: {seq}')
+
+        val_data = list(BatchIterable(vocab_size, 50, 5, reverse=reverse, batch_first=True))
+        for epoch in range(num_epoch):
+            model.train()
+            train_data = BatchIterable(vocab_size, 30, 50, seq_len=12, reverse=reverse,
+                                       batch_first=True)
+            train_loss = trainer.run_epoch(train_data, num_batches=train_data.num_batches,
+                                           train_mode=True)
+            val_loss = trainer.run_epoch(val_data, num_batches=len(val_data), train_mode=False)
+            log.info(
+                f"Epoch {epoch}, training Loss: {train_loss:.4f} \t validation loss:{val_loss:.4f}")
+            model.eval()
+            res = decr.greedy_decode(src, src_lens, max_len=17)
+            print_res(res)
+
+
+def __test_binmt_model__():
+    from rtg.dummy import BatchIterable
+    from rtg.module.decoder import Decoder
+
+    vocab_size = 20
+    exp = Experiment("tmp.work", config={'model_type': 'seq2seq'}, read_only=True)
+    num_epoch = 100
+
+    src = tensor([[2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
+                  [2, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4]])
+    src_lens = tensor([src.size(1)] * src.size(0))
+
+    for reverse in (False,):
+        # train two models;
+        #  first, just copy the numbers, i.e. y = x
+        #  second, reverse the numbers y=(V + reserved - x)
+        log.info(f"====== REVERSE={reverse}; VOCAB={vocab_size}======")
+        model, args = BiNMT.make_model('DummyA', 'DummyB', vocab_size, vocab_size,
+                                         emb_size=100, hid_size=100, n_layers=2)
+        trainer = NMTTrainer(exp=exp, model=model, lr=0.01, warmup_steps=1000)
 
         decr = Decoder.new(exp, model)
         assert 2 == Batch.bos_val
@@ -463,4 +622,6 @@ def __test_model__():
 
 
 if __name__ == '__main__':
-    __test_model__()
+    #__test_binmt_model__()
+    __test_seq2seq_model__()
+
