@@ -211,7 +211,7 @@ class Seq2SeqBridge(nn.Module):
 
 class Seq2Seq(nn.Module):
 
-    def __init__(self, enc: SeqEncoder, dec: SeqDecoder, bridge:Seq2SeqBridge=None):
+    def __init__(self, enc: SeqEncoder, dec: SeqDecoder, bridge: Seq2SeqBridge = None):
         super(Seq2Seq, self).__init__()
         self.enc = enc
         self.dec = dec
@@ -319,8 +319,8 @@ class BiNMT(nn.Module):
         self.model_dim = enc1.out_size
 
         self.paths = {
-            'E1D1': Seq2Seq(enc1, dec1),   # ENC1 --> DEC1
-            'E2D2': Seq2Seq(enc2, dec2),   # ENC2 --> DEC2
+            'E1D1': Seq2Seq(enc1, dec1),  # ENC1 --> DEC1
+            'E2D2': Seq2Seq(enc2, dec2),  # ENC2 --> DEC2
             # ENC1 --> DEC2 --> ENC2 --> DEC1
             'E1D2E2D1': Seq2Seq(enc1, dec1, bridge=Seq2SeqBridge(dec2, enc2)),
             # ENC2 --> DEC1 --> ENC1 --> DEC2
@@ -369,8 +369,8 @@ class BiNMT(nn.Module):
 
 
 class NoamOpt:
-
     """Optim wrapper that implements rate."""
+
     # taken from Tensor2Tensor/Transformer model. Thanks to Alexander Rush of HarvardNLP
 
     def __init__(self, model_size, factor, warmup, optimizer):
@@ -399,7 +399,7 @@ class NoamOpt:
         if step is None:
             step = self._step
         return self.factor * (
-                    self.model_size ** (-0.5) * min(step ** (-0.5), step * self.warmup ** (-1.5)))
+                self.model_size ** (-0.5) * min(step ** (-0.5), step * self.warmup ** (-1.5)))
 
     @staticmethod
     def get_std_opt(model):
@@ -496,7 +496,11 @@ class NMTTrainer:
                 self.model.zero_grad()
                 # Step Run forward pass.
                 # FIXME path E1D1
-                outp_log_probs = self.model(batch)
+                if isinstance(self.model, BiNMT):
+                    outp_log_probs = self.model(batch, 'E1D1')
+                else:
+                    outp_log_probs = self.model(batch)
+
                 tok_mask = self.sequence_mask(batch.y_len, batch.max_y_len - 1)
                 per_tok_loss = -outp_log_probs
                 loss = (per_tok_loss * tok_mask.float()).sum().float() / batch.y_toks
@@ -583,7 +587,7 @@ def __test_binmt_model__():
     from rtg.module.decoder import Decoder
 
     vocab_size = 20
-    exp = Experiment("tmp.work", config={'model_type': 'seq2seq'}, read_only=True)
+    exp = Experiment("tmp.work", config={'model_type': 'binmt'}, read_only=True)
     num_epoch = 100
 
     src = tensor([[2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
@@ -596,7 +600,7 @@ def __test_binmt_model__():
         #  second, reverse the numbers y=(V + reserved - x)
         log.info(f"====== REVERSE={reverse}; VOCAB={vocab_size}======")
         model, args = BiNMT.make_model('DummyA', 'DummyB', vocab_size, vocab_size,
-                                         emb_size=100, hid_size=100, n_layers=2)
+                                       emb_size=100, hid_size=100, n_layers=2)
         trainer = NMTTrainer(exp=exp, model=model, lr=0.01, warmup_steps=1000)
 
         decr = Decoder.new(exp, model)
@@ -622,6 +626,5 @@ def __test_binmt_model__():
 
 
 if __name__ == '__main__':
-    #__test_binmt_model__()
-    __test_seq2seq_model__()
-
+    __test_binmt_model__()
+    # __test_seq2seq_model__()
