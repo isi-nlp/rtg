@@ -26,6 +26,7 @@ prep:
   truncate: true
   valid_src: data/valid.src
   valid_tgt: data/valid.tgt
+  shared_vocab: true
 src_lang: FRA
 test_src: null
 test_tgt: null

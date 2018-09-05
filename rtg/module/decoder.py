@@ -35,9 +35,9 @@ class Seq2SeqGenerator:
     def __init__(self, model, x_seqs, x_lens):
         self.model = model
         # [S, B, d], [S, B, d] <-- [S, B], [B]
-        self.enc_outs, enc_hids = model.enc(x_seqs, x_lens, None)
+        self.enc_outs, enc_hids = model.encode(x_seqs, x_lens, None)
         # [S, B, d]
-        self.dec_hids = model.enc_to_dec_state(enc_hids)
+        self.dec_hids = enc_hids
 
     def generate_next(self, past_ys):
         last_ys = past_ys[:, -1]
@@ -47,14 +47,15 @@ class Seq2SeqGenerator:
 
 class BiNMTGenerator:
 
-    def __init__(self, model, x_seqs, x_lens, path='E1D1'):
+    def __init__(self, model, x_seqs, x_lens, path='E1D2E2D1'):
         self.model = model.paths[path]
         log.warning(f'FIXME: path {path} is hardcoded')
 
         # [S, B, d], [S, B, d] <-- [S, B], [B]
-        self.enc_outs, enc_hids = self.model.enc(x_seqs, x_lens, None)
+        self.enc_outs, enc_hids = self.model.encode(x_seqs, x_lens, None)
+
         # [S, B, d]
-        self.dec_hids = self.model.enc_to_dec_state(enc_hids)
+        self.dec_hids = enc_hids
 
     def generate_next(self, past_ys):
         last_ys = past_ys[:, -1]

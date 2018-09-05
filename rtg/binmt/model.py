@@ -66,9 +66,13 @@ class SeqEncoder(nn.Module):
 
     def forward(self, input_seqs: torch.Tensor, input_lengths, hidden=None, pre_embedded=False):
         assert len(input_seqs) == len(input_lengths)
-        batch_size, seq_len = input_seqs.shape
-        embedded = input_seqs if pre_embedded else self.emb(input_seqs)
-        embedded = embedded.view(batch_size, seq_len, self.emb_size)
+        if pre_embedded:
+            embedded = input_seqs
+            batch_size, seq_len, emb_size = input_seqs.shape
+            assert emb_size == self.emb_size
+        else:
+            batch_size, seq_len = input_seqs.shape
+            embedded = self.emb(input_seqs).view(batch_size, seq_len, self.emb_size)
 
         packed = nn.utils.rnn.pack_padded_sequence(embedded, input_lengths, batch_first=True)
         outputs, hidden = self.rnn_node(packed, hidden)
@@ -76,7 +80,20 @@ class SeqEncoder(nn.Module):
                                                                    padding_value=PAD_TOK_IDX)
         # Sum bidirectional outputs
         # outputs = outputs[:, :, :self.hid_size] + outputs[:, :, self.hid_size:]
-        return outputs, hidden
+        return outputs, self.to_dec_state(hidden)
+
+    def to_dec_state(self, enc_state):
+        if self.bidirectional:
+            # h_t, c_t = enc_state
+            batch_size = enc_state[0].shape[1]
+            # [num_layers * 2, batch_size, hid // 2]
+            #    -> [num_layers, 2, batch_size, hid // 2]
+            #    -> [num_layers, batch_size, hid]
+            #
+            return [
+                hc.view(self.n_layers, 2, batch_size, self.out_size // 2)
+                    .view(self.n_layers, batch_size, self.out_size) for hc in enc_state]
+        return enc_state
 
 
 class SeqDecoder(nn.Module):
@@ -193,13 +210,12 @@ class Seq2SeqBridge(nn.Module):
         self.enc = enc
 
     def forward(self, enc_outs, enc_hids, max_len):
-        assert len(enc_outs) == len(enc_hids) == len(max_len)
         batch_size = len(enc_outs)
+        assert batch_size == enc_hids[0].shape[1] == enc_hids[1].shape[1]
 
         dec_inps = tensor([[BOS_TOK_IDX]] * batch_size, dtype=torch.long)
-        dec_hids = self.enc_to_dec_state(enc_hids)
+        dec_hids = enc_hids
         result = torch.zeros((batch_size, max_len, self.dec.hid_size), device=device)
-
         for t in range(max_len):
             dec_outs, dec_hids, _ = self.dec(enc_outs, dec_inps, dec_hids, gen_probs=False)
             result[:, t, :] = dec_outs
@@ -220,30 +236,22 @@ class Seq2Seq(nn.Module):
         self.model_dim = self.enc.out_size
         self.bridge = bridge
 
-    def enc_to_dec_state(self, enc_state):
-        if self.enc.bidirectional:
-            # h_t, c_t = enc_state
-            batch_size = enc_state[0].shape[1]
-            # [num_layers * 2, batch_size, hid // 2]
-            #    -> [num_layers, 2, batch_size, hid // 2]
-            #    -> [num_layers, batch_size, hid]
-            #
-            return [
-                hc.view(self.enc.n_layers, 2, batch_size, self.enc.out_size // 2)
-                    .view(self.enc.n_layers, batch_size, self.enc.out_size) for hc in enc_state]
-        return enc_state
+    def encode(self, x_seqs, x_lens, hids=None, max_y_len=256):
+        enc_outs, enc_hids = self.enc(x_seqs, x_lens, hids)
+        if self.bridge:
+            # used in BiNMT to make a cycle, such as Enc1 -> [[Dec2 -> Enc2]] -> Dec2
+            enc_outs, enc_hids = self.bridge(enc_outs, enc_hids, max_y_len)
+        return enc_outs, enc_hids
 
     def forward(self, batch: Batch):
         assert batch.batch_first
         batch_size = len(batch)
-        enc_outs, enc_hids = self.enc(batch.x_seqs, batch.x_len, None)
-        if self.bridge:
-            # used in BiNMT to make a cycle, such as Enc1 -> [[Dec2 -> Enc2]] -> Dec2
-            _enc_outs, _enc_hids = enc_outs, enc_hids
-            enc_outs, enc_hids = self.bridge(enc_outs, enc_hids, batch.y_len)
+        enc_outs, enc_hids = self.encode(batch.x_seqs, batch.x_len, hids=None, max_y_len=batch.max_y_len)
+
         dec_inps = tensor([[BOS_TOK_IDX]] * batch_size, dtype=torch.long)
-        dec_hids = self.enc_to_dec_state(enc_hids)
+        dec_hids = enc_hids
         """
+        # extract vector at given last stamp (as per the seq length)
         t_dim = 1
         lastt_idx = (batch.x_len - 1).view(-1, 1).expand(-1, self.enc.out_size).unsqueeze(t_dim)
         lastt_out = enc_outs.gather(dim=t_dim, index=lastt_idx).squeeze(t_dim)
@@ -407,7 +415,7 @@ class NoamOpt:
                        torch.optim.Adam(model.parameters(), lr=0, betas=(0.9, 0.98), eps=1e-9))
 
 
-class NMTTrainer:
+class BiNmtTrainer:
 
     def __init__(self, exp: Experiment, model=None, optim='ADAM', **optim_args):
         self.exp = exp
@@ -478,7 +486,7 @@ class NMTTrainer:
         summary = '\n'.join(f'{ep:02}\t{tl:.4f}\t{vl:.4f}' for ep, tl, vl in losses)
         log.info(f"==Summary==:\nEpoch\t TrainLoss \t ValidnLoss \n {summary}")
 
-    def run_epoch(self, data_iter, num_batches=None, train_mode=True):
+    def run_epoch(self, data_iter, num_batches=None, train_mode=True, path=None):
         """
         run a pass over data set
         :param data_iter: batched data set
@@ -495,9 +503,9 @@ class NMTTrainer:
                 # Step clear gradients
                 self.model.zero_grad()
                 # Step Run forward pass.
-                # FIXME path E1D1
+                # FIXME path
                 if isinstance(self.model, BiNMT):
-                    outp_log_probs = self.model(batch, 'E1D1')
+                    outp_log_probs = self.model(batch, 'E1D2E2D1')
                 else:
                     outp_log_probs = self.model(batch)
 
@@ -558,7 +566,7 @@ def __test_seq2seq_model__():
         log.info(f"====== REVERSE={reverse}; VOCAB={vocab_size}======")
         model, args = Seq2Seq.make_model('DummyA', 'DummyB', vocab_size, vocab_size,
                                          emb_size=100, hid_size=100, n_layers=2)
-        trainer = NMTTrainer(exp=exp, model=model, lr=0.01, warmup_steps=1000)
+        trainer = BiNmtTrainer(exp=exp, model=model, lr=0.01, warmup_steps=1000)
 
         decr = Decoder.new(exp, model)
         assert 2 == Batch.bos_val
@@ -601,7 +609,7 @@ def __test_binmt_model__():
         log.info(f"====== REVERSE={reverse}; VOCAB={vocab_size}======")
         model, args = BiNMT.make_model('DummyA', 'DummyB', vocab_size, vocab_size,
                                        emb_size=100, hid_size=100, n_layers=2)
-        trainer = NMTTrainer(exp=exp, model=model, lr=0.01, warmup_steps=1000)
+        trainer = BiNmtTrainer(exp=exp, model=model, lr=0.01, warmup_steps=1000)
 
         decr = Decoder.new(exp, model)
         assert 2 == Batch.bos_val
@@ -627,4 +635,5 @@ def __test_binmt_model__():
 
 if __name__ == '__main__':
     __test_binmt_model__()
-    # __test_seq2seq_model__()
+    #__test_seq2seq_model__()
+    pass

@@ -7,6 +7,7 @@ import operator as op
 from enum import Enum
 import inspect
 import gzip
+from pathlib import Path
 
 # Size of each element in tensor
 tensor_size = {
@@ -75,7 +76,7 @@ class IO:
     """File opener and automatic closer"""
 
     def __init__(self, path, mode='r', encoding=None, errors=None):
-        self.path = path
+        self.path = path if type(path) is Path else Path(path)
         self.mode = mode
         self.fd = None
         self.encoding = encoding if encoding else 'utf-8' if 't' in mode else None
@@ -83,13 +84,13 @@ class IO:
 
     def __enter__(self):
 
-        if self.path.endswith(".gz"):   # gzip mode
+        if self.path.name.endswith(".gz"):   # gzip mode
             self.fd = gzip.open(self.path, self.mode, encoding=self.encoding, errors=self.errors)
         else:
             if 'b' in self.mode:  # binary mode doesnt take encoding or errors
-                self.fd = open(self.path, self.mode)
+                self.fd = self.path.open(self.mode)
             else:
-                self.fd = open(self.path, self.mode, encoding=self.encoding, errors=self.errors)
+                self.fd = self.path.open(self.mode, encoding=self.encoding, errors=self.errors)
         return self.fd
 
     def __exit__(self, _type, value, traceback):

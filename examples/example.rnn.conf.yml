@@ -23,6 +23,7 @@ prep:
   truncate: true
   valid_src: data/valid.src
   valid_tgt: data/valid.tgt
+  shared_vocab: true
 src_lang: FRA
 tgt_lang: ENG
 updated_at: '2018-07-25T15:50:52.578881'

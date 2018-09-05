@@ -1,0 +1,27 @@
+model_type: binmt
+model_args:
+  n_layers: 2
+  emb_size: 300
+  hid_size: 300
+  src_vocab: 8000
+  tgt_vocab: 8000
+optim:
+  args:
+    lr: 0.001
+  name: ADAM
+  warmup_steps: 2000
+pieces: unigram
+prep:
+  text_pieces: true
+  src_len: 100
+  tgt_len: 100
+  truncate: true
+  mono_train_src: data/mono.train.src
+  mono_train_tgt: data/mono.train.tgt
+  mono_valid_src: data/mono.valid.src
+  mono_valid_tgt: data/mono.valid.tgt
+  shared_vocab: false
+src_lang: FRA
+tgt_lang: ENG
+updated_at: '2018-07-25T15:50:52.578881'
+vocab_size: 32000

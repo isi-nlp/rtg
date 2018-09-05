@@ -17,14 +17,16 @@ def parse_args():
                         help='Type of model: RNN or T2T (aka transformer)')
     parser.add_argument("-ne", "--num-epochs", help="Num epochs", type=int, default=30)
     parser.add_argument("-re", "--resume", action='store_true', dest='resume_train',
-                        help="Resume Training. adds --num-epochs more epochs to the most recent model in work-dir", )
+                        help="Resume Training. adds --num-epochs more epochs to the most "
+                             "recent model in work-dir", )
     parser.add_argument("-bs", "--batch-size", help="Batch size", type=int, default=256)
     parser.add_argument("-km", "--keep-models", type=int, default=10,
                         help="Number of models to keep. Stores one model per epoch")
-    parser.add_argument("-op", "--optim", type=str, default='ADAM', choices=Optims.names(), help="Name of optimizer")
+    parser.add_argument("-op", "--optim", type=str, default='ADAM', choices=Optims.names(),
+                        help="Name of optimizer")
     parser.add_argument("-oa", "--optim-args", type=str, default='lr=0.001',
-                        help="Comma separated key1=val1,key2=val2 args to optimizer. Example: lr=0.01 "
-                             "The arguments depends on the choice of --optim")
+                        help="Comma separated key1=val1,key2=val2 args to optimizer."
+                             " Example: lr=0.01. The arguments depends on the choice of --optim")
     return vars(parser.parse_args())
 
 
@@ -32,10 +34,12 @@ def main():
     args = parse_args()
     exp = Experiment(args.pop('work_dir'))
     mod_type = args.pop('mod_type')
-    assert exp.has_prepared(), f'Experiment dir {exp.work_dir} is not ready to train. Please run "prep" sub task'
+    assert exp.has_prepared(), f'Experiment dir {exp.work_dir} is not ready to train. ' \
+                               f'Please run "prep" sub task'
     if exp.has_trained() and exp.model_type and exp.model_type != mod_type:
-        raise Exception(f'Experiment {exp.work_dir} was previously trained with model type "{exp.model_type}". '
-                        f'Please clear models or start a new experiment to train {mod_type}. Or use {exp.model_type}')
+        raise Exception(f'Experiment {exp.work_dir} was previously trained with model type'
+                        f' "{exp.model_type}". Please clear models or start a new experiment to'
+                        f' train {mod_type}. Or use {exp.model_type}')
     elif exp.model_type != mod_type:
         exp.model_type = mod_type
         exp.store_config()
@@ -46,7 +50,10 @@ def main():
         pairs = [x.strip() for x in args.pop('optim_args').split(',')]
         pairs = [pair.split('=') for pair in pairs if pair]
         optim_args.update({k.strip(): float(v) for k, v in pairs})
-    trainer = {'t2t': T2TTrainer, 'rnn': RNNTrainer}[mod_type](exp, optim=args.pop('optim'), **optim_args)
+    trainer = {
+        't2t': T2TTrainer,
+        'rnn': RNNTrainer,
+        'binmt': None}[mod_type](exp, optim=args.pop('optim'), **optim_args)
     try:
         trainer.train(**args)
     except RuntimeError as e:

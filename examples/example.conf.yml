@@ -15,6 +15,7 @@ prep:
   mono_tgt: []
   # make human readable split files
   text_pieces: false
+  shared_vocab: true
 
 # vocabulary
 pieces: unigram
