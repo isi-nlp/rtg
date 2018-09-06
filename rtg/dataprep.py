@@ -79,7 +79,7 @@ class Field(SentencePieceProcessor):
         model_prefix = model_path.replace('.model', '')
         arg = f"--input={','.join(files)} --vocab_size={vocab_size} --model_prefix={model_prefix}" \
               f" --model_type={model_type} --pad_id={PAD_TOK[1]} --bos_id={BOS_TOK[1]}" \
-              f" --eos_id={EOS_TOK[1]} --unk_id={UNK_TOK[1]}"
+              f" --eos_id={EOS_TOK[1]} --unk_id={UNK_TOK[1]} --hard_vocab_limit=false"
         log.info(f"SPM: {arg}")
         SentencePieceTrainer.Train(arg)
         log.info("Training complete")

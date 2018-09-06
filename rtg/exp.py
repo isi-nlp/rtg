@@ -26,6 +26,8 @@ class TranslationExperiment:
         self._shared_field_file = str(self.data_dir / 'sentpiece.shared.model')
         self._src_field_file = str(self.data_dir / 'sentpiece.src.model')
         self._tgt_field_file = str(self.data_dir / 'sentpiece.tgt.model')
+        self._prepared_flag = self.work_dir / '_PREPARED'
+        self._trained_flag = self.work_dir / '_TRAINED'
 
         self.train_file = self.data_dir / 'train.tsv.gz'
         self.valid_file = self.data_dir / 'valid.tsv.gz'
@@ -48,6 +50,13 @@ class TranslationExperiment:
         # both are set or both are unset
         assert (self.src_field is None) == (self.tgt_field is None)
 
+        self._unsupervised = self.model_type in {'binmt'}
+        if self._unsupervised:
+            self.mono_train_src = self.work_dir / 'mono.train.src.gz'
+            self.mono_train_tgt = self.work_dir / 'mono.train.tgt.gz'
+            self.mono_valid_src = self.work_dir / 'mono.valid.src.gz'
+            self.mono_valid_tgt = self.work_dir / 'mono.valid.tgt.gz'
+
     def store_config(self):
         with IO.writer(self._config_file) as fp:
             return yaml.dump(self.config, fp, default_flow_style=False)
@@ -61,10 +70,10 @@ class TranslationExperiment:
         self.config['model_type'] = mod_type
 
     def has_prepared(self):
-        return self.shared_field and self.train_file.exists() and self.valid_file.exists()
+        return self._prepared_flag.exists()
 
     def has_trained(self):
-        return self.get_last_saved_model()[0] is not None
+        return self._trained_flag.exists()
 
     @staticmethod
     def write_tsv(records: Iterator[ParallelSeqRecord], path: Union[str, Path]):
@@ -112,14 +121,15 @@ class TranslationExperiment:
                 recs = (rec for rec in recs if 0 < len(rec) <= max_len)
             yield from recs
 
-    def pre_process(self, args=None):
-        args = args if args else self.config['prep']
-
+    def pre_process_parallel(self, args):
+        assert args['shared_vocab']
+        # TODO support individual vocab types
         files = [args['train_src'], args['train_tgt']]
         for val in [args.get('mono_src'), args.get('mono_tgt')]:
             if val:
                 files.extend(val)
-        self.shared_field = Field.train(self.config['pieces'], self.config['vocab_size'],
+
+        self.shared_field = Field.train(args['pieces'], args['max_types'],
                                         self._shared_field_file, files)
 
         # create Piece IDs
@@ -143,8 +153,47 @@ class TranslationExperiment:
                                           tokenizer=self.tgt_vocab.tokenize)
             self.write_tsv(val_recs, str(self.valid_file).replace('.tsv', '.pieces.tsv'))
 
+    def pre_process_mono(self, args):
+        if args.get('shared_vocab'):
+            files = [args['mono_train_src'], args['mono_train_tgt']]
+            self.shared_field = Field.train(args['pieces'],
+                                            args['max_types'],
+                                            self._shared_field_file, files)
+        else:
+            self.src_field = Field.train(args['pieces'], args['max_src_types'],
+                                         self._src_field_file, [args['mono_train_src']])
+
+            self.tgt_field = Field.train(args['pieces'], args['max_tgt_types'],
+                                         self._tgt_field_file, [args['mono_train_tgt']])
+
+        def _prep_file(raw_file, out_file, do_truncate, max_len, field: Field):
+            recs = self.read_mono_raw_data(raw_file, do_truncate, max_len, field.encode_as_ids)
+            self.write_mono_lines(recs, out_file)
+            if args.get('text_files'):
+                recs = self.read_mono_raw_data(raw_file, do_truncate, max_len, field.tokenize)
+                self.write_mono_lines(recs, str(out_file).replace('.tsv', '.pieces.tsv'))
+
+        _prep_file(args['mono_train_src'], self.mono_train_src, args['truncate'], args['src_len'],
+                   self.src_vocab)
+        _prep_file(args['mono_train_tgt'], self.mono_train_tgt, args['truncate'], args['tgt_len'],
+                   self.tgt_vocab)
+
+        _prep_file(args['mono_valid_src'], self.mono_valid_src, args['truncate'], args['src_len'],
+                   self.src_vocab)
+        _prep_file(args['mono_valid_tgt'], self.mono_valid_tgt, args['truncate'], args['tgt_len'],
+                   self.tgt_vocab)
+
+    def pre_process(self, args=None):
+
+        args = args if args else self.config['prep']
+        if self._unsupervised:
+            self.pre_process_mono(args)
+        else:
+            self.pre_process_parallel(args)
+
         # update state on disk
         self.persist_state()
+        self._prepared_flag.touch()
 
     def persist_state(self):
         """Writes state of current experiment to the disk"""
@@ -239,48 +288,3 @@ class TranslationExperiment:
     @property
     def tgt_vocab(self):
         return self.shared_field if self.shared_field is not None else self.tgt_field
-
-
-class UnSupervisedMTExp(TranslationExperiment):
-
-    def __init__(self, work_dir: Union[str, Path], read_only=False, config=None):
-        super().__init__(work_dir, read_only, config)
-        self.mono_train_src = self.work_dir / 'mono.train.src.gz'
-        self.mono_train_tgt = self.work_dir / 'mono.train.tgt.gz'
-        self.mono_valid_src = self.work_dir / 'mono.valid.src.gz'
-        self.mono_valid_tgt = self.work_dir / 'mono.valid.tgt.gz'
-
-    def pre_process(self, args=None):
-        args = args if args else self.config['prep']
-
-        if args.get('shared_vocab'):
-            files = [args['mono_train_src'], args['mono_train_tgt']]
-            self.shared_field = Field.train(self.config['pieces'],
-                                            self.config['vocab_size'],
-                                            self._shared_field_file, files)
-        else:
-            self.src_field = Field.train(self.config['pieces'], self.config['vocab_size'],
-                                         self._src_field_file, [args['mono_train_src']])
-
-            self.tgt_field = Field.train(self.config['pieces'], self.config['vocab_size'],
-                                         self._tgt_field_file, [args['mono_train_tgt']])
-
-        def _prep_file(raw_file, out_file, do_truncate, max_len, field: Field):
-            recs = self.read_mono_raw_data(raw_file, do_truncate, max_len, field.encode_as_ids)
-            self.write_mono_lines(recs, out_file)
-            if args.get('text_files'):
-                recs = self.read_mono_raw_data(raw_file, do_truncate, max_len, field.tokenize)
-                self.write_mono_lines(recs, str(out_file).replace('.tsv', '.pieces.tsv'))
-
-        _prep_file(args['mono_train_src'], self.mono_train_src, args['truncate'], args['src_len'],
-                   self.src_vocab)
-        _prep_file(args['mono_train_tgt'], self.mono_train_tgt, args['truncate'], args['tgt_len'],
-                   self.tgt_vocab)
-
-        _prep_file(args['mono_valid_src'], self.mono_valid_src, args['truncate'], args['src_len'],
-                   self.src_vocab)
-        _prep_file(args['mono_valid_tgt'], self.mono_valid_tgt, args['truncate'], args['tgt_len'],
-                   self.tgt_vocab)
-
-        # update state on disk
-        self.persist_state()

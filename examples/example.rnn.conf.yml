@@ -11,7 +11,6 @@ optim:
   args:
     lr: 0.001
   name: ADAM
-pieces: unigram
 prep:
   mono_src: []
   mono_tgt: []
@@ -24,7 +23,9 @@ prep:
   valid_src: data/valid.src
   valid_tgt: data/valid.tgt
   shared_vocab: true
+  max_types: 8000
+  pieces: unigram
 src_lang: FRA
 tgt_lang: ENG
 updated_at: '2018-07-25T15:50:52.578881'
-vocab_size: 8000
+

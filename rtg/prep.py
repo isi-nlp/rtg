@@ -3,7 +3,7 @@
 import argparse
 from argparse import ArgumentDefaultsHelpFormatter as ArgFormatter
 
-from rtg.exp import TranslationExperiment, UnSupervisedMTExp
+from rtg.exp import TranslationExperiment
 
 piece_types = ('unigram', 'bpe', 'char', 'word')
 
@@ -19,10 +19,6 @@ def parse_args():
 def main():
     args = parse_args()
     exp = TranslationExperiment(args.work_dir, config=args.conf_file)
-    if exp.model_type == 'binmt':
-        del exp
-        exp = UnSupervisedMTExp(args.work_dir, config=args.conf_file)
-
     return exp.pre_process()
 
 

@@ -4,8 +4,9 @@ import argparse
 from argparse import ArgumentDefaultsHelpFormatter as ArgFormatter
 
 from rtg import TranslationExperiment as Experiment
-from rtg.module.rnn import RNNTrainer as RNNTrainer
+from rtg.module.rnn import RNNTrainer
 from rtg.module.t2t import T2TTrainer
+from rtg.binmt.model import BiNmtTrainer
 from rtg.utils import log_tensor_sizes, Optims
 
 
@@ -13,8 +14,6 @@ def parse_args():
     parser = argparse.ArgumentParser(prog="rtg.train", description="Train NMT model",
                                      formatter_class=ArgFormatter)
     parser.add_argument("work_dir", help="Working directory", type=str)
-    parser.add_argument('-mt', '--mod-type', default='t2t', choices=['rnn', 't2t'],
-                        help='Type of model: RNN or T2T (aka transformer)')
     parser.add_argument("-ne", "--num-epochs", help="Num epochs", type=int, default=30)
     parser.add_argument("-re", "--resume", action='store_true', dest='resume_train',
                         help="Resume Training. adds --num-epochs more epochs to the most "
@@ -33,27 +32,20 @@ def parse_args():
 def main():
     args = parse_args()
     exp = Experiment(args.pop('work_dir'))
-    mod_type = args.pop('mod_type')
     assert exp.has_prepared(), f'Experiment dir {exp.work_dir} is not ready to train. ' \
                                f'Please run "prep" sub task'
-    if exp.has_trained() and exp.model_type and exp.model_type != mod_type:
-        raise Exception(f'Experiment {exp.work_dir} was previously trained with model type'
-                        f' "{exp.model_type}". Please clear models or start a new experiment to'
-                        f' train {mod_type}. Or use {exp.model_type}')
-    elif exp.model_type != mod_type:
-        exp.model_type = mod_type
-        exp.store_config()
-
     _, optim_args = exp.optim_args
     if args.get('optim_args'):
         # convert key1=val1,key2=val2 format to dictionary
         pairs = [x.strip() for x in args.pop('optim_args').split(',')]
         pairs = [pair.split('=') for pair in pairs if pair]
         optim_args.update({k.strip(): float(v) for k, v in pairs})
+
     trainer = {
         't2t': T2TTrainer,
         'rnn': RNNTrainer,
-        'binmt': None}[mod_type](exp, optim=args.pop('optim'), **optim_args)
+        'binmt': BiNmtTrainer
+    }[exp.model_type](exp, optim=args.pop('optim'), **optim_args)
     try:
         trainer.train(**args)
     except RuntimeError as e:

@@ -422,10 +422,11 @@ class BiNmtTrainer:
         self.start_epoch = 0
 
         if model is None:
+            model_args = exp.model_args
             if exp.model_type == 'seq2seq':
-                model, args = Seq2Seq.make_model(**exp.model_args)
+                model, args = Seq2Seq.make_model(**model_args)
             elif exp.model_type == 'binmt':
-                model, args = BiNMT.make_model(**exp.model_args)
+                model, args = BiNMT.make_model(**model_args)
             else:
                 raise Exception(f'Unsupported type {exp.model_type}; expected: seq2seq or binmt')
             last_check_pt, last_epoch = self.exp.get_last_saved_model()
@@ -462,10 +463,10 @@ class BiNmtTrainer:
     def train(self, num_epochs: int, batch_size: int, **args):
         log.info(f'Going to train for {num_epochs} epochs; batch_size={batch_size}')
 
-        train_data = BatchIterable(self.exp.train_file, batch_size=batch_size, batch_first=False,
-                                   shuffle=True)
-        val_data = BatchIterable(self.exp.valid_file, batch_size=batch_size, batch_first=True,
-                                 shuffle=False)
+        train_data = BatchIterable(self.exp.mono_train_src, batch_size=batch_size, batch_first=True,
+                                   shuffle=True, copy_xy=True)
+        val_data = BatchIterable(self.exp.mono_valid_src, batch_size=batch_size, batch_first=True,
+                                 shuffle=False, copy_xy=True)
         keep_models = args.pop('keep_models', 4)
         if args.pop('resume_train'):
             num_epochs += self.start_epoch
