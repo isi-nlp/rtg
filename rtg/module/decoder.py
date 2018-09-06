@@ -45,22 +45,13 @@ class Seq2SeqGenerator:
         return log_probs
 
 
-class BiNMTGenerator:
+class BiNMTGenerator(Seq2SeqGenerator):
 
-    def __init__(self, model, x_seqs, x_lens, path='E1D2E2D1'):
-        self.model = model.paths[path]
-        log.warning(f'FIXME: path {path} is hardcoded')
-
-        # [S, B, d], [S, B, d] <-- [S, B], [B]
-        self.enc_outs, enc_hids = self.model.encode(x_seqs, x_lens, None)
-
-        # [S, B, d]
-        self.dec_hids = enc_hids
-
-    def generate_next(self, past_ys):
-        last_ys = past_ys[:, -1]
-        log_probs, self.dec_hids, _ = self.model.dec(self.enc_outs, last_ys, self.dec_hids)
-        return log_probs
+    def __init__(self, model, x_seqs, x_lens, path):
+        # pick a sub Seq2Seq model inside the BiNMT model as per the given path
+        assert path
+        self.path = path
+        super().__init__(model.paths[path], x_seqs, x_lens)
 
 
 class T2TGenerator:
@@ -89,7 +80,7 @@ class Decoder:
         self.debug = debug
 
     @classmethod
-    def new(cls, exp: Experiment, model=None):
+    def new(cls, exp: Experiment, model=None, gen_args=None):
         generators = {'t2t': T2TGenerator,
                       'rnn': RNNGenerator,
                       'seq2seq': Seq2SeqGenerator,
@@ -104,9 +95,11 @@ class Decoder:
 
         model = model.eval().to(device=device)
         generator = generators[exp.model_type]
+        if gen_args is None:
+            gen_args = {}
 
         def seq_generator(x_seqs, x_lens):
-            return generator(model, x_seqs, x_lens)
+            return generator(model, x_seqs, x_lens, **gen_args)
         return cls(seq_generator, exp)
 
     def greedy_decode(self, x_seqs, x_lens, max_len, **args) -> List[Hypothesis]:

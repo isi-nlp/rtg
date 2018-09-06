@@ -8,7 +8,7 @@ from rtg import my_tensor as tensor, device
 from rtg.dataprep import PAD_TOK_IDX, BOS_TOK_IDX, Batch, BatchIterable
 from rtg import log, TranslationExperiment as Experiment
 from rtg.utils import Optims
-from typing import Optional
+from typing import Optional, Mapping
 from tqdm import tqdm
 import random
 import itertools
@@ -326,9 +326,9 @@ class BiNMT(nn.Module):
         # since no linear projects at the moment, all sizes must be same
         assert aeq(enc1.out_size, enc2.out_size, dec1.emb_size, dec2.emb_size,
                    dec1.hid_size, dec2.hid_size)
-        self.model_dim = enc1.out_size
+        self.model_dim: int = enc1.out_size
 
-        self.paths = {
+        self.paths: Mapping[str, Seq2Seq] = {
             'E1D1': Seq2Seq(enc1, dec1),  # ENC1 --> DEC1
             'E2D2': Seq2Seq(enc2, dec2),  # ENC2 --> DEC2
             # ENC1 --> DEC2 --> ENC2 --> DEC1
@@ -719,7 +719,7 @@ def __test_binmt_model__():
                                        emb_size=100, hid_size=100, n_layers=2)
         trainer = BiNmtTrainer(exp=exp, model=model, lr=0.01, warmup_steps=1000)
 
-        decr = Decoder.new(exp, model)
+        decr = Decoder.new(exp, model, gen_args={'path': 'E1D1'})
         assert 2 == Batch.bos_val
 
         def print_res(res):
