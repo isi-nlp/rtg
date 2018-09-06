@@ -52,10 +52,10 @@ class TranslationExperiment:
 
         self._unsupervised = self.model_type in {'binmt'}
         if self._unsupervised:
-            self.mono_train_src = self.work_dir / 'mono.train.src.gz'
-            self.mono_train_tgt = self.work_dir / 'mono.train.tgt.gz'
-            self.mono_valid_src = self.work_dir / 'mono.valid.src.gz'
-            self.mono_valid_tgt = self.work_dir / 'mono.valid.tgt.gz'
+            self.mono_train_src = self.data_dir / 'mono.train.src.gz'
+            self.mono_train_tgt = self.data_dir / 'mono.train.tgt.gz'
+            self.mono_valid_src = self.data_dir / 'mono.valid.src.gz'
+            self.mono_valid_tgt = self.data_dir / 'mono.valid.tgt.gz'
 
     def store_config(self):
         with IO.writer(self._config_file) as fp:

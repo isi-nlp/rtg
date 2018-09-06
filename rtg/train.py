@@ -6,7 +6,7 @@ from argparse import ArgumentDefaultsHelpFormatter as ArgFormatter
 from rtg import TranslationExperiment as Experiment
 from rtg.module.rnn import RNNTrainer
 from rtg.module.t2t import T2TTrainer
-from rtg.binmt.model import BiNmtTrainer
+from rtg.binmt.model import BiNmtTrainer, Seq2SeqTrainer
 from rtg.utils import log_tensor_sizes, Optims
 
 
@@ -35,6 +35,8 @@ def main():
     assert exp.has_prepared(), f'Experiment dir {exp.work_dir} is not ready to train. ' \
                                f'Please run "prep" sub task'
     _, optim_args = exp.optim_args
+    if optim_args is None:
+        optim_args = {}
     if args.get('optim_args'):
         # convert key1=val1,key2=val2 format to dictionary
         pairs = [x.strip() for x in args.pop('optim_args').split(',')]
@@ -44,7 +46,8 @@ def main():
     trainer = {
         't2t': T2TTrainer,
         'rnn': RNNTrainer,
-        'binmt': BiNmtTrainer
+        'binmt': BiNmtTrainer,
+        'seq2seq': Seq2SeqTrainer,
     }[exp.model_type](exp, optim=args.pop('optim'), **optim_args)
     try:
         trainer.train(**args)

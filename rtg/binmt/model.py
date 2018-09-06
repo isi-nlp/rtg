@@ -246,7 +246,8 @@ class Seq2Seq(nn.Module):
     def forward(self, batch: Batch):
         assert batch.batch_first
         batch_size = len(batch)
-        enc_outs, enc_hids = self.encode(batch.x_seqs, batch.x_len, hids=None, max_y_len=batch.max_y_len)
+        enc_outs, enc_hids = self.encode(batch.x_seqs, batch.x_len, hids=None,
+                                         max_y_len=batch.max_y_len)
 
         dec_inps = tensor([[BOS_TOK_IDX]] * batch_size, dtype=torch.long)
         dec_hids = enc_hids
@@ -415,26 +416,20 @@ class NoamOpt:
                        torch.optim.Adam(model.parameters(), lr=0, betas=(0.9, 0.98), eps=1e-9))
 
 
-class BiNmtTrainer:
+class BaseTrainer:
 
-    def __init__(self, exp: Experiment, model=None, optim='ADAM', **optim_args):
+    def __init__(self, exp: Experiment, model, optim='ADAM', maybe_restore=True,
+                 model_factory=None, **optim_args):
         self.exp = exp
         self.start_epoch = 0
-
         if model is None:
-            model_args = exp.model_args
-            if exp.model_type == 'seq2seq':
-                model, args = Seq2Seq.make_model(**model_args)
-            elif exp.model_type == 'binmt':
-                model, args = BiNMT.make_model(**model_args)
-            else:
-                raise Exception(f'Unsupported type {exp.model_type}; expected: seq2seq or binmt')
+            model, exp.model_args = model_factory(**exp.model_args)
+        if maybe_restore:
             last_check_pt, last_epoch = self.exp.get_last_saved_model()
             if last_check_pt:
                 log.info(f"Resuming training from epoch:{self.start_epoch}, model={last_check_pt}")
                 self.start_epoch = last_epoch + 1
                 model.load_state_dict(torch.load(last_check_pt))
-            exp.model_args = args
 
         if torch.cuda.device_count() > 1:
             raise RuntimeError('Please export CUDA_VISIBLE_DEVICES to a single GPU id')
@@ -459,6 +454,103 @@ class BiNmtTrainer:
         # make lengths vectors to [B x 1] and duplicate columns to [B, S]
         seq_length_expand = lengths.unsqueeze(1).expand_as(seq_range_expand)
         return seq_range_expand < seq_length_expand  # 0 if padding, 1 otherwise
+
+    def overfit_batch(self, batch, max_iters=200):
+        log.info("Trying to overfit a batch")
+        losses = []
+        for i in range(max_iters):
+            batch.to(device)
+            self.model.zero_grad()
+            outp_log_probs = self.model(batch)
+            tok_mask = self.sequence_mask(batch.y_len, batch.max_y_len - 1)
+            per_tok_loss = -outp_log_probs
+            loss = (per_tok_loss * tok_mask.float()).sum().float() / batch.y_toks
+            loss_value = loss.item()
+            losses.append(loss_value)
+            loss.backward()
+            self.optimizer.step()
+            self.optimizer.zero_grad()
+            if i % 4 == 0:
+                log.info(f"{i} :: {loss_value:.6f}")
+            if len(losses) > 5 and sum(x * x for x in losses[-5:]) == 0.0:
+                log.info("Converged...")
+                break
+
+
+class Seq2SeqTrainer(BaseTrainer):
+
+    def __init__(self, exp: Experiment, model=None, optim='ADAM', **optim_args):
+        assert exp.model_type == 'seq2seq'
+        super().__init__(exp, model, optim=optim, model_factory=Seq2Seq.make_model, **optim_args)
+
+    def train(self, num_epochs: int, batch_size: int, **args):
+        log.info(f'Going to train for {num_epochs} epochs; batch_size={batch_size}')
+
+        train_data = BatchIterable(self.exp.train_file, batch_size=batch_size, batch_first=True,
+                                   shuffle=True)
+        val_data = BatchIterable(self.exp.valid_file, batch_size=batch_size, batch_first=True,
+                                 shuffle=False, copy_xy=True)
+        keep_models = args.pop('keep_models', 4)
+        if args.pop('resume_train'):
+            num_epochs += self.start_epoch
+        elif num_epochs <= self.start_epoch:
+            raise Exception(f'The model was already trained to {self.start_epoch} epochs. '
+                            f'Please increase epoch or clear the existing models')
+        losses = []
+        for ep in range(self.start_epoch, num_epochs):
+            train_loss = self.run_epoch(train_data, train_mode=True)
+            log.info(f'Epoch {ep+1} complete.. Training loss in this epoch {train_loss}...')
+            val_loss = self.run_epoch(val_data, train_mode=False)
+            log.info(f'Validation of {ep+1} complete.. Validation loss in this epoch {val_loss}...')
+            losses.append((ep, train_loss, val_loss))
+            if keep_models > 0:
+                self.exp.store_model(epoch=ep, model=self.model.state_dict(),
+                                     train_score=train_loss,
+                                     val_score=val_loss, keep=keep_models)
+        summary = '\n'.join(f'{ep:02}\t{tl:.4f}\t{vl:.4f}' for ep, tl, vl in losses)
+        log.info(f"==Summary==:\nEpoch\t TrainLoss \t ValidnLoss \n {summary}")
+
+    def run_epoch(self, data_iter, num_batches=None, train_mode=True):
+        """
+        run a pass over data set
+        :param data_iter: batched data set
+        :param num_batches: number of batches in the dataset (for tqdm progress bar), None if unknown
+        :param train_mode: is it training mode (False if validation mode)
+        :return: total loss
+        """
+        tot_loss = 0.0
+        start = time.time()
+        self.model.train(train_mode)
+        with tqdm(data_iter, total=num_batches, unit='batch') as data_bar:
+            for i, batch in enumerate(data_bar):
+                batch = batch.to(device)
+                # Step clear gradients
+                self.model.zero_grad()
+                # Step Run forward pass.
+                outp_log_probs = self.model(batch)
+
+                tok_mask = self.sequence_mask(batch.y_len, batch.max_y_len - 1)
+                per_tok_loss = -outp_log_probs
+                loss = (per_tok_loss * tok_mask.float()).sum().float() / batch.y_toks
+                tot_loss += loss.item()
+                learn_rate = ""
+                if train_mode:
+                    loss.backward()
+                    learn_rate = self.optimizer.step()
+                    self.optimizer.zero_grad()
+                    learn_rate = f'LR={learn_rate:g}'
+                elapsed = time.time() - start
+                bar_msg = f'Loss:{loss:.4f}, {int(batch.y_toks/elapsed)}toks/s {learn_rate}'
+                data_bar.set_postfix_str(bar_msg, refresh=False)
+                del batch
+        return tot_loss
+
+
+class BiNmtTrainer(BaseTrainer):
+
+    def __init__(self, exp: Experiment, model=None, optim='ADAM', **optim_args):
+        assert exp.model_type == 'binmt'
+        super().__init__(exp, model, optim=optim, model_factory=BiNMT.make_model, **optim_args)
 
     def train(self, num_epochs: int, batch_size: int, **args):
         log.info(f'Going to train for {num_epochs} epochs; batch_size={batch_size}')
@@ -487,7 +579,7 @@ class BiNmtTrainer:
         summary = '\n'.join(f'{ep:02}\t{tl:.4f}\t{vl:.4f}' for ep, tl, vl in losses)
         log.info(f"==Summary==:\nEpoch\t TrainLoss \t ValidnLoss \n {summary}")
 
-    def run_epoch(self, data_iter, num_batches=None, train_mode=True, path=None):
+    def run_epoch(self, data_iter, num_batches=None, train_mode=True, path='E1D2E2D1'):
         """
         run a pass over data set
         :param data_iter: batched data set
@@ -504,12 +596,7 @@ class BiNmtTrainer:
                 # Step clear gradients
                 self.model.zero_grad()
                 # Step Run forward pass.
-                # FIXME path
-                if isinstance(self.model, BiNMT):
-                    outp_log_probs = self.model(batch, 'E1D2E2D1')
-                else:
-                    outp_log_probs = self.model(batch)
-
+                outp_log_probs = self.model(batch, path)
                 tok_mask = self.sequence_mask(batch.y_len, batch.max_y_len - 1)
                 per_tok_loss = -outp_log_probs
                 loss = (per_tok_loss * tok_mask.float()).sum().float() / batch.y_toks
@@ -525,27 +612,6 @@ class BiNmtTrainer:
                 data_bar.set_postfix_str(bar_msg, refresh=False)
                 del batch
         return tot_loss
-
-    def overfit_batch(self, batch, max_iters=200):
-        log.info("Trying to overfit a batch")
-        losses = []
-        for i in range(max_iters):
-            batch.to(device)
-            self.model.zero_grad()
-            outp_log_probs = self.model(batch)
-            tok_mask = self.sequence_mask(batch.y_len, batch.max_y_len - 1)
-            per_tok_loss = -outp_log_probs
-            loss = (per_tok_loss * tok_mask.float()).sum().float() / batch.y_toks
-            loss_value = loss.item()
-            losses.append(loss_value)
-            loss.backward()
-            self.optimizer.step()
-            self.optimizer.zero_grad()
-            if i % 4 == 0:
-                log.info(f"{i} :: {loss_value:.6f}")
-            if len(losses) > 5 and sum(x * x for x in losses[-5:]) == 0.0:
-                log.info("Converged...")
-                break
 
 
 def __test_seq2seq_model__():
@@ -567,7 +633,7 @@ def __test_seq2seq_model__():
         log.info(f"====== REVERSE={reverse}; VOCAB={vocab_size}======")
         model, args = Seq2Seq.make_model('DummyA', 'DummyB', vocab_size, vocab_size,
                                          emb_size=100, hid_size=100, n_layers=2)
-        trainer = BiNmtTrainer(exp=exp, model=model, lr=0.01, warmup_steps=1000)
+        trainer = Seq2SeqTrainer(exp=exp, model=model, lr=0.01, warmup_steps=1000)
 
         decr = Decoder.new(exp, model)
         assert 2 == Batch.bos_val
@@ -635,6 +701,6 @@ def __test_binmt_model__():
 
 
 if __name__ == '__main__':
-    __test_binmt_model__()
-    #__test_seq2seq_model__()
-    pass
+    #__test_binmt_model__()
+    __test_seq2seq_model__()
+
