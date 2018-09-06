@@ -24,15 +24,25 @@ def parse_args():
                         help='Number of hypothesis to output. This should be smaller than beam_size')
     parser.add_argument("--prepared", dest="prepared", action='store_true',
                         help='Each token is a valid integer wich is an index to embedding, so skip indexifying again')
+    parser.add_argument("-bp", '--binmt-path', type=str, default=None,
+                        choices=['E1D1', 'E2D2', 'E1D2E2D1', 'E2D2E1D2'],
+                        help='Sub module path inside BiNMT. applicable only when model is BiNMT')
     return vars(parser.parse_args())
 
 
 def main():
     args = parse_args()
+    gen_args = {}
+
     exp = Experiment(args.pop('work_dir'), read_only=True)
+    if exp.model_type == 'binmt':
+        if not args.get('path'):
+            Exception('--binmt-path argument is needed for BiNMT model.')
+        gen_args['path'] = args.pop('binmt_path')
     assert exp.has_prepared(), f'Experiment dir {exp.work_dir} is not ready to train. Please run "prep" sub task'
     assert exp.has_trained(), f'Experiment dir {exp.work_dir} is not ready to decode. Please run "train" sub task'
-    decoder = Decoder.new(exp)
+
+    decoder = Decoder.new(exp, gen_args=gen_args)
     return decoder.decode_file(args.pop('input'), args.pop('output'), **args)
 
 
