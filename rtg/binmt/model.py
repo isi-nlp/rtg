@@ -8,9 +8,10 @@ from rtg import my_tensor as tensor, device
 from rtg.dataprep import PAD_TOK_IDX, BOS_TOK_IDX, Batch, BatchIterable
 from rtg import log, TranslationExperiment as Experiment
 from rtg.utils import Optims
-from typing import Optional, Any, List, Mapping, Dict, Union
+from typing import Optional
 from tqdm import tqdm
 import random
+import itertools
 
 
 class Embedder(nn.Embedding):
@@ -552,66 +553,106 @@ class BiNmtTrainer(BaseTrainer):
         assert exp.model_type == 'binmt'
         super().__init__(exp, model, optim=optim, model_factory=BiNMT.make_model, **optim_args)
 
+    def _forward_batch(self, batch: Batch, path: str):
+        batch = batch.to(device)
+        # Step clear gradients
+        self.model.zero_grad()
+        # Step Run forward pass.
+        outp_log_probs = self.model(batch, path)
+        tok_mask = self.sequence_mask(batch.y_len, batch.max_y_len - 1)
+        per_tok_loss = -outp_log_probs
+        loss_node = (per_tok_loss * tok_mask.float()).sum().float() / batch.y_toks
+        return loss_node
+
+    def _run_epoch(self, mono_src: BatchIterable, mono_tgt: BatchIterable, train_mode: bool):
+        start = time.time()
+        tot_src_loss = 0.0
+        tot_src_cyc_loss = 0.0
+        tot_tgt_loss = 0.0
+        tot_tgt_cyc_loss = 0.0
+        self.model.train(train_mode)
+        num_batches = max(mono_src.num_batches, mono_tgt.num_batches)
+        # TODO: not sure if this is a good idea. check  the effect of unequal ratio of data
+        data = itertools.zip_longest(mono_src, mono_tgt)
+        with tqdm(data, total=num_batches, unit='batch') as data_bar:
+            for i, (src_batch, tgt_batch) in enumerate(data_bar):
+                batch_losses = []
+                batch_toks = 0
+                if src_batch:
+                    batch_toks += src_batch.y_toks * 2
+                    src_loss_node = self._forward_batch(src_batch, path='E1D1')
+                    tot_src_loss += src_loss_node.item()
+                    batch_losses.append(src_loss_node)
+
+                    src_cyc_loss_node = self._forward_batch(src_batch, path='E1D2E2D1')
+                    tot_src_cyc_loss += src_cyc_loss_node.item()
+                    batch_losses.append(src_cyc_loss_node)
+                if tgt_batch:
+                    batch_toks += tgt_batch.y_toks * 2
+                    tgt_loss_node = self._forward_batch(tgt_batch, path='E2D2')
+                    tot_tgt_loss += tgt_loss_node.item()
+                    batch_losses.append(tgt_loss_node)
+
+                    tgt_cyc_loss_node = self._forward_batch(tgt_batch, path='E2D1E1D2')
+                    batch_losses.append(tgt_cyc_loss_node)
+                    tot_tgt_cyc_loss += tgt_cyc_loss_node.item()
+
+                tot_batch_loss_node = sum(batch_losses)
+                tot_batch_loss = tot_batch_loss_node.item()
+                learn_rate = ''
+                if train_mode:
+                    tot_batch_loss_node.backward()
+                    learn_rate = self.optimizer.step()
+                    self.optimizer.zero_grad()
+                    learn_rate = f'LR={learn_rate:g}'
+                elapsed = time.time() - start
+                bar_msg = f'Loss:{tot_batch_loss:.4f}, {int(batch_toks/elapsed)}toks/s {learn_rate}'
+                data_bar.set_postfix_str(bar_msg, refresh=False)
+
+        log.info(f'{"Training " if train_mode else "Validation"} Epoch\'s Losses: \n\t'
+                 f' * Source-Source:{tot_src_loss:g}\n\t'
+                 f' * Source-Target-Source: {tot_src_cyc_loss:g}\n\t'
+                 f' * Target-Target: {tot_tgt_loss:g} \n\t'
+                 f' * Target-Source-Target: {tot_tgt_cyc_loss:g}')
+        return sum([tot_src_loss, tot_tgt_loss, tot_src_cyc_loss, tot_tgt_cyc_loss])
+
     def train(self, num_epochs: int, batch_size: int, **args):
         log.info(f'Going to train for {num_epochs} epochs; batch_size={batch_size}')
 
-        train_data = BatchIterable(self.exp.mono_train_src, batch_size=batch_size, batch_first=True,
-                                   shuffle=True, copy_xy=True)
-        val_data = BatchIterable(self.exp.mono_valid_src, batch_size=batch_size, batch_first=True,
-                                 shuffle=False, copy_xy=True)
+        # FIXME: in memory data could cause OOM (RAM)
+        train_src = BatchIterable(self.exp.mono_train_src, batch_size=batch_size, batch_first=True,
+                                  shuffle=True, copy_xy=True)
+        train_tgt = BatchIterable(self.exp.mono_train_tgt, batch_size=batch_size, batch_first=True,
+                                  shuffle=True, copy_xy=True)
+
+        val_src = BatchIterable(self.exp.mono_valid_src, batch_size=batch_size, batch_first=True,
+                                shuffle=False, copy_xy=True)
+        val_tgt = BatchIterable(self.exp.mono_valid_src, batch_size=batch_size, batch_first=True,
+                                shuffle=False, copy_xy=True)
+
         keep_models = args.pop('keep_models', 4)
         if args.pop('resume_train'):
             num_epochs += self.start_epoch
         elif num_epochs <= self.start_epoch:
             raise Exception(f'The model was already trained to {self.start_epoch} epochs. '
                             f'Please increase epoch or clear the existing models')
+
         losses = []
         for ep in range(self.start_epoch, num_epochs):
-            train_loss = self.run_epoch(train_data, train_mode=True)
-            log.info(f'Epoch {ep+1} complete.. Training loss in this epoch {train_loss}...')
-            val_loss = self.run_epoch(val_data, train_mode=False)
-            log.info(f'Validation of {ep+1} complete.. Validation loss in this epoch {val_loss}...')
+            log.info(f"training epoch {ep+1} started...")
+            train_loss = self._run_epoch(train_src, train_tgt, train_mode=True)
+            log.info(f'Training epoch {ep+1} complete. Train Loss = {train_loss}')
+
+            log.info(f"Validation epoch {ep+1} started...")
+            val_loss = self._run_epoch(val_src, val_tgt, train_mode=False)
+            log.info(f"Validation epoch {ep+1} complete. Validation Loss = {val_loss}")
             losses.append((ep, train_loss, val_loss))
             if keep_models > 0:
                 self.exp.store_model(epoch=ep, model=self.model.state_dict(),
                                      train_score=train_loss,
                                      val_score=val_loss, keep=keep_models)
         summary = '\n'.join(f'{ep:02}\t{tl:.4f}\t{vl:.4f}' for ep, tl, vl in losses)
-        log.info(f"==Summary==:\nEpoch\t TrainLoss \t ValidnLoss \n {summary}")
-
-    def run_epoch(self, data_iter, num_batches=None, train_mode=True, path='E1D2E2D1'):
-        """
-        run a pass over data set
-        :param data_iter: batched data set
-        :param num_batches: number of batches in the dataset (for tqdm progress bar), None if unknown
-        :param train_mode: is it training mode (False if validation mode)
-        :return: total loss
-        """
-        tot_loss = 0.0
-        start = time.time()
-        self.model.train(train_mode)
-        with tqdm(data_iter, total=num_batches, unit='batch') as data_bar:
-            for i, batch in enumerate(data_bar):
-                batch = batch.to(device)
-                # Step clear gradients
-                self.model.zero_grad()
-                # Step Run forward pass.
-                outp_log_probs = self.model(batch, path)
-                tok_mask = self.sequence_mask(batch.y_len, batch.max_y_len - 1)
-                per_tok_loss = -outp_log_probs
-                loss = (per_tok_loss * tok_mask.float()).sum().float() / batch.y_toks
-                tot_loss += loss.item()
-                learn_rate = ""
-                if train_mode:
-                    loss.backward()
-                    learn_rate = self.optimizer.step()
-                    self.optimizer.zero_grad()
-                    learn_rate = f'LR={learn_rate:g}'
-                elapsed = time.time() - start
-                bar_msg = f'Loss:{loss:.4f}, {int(batch.y_toks/elapsed)}toks/s {learn_rate}'
-                data_bar.set_postfix_str(bar_msg, refresh=False)
-                del batch
-        return tot_loss
+        log.info(f"==Summary==:\nEpoch\t TrainLoss \t ValidationLoss \n {summary}")
 
 
 def __test_seq2seq_model__():
@@ -685,14 +726,13 @@ def __test_binmt_model__():
             for score, seq in res:
                 log.info(f'{score:.4f} :: {seq}')
 
-        val_data = list(BatchIterable(vocab_size, 50, 5, reverse=reverse, batch_first=True))
         for epoch in range(num_epoch):
             model.train()
             train_data = BatchIterable(vocab_size, 30, 50, seq_len=12, reverse=reverse,
                                        batch_first=True)
-            train_loss = trainer.run_epoch(train_data, num_batches=train_data.num_batches,
-                                           train_mode=True)
-            val_loss = trainer.run_epoch(val_data, num_batches=len(val_data), train_mode=False)
+            val_data = BatchIterable(vocab_size, 50, 5, reverse=reverse, batch_first=True)
+            train_loss = trainer._run_epoch(train_data, train_data, train_mode=True)
+            val_loss = trainer._run_epoch(val_data, val_data, train_mode=False)
             log.info(
                 f"Epoch {epoch}, training Loss: {train_loss:.4f} \t validation loss:{val_loss:.4f}")
             model.eval()
@@ -701,6 +741,5 @@ def __test_binmt_model__():
 
 
 if __name__ == '__main__':
-    #__test_binmt_model__()
-    __test_seq2seq_model__()
-
+    __test_binmt_model__()
+    #__test_seq2seq_model__()
