@@ -118,10 +118,9 @@ class TSVData:
     def read_all(self) -> Iterator[Example]:
         with IO.reader(self.path) as lines:
             recs = (line.split('\t') for line in lines)
-            recs = (Example(self._parse(rec[0]),
-                            self._parse(rec[1]) if len(rec) > 1 else None)
-                    for rec in recs)
-            yield from recs
+            for rec in recs:
+                if rec[0] and rec[0].strip():
+                    yield Example(self._parse(rec[0]), self._parse(rec[1]) if len(rec) > 1 else None)
 
     def __len__(self):
         if not self.mem:
@@ -182,7 +181,7 @@ class Batch:
         """
         :param batch: List fo Examples
         :param sort_dec: True if the examples be sorted as descending order of their source sequence lengths
-        :param batch_first: first dimension is batch
+        :Param Batch_First: first dimension is batch
         :param copy_xy: copy x to y
         """
         for ex in batch:  # check and insert BOS and EOS

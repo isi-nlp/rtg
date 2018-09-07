@@ -574,12 +574,12 @@ class BiNmtTrainer(BaseTrainer):
         num_batches = max(mono_src.num_batches, mono_tgt.num_batches)
         # TODO: not sure if this is a good idea. check  the effect of unequal ratio of data
         data = itertools.zip_longest(mono_src, mono_tgt)
+        tot_toks = 0
         with tqdm(data, total=num_batches, unit='batch') as data_bar:
             for i, (src_batch, tgt_batch) in enumerate(data_bar):
                 batch_losses = []
-                batch_toks = 0
                 if src_batch:
-                    batch_toks += src_batch.y_toks * 2
+                    tot_toks += src_batch.y_toks * 2
                     src_loss_node = self._forward_batch(src_batch, path='E1D1')
                     tot_src_loss += src_loss_node.item()
                     batch_losses.append(src_loss_node)
@@ -588,7 +588,7 @@ class BiNmtTrainer(BaseTrainer):
                     tot_src_cyc_loss += src_cyc_loss_node.item()
                     batch_losses.append(src_cyc_loss_node)
                 if tgt_batch:
-                    batch_toks += tgt_batch.y_toks * 2
+                    tot_toks += tgt_batch.y_toks * 2
                     tgt_loss_node = self._forward_batch(tgt_batch, path='E2D2')
                     tot_tgt_loss += tgt_loss_node.item()
                     batch_losses.append(tgt_loss_node)
@@ -606,7 +606,7 @@ class BiNmtTrainer(BaseTrainer):
                     self.optimizer.zero_grad()
                     learn_rate = f'LR={learn_rate:g}'
                 elapsed = time.time() - start
-                bar_msg = f'Loss:{tot_batch_loss:.4f}, {int(batch_toks/elapsed)}toks/s {learn_rate}'
+                bar_msg = f'Loss:{tot_batch_loss:.4f}, {int(tot_toks/elapsed)}toks/s {learn_rate}'
                 data_bar.set_postfix_str(bar_msg, refresh=False)
 
         log.info(f'{"Training " if train_mode else "Validation"} Epoch\'s Losses: \n\t'
@@ -627,7 +627,7 @@ class BiNmtTrainer(BaseTrainer):
 
         val_src = BatchIterable(self.exp.mono_valid_src, batch_size=batch_size, batch_first=True,
                                 shuffle=False, copy_xy=True)
-        val_tgt = BatchIterable(self.exp.mono_valid_src, batch_size=batch_size, batch_first=True,
+        val_tgt = BatchIterable(self.exp.mono_valid_tgt, batch_size=batch_size, batch_first=True,
                                 shuffle=False, copy_xy=True)
 
         keep_models = args.pop('keep_models', 4)
