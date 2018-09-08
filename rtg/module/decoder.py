@@ -10,6 +10,7 @@ from rtg import TranslationExperiment as Experiment
 import sys
 import traceback
 import time
+
 Hypothesis = Tuple[float, List[int]]
 StrHypothesis = Tuple[float, str]
 
@@ -280,7 +281,30 @@ class Decoder:
                     (scores[j].item(), beamed_ys[start + indices[j], 1:].squeeze().tolist()))
         return result
 
+    @property
+    def inp_vocab(self):
+        # the choice of vocabulary can be tricky, because of bidirectional model
+        if self.exp.model_type == 'binmt':
+            return {
+                'E1': self.exp.src_vocab,
+                'E2': self.exp.tgt_vocab
+            }[self.generator.path[:2]]
+        else:   # all others go from source as input to target as output
+            return self.exp.src_vocab
+
+    @property
+    def out_vocab(self):
+        # the choice of vocabulary can be tricky, because of bidirectional model
+        if self.exp.model_type == 'binmt':
+            return {
+                'D1': self.exp.src_vocab,
+                'D2': self.exp.tgt_vocab
+            }[self.generator.path[-2:]]
+        else:  # all others go from source as input to target as output
+            return self.exp.tgt_vocab
+
     def decode_sentence(self, line: str, max_len=20, prepared=False, **args) -> List[StrHypothesis]:
+
         line = line.strip()
         if prepared:
             in_seq = [int(t) for t in line.split()]
@@ -289,19 +313,20 @@ class Decoder:
             if in_seq[-1] != self.eos_val:
                 in_seq.append(self.eos_val)
         else:
-            in_seq = self.exp.src_vocab.encode_as_ids(line, add_eos=True, add_bos=True)
+
+            in_seq = self.inp_vocab.encode_as_ids(line, add_eos=True, add_bos=True)
         in_seqs = tensor(in_seq, dtype=torch.long).view(1, -1)
         in_lens = tensor([len(in_seq)], dtype=torch.long)
         if self.debug:
             greedy_score, greedy_out = self.greedy_decode(in_seqs, in_lens, max_len, **args)[0]
-            greedy_out = self.exp.tgt_vocab.decode_ids(greedy_out, trunc_eos=True)
+            greedy_out = self.out_vocab.decode_ids(greedy_out, trunc_eos=True)
             log.debug(f'Greedy : score: {greedy_score:.4f} :: {greedy_out}')
 
         beams: List[List[Hypothesis]] = self.beam_decode(in_seqs, in_lens, max_len, **args)
         beams = beams[0]  # first sentence, the only one we passed to it as input
         result = []
         for i, (score, beam_toks) in enumerate(beams):
-            out = self.exp.tgt_vocab.decode_ids(beam_toks, trunc_eos=True)
+            out = self.out_vocab.decode_ids(beam_toks, trunc_eos=True)
             if self.debug:
                 log.debug(f"Beam {i}: score:{score:.4f} :: {out}")
             result.append((score, out))
@@ -315,8 +340,6 @@ class Decoder:
                  (':hyps <k>', 'to print top k hypotheses')]
         if self.exp.model_type == 'binmt':
             helps.append((':path <path>', 'BiNMT modules: {E1D1, E2D2, E1D2E2D1, E2D2E1D2}'))
-
-        print("Launching Interactive shell")
 
         def print_cmds():
             for cmd, msg in helps:
