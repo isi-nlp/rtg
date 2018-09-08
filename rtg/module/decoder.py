@@ -4,6 +4,7 @@ from rtg import log, device, my_tensor as tensor, debug_mode
 from rtg.dataprep import PAD_TOK, BOS_TOK, EOS_TOK, subsequent_mask
 from rtg.module.t2t import T2TModel
 from rtg.module.rnn import RNNModel
+from rtg.binmt.model import Seq2Seq, BiNMT
 from typing import List, Tuple
 from rtg import TranslationExperiment as Experiment
 
@@ -13,7 +14,7 @@ StrHypothesis = Tuple[float, str]
 
 class RNNGenerator:
 
-    def __init__(self, model, x_seqs, x_lens):
+    def __init__(self, model: RNNModel, x_seqs, x_lens):
         self.model = model
         x_seqs = x_seqs.view(-1, len(x_seqs))  # [S, B]  <- [B, S]
         # [S, B, d], [S, B, d] <-- [S, B], [B]
@@ -32,7 +33,7 @@ class RNNGenerator:
 
 class Seq2SeqGenerator:
 
-    def __init__(self, model, x_seqs, x_lens):
+    def __init__(self, model: Seq2Seq, x_seqs, x_lens):
         self.model = model
         # [S, B, d], [S, B, d] <-- [S, B], [B]
         self.enc_outs, enc_hids = model.encode(x_seqs, x_lens, None)
@@ -47,7 +48,7 @@ class Seq2SeqGenerator:
 
 class BiNMTGenerator(Seq2SeqGenerator):
 
-    def __init__(self, model, x_seqs, x_lens, path):
+    def __init__(self, model: BiNMT, x_seqs, x_lens, path):
         # pick a sub Seq2Seq model inside the BiNMT model as per the given path
         assert path
         self.path = path
@@ -56,7 +57,7 @@ class BiNMTGenerator(Seq2SeqGenerator):
 
 class T2TGenerator:
 
-    def __init__(self,  model, x_seqs, x_lens=None):
+    def __init__(self,  model: T2TModel, x_seqs, x_lens=None):
         self.model = model
         self.x_mask = (x_seqs != Decoder.pad_val).unsqueeze(1)
         self.memory = self.model.encode(x_seqs, self.x_mask)
@@ -85,7 +86,12 @@ class Decoder:
                       'rnn': RNNGenerator,
                       'seq2seq': Seq2SeqGenerator,
                       'binmt': BiNMTGenerator}
-        factories = {'t2t': T2TModel.make_model, 'rnn': RNNModel.make_model}
+        factories = {
+            't2t': T2TModel.make_model,
+            'rnn': RNNModel.make_model,
+            'seq2seq': Seq2Seq.make_model,
+            'binmt': BiNMT.make_model,
+        }
         if model is None:
             factory = factories[exp.model_type]
             model = factory(**exp.model_args)[0]
