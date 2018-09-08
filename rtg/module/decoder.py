@@ -336,8 +336,11 @@ class Decoder:
 
         helps = [(':quit', 'Exit'),
                  (':help', 'Print this help message'),
-                 (':beam <n>', 'to set beam size to n'),
-                 (':hyps <k>', 'to print top k hypotheses')]
+                 (':beam <n>', 'Set beam size to n'),
+                 (':hyps <k>', 'Print top k hypotheses'),
+                 (':debug', 'Enable debug mode'),
+                 (':-debug', 'Disable debug mode')
+                 ]
         if self.exp.model_type == 'binmt':
             helps.append((':path <path>', 'BiNMT modules: {E1D1, E2D2, E1D2E2D1, E2D2E1D2}'))
 
@@ -345,12 +348,15 @@ class Decoder:
             for cmd, msg in helps:
                 print(f"\t{cmd:15}\t-\t{msg}")
 
+        print("Launching Interactive shell...")
+        print_cmds()
         print_state = True
         while True:
             if print_state:
                 state = '  '.join(f'{k}={v}' for k, v in args.items())
                 if isinstance(self.generator, BiNMTGenerator):
                     state += f'  path={self.generator.path}'
+                state += f'  debug={debug_mode}'
                 print('\t|' + state)
                 print_state = False
             line = input('Input : ')
@@ -368,6 +374,12 @@ class Decoder:
                 elif line.startswith(":hyps"):
                     args['num_hyp'] = int(line.replace(':hyps', '').strip())
                     print_state = True
+                elif line.startswith(":debug"):
+                    self.debug = True
+                    print_state = True
+                elif line.startswith(":-debug"):
+                    self.debug = True
+                    print_state = True
                 elif line.startswith(":path"):
                     path = line.replace(':path', '').strip()
                     if path != self.generator.path:
@@ -378,7 +390,7 @@ class Decoder:
                     res = self.decode_sentence(line, **args)
                     print(f'\t|took={1000 * (time.time()-start)}ms')
                     for score, hyp in res:
-                        print(f'{score:.4f}\t{hyp}')
+                        print(f'\t :: {score:.4f}\t{hyp}')
             except Exception:
                 traceback.print_exc()
 
