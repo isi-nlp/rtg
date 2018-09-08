@@ -45,7 +45,7 @@ def main():
     assert exp.has_trained(), f'Experiment dir {exp.work_dir} is not ready to decode. Please run "train" sub task'
 
     decoder = Decoder.new(exp, gen_args=gen_args)
-    if args.get('interactive'):
+    if args.pop('interactive'):
         if args['input'] != sys.stdin or args['output'] != sys.stdout:
             log.warning('--input and --output args are not applicable in --interactive mode')
         args.pop('input')

@@ -103,7 +103,7 @@ class Decoder:
     eos_val = EOS_TOK[1]
     default_beam_size = 5
 
-    def __init__(self, model, gen_factory: Type[GeneratorFactory], exp, debug=debug_mode, gen_args=None):
+    def __init__(self, model, gen_factory: Type[GeneratorFactory], exp, gen_args=None, debug=debug_mode):
         self.model = model
         self.exp = exp
         self.gen_factory = gen_factory
@@ -308,7 +308,7 @@ class Decoder:
             return {
                 'D1': self.exp.src_vocab,
                 'D2': self.exp.tgt_vocab
-            }[self.gen_args['path'][:2][-2:]]
+            }[self.gen_args['path'][-2:]]
         else:  # all others go from source as input to target as output
             return self.exp.tgt_vocab
 
@@ -342,7 +342,8 @@ class Decoder:
         return result
 
     def decode_interactive(self, **args):
-
+        import readline
+        import sys
         helps = [(':quit', 'Exit'),
                  (':help', 'Print this help message'),
                  (':beam <n>', 'Set beam size to n'),
@@ -363,12 +364,12 @@ class Decoder:
         while True:
             if print_state:
                 state = '  '.join(f'{k}={v}' for k, v in args.items())
-                if isinstance(self.generator, BiNMTGenerator):
-                    state += f'  path={self.generator.path}'
+                if self.exp.model_type == 'binmt':
+                    state += f'  path={self.gen_args.get("path")}'
                 state += f'  debug={debug_mode}'
                 print('\t|' + state)
-                print_state = False
-            line = input('Input : ')
+            print_state = False
+            line = input('Input: ')
             line = line.strip()
             if not line:
                 continue
@@ -397,9 +398,12 @@ class Decoder:
                     res = self.decode_sentence(line, **args)
                     print(f'\t|took={1000 * (time.time()-start)}ms')
                     for score, hyp in res:
-                        print(f'\t :: {score:.4f}\t{hyp}')
+                        print(f'  {score:.4f}\t{hyp}')
+            except EOFError as e1:
+                break
             except Exception:
                 traceback.print_exc()
+                show_state = True
 
     def decode_file(self, inp, out, **args):
         for i, line in enumerate(inp):
