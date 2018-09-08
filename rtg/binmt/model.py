@@ -564,7 +564,22 @@ class BiNmtTrainer(BaseTrainer):
         loss_node = (per_tok_loss * tok_mask.float()).sum().float() / batch.y_toks
         return loss_node
 
-    def _run_epoch(self, mono_src: BatchIterable, mono_tgt: BatchIterable, train_mode: bool):
+    def _run_epoch(self, batch_size: int, train_mode: bool):
+        if train_mode:
+            mono_src = BatchIterable(self.exp.mono_train_src, batch_size=batch_size,
+                                     batch_first=True,
+                                     shuffle=True, copy_xy=True)
+            mono_tgt = BatchIterable(self.exp.mono_train_tgt, batch_size=batch_size,
+                                     batch_first=True,
+                                     shuffle=True, copy_xy=True)
+        else:
+            mono_src = BatchIterable(self.exp.mono_valid_src, batch_size=batch_size,
+                                     batch_first=True,
+                                     shuffle=False, copy_xy=True)
+            mono_tgt = BatchIterable(self.exp.mono_valid_tgt, batch_size=batch_size,
+                                     batch_first=True,
+                                     shuffle=False, copy_xy=True)
+
         start = time.time()
         tot_src_loss = 0.0
         tot_src_cyc_loss = 0.0
@@ -618,18 +633,6 @@ class BiNmtTrainer(BaseTrainer):
 
     def train(self, num_epochs: int, batch_size: int, **args):
         log.info(f'Going to train for {num_epochs} epochs; batch_size={batch_size}')
-
-        # FIXME: in memory data could cause OOM (RAM)
-        train_src = BatchIterable(self.exp.mono_train_src, batch_size=batch_size, batch_first=True,
-                                  shuffle=True, copy_xy=True)
-        train_tgt = BatchIterable(self.exp.mono_train_tgt, batch_size=batch_size, batch_first=True,
-                                  shuffle=True, copy_xy=True)
-
-        val_src = BatchIterable(self.exp.mono_valid_src, batch_size=batch_size, batch_first=True,
-                                shuffle=False, copy_xy=True)
-        val_tgt = BatchIterable(self.exp.mono_valid_tgt, batch_size=batch_size, batch_first=True,
-                                shuffle=False, copy_xy=True)
-
         keep_models = args.pop('keep_models', 4)
         if args.pop('resume_train'):
             num_epochs += self.start_epoch
@@ -640,11 +643,11 @@ class BiNmtTrainer(BaseTrainer):
         losses = []
         for ep in range(self.start_epoch, num_epochs):
             log.info(f"training epoch {ep+1} started...")
-            train_loss = self._run_epoch(train_src, train_tgt, train_mode=True)
+            train_loss = self._run_epoch(batch_size=batch_size, train_mode=True)
             log.info(f'Training epoch {ep+1} complete. Train Loss = {train_loss}')
 
             log.info(f"Validation epoch {ep+1} started...")
-            val_loss = self._run_epoch(val_src, val_tgt, train_mode=False)
+            val_loss = self._run_epoch(batch_size=batch_size, train_mode=False)
             log.info(f"Validation epoch {ep+1} complete. Validation Loss = {val_loss}")
             losses.append((ep, train_loss, val_loss))
             if keep_models > 0:
@@ -742,4 +745,4 @@ def __test_binmt_model__():
 
 if __name__ == '__main__':
     __test_binmt_model__()
-    #__test_seq2seq_model__()
+    # __test_seq2seq_model__()
