@@ -334,7 +334,10 @@ class BiNMT(nn.Module):
             # ENC1 --> DEC2 --> ENC2 --> DEC1
             'E1D2E2D1': Seq2Seq(enc1, dec1, bridge=Seq2SeqBridge(dec2, enc2)),
             # ENC2 --> DEC1 --> ENC1 --> DEC2
-            'E2D1E1D2': Seq2Seq(enc2, dec2, bridge=Seq2SeqBridge(dec1, enc1))
+            'E2D1E1D2': Seq2Seq(enc2, dec2, bridge=Seq2SeqBridge(dec1, enc1)),
+            ## parallel
+            'E1D2': Seq2Seq(enc1, dec2),
+            'E2D1': Seq2Seq(enc2, dec1),
         }
         # TODO: parallel data when available (semi supervised)
         # 1. ENC1 --> DEC2

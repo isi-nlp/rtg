@@ -25,7 +25,7 @@ def parse_args():
     parser.add_argument("--prepared", dest="prepared", action='store_true',
                         help='Each token is a valid integer wich is an index to embedding, so skip indexifying again')
     parser.add_argument("-bp", '--binmt-path', type=str, default=None,
-                        choices=['E1D1', 'E2D2', 'E1D2E2D1', 'E2D2E1D2'],
+                        choices=['E1D1', 'E2D2', 'E1D2E2D1', 'E2D2E1D2', 'E1D2', 'E2D1'],
                         help='Sub module path inside BiNMT. applicable only when model is BiNMT')
     parser.add_argument("-it", '--interactive', action='store_true',
                         help='Open interactive shell with decoder')
