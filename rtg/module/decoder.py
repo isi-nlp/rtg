@@ -5,20 +5,32 @@ from rtg.dataprep import PAD_TOK, BOS_TOK, EOS_TOK, subsequent_mask
 from rtg.module.t2t import T2TModel
 from rtg.module.rnn import RNNModel
 from rtg.binmt.model import Seq2Seq, BiNMT
-from typing import List, Tuple
+from typing import List, Tuple, Type
 from rtg import TranslationExperiment as Experiment
-import sys
 import traceback
 import time
+import abc
 
 Hypothesis = Tuple[float, List[int]]
 StrHypothesis = Tuple[float, str]
 
 
-class RNNGenerator:
+# TODO: simplify the generators
+class GeneratorFactory(abc.ABC):
+
+    def __init__(self, model, **kwargs):
+        self.model = model
+
+    @abc.abstractmethod
+    def generate_next(self, past_ys):
+        pass
+
+
+class RNNGenerator(GeneratorFactory):
+    # TODO: this is duplicate of seq2seq model
 
     def __init__(self, model: RNNModel, x_seqs, x_lens):
-        self.model = model
+        super().__init__(model)
         x_seqs = x_seqs.view(-1, len(x_seqs))  # [S, B]  <- [B, S]
         # [S, B, d], [S, B, d] <-- [S, B], [B]
         self.enc_outs, enc_hids = model.enc(x_seqs, x_lens, None)
@@ -35,10 +47,10 @@ class RNNGenerator:
         return log_probs
 
 
-class Seq2SeqGenerator:
+class Seq2SeqGenerator(GeneratorFactory):
 
     def __init__(self, model: Seq2Seq, x_seqs, x_lens):
-        self.model = model
+        super().__init__(model)
         # [S, B, d], [S, B, d] <-- [S, B], [B]
         self.enc_outs, enc_hids = model.encode(x_seqs, x_lens, None)
         # [S, B, d]
@@ -60,10 +72,10 @@ class BiNMTGenerator(Seq2SeqGenerator):
         self.wrapper = model
 
 
-class T2TGenerator:
+class T2TGenerator(GeneratorFactory):
 
     def __init__(self, model: T2TModel, x_seqs, x_lens=None):
-        self.model = model
+        super().__init__(model)
         self.x_mask = (x_seqs != Decoder.pad_val).unsqueeze(1)
         self.memory = self.model.encode(x_seqs, self.x_mask)
 
@@ -91,14 +103,18 @@ class Decoder:
     eos_val = EOS_TOK[1]
     default_beam_size = 5
 
-    def __init__(self, generator, exp, debug=debug_mode):
+    def __init__(self, model, gen_factory: Type[GeneratorFactory], exp, debug=debug_mode, gen_args=None):
+        self.model = model
         self.exp = exp
-        self.generator = generator
+        self.gen_factory = gen_factory
         self.debug = debug
+        self.gen_args = gen_args if gen_args is not None else {}
+
+    def generator(self, x_seqs, x_lens):
+        return self.gen_factory(self.model, x_seqs=x_seqs, x_lens=x_lens, **self.gen_args)
 
     @classmethod
     def new(cls, exp: Experiment, model=None, gen_args=None):
-
         if model is None:
             factory = factories[exp.model_type]
             model = factory(**exp.model_args)[0]
@@ -108,13 +124,7 @@ class Decoder:
 
         model = model.eval().to(device=device)
         generator = generators[exp.model_type]
-        if gen_args is None:
-            gen_args = {}
-
-        def seq_generator(x_seqs, x_lens):
-            return generator(model, x_seqs, x_lens, **gen_args)
-
-        return cls(seq_generator, exp)
+        return cls(model, generator, exp, gen_args)
 
     def greedy_decode(self, x_seqs, x_lens, max_len, **args) -> List[Hypothesis]:
         """
@@ -156,7 +166,6 @@ class Decoder:
     def beam_decode(self, x_seqs, x_lens, max_len, beam_size=default_beam_size, num_hyp=None,
                     **args) -> List[List[Hypothesis]]:
         """
-
         :param x_seqs: input batch of sequences
         :param max_len:  maximum length to consider if decoder doesnt produce EOS token
         :param beam_size: beam size
@@ -288,7 +297,7 @@ class Decoder:
             return {
                 'E1': self.exp.src_vocab,
                 'E2': self.exp.tgt_vocab
-            }[self.generator.path[:2]]
+            }[self.gen_args['path'][:2]]
         else:   # all others go from source as input to target as output
             return self.exp.src_vocab
 
@@ -299,7 +308,7 @@ class Decoder:
             return {
                 'D1': self.exp.src_vocab,
                 'D2': self.exp.tgt_vocab
-            }[self.generator.path[-2:]]
+            }[self.gen_args['path'][:2][-2:]]
         else:  # all others go from source as input to target as output
             return self.exp.tgt_vocab
 
@@ -381,9 +390,7 @@ class Decoder:
                     self.debug = True
                     print_state = True
                 elif line.startswith(":path"):
-                    path = line.replace(':path', '').strip()
-                    if path != self.generator.path:
-                        self.generator.model = self.generator.wrapper[path]
+                    self.gen_args['path'] = line.replace(':path', '').strip()
                     print_state = True
                 else:
                     start = time.time()

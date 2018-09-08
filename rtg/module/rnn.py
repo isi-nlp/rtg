@@ -1,3 +1,6 @@
+
+# FIXME: this is duplicate of binmt.model.seq2seq , so remove this
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
