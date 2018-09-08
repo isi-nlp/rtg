@@ -7,7 +7,9 @@ from rtg.module.rnn import RNNModel
 from rtg.binmt.model import Seq2Seq, BiNMT
 from typing import List, Tuple
 from rtg import TranslationExperiment as Experiment
-
+import sys
+import traceback
+import time
 Hypothesis = Tuple[float, List[int]]
 StrHypothesis = Tuple[float, str]
 
@@ -26,7 +28,8 @@ class RNNGenerator:
 
     def generate_next(self, past_ys):
         last_ys = past_ys[:, -1]
-        next_ys, self.dec_hids, self.dec_attn = self.model.dec(last_ys, self.dec_hids, self.enc_outs)
+        next_ys, self.dec_hids, self.dec_attn = self.model.dec(last_ys, self.dec_hids,
+                                                               self.enc_outs)
         log_probs = F.log_softmax(next_ys, dim=1)
         return log_probs
 
@@ -51,13 +54,14 @@ class BiNMTGenerator(Seq2SeqGenerator):
     def __init__(self, model: BiNMT, x_seqs, x_lens, path):
         # pick a sub Seq2Seq model inside the BiNMT model as per the given path
         assert path
-        self.path = path
         super().__init__(model.paths[path], x_seqs, x_lens)
+        self.path = path
+        self.wrapper = model
 
 
 class T2TGenerator:
 
-    def __init__(self,  model: T2TModel, x_seqs, x_lens=None):
+    def __init__(self, model: T2TModel, x_seqs, x_lens=None):
         self.model = model
         self.x_mask = (x_seqs != Decoder.pad_val).unsqueeze(1)
         self.memory = self.model.encode(x_seqs, self.x_mask)
@@ -68,8 +72,19 @@ class T2TGenerator:
         return log_probs
 
 
-class Decoder:
+generators = {'t2t': T2TGenerator,
+              'rnn': RNNGenerator,
+              'seq2seq': Seq2SeqGenerator,
+              'binmt': BiNMTGenerator}
+factories = {
+    't2t': T2TModel.make_model,
+    'rnn': RNNModel.make_model,
+    'seq2seq': Seq2Seq.make_model,
+    'binmt': BiNMT.make_model,
+}
 
+
+class Decoder:
     pad_val = PAD_TOK[1]
     bos_val = BOS_TOK[1]
     eos_val = EOS_TOK[1]
@@ -82,16 +97,7 @@ class Decoder:
 
     @classmethod
     def new(cls, exp: Experiment, model=None, gen_args=None):
-        generators = {'t2t': T2TGenerator,
-                      'rnn': RNNGenerator,
-                      'seq2seq': Seq2SeqGenerator,
-                      'binmt': BiNMTGenerator}
-        factories = {
-            't2t': T2TModel.make_model,
-            'rnn': RNNModel.make_model,
-            'seq2seq': Seq2Seq.make_model,
-            'binmt': BiNMT.make_model,
-        }
+
         if model is None:
             factory = factories[exp.model_type]
             model = factory(**exp.model_args)[0]
@@ -106,6 +112,7 @@ class Decoder:
 
         def seq_generator(x_seqs, x_lens):
             return generator(model, x_seqs, x_lens, **gen_args)
+
         return cls(seq_generator, exp)
 
     def greedy_decode(self, x_seqs, x_lens, max_len, **args) -> List[Hypothesis]:
@@ -119,11 +126,12 @@ class Decoder:
 
         gen = self.generator(x_seqs, x_lens)
         batch_size = x_seqs.size(0)
-        ys = torch.full(size=(batch_size, 1), fill_value=self.bos_val, dtype=torch.long, device=device)
+        ys = torch.full(size=(batch_size, 1), fill_value=self.bos_val, dtype=torch.long,
+                        device=device)
         scores = torch.zeros(batch_size, device=device)
 
         actives = ys[:, -1] != self.eos_val
-        for i in range(1, max_len+1):
+        for i in range(1, max_len + 1):
             if actives.sum() == 0:  # all sequences Ended
                 break
             log_prob = gen.generate_next(ys)
@@ -144,7 +152,8 @@ class Decoder:
         selected = x.masked_select(mask)
         return selected.view(-1, x.size(1))
 
-    def beam_decode(self, x_seqs, x_lens, max_len, beam_size=default_beam_size, num_hyp=None, **args) -> List[List[Hypothesis]]:
+    def beam_decode(self, x_seqs, x_lens, max_len, beam_size=default_beam_size, num_hyp=None,
+                    **args) -> List[List[Hypothesis]]:
         """
 
         :param x_seqs: input batch of sequences
@@ -170,12 +179,13 @@ class Decoder:
         beamed_x_lens = x_lens.view(-1, 1).repeat(1, beam_size).view(beamed_batch_size)
         generator = self.generator(beamed_x_seqs, beamed_x_lens)
 
-        beamed_ys = torch.full(size=(beamed_batch_size, 1), fill_value=self.bos_val, dtype=torch.long, device=device)
+        beamed_ys = torch.full(size=(beamed_batch_size, 1), fill_value=self.bos_val,
+                               dtype=torch.long, device=device)
         beamed_scores = torch.zeros((beamed_batch_size, 1), device=device)
 
         beam_active = torch.ones((beamed_batch_size, 1), dtype=torch.uint8, device=device)
         # zeros means ended, one means active
-        for t in range(1, max_len+1):
+        for t in range(1, max_len + 1):
             if beam_active.sum() == 0:
                 break
             # [batch*beam, Vocab]
@@ -184,16 +194,18 @@ class Decoder:
             # broad cast scores along row (broadcast) and sum  log probabilities
             next_scores = beamed_scores + beam_active.float() * log_prob  # Zero out inactive beams
 
-            top_scores, nxt_idx = next_scores.topk(k=beam_size, dim=-1)  # [batch*beam, beam],[batch*beam, beam]
+            top_scores, nxt_idx = next_scores.topk(k=beam_size,
+                                                   dim=-1)  # [batch*beam, beam],[batch*beam, beam]
             # Now we got beam_size*beam_size heads, task: shrink it to beam_size
             # Since the ys will change, after re-scoring, we will make a new tensor for new ys
-            new_ys = torch.full(size=(beamed_batch_size, beamed_ys.size(1) + 1), fill_value=self.pad_val,
+            new_ys = torch.full(size=(beamed_batch_size, beamed_ys.size(1) + 1),
+                                fill_value=self.pad_val,
                                 device=device, dtype=torch.long)
 
             for i in range(batch_size):
                 # going to picking top k out of k*k beams for each sequence in batch
                 # beams of i'th sequence in batch have this start and end
-                start, end = i * beam_size, (i+1) * beam_size
+                start, end = i * beam_size, (i + 1) * beam_size
                 if beam_active[start:end].sum() == 0:
                     # current sequence ended
                     new_ys[:start:end, :-1] = beamed_ys[start:end]
@@ -207,16 +219,17 @@ class Decoder:
                     new_ys[start:end, :-1] = beamed_ys[start:end]
                     seqi_top_scores = seqi_top_scores.view(-1, 1)
                 else:
-                    seqi_nxt_ys = torch.full((beam_size,1), fill_value=self.pad_val, device=device)
+                    seqi_nxt_ys = torch.full((beam_size, 1), fill_value=self.pad_val, device=device)
                     seqi_top_scores = torch.zeros((beam_size, 1), device=device)
 
                     # ignore the inactive beams, don't grow them any further
                     # INACTIVE BEAMS: Preserve the inactive beams, just copy them
                     seqi_inactive_mask = (beam_active[start:end, -1] == 0).view(-1, 1)
                     seqi_inactive_count = seqi_inactive_mask.sum()
-                    active_start = start + seqi_inactive_count    # [start, ... active_start-1, active_start, ... end]
-                    if seqi_inactive_count > 0: # if there are some inactive beams
-                        seqi_inactive_ys = self.masked_select(beamed_ys[start:end, :], seqi_inactive_mask)
+                    active_start = start + seqi_inactive_count  # [start, ... active_start-1, active_start, ... end]
+                    if seqi_inactive_count > 0:  # if there are some inactive beams
+                        seqi_inactive_ys = self.masked_select(beamed_ys[start:end, :],
+                                                              seqi_inactive_mask)
                         new_ys[start: active_start, :-1] = seqi_inactive_ys  # Copy inactive beams
                         seqi_top_scores[start:active_start, :] = \
                             self.masked_select(beamed_scores[start:end, :], seqi_inactive_mask)
@@ -228,7 +241,8 @@ class Decoder:
                     seqi_scores = self.masked_select(top_scores[start:end, :], seqi_active_mask)
                     seqi_nxt_idx = self.masked_select(nxt_idx[start:end, :], seqi_active_mask)
 
-                    seqi_active_top_scores, seqi_nxt_idx_idx = seqi_scores.view(-1).topk(k=seqi_active_count)
+                    seqi_active_top_scores, seqi_nxt_idx_idx = seqi_scores.view(-1).topk(
+                        k=seqi_active_count)
                     seqi_top_scores[active_start:end, 0] = seqi_active_top_scores
                     seqi_nxt_ys[active_start: end, 0] = seqi_nxt_idx.view(-1)[seqi_nxt_idx_idx]
 
@@ -239,7 +253,8 @@ class Decoder:
                     new_ys[active_start:end, :-1] = seqi_active_old_ys
 
                     # Update status of beam_active flags
-                    beam_active[active_start:end, :] = self.masked_select(beam_active[start:end, :], seqi_active_mask) \
+                    beam_active[active_start:end, :] = self.masked_select(beam_active[start:end, :],
+                                                                          seqi_active_mask) \
                         .index_select(0, active_beam_idx)
                     if active_start > start:
                         beam_active[start:active_start, -1] = 0  # inactive beams are set to zero
@@ -249,7 +264,8 @@ class Decoder:
                 new_ys[start:end, -1] = seqi_nxt_ys.view(-1)
             beamed_ys = new_ys
             # AND to update active flag
-            beam_active = beam_active & (beamed_ys[:, -1] != self.eos_val).view(beamed_batch_size, 1)
+            beam_active = beam_active & (beamed_ys[:, -1] != self.eos_val).view(beamed_batch_size,
+                                                                                1)
 
         result = []
         # reverse sort based on the score
@@ -260,7 +276,8 @@ class Decoder:
             for j in range(beam_size):
                 if len(result[-1]) == num_hyp:
                     continue
-                result[-1].append((scores[j].item(), beamed_ys[start+indices[j], 1:].squeeze().tolist()))
+                result[-1].append(
+                    (scores[j].item(), beamed_ys[start + indices[j], 1:].squeeze().tolist()))
         return result
 
     def decode_sentence(self, line: str, max_len=20, prepared=False, **args) -> List[StrHypothesis]:
@@ -290,6 +307,58 @@ class Decoder:
             result.append((score, out))
         return result
 
+    def decode_interactive(self, **args):
+
+        helps = [(':quit', 'Exit'),
+                 (':help', 'Print this help message'),
+                 (':beam <n>', 'to set beam size to n'),
+                 (':hyps <k>', 'to print top k hypotheses')]
+        if self.exp.model_type == 'binmt':
+            helps.append((':path <path>', 'BiNMT modules: {E1D1, E2D2, E1D2E2D1, E2D2E1D2}'))
+
+        print("Launching Interactive shell")
+
+        def print_cmds():
+            for cmd, msg in helps:
+                print(f"\t{cmd:15}\t-\t{msg}")
+
+        print_state = True
+        while True:
+            if print_state:
+                state = '  '.join(f'{k}={v}' for k, v in args.items())
+                if isinstance(self.generator, BiNMTGenerator):
+                    state += f'  path={self.generator.path}'
+                print('\t|' + state)
+                print_state = False
+            line = input('Input : ')
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                if line == ':quit':
+                    break
+                elif line == ':help':
+                    print_cmds()
+                elif line.startswith(":beam "):
+                    args['beam_size'] = int(line.replace(':beam', '').strip())
+                    print_state = True
+                elif line.startswith(":hyps"):
+                    args['num_hyp'] = int(line.replace(':hyps', '').strip())
+                    print_state = True
+                elif line.startswith(":path"):
+                    path = line.replace(':path', '').strip()
+                    if path != self.generator.path:
+                        self.generator.model = self.generator.wrapper[path]
+                    print_state = True
+                else:
+                    start = time.time()
+                    res = self.decode_sentence(line, **args)
+                    print(f'\t|took={1000 * (time.time()-start)}ms')
+                    for score, hyp in res:
+                        print(f'{score:.4f}\t{hyp}')
+            except Exception:
+                traceback.print_exc()
+
     def decode_file(self, inp, out, **args):
         for i, line in enumerate(inp):
             line = line.strip()
@@ -309,4 +378,3 @@ class Decoder:
             log.debug(f"OUT: {i}: {out_line}\n")
             if num_hyp > 1:
                 out.write('\n')
-

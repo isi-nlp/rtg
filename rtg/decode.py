@@ -3,7 +3,7 @@ import argparse
 import sys
 from argparse import ArgumentDefaultsHelpFormatter as ArgFormatter
 
-from rtg import TranslationExperiment as Experiment
+from rtg import TranslationExperiment as Experiment, log
 from rtg.module.decoder import Decoder
 
 
@@ -27,6 +27,8 @@ def parse_args():
     parser.add_argument("-bp", '--binmt-path', type=str, default=None,
                         choices=['E1D1', 'E2D2', 'E1D2E2D1', 'E2D2E1D2'],
                         help='Sub module path inside BiNMT. applicable only when model is BiNMT')
+    parser.add_argument("-it", '--interactive', action='store_true',
+                        help='Open interactive shell with decoder')
     return vars(parser.parse_args())
 
 
@@ -43,7 +45,14 @@ def main():
     assert exp.has_trained(), f'Experiment dir {exp.work_dir} is not ready to decode. Please run "train" sub task'
 
     decoder = Decoder.new(exp, gen_args=gen_args)
-    return decoder.decode_file(args.pop('input'), args.pop('output'), **args)
+    if args.get('interactive'):
+        if args['input'] != sys.stdin or args['output'] != sys.stdout:
+            log.warning('--input and --output args are not applicable in --interactive mode')
+        args.pop('input')
+        args.pop('output')
+        decoder.decode_interactive(**args)
+    else:
+        return decoder.decode_file(args.pop('input'), args.pop('output'), **args)
 
 
 if __name__ == '__main__':
