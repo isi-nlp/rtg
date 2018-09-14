@@ -29,6 +29,8 @@ def parse_args():
                         help='Sub module path inside BiNMT. applicable only when model is BiNMT')
     parser.add_argument("-it", '--interactive', action='store_true',
                         help='Open interactive shell with decoder')
+    parser.add_argument("-sc", '--skip-check', action='store_true',
+                        help='Skip Checking whether the experiment dir is prepared and trained')
     return vars(parser.parse_args())
 
 
@@ -41,8 +43,10 @@ def main():
         if not args.get('path'):
             Exception('--binmt-path argument is needed for BiNMT model.')
         gen_args['path'] = args.pop('binmt_path')
-    assert exp.has_prepared(), f'Experiment dir {exp.work_dir} is not ready to train. Please run "prep" sub task'
-    assert exp.has_trained(), f'Experiment dir {exp.work_dir} is not ready to decode. Please run "train" sub task'
+
+    if not args.pop('skip_check'): # if --skip-check is not requested
+        assert exp.has_prepared(), f'Experiment dir {exp.work_dir} is not ready to train. Please run "prep" sub task'
+        assert exp.has_trained(), f'Experiment dir {exp.work_dir} is not ready to decode. Please run "train" sub task'
 
     decoder = Decoder.new(exp, gen_args=gen_args)
     if args.pop('interactive'):
