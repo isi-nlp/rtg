@@ -99,7 +99,8 @@ class SeqEncoder(nn.Module):
 
         # lnhn and lncn hold compact representation
         # duplicate for decoder layers
-        return lnhn.expand(self.n_layers, *lnhn.shape), lncn.expand(self.n_layers, *lncn.shape)
+        return (lnhn.expand(self.n_layers, *lnhn.shape).contiguous(),
+                lncn.expand(self.n_layers, *lncn.shape).contiguous())
 
 
 class SeqDecoder(nn.Module):
