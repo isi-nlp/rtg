@@ -528,6 +528,7 @@ class Seq2SeqTrainer(BaseTrainer):
                 state = self.model.to(cpu_device).state_dict()
                 self.exp.store_model(epoch=ep, model=state, train_score=train_loss,
                                      val_score=val_loss, keep=keep_models)
+                self.model = self.model.to(device) # bring it back to GPU device
                 del state
             gc.collect()
         summary = '\n'.join(f'{ep:02}\t{tl:.4f}\t{vl:.4f}' for ep, tl, vl in losses)
@@ -681,6 +682,7 @@ class BiNmtTrainer(BaseTrainer):
                 state = self.model.to(cpu_device).state_dict()
                 self.exp.store_model(epoch=ep, model=state, train_score=train_loss,
                                      val_score=val_loss, keep=keep_models)
+                self.model = self.model.to(device) # bring it back to GPU device
                 del state
             gc.collect()
         summary = '\n'.join(f'{ep:02}\t{tl:.4f}\t{vl:.4f}' for ep, tl, vl in losses)
