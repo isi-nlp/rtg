@@ -84,17 +84,22 @@ class SeqEncoder(nn.Module):
         return outputs, self.to_dec_state(hidden)
 
     def to_dec_state(self, enc_state):
+        # get the last layer's last time step output
+        # lnhn is layer n hidden n which is last layer last hidden. similarly lncn
+        hns, cns = enc_state
         if self.bidirectional:
-            # h_t, c_t = enc_state
-            batch_size = enc_state[0].shape[1]
-            # [num_layers * 2, batch_size, hid // 2]
-            #    -> [num_layers, 2, batch_size, hid // 2]
-            #    -> [num_layers, batch_size, hid]
-            #
-            return [
-                hc.view(self.n_layers, 2, batch_size, self.out_size // 2)
-                    .view(self.n_layers, batch_size, self.out_size) for hc in enc_state]
-        return enc_state
+            # cat bidirectional
+            lnhn = hns.view(self.n_layers, 2, hns.shape[1], hns.shape[-1])[-1]
+            lnhn = torch.cat([lnhn[0], lnhn[1]], dim=1)
+            lncn = cns.view(self.n_layers, 2, cns.shape[1], cns.shape[-1])[-1]
+            lncn = torch.cat([lncn[0], lncn[1]], dim=1)
+        else:
+            lnhn = hns.view(self.n_layers, hns.shape[1], hns.shape[-1])[-1]
+            lncn = cns.view(self.n_layers, cns.shape[1], cns.shape[-1])[-1]
+
+        # lnhn and lncn hold compact representation
+        # duplicate for decoder layers
+        return lnhn.expand(self.n_layers, *lnhn.shape), lncn.expand(self.n_layers, *lncn.shape)
 
 
 class SeqDecoder(nn.Module):
@@ -280,7 +285,7 @@ class Seq2Seq(nn.Module):
 
     @staticmethod
     def make_model(src_lang, tgt_lang, src_vocab: int, tgt_vocab: int, emb_size: int = 300,
-                   hid_size: int = 300, n_layers: int = 2):
+                   hid_size: int = 300, n_layers: int = 2, attention=False):
         args = {
             'src_lang': src_lang,
             'tgt_lang': tgt_lang,
@@ -288,14 +293,19 @@ class Seq2Seq(nn.Module):
             'tgt_vocab': tgt_vocab,
             'emb_size': emb_size,
             'hid_size': hid_size,
-            'n_layers': n_layers
+            'n_layers': n_layers,
+            'attention': attention
         }
         src_embedder = Embedder(src_lang, src_vocab, emb_size)
         tgt_embedder = Embedder(tgt_lang, tgt_vocab, emb_size)
         tgt_generator = Generator(tgt_lang, vec_size=hid_size, vocab_size=tgt_vocab)
         enc = SeqEncoder(src_embedder, hid_size, n_layers=n_layers, bidirectional=True)
-        # dec = SeqDecoder(tgt_embedder, tgt_generator, n_layers=n_layers)
-        dec = AttnSeqDecoder(tgt_embedder, tgt_generator, n_layers=n_layers)
+        if attention:
+            log.info("Using attention models for decoding")
+            dec = AttnSeqDecoder(tgt_embedder, tgt_generator, n_layers=n_layers)
+        else:
+            log.info("NOT Using attention models for decoding")
+            dec = SeqDecoder(tgt_embedder, tgt_generator, n_layers=n_layers)
 
         model = Seq2Seq(enc, dec)
         # Initialize parameters with Glorot / fan_avg.
@@ -350,7 +360,7 @@ class BiNMT(nn.Module):
 
     @staticmethod
     def make_model(src_lang, tgt_lang, src_vocab: int, tgt_vocab: int, emb_size: int = 300,
-                   hid_size: int = 300, n_layers: int = 2):
+                   hid_size: int = 300, n_layers: int = 2, attention=False):
         args = {
             'src_lang': src_lang,
             'tgt_lang': tgt_lang,
@@ -358,7 +368,8 @@ class BiNMT(nn.Module):
             'tgt_vocab': tgt_vocab,
             'emb_size': emb_size,
             'hid_size': hid_size,
-            'n_layers': n_layers
+            'n_layers': n_layers,
+            'attention': attention
         }
         src_embedder = Embedder(src_lang, src_vocab, emb_size)
         tgt_embedder = Embedder(tgt_lang, tgt_vocab, emb_size)
@@ -369,10 +380,14 @@ class BiNMT(nn.Module):
         src_enc = SeqEncoder(src_embedder, hid_size, n_layers=n_layers, bidirectional=True)
         tgt_enc = SeqEncoder(tgt_embedder, hid_size, n_layers=n_layers, bidirectional=True)
 
-        # dec = SeqDecoder(tgt_embedder, tgt_generator, n_layers=n_layers)
-        src_dec = AttnSeqDecoder(src_embedder, src_generator, n_layers=n_layers)
-        tgt_dec = AttnSeqDecoder(tgt_embedder, tgt_generator, n_layers=n_layers)
-
+        if attention:
+            log.info("Using attention models for decoding")
+            src_dec = AttnSeqDecoder(src_embedder, src_generator, n_layers=n_layers)
+            tgt_dec = AttnSeqDecoder(tgt_embedder, tgt_generator, n_layers=n_layers)
+        else:
+            log.info("NOT Using attention models for decoding")
+            src_dec = SeqDecoder(src_embedder, src_generator, n_layers=n_layers)
+            tgt_dec = SeqDecoder(tgt_embedder, tgt_generator, n_layers=n_layers)
         model = BiNMT(src_enc, src_dec, tgt_enc, tgt_dec)
         # Initialize parameters with Glorot / fan_avg.
         for p in model.parameters():
@@ -583,6 +598,9 @@ class BiNmtTrainer(BaseTrainer):
                                      batch_first=True,
                                      shuffle=False, copy_xy=True)
 
+        return self._run_cycle(mono_src, mono_tgt, train_mode)
+
+    def _run_cycle(self, mono_src, mono_tgt, train_mode):
         start = time.time()
         tot_src_loss = 0.0
         tot_src_cyc_loss = 0.0
@@ -626,7 +644,6 @@ class BiNmtTrainer(BaseTrainer):
                 elapsed = time.time() - start
                 bar_msg = f'Loss:{tot_batch_loss:.4f}, {int(tot_toks/elapsed)}toks/s {learn_rate}'
                 data_bar.set_postfix_str(bar_msg, refresh=False)
-
         log.info(f'{"Training " if train_mode else "Validation"} Epoch\'s Losses: \n\t'
                  f' * Source-Source:{tot_src_loss:g}\n\t'
                  f' * Source-Target-Source: {tot_src_cyc_loss:g}\n\t'
@@ -737,8 +754,8 @@ def __test_binmt_model__():
             train_data = BatchIterable(vocab_size, 30, 50, seq_len=12, reverse=reverse,
                                        batch_first=True)
             val_data = BatchIterable(vocab_size, 50, 5, reverse=reverse, batch_first=True)
-            train_loss = trainer._run_epoch(train_data, train_data, train_mode=True)
-            val_loss = trainer._run_epoch(val_data, val_data, train_mode=False)
+            train_loss = trainer._run_cycle(train_data, train_data, train_mode=True)
+            val_loss = trainer._run_cycle(val_data, val_data, train_mode=False)
             log.info(
                 f"Epoch {epoch}, training Loss: {train_loss:.4f} \t validation loss:{val_loss:.4f}")
             model.eval()
@@ -749,3 +766,4 @@ def __test_binmt_model__():
 if __name__ == '__main__':
     __test_binmt_model__()
     # __test_seq2seq_model__()
+

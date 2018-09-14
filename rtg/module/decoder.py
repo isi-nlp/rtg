@@ -403,7 +403,7 @@ class Decoder:
                 break
             except Exception:
                 traceback.print_exc()
-                show_state = True
+                print_state = True
 
     def decode_file(self, inp, out, **args):
         for i, line in enumerate(inp):
