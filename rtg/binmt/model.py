@@ -4,7 +4,7 @@ import time
 
 import torch.nn.functional as F
 
-from rtg import my_tensor as tensor, device
+from rtg import my_tensor as tensor, device, cpu_device
 from rtg.dataprep import PAD_TOK_IDX, BOS_TOK_IDX, Batch, BatchIterable
 from rtg import log, TranslationExperiment as Experiment
 from rtg.utils import Optims
@@ -12,6 +12,7 @@ from typing import Optional, Mapping
 from tqdm import tqdm
 import random
 import itertools
+import gc
 
 
 class Embedder(nn.Embedding):
@@ -524,9 +525,11 @@ class Seq2SeqTrainer(BaseTrainer):
             log.info(f'Validation of {ep+1} complete.. Validation loss in this epoch {val_loss}...')
             losses.append((ep, train_loss, val_loss))
             if keep_models > 0:
-                self.exp.store_model(epoch=ep, model=self.model.state_dict(),
-                                     train_score=train_loss,
+                state = self.model.to(cpu_device).state_dict()
+                self.exp.store_model(epoch=ep, model=state, train_score=train_loss,
                                      val_score=val_loss, keep=keep_models)
+                del state
+            gc.collect()
         summary = '\n'.join(f'{ep:02}\t{tl:.4f}\t{vl:.4f}' for ep, tl, vl in losses)
         log.info(f"==Summary==:\nEpoch\t TrainLoss \t ValidnLoss \n {summary}")
 
@@ -672,9 +675,14 @@ class BiNmtTrainer(BaseTrainer):
             log.info(f"Validation epoch {ep+1} complete. Validation Loss = {val_loss}")
             losses.append((ep, train_loss, val_loss))
             if keep_models > 0:
-                self.exp.store_model(epoch=ep, model=self.model.state_dict(),
-                                     train_score=train_loss,
+                # Move model to CPU before serializing
+                # See https://discuss.pytorch.org/t/why-cuda-runs-out-of-memory-when-calling-torch-save/2219/5
+                # otherwise torch causes OOM sometimes
+                state = self.model.to(cpu_device).state_dict()
+                self.exp.store_model(epoch=ep, model=state, train_score=train_loss,
                                      val_score=val_loss, keep=keep_models)
+                del state
+            gc.collect()
         summary = '\n'.join(f'{ep:02}\t{tl:.4f}\t{vl:.4f}' for ep, tl, vl in losses)
         log.info(f"==Summary==:\nEpoch\t TrainLoss \t ValidationLoss \n {summary}")
 
