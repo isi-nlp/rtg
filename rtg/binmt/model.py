@@ -586,6 +586,7 @@ class BiNmtTrainer(BaseTrainer):
         return loss_node
 
     def _run_epoch(self, batch_size: int, train_mode: bool):
+        torch.set_grad_enabled(train_mode)
         if train_mode:
             mono_src = BatchIterable(self.exp.mono_train_src, batch_size=batch_size,
                                      batch_first=True,
@@ -609,6 +610,7 @@ class BiNmtTrainer(BaseTrainer):
         tot_src_cyc_loss = 0.0
         tot_tgt_loss = 0.0
         tot_tgt_cyc_loss = 0.0
+        torch.set_grad_enabled(train_mode)
         self.model.train(train_mode)
         num_batches = max(mono_src.num_batches, mono_tgt.num_batches)
         # TODO: not sure if this is a good idea. check  the effect of unequal ratio of data
