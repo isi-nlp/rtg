@@ -510,7 +510,7 @@ class Seq2SeqTrainer(BaseTrainer):
         train_data = BatchIterable(self.exp.train_file, batch_size=batch_size, batch_first=True,
                                    shuffle=True)
         val_data = BatchIterable(self.exp.valid_file, batch_size=batch_size, batch_first=True,
-                                 shuffle=False, copy_xy=True)
+                                 shuffle=False)
         keep_models = args.pop('keep_models', 4)
         if args.pop('resume_train'):
             num_epochs += self.start_epoch

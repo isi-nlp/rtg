@@ -118,7 +118,7 @@ class Decoder:
         if model is None:
             factory = factories[exp.model_type]
             model = factory(**exp.model_args)[0]
-            check_pt_file, _ = exp.get_last_saved_model()
+            check_pt_file, _ = exp.get_best_known_model()
             log.info(f" Restoring state from {check_pt_file}")
             model.load_state_dict(torch.load(check_pt_file))
 

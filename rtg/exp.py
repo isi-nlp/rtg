@@ -213,33 +213,61 @@ class TranslationExperiment:
         :param model: model object itself
         :param train_score: score of model on training split
         :param val_score: score of model on validation split
-        :param keep: number of recent models to keep, older models will be deleted
+        :param keep: number of good models to keep, bad models will be deleted
         :return:
         """
+        # TODO: improve this by skipping the model save if the model is not good enough to be saved
         assert not self.read_only
         name = f'model_{epoch:03d}_{train_score:.4f}_{val_score:.4f}.pkl'
-        path = os.path.join(self.model_dir, name)
+        path = self.model_dir / name
         log.info(f"Saving epoch {epoch} to {path}")
-        torch.save(model, path)
-        for old_model in self.list_models()[keep:]:
-            log.info(f"Deleting old {old_model} . Keep={keep}")
-            os.remove(old_model)
+        torch.save(model, str(path))
+
+        for bad_model in self.list_models(sort='valid_score', desc=False)[keep:]:
+            log.info(f"Deleting bad model {bad_model} . Keep={keep}")
+            os.remove(str(bad_model))
+
         with IO.writer(os.path.join(self.model_dir, 'scores.tsv'), append=True) as f:
             cols = [str(epoch), datetime.now().isoformat(), name, f'{train_score:.4f}',
                     f'{val_score:.4f}']
             f.write('\t'.join(cols) + '\n')
 
-    def list_models(self) -> List[Path]:
+    def list_models(self, sort: str='mtime', desc: bool=True) -> List[Path]:
         """
         Lists models in descending order of modification time
+        :param sort: how to sort models ?
+          - default is `mtime`, which uses modification time to sort
+          - valid_score: sort based on score on validation set
+        :param desc: True to sort in reverse (default); False to sort in ascending
         :return: list of model paths
         """
         paths = self.model_dir.glob('model_*.pkl')
-        return sorted(paths, key=lambda p: p.stat().st_mtime,
-                      reverse=True)  # sort by descending time
+        if sort == 'valid_score':
+            def _path_to_validn_score(path):
+                parts = str(path).replace('.pkl', '').split('_')
+                valid_score = float(parts[-1])
+                return valid_score
+            paths = sorted(paths, key=_path_to_validn_score, reverse=desc)
+        elif not sort or sort == 'mtime':
+            # default score
+            paths = sorted(paths, key=lambda p: p.stat().st_mtime,
+                           reverse=desc)
+        else:
+            raise Exception(f'Sort {sort} not supported. sort=None for default sort')
+        return paths
+
+    def get_best_known_model(self) -> Tuple[Optional[Path], int]:
+        """Gets best Known model (best on validation set)
+        """
+        models = self.list_models(sort='valid_score', desc=False)
+        if models:
+            _, epoch, train_score, valid_score = models[0].name.replace('.pkl', '').split('_')
+            return models[0], int(epoch)
+        else:
+            return None, -1
 
     def get_last_saved_model(self) -> Tuple[Optional[Path], int]:
-        models = self.list_models()
+        models = self.list_models(sort='mtime', desc=True)
         if models:
             _, epoch, train_score, valid_score = models[0].name.replace('.pkl', '').split('_')
             return models[0], int(epoch)
