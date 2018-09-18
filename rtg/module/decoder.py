@@ -10,6 +10,7 @@ from rtg import TranslationExperiment as Experiment
 import traceback
 import time
 import abc
+from pathlib import Path
 
 Hypothesis = Tuple[float, List[int]]
 StrHypothesis = Tuple[float, str]
@@ -114,13 +115,17 @@ class Decoder:
         return self.gen_factory(self.model, x_seqs=x_seqs, x_lens=x_lens, **self.gen_args)
 
     @classmethod
-    def new(cls, exp: Experiment, model=None, gen_args=None):
+    def new(cls, exp: Experiment, model=None, gen_args=None, model_path=None):
         if model is None:
             factory = factories[exp.model_type]
             model = factory(**exp.model_args)[0]
-            check_pt_file, _ = exp.get_best_known_model()
-            log.info(f" Restoring state from {check_pt_file}")
-            model.load_state_dict(torch.load(check_pt_file))
+            if model_path:
+                assert Path(model_path).is_file()
+            else:
+                model_path, _ = exp.get_best_known_model()
+
+            log.info(f" Restoring state from {model_path}")
+            model.load_state_dict(torch.load(model_path))
 
         model = model.eval().to(device=device)
         generator = generators[exp.model_type]
@@ -322,7 +327,6 @@ class Decoder:
             if in_seq[-1] != self.eos_val:
                 in_seq.append(self.eos_val)
         else:
-
             in_seq = self.inp_vocab.encode_as_ids(line, add_eos=True, add_bos=True)
         in_seqs = tensor(in_seq, dtype=torch.long).view(1, -1)
         in_lens = tensor([len(in_seq)], dtype=torch.long)
@@ -388,7 +392,7 @@ class Decoder:
                     self.debug = True
                     print_state = True
                 elif line.startswith(":-debug"):
-                    self.debug = True
+                    self.debug = False
                     print_state = True
                 elif line.startswith(":path"):
                     self.gen_args['path'] = line.replace(':path', '').strip()

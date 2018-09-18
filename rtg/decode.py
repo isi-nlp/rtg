@@ -11,7 +11,10 @@ def parse_args():
     parser = argparse.ArgumentParser(prog="rtg.decode", description="Decode using NMT model",
                                      formatter_class=ArgFormatter)
     parser.add_argument("work_dir", help="Working directory", type=str)
-
+    parser.add_argument("model_path", type=str, nargs='?',
+                        help="Path to model's checkpoint. "
+                             "If not specified, a best model (based on the score on validation set)"
+                             " from the experiment directory will be used")
     parser.add_argument("-if", '--input', type=argparse.FileType('r'), default=sys.stdin,
                         help='Input file path. default is STDIN')
     parser.add_argument("-of", '--output', type=argparse.FileType('w'), default=sys.stdout,
@@ -44,11 +47,11 @@ def main():
             Exception('--binmt-path argument is needed for BiNMT model.')
         gen_args['path'] = args.pop('binmt_path')
 
-    if not args.pop('skip_check'): # if --skip-check is not requested
+    if not args.pop('skip_check'):  # if --skip-check is not requested
         assert exp.has_prepared(), f'Experiment dir {exp.work_dir} is not ready to train. Please run "prep" sub task'
         assert exp.has_trained(), f'Experiment dir {exp.work_dir} is not ready to decode. Please run "train" sub task'
 
-    decoder = Decoder.new(exp, gen_args=gen_args)
+    decoder = Decoder.new(exp, gen_args=gen_args, model_path=args.pop('model_path', None))
     if args.pop('interactive'):
         if args['input'] != sys.stdin or args['output'] != sys.stdout:
             log.warning('--input and --output args are not applicable in --interactive mode')
