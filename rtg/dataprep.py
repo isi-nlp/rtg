@@ -109,7 +109,19 @@ class TSVData:
         self.longest_first = longest_first
         self.shuffle = shuffle
         self.mem = list(self.read_all()) if self.in_mem else None
+        self._len = len(self.mem) if self.in_mem else self._line_count(path)
         self.read_counter = 0
+
+    @staticmethod
+    def _line_count(path):
+        log.debug(f"Counting lines in {path}")
+        with open(path) as f:
+            count = 0
+            for _ in f:
+                if f:
+                    count += 1
+            log.debug(f"{path} has {count} non empty lines")
+            return count
 
     @staticmethod
     def _parse(line: str):
@@ -123,9 +135,7 @@ class TSVData:
                     yield Example(self._parse(rec[0]), self._parse(rec[1]) if len(rec) > 1 else None)
 
     def __len__(self):
-        if not self.mem:
-            raise RuntimeError('Length is known only when in_mem or shuffle are enabled')
-        return len(self.mem)
+        return self._len
 
     def __iter__(self) -> Iterator[Example]:
         if self.read_counter == 0 and self.longest_first:

@@ -584,35 +584,36 @@ class Seq2SeqTrainer(BaseTrainer):
                             f'Please increase epoch or clear the existing models')
         losses = []
         for ep in range(self.start_epoch, num_epochs):
-            train_loss = self.run_epoch(train_data, train_mode=True)
-            log.info(f'Epoch {ep+1} complete.. Training loss in this epoch {train_loss}...')
+            train_loss = self.run_epoch(train_data, train_mode=True,
+                                        num_batches=train_data.num_batches)
+            log.info(f'Epoch {ep} complete.. Training loss in this epoch {train_loss}...')
             with torch.no_grad():
-                val_loss = self.run_epoch(val_data, train_mode=False)
-                log.info(f'Validation of {ep+1} complete.. Validation loss in this epoch {val_loss}...')
+                val_loss = self.run_epoch(val_data, train_mode=False,
+                                          num_batches=val_data.num_batches)
+                log.info(f'Validation of {ep} complete.. Validation loss in this epoch {val_loss}...')
                 losses.append((ep, train_loss, val_loss))
 
             if keep_models > 0:
                 state = self.model.to(cpu_device).state_dict()
                 self.exp.store_model(epoch=ep, model=state, train_score=train_loss,
                                      val_score=val_loss, keep=keep_models)
-                self.model = self.model.to(device) # bring it back to GPU device
+                self.model = self.model.to(device)  # bring it back to GPU device
                 del state
             gc.collect()
         summary = '\n'.join(f'{ep:02}\t{tl:.4f}\t{vl:.4f}' for ep, tl, vl in losses)
         log.info(f"==Summary==:\nEpoch\t TrainLoss \t ValidnLoss \n {summary}")
 
-    def run_epoch(self, data_iter, num_batches=None, train_mode=True):
+    def run_epoch(self, data_iter, train_mode=True):
         """
         run a pass over data set
         :param data_iter: batched data set
-        :param num_batches: number of batches in the dataset (for tqdm progress bar), None if unknown
         :param train_mode: is it training mode (False if validation mode)
         :return: total loss
         """
         tot_loss = 0.0
         start = time.time()
         self.model.train(train_mode)
-        with tqdm(data_iter, total=num_batches, unit='batch') as data_bar:
+        with tqdm(data_iter, total=data_iter.num_batches, unit='batch') as data_bar:
             for i, batch in enumerate(data_bar):
                 batch = batch.to(device)
                 # Step clear gradients
@@ -787,14 +788,18 @@ def __test_seq2seq_model__():
             for score, seq in res:
                 log.info(f'{score:.4f} :: {seq}')
 
-        val_data = list(BatchIterable(vocab_size, 50, 5, reverse=reverse, batch_first=True))
+        # to keep iterator in memory
+        class MyList(list):
+            pass
+
+        val_data = MyList(BatchIterable(vocab_size, 50, 5, reverse=reverse, batch_first=True))
+        val_data.num_batches = len(val_data)
         for epoch in range(num_epoch):
             model.train()
             train_data = BatchIterable(vocab_size, 30, 50, seq_len=12, reverse=reverse,
                                        batch_first=True)
-            train_loss = trainer.run_epoch(train_data, num_batches=train_data.num_batches,
-                                           train_mode=True)
-            val_loss = trainer.run_epoch(val_data, num_batches=len(val_data), train_mode=False)
+            train_loss = trainer.run_epoch(train_data, train_mode=True)
+            val_loss = trainer.run_epoch(val_data, train_mode=False)
             log.info(
                 f"Epoch {epoch}, training Loss: {train_loss:.4f} \t validation loss:{val_loss:.4f}")
             model.eval()

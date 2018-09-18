@@ -8,8 +8,8 @@ class BatchIterable:
     # TODO: How to specify Type Hint for this as Iterable[Batch]
     """Dummy equivalent of dataprep.BatchIterable"""
 
-    def __init__(self, vocab_size, batch_size, n_batches, seq_len=10, n_reserved_toks=Batch.eos_val+1, reverse=True,
-                 batch_first=False):
+    def __init__(self, vocab_size, batch_size, n_batches, seq_len=10,
+                 n_reserved_toks=Batch.eos_val+1, reverse=True, batch_first=False):
         """
          "Generate random data for a src-tgt copy task."
          :param vocab_size: Vocabulary size
