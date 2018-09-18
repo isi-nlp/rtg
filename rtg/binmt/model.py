@@ -510,7 +510,7 @@ class Seq2SeqTrainer(BaseTrainer):
         train_data = BatchIterable(self.exp.train_file, batch_size=batch_size, batch_first=True,
                                    shuffle=True)
         val_data = BatchIterable(self.exp.valid_file, batch_size=batch_size, batch_first=True,
-                                 shuffle=False, copy_xy=True)
+                                 shuffle=False)
         keep_models = args.pop('keep_models', 4)
         if args.pop('resume_train'):
             num_epochs += self.start_epoch
@@ -521,9 +521,11 @@ class Seq2SeqTrainer(BaseTrainer):
         for ep in range(self.start_epoch, num_epochs):
             train_loss = self.run_epoch(train_data, train_mode=True)
             log.info(f'Epoch {ep+1} complete.. Training loss in this epoch {train_loss}...')
-            val_loss = self.run_epoch(val_data, train_mode=False)
-            log.info(f'Validation of {ep+1} complete.. Validation loss in this epoch {val_loss}...')
-            losses.append((ep, train_loss, val_loss))
+            with torch.no_grad():
+                val_loss = self.run_epoch(val_data, train_mode=False)
+                log.info(f'Validation of {ep+1} complete.. Validation loss in this epoch {val_loss}...')
+                losses.append((ep, train_loss, val_loss))
+
             if keep_models > 0:
                 state = self.model.to(cpu_device).state_dict()
                 self.exp.store_model(epoch=ep, model=state, train_score=train_loss,
