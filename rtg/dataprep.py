@@ -233,6 +233,7 @@ class Batch:
                 self.y_seqs_nobos = self.y_seqs_nobos.t()
             self.y_mask = self.make_std_mask(self.y_seqs)
         elif self.copy_xy:
+            self.has_y = True
             self.y_toks = self.x_toks
             self.y_len = self.x_len
             self.max_y_len = self.max_x_len
