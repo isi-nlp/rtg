@@ -51,9 +51,10 @@ class Generator(nn.Module):
 class SeqEncoder(nn.Module):
 
     def __init__(self, embedder: Embedder, out_size: int, n_layers: int,
-                 bidirectional: bool = True):
+                 bidirectional: bool = True, dropout=0.5):
         super().__init__()
         self.emb = embedder
+        self.dropout = nn.Dropout(dropout)
         self.emb_size = self.emb.emb_size
         self.out_size = out_size
         self.n_layers = n_layers
@@ -64,7 +65,8 @@ class SeqEncoder(nn.Module):
             assert self.out_size % 2 == 0
             out_size = out_size // 2
         self.rnn_node = nn.LSTM(self.emb_size, out_size, num_layers=self.n_layers,
-                                bidirectional=self.bidirectional, batch_first=True)
+                                bidirectional=self.bidirectional, batch_first=True,
+                                dropout=dropout if n_layers > 1 else 0)
 
     def forward(self, input_seqs: torch.Tensor, input_lengths, hidden=None, pre_embedded=False):
         assert len(input_seqs) == len(input_lengths)
@@ -75,7 +77,7 @@ class SeqEncoder(nn.Module):
         else:
             batch_size, seq_len = input_seqs.shape
             embedded = self.emb(input_seqs).view(batch_size, seq_len, self.emb_size)
-
+        embedded = self.dropout(embedded)
         packed = nn.utils.rnn.pack_padded_sequence(embedded, input_lengths, batch_first=True)
         outputs, hidden = self.rnn_node(packed, hidden)
         outputs, output_lengths = nn.utils.rnn.pad_packed_sequence(outputs, batch_first=True,
@@ -106,15 +108,17 @@ class SeqEncoder(nn.Module):
 
 class SeqDecoder(nn.Module):
 
-    def __init__(self, prev_emb_node: Embedder, generator: Generator, n_layers: int):
+    def __init__(self, prev_emb_node: Embedder, generator: Generator, n_layers: int, dropout=0.5):
         super(SeqDecoder, self).__init__()
         self.prev_emb = prev_emb_node
+        self.dropout = nn.Dropout(dropout)
         self.generator = generator
         self.n_layers = n_layers
         self.emb_size = self.prev_emb.emb_size
         self.hid_size = self.generator.vec_size
-        self.rnn_node = nn.LSTM(self.emb_size, self.hid_size,
-                                num_layers=self.n_layers, bidirectional=False, batch_first=True)
+        self.rnn_node = nn.LSTM(self.emb_size, self.hid_size, num_layers=self.n_layers,
+                                bidirectional=False, batch_first=True,
+                                dropout=dropout if n_layers > 1 else 0)
 
     def forward(self, enc_outs, prev_out, last_hidden, gen_probs=True):
         # Note: we run this one step at a time
@@ -124,6 +128,7 @@ class SeqDecoder(nn.Module):
         assert len(enc_outs) == batch_size
         # S=B x 1 x N
         embedded = self.prev_emb(prev_out).view(batch_size, 1, self.prev_emb.emb_size)
+        embedded = self.dropout(embedded)
         # Get current hidden state from input word and last hidden state
         rnn_output, hidden = self.rnn_node(embedded, last_hidden)
 
@@ -165,8 +170,9 @@ class GeneralAttn(nn.Module):
 
 
 class AttnSeqDecoder(SeqDecoder):
-    def __init__(self, prev_emb_node: Embedder, generator: Generator, n_layers: int):
-        super(AttnSeqDecoder, self).__init__(prev_emb_node, generator, n_layers)
+    def __init__(self, prev_emb_node: Embedder, generator: Generator, n_layers: int,
+                 dropout: float=0.5):
+        super(AttnSeqDecoder, self).__init__(prev_emb_node, generator, n_layers, dropout=dropout)
         self.attn = GeneralAttn(self.hid_size)
         self.merge = nn.Linear(self.hid_size + self.attn.out_size, self.hid_size)
 
@@ -177,7 +183,7 @@ class AttnSeqDecoder(SeqDecoder):
         batch_size = prev_out.size(0)
         embedded = self.prev_emb(prev_out)
         embedded = embedded.view(batch_size, 1, self.prev_emb.emb_size)
-
+        embedded = self.dropout(embedded)
         # Get current hidden state from input word and last hidden state
         rnn_output, hidden = self.rnn_node(embedded, last_hidden)
         # [B x N ] <- [B x S=1 x  N]
@@ -287,7 +293,7 @@ class Seq2Seq(nn.Module):
 
     @staticmethod
     def make_model(src_lang, tgt_lang, src_vocab: int, tgt_vocab: int, emb_size: int = 300,
-                   hid_size: int = 300, n_layers: int = 2, attention=False):
+                   hid_size: int = 300, n_layers: int = 2, attention=False, dropout=0.5):
         args = {
             'src_lang': src_lang,
             'tgt_lang': tgt_lang,
@@ -296,18 +302,20 @@ class Seq2Seq(nn.Module):
             'emb_size': emb_size,
             'hid_size': hid_size,
             'n_layers': n_layers,
-            'attention': attention
+            'attention': attention,
+            'dropout': dropout
         }
         src_embedder = Embedder(src_lang, src_vocab, emb_size)
         tgt_embedder = Embedder(tgt_lang, tgt_vocab, emb_size)
         tgt_generator = Generator(tgt_lang, vec_size=hid_size, vocab_size=tgt_vocab)
-        enc = SeqEncoder(src_embedder, hid_size, n_layers=n_layers, bidirectional=True)
+        enc = SeqEncoder(src_embedder, hid_size, n_layers=n_layers, bidirectional=True,
+                         dropout=dropout)
         if attention:
             log.info("Using attention models for decoding")
-            dec = AttnSeqDecoder(tgt_embedder, tgt_generator, n_layers=n_layers)
+            dec = AttnSeqDecoder(tgt_embedder, tgt_generator, n_layers=n_layers, dropout=dropout)
         else:
             log.info("NOT Using attention models for decoding")
-            dec = SeqDecoder(tgt_embedder, tgt_generator, n_layers=n_layers)
+            dec = SeqDecoder(tgt_embedder, tgt_generator, n_layers=n_layers, dropout=dropout)
 
         model = Seq2Seq(enc, dec)
         # Initialize parameters with Glorot / fan_avg.
@@ -362,7 +370,7 @@ class BiNMT(nn.Module):
 
     @staticmethod
     def make_model(src_lang, tgt_lang, src_vocab: int, tgt_vocab: int, emb_size: int = 300,
-                   hid_size: int = 300, n_layers: int = 2, attention=False):
+                   hid_size: int = 300, n_layers: int = 2, attention=False, dropout=0.5):
         args = {
             'src_lang': src_lang,
             'tgt_lang': tgt_lang,
@@ -371,7 +379,8 @@ class BiNMT(nn.Module):
             'emb_size': emb_size,
             'hid_size': hid_size,
             'n_layers': n_layers,
-            'attention': attention
+            'attention': attention,
+            'dropout': dropout
         }
         src_embedder = Embedder(src_lang, src_vocab, emb_size)
         tgt_embedder = Embedder(tgt_lang, tgt_vocab, emb_size)
@@ -379,17 +388,21 @@ class BiNMT(nn.Module):
         src_generator = Generator(src_lang, vec_size=hid_size, vocab_size=src_vocab)
         tgt_generator = Generator(tgt_lang, vec_size=hid_size, vocab_size=tgt_vocab)
 
-        src_enc = SeqEncoder(src_embedder, hid_size, n_layers=n_layers, bidirectional=True)
-        tgt_enc = SeqEncoder(tgt_embedder, hid_size, n_layers=n_layers, bidirectional=True)
+        src_enc = SeqEncoder(src_embedder, hid_size, n_layers=n_layers, bidirectional=True,
+                             dropout=dropout)
+        tgt_enc = SeqEncoder(tgt_embedder, hid_size, n_layers=n_layers, bidirectional=True,
+                             dropout=dropout)
 
         if attention:
             log.info("Using attention models for decoding")
-            src_dec = AttnSeqDecoder(src_embedder, src_generator, n_layers=n_layers)
-            tgt_dec = AttnSeqDecoder(tgt_embedder, tgt_generator, n_layers=n_layers)
+            src_dec = AttnSeqDecoder(src_embedder, src_generator, n_layers=n_layers,
+                                     dropout=dropout)
+            tgt_dec = AttnSeqDecoder(tgt_embedder, tgt_generator, n_layers=n_layers,
+                                     dropout=dropout)
         else:
             log.info("NOT Using attention models for decoding")
-            src_dec = SeqDecoder(src_embedder, src_generator, n_layers=n_layers)
-            tgt_dec = SeqDecoder(tgt_embedder, tgt_generator, n_layers=n_layers)
+            src_dec = SeqDecoder(src_embedder, src_generator, n_layers=n_layers, dropout=dropout)
+            tgt_dec = SeqDecoder(tgt_embedder, tgt_generator, n_layers=n_layers, dropout=dropout)
         model = BiNMT(src_enc, src_dec, tgt_enc, tgt_dec)
         # Initialize parameters with Glorot / fan_avg.
         for p in model.parameters():
@@ -435,6 +448,58 @@ class NoamOpt:
     def get_std_opt(model):
         return NoamOpt(model.src_embed[0].d_model, 2, 4000,
                        torch.optim.Adam(model.parameters(), lr=0, betas=(0.9, 0.98), eps=1e-9))
+
+
+class LabelSmoothing(nn.Module):
+    def __init__(self, vocab_size: int, padding_idx: int, smoothing=0.0):
+        super(LabelSmoothing, self).__init__()
+        self._size = vocab_size
+        assert 0.0 <= smoothing <= 1.0
+        self.padding_idx = padding_idx
+        self.criterion = nn.KLDivLoss(size_average=False)
+        fill_val = smoothing / (vocab_size - 2)
+        one_hot = torch.full(size=(1, vocab_size), fill_value=fill_val, device=device)
+        one_hot[0][self.padding_idx] = 0
+        self.register_buffer('one_hot', one_hot)
+        self.confidence = 1.0 - smoothing
+
+    def forward(self, x, target):
+        assert x.size(1) == self._size
+        gtruth = target.view(-1)
+        tdata = gtruth.data
+        mask = torch.nonzero(tdata.eq(self.padding_idx)).squeeze()
+        log_likelihood = torch.gather(x.data, 1, tdata.unsqueeze(1))
+
+        smoothed_truth = self.one_hot.repeat(gtruth.size(0), 1)
+        smoothed_truth.scatter_(1, tdata.unsqueeze(1), self.confidence)
+        if mask.numel() > 0:
+            log_likelihood.index_fill_(0, mask, 0)
+            smoothed_truth.index_fill_(0, mask, 0)
+        loss = self.criterion(x, smoothed_truth)
+        # loss is a scalar value (0-dim )
+        # but data parallel expects tensors (for gathering along a dim), so doing this
+        return loss.unsqueeze(0)
+
+
+class SimpleLossCompute:
+    "A simple loss compute and train function."
+
+    def __init__(self, generator, criterion, opt):
+        self.generator = generator
+        self.criterion = criterion
+        self.opt = opt
+
+    def __call__(self, x, y, norm, train_mode=True):
+        x = self.generator(x)
+        scores = x.contiguous().view(-1, x.size(-1))
+        truth = y.contiguous().view(-1)
+        assert norm != 0
+        loss = self.criterion(scores, truth).sum() / norm
+        if train_mode:  # dont do this for validation set
+            loss.backward()
+            self.opt.step()
+            self.opt.zero_grad()
+        return loss.item() * norm
 
 
 class BaseTrainer:
@@ -697,7 +762,7 @@ def __test_seq2seq_model__():
     from rtg.dummy import BatchIterable
     from rtg.module.decoder import Decoder
 
-    vocab_size = 20
+    vocab_size = 125
     exp = Experiment("tmp.work", config={'model_type': 'seq2seq'}, read_only=True)
     num_epoch = 100
 
@@ -711,13 +776,14 @@ def __test_seq2seq_model__():
         #  second, reverse the numbers y=(V + reserved - x)
         log.info(f"====== REVERSE={reverse}; VOCAB={vocab_size}======")
         model, args = Seq2Seq.make_model('DummyA', 'DummyB', vocab_size, vocab_size,
-                                         emb_size=100, hid_size=100, n_layers=2)
+                                         emb_size=300, hid_size=300, n_layers=1)
         trainer = Seq2SeqTrainer(exp=exp, model=model, lr=0.01, warmup_steps=1000)
 
         decr = Decoder.new(exp, model)
         assert 2 == Batch.bos_val
 
         def print_res(res):
+
             for score, seq in res:
                 log.info(f'{score:.4f} :: {seq}')
 
@@ -766,7 +832,7 @@ def __test_binmt_model__():
 
         for epoch in range(num_epoch):
             model.train()
-            train_data = BatchIterable(vocab_size, 30, 50, seq_len=12, reverse=reverse,
+            train_data = BatchIterable(vocab_size, 30, 50, seq_len=10, reverse=reverse,
                                        batch_first=True)
             val_data = BatchIterable(vocab_size, 50, 5, reverse=reverse, batch_first=True)
             train_loss = trainer._run_cycle(train_data, train_data, train_mode=True)
@@ -779,6 +845,7 @@ def __test_binmt_model__():
 
 
 if __name__ == '__main__':
-    __test_binmt_model__()
-    # __test_seq2seq_model__()
+    #__test_binmt_model__()
+    __test_seq2seq_model__()
+
 
