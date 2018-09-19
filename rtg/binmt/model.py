@@ -293,7 +293,7 @@ class Seq2Seq(nn.Module):
 
     @staticmethod
     def make_model(src_lang, tgt_lang, src_vocab: int, tgt_vocab: int, emb_size: int = 300,
-                   hid_size: int = 300, n_layers: int = 2, attention=False, dropout=0.5):
+                   hid_size: int = 300, n_layers: int = 2, attention=False, dropout=0.33):
         args = {
             'src_lang': src_lang,
             'tgt_lang': tgt_lang,
@@ -474,6 +474,7 @@ class BaseTrainer:
         self.model.train()
         warmup = optim_args.pop('warmup_steps', 2000)
         optim_args['lr'] = optim_args.get('lr', 0.001)
+        optim_args['weight_decay'] = optim_args.get('weight_decay', 1e-5)
         optimizer = Optims[optim].new(self.model.parameters(), **optim_args)
         self.optimizer = NoamOpt(model.model_dim * 2, 2, warmup, optimizer)
         optim_args['warmup_steps'] = warmup
