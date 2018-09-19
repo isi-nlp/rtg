@@ -570,6 +570,7 @@ class Seq2SeqTrainer(BaseTrainer):
         tot_loss = 0.0
         start = time.time()
         self.model.train(train_mode)
+        tot_toks = 0
 
         with tqdm(data_iter, total=data_iter.num_batches, unit='batch') as data_bar:
             for i, batch in enumerate(data_bar):
@@ -582,6 +583,7 @@ class Seq2SeqTrainer(BaseTrainer):
                 tok_mask = self.sequence_mask(batch.y_len, batch.max_y_len - 1)
                 per_tok_loss = -outp_log_probs
                 loss = (per_tok_loss * tok_mask.float()).sum().float() / batch.y_toks
+                tot_toks += batch.y_toks
                 tot_loss += loss.item()
                 learn_rate = ""
                 if train_mode:
@@ -590,7 +592,7 @@ class Seq2SeqTrainer(BaseTrainer):
                     self.optimizer.zero_grad()
                     learn_rate = f'LR={learn_rate:g}'
                 elapsed = time.time() - start
-                bar_msg = f'Loss:{loss:.4f}, {int(batch.y_toks/elapsed)}toks/s {learn_rate}'
+                bar_msg = f'Loss:{loss:.4f}, {int(tot_toks/elapsed)}toks/s {learn_rate}'
                 data_bar.set_postfix_str(bar_msg, refresh=False)
                 del batch
         return tot_loss / data_iter.num_batches
