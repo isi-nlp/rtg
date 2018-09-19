@@ -39,7 +39,7 @@ class T2TModel(nn.Module):
         return self.decoder(self.tgt_embed(tgt), memory, src_mask, tgt_mask)
 
     @staticmethod
-    def make_model(src_vocab, tgt_vocab, n_layers=4, hid_size=512, ff_size=512, n_heads=4, dropout=0.1):
+    def make_model(src_vocab, tgt_vocab, n_layers=4, hid_size=512, ff_size=512, n_heads=4, dropout=0.5):
         "Helper: Construct a model from hyperparameters."
 
         # args for reconstruction of model
