@@ -1,11 +1,9 @@
 model_args:
-  dropout: 0.1
-  ff_size: 512
+  ff_size: 2048
   hid_size: 512
-  n_heads: 4
-  n_layers: 4
-  src_vocab: 8000
-  tgt_vocab: 8000
+  n_heads: 8
+  n_layers: 6
+  dropout: 0.5
 model_type: t2t
 optim:
   args:
@@ -26,7 +24,7 @@ prep:
   valid_src: data/valid.src
   valid_tgt: data/valid.tgt
   shared_vocab: true
-  max_types: 8000
+  max_types: 16000
   pieces: unigram
 
 src_lang: FRA
