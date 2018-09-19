@@ -606,11 +606,12 @@ class Seq2SeqTrainer(BaseTrainer):
         run a pass over data set
         :param data_iter: batched data set
         :param train_mode: is it training mode (False if validation mode)
-        :return: total loss
+        :return: average loss per token
         """
         tot_loss = 0.0
         start = time.time()
         self.model.train(train_mode)
+
         with tqdm(data_iter, total=data_iter.num_batches, unit='batch') as data_bar:
             for i, batch in enumerate(data_bar):
                 batch = batch.to(device)
@@ -633,7 +634,7 @@ class Seq2SeqTrainer(BaseTrainer):
                 bar_msg = f'Loss:{loss:.4f}, {int(batch.y_toks/elapsed)}toks/s {learn_rate}'
                 data_bar.set_postfix_str(bar_msg, refresh=False)
                 del batch
-        return tot_loss
+        return tot_loss / data_iter.num_batches
 
 
 class BiNmtTrainer(BaseTrainer):
@@ -717,12 +718,18 @@ class BiNmtTrainer(BaseTrainer):
                 elapsed = time.time() - start
                 bar_msg = f'Loss:{tot_batch_loss:.4f}, {int(tot_toks/elapsed)}toks/s {learn_rate}'
                 data_bar.set_postfix_str(bar_msg, refresh=False)
+
+        # average
+        avg_src_loss = tot_src_loss / mono_src.num_batches
+        avg_src_cyc_loss = tot_src_cyc_loss / mono_src.num_batches
+        avg_tgt_loss = tot_tgt_loss / mono_tgt.num_batches
+        avg_tgt_cyc_loss = tot_tgt_cyc_loss / mono_tgt.num_batches
         log.info(f'{"Training " if train_mode else "Validation"} Epoch\'s Losses: \n\t'
-                 f' * Source-Source:{tot_src_loss:g}\n\t'
-                 f' * Source-Target-Source: {tot_src_cyc_loss:g}\n\t'
-                 f' * Target-Target: {tot_tgt_loss:g} \n\t'
-                 f' * Target-Source-Target: {tot_tgt_cyc_loss:g}')
-        return sum([tot_src_loss, tot_tgt_loss, tot_src_cyc_loss, tot_tgt_cyc_loss])
+                 f' * Source-Source: Tot:{tot_src_loss:g} Avg:{avg_src_loss:g}\n\t'
+                 f' * Source-Target-Source: Tot:{tot_src_cyc_loss:g} Avg:{avg_src_cyc_loss:g}\n\t'
+                 f' * Target-Target: Tot:{tot_tgt_loss:g} Avg:{avg_tgt_loss:g} \n\t'
+                 f' * Target-Source-Target: Tot:{tot_tgt_cyc_loss:g} Avg:{avg_tgt_cyc_loss:g}')
+        return sum([avg_src_loss, avg_tgt_loss, avg_src_cyc_loss, avg_tgt_cyc_loss])
 
     def train(self, num_epochs: int, batch_size: int, **args):
         log.info(f'Going to train for {num_epochs} epochs; batch_size={batch_size}')
@@ -753,7 +760,7 @@ class BiNmtTrainer(BaseTrainer):
                 self.model = self.model.to(device) # bring it back to GPU device
                 del state
             gc.collect()
-        summary = '\n'.join(f'{ep:02}\t{tl:.4f}\t{vl:.4f}' for ep, tl, vl in losses)
+        summary = '\n'.join(f'{ep:02}\t{tl:.g}\t{vl:g}' for ep, tl, vl in losses)
         log.info(f"==Summary==:\nEpoch\t TrainLoss \t ValidationLoss \n {summary}")
 
 
@@ -761,12 +768,12 @@ def __test_seq2seq_model__():
     from rtg.dummy import BatchIterable
     from rtg.module.decoder import Decoder
 
-    vocab_size = 125
+    vocab_size = 50
     exp = Experiment("tmp.work", config={'model_type': 'seq2seq'}, read_only=True)
     num_epoch = 100
 
-    src = tensor([[2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
-                  [2, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4]])
+    src = tensor([[2,  4,  5,  6,  7, 8, 9, 10, 11, 12, 13],
+                  [2, 13, 12, 11, 10, 9, 8,  7,  6,  5,  4]])
     src_lens = tensor([src.size(1)] * src.size(0))
 
     for reverse in (False,):
@@ -775,7 +782,7 @@ def __test_seq2seq_model__():
         #  second, reverse the numbers y=(V + reserved - x)
         log.info(f"====== REVERSE={reverse}; VOCAB={vocab_size}======")
         model, args = Seq2Seq.make_model('DummyA', 'DummyB', vocab_size, vocab_size,
-                                         emb_size=300, hid_size=300, n_layers=1)
+                                         emb_size=100, hid_size=100, n_layers=1)
         trainer = Seq2SeqTrainer(exp=exp, model=model, lr=0.01, warmup_steps=1000)
 
         decr = Decoder.new(exp, model)
@@ -799,7 +806,7 @@ def __test_seq2seq_model__():
             train_loss = trainer.run_epoch(train_data, train_mode=True)
             val_loss = trainer.run_epoch(val_data, train_mode=False)
             log.info(
-                f"Epoch {epoch}, training Loss: {train_loss:.4f} \t validation loss:{val_loss:.4f}")
+                f"Epoch {epoch}, training loss: {train_loss:g} \t validation loss:{val_loss:g}")
             model.eval()
             res = decr.greedy_decode(src, src_lens, max_len=17)
             print_res(res)
@@ -841,7 +848,7 @@ def __test_binmt_model__():
             train_loss = trainer._run_cycle(train_data, train_data, train_mode=True)
             val_loss = trainer._run_cycle(val_data, val_data, train_mode=False)
             log.info(
-                f"Epoch {epoch}, training Loss: {train_loss:.4f} \t validation loss:{val_loss:.4f}")
+                f"Epoch {epoch}, training Loss: {train_loss:g} \t validation loss:{val_loss:g}")
             model.eval()
             res = decr.greedy_decode(src, src_lens, max_len=17)
             print_res(res)
