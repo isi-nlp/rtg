@@ -5,7 +5,7 @@ from rtg.dataprep import PAD_TOK, BOS_TOK, EOS_TOK, subsequent_mask
 from rtg.module.t2t import T2TModel
 from rtg.module.rnn import RNNModel
 from rtg.binmt.model import Seq2Seq, BiNMT
-from typing import List, Tuple, Type
+from typing import List, Tuple, Type, Dict, Any
 from rtg import TranslationExperiment as Experiment
 import traceback
 import time
@@ -96,6 +96,16 @@ factories = {
     'seq2seq': Seq2Seq.make_model,
     'binmt': BiNMT.make_model,
 }
+
+
+class ReloadEvent(Exception):
+    """An exception to reload model with new path
+    -- Its a kind of hack to pass event back to caller and redo interactive shell--
+    """
+
+    def __init__(self, model_path, args: Dict[str, Any]):
+        self.model_path = model_path
+        self.args = args
 
 
 class Decoder:
@@ -353,7 +363,9 @@ class Decoder:
                  (':beam <n>', 'Set beam size to n'),
                  (':hyps <k>', 'Print top k hypotheses'),
                  (':debug', 'Enable debug mode'),
-                 (':-debug', 'Disable debug mode')
+                 (':-debug', 'Disable debug mode'),
+                 (':models', 'show all available models of this experiment'),
+                 (':model <number>', 'reload shell with the model chosen by <number>')
                  ]
         if self.exp.model_type == 'binmt':
             helps.append((':path <path>', 'BiNMT modules: {E1D1, E2D2, E1D2E2D1, E2D2E1D2}'))
@@ -397,6 +409,18 @@ class Decoder:
                 elif line.startswith(":path"):
                     self.gen_args['path'] = line.replace(':path', '').strip()
                     print_state = True
+                elif line.startswith(":models"):
+                    for i, mod_path in enumerate(self.exp.list_models()):
+                        print(f"\t{i}\t{mod_path}")
+                elif line.startswith(":model"):
+                    mod_idx = int(line.replace(":model", "").strip())
+                    models = self.exp.list_models()
+                    if 0 <= mod_idx < len(models):
+                        mod_path = models[mod_idx]
+                        print(f"\t Reloading model {mod_path}")
+                        raise ReloadEvent(str(mod_path), args=args)
+                    else:
+                        print(f"\tERROR: Index {mod_idx} is invalid")
                 else:
                     start = time.time()
                     res = self.decode_sentence(line, **args)

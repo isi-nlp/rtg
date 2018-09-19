@@ -4,7 +4,7 @@ import sys
 from argparse import ArgumentDefaultsHelpFormatter as ArgFormatter
 
 from rtg import TranslationExperiment as Experiment, log
-from rtg.module.decoder import Decoder
+from rtg.module.decoder import Decoder, ReloadEvent
 
 
 def parse_args():
@@ -57,7 +57,16 @@ def main():
             log.warning('--input and --output args are not applicable in --interactive mode')
         args.pop('input')
         args.pop('output')
-        decoder.decode_interactive(**args)
+
+        while True:
+            try:
+                # an hacky way to unload and reload model when user tries to switch models
+                decoder.decode_interactive(**args)
+                break  # exit loop if there is no request for reload
+            except ReloadEvent as re:
+                decoder = Decoder.new(exp, gen_args=gen_args, model_path=re.model_path)
+                args = re.args
+                # go back to loop and redo interactive shell
     else:
         return decoder.decode_file(args.pop('input'), args.pop('output'), **args)
 
