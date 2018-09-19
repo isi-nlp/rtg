@@ -103,9 +103,10 @@ class ReloadEvent(Exception):
     -- Its a kind of hack to pass event back to caller and redo interactive shell--
     """
 
-    def __init__(self, model_path, args: Dict[str, Any]):
+    def __init__(self, model_path, state: Dict[str, Any]):
+        super().__init__()
         self.model_path = model_path
-        self.args = args
+        self.state = state
 
 
 class Decoder:
@@ -418,7 +419,7 @@ class Decoder:
                     if 0 <= mod_idx < len(models):
                         mod_path = models[mod_idx]
                         print(f"\t Reloading model {mod_path}")
-                        raise ReloadEvent(str(mod_path), args=args)
+                        raise ReloadEvent(str(mod_path), state=args)
                     else:
                         print(f"\tERROR: Index {mod_idx} is invalid")
                 else:

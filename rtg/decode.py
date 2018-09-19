@@ -65,7 +65,7 @@ def main():
                 break  # exit loop if there is no request for reload
             except ReloadEvent as re:
                 decoder = Decoder.new(exp, gen_args=gen_args, model_path=re.model_path)
-                args = re.args
+                args = re.state
                 # go back to loop and redo interactive shell
     else:
         return decoder.decode_file(args.pop('input'), args.pop('output'), **args)
