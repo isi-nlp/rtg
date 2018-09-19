@@ -222,6 +222,8 @@ class Seq2SeqBridge(nn.Module):
         super().__init__()
         self.dec = dec
         self.enc = enc
+        self.inp_size = dec.hid_size
+        self.out_size = enc.out_size
 
     def forward(self, enc_outs, enc_hids, max_len):
         batch_size = len(enc_outs)
@@ -245,8 +247,13 @@ class Seq2Seq(nn.Module):
         super(Seq2Seq, self).__init__()
         self.enc = enc
         self.dec = dec
-        # since no linear projects, all sizes must be same
-        assert aeq(enc.out_size, enc.emb_size, dec.hid_size, dec.emb_size)
+        if bridge:
+            # enc --> bridge.dec --> bridge.enc --> dec
+            assert enc.out_size == bridge.inp_size
+            assert bridge.out_size == dec.hid_size
+        else:
+            # enc --> dec
+            assert enc.out_size == dec.hid_size
         self.model_dim = self.enc.out_size
         self.bridge = bridge
 
@@ -346,6 +353,7 @@ class BiNMT(nn.Module):
         # since no linear projects at the moment, all sizes must be same
         assert aeq(enc1.out_size, enc2.out_size, dec1.emb_size, dec2.emb_size,
                    dec1.hid_size, dec2.hid_size)
+
         self.model_dim: int = enc1.out_size
 
         self.paths: Mapping[str, Seq2Seq] = {
@@ -722,6 +730,8 @@ def __test_seq2seq_model__():
     vocab_size = 50
     exp = Experiment("tmp.work", config={'model_type': 'seq2seq'}, read_only=True)
     num_epoch = 100
+    emb_size = 100
+    model_dim = 200
 
     src = tensor([[2,  4,  5,  6,  7, 8, 9, 10, 11, 12, 13],
                   [2, 13, 12, 11, 10, 9, 8,  7,  6,  5,  4]])
@@ -733,7 +743,7 @@ def __test_seq2seq_model__():
         #  second, reverse the numbers y=(V + reserved - x)
         log.info(f"====== REVERSE={reverse}; VOCAB={vocab_size}======")
         model, args = Seq2Seq.make_model('DummyA', 'DummyB', vocab_size, vocab_size,
-                                         emb_size=100, hid_size=100, n_layers=1)
+                                         emb_size=emb_size, hid_size=model_dim, n_layers=1)
         trainer = Seq2SeqTrainer(exp=exp, model=model, lr=0.01, warmup_steps=1000)
 
         decr = Decoder.new(exp, model)
@@ -770,6 +780,8 @@ def __test_binmt_model__():
     vocab_size = 20
     exp = Experiment("tmp.work", config={'model_type': 'binmt'}, read_only=True)
     num_epoch = 100
+    emb_size = 100
+    model_dim = 100
 
     src = tensor([[2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
                   [2, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4]])
@@ -781,7 +793,7 @@ def __test_binmt_model__():
         #  second, reverse the numbers y=(V + reserved - x)
         log.info(f"====== REVERSE={reverse}; VOCAB={vocab_size}======")
         model, args = BiNMT.make_model('DummyA', 'DummyB', vocab_size, vocab_size,
-                                       emb_size=100, hid_size=100, n_layers=2)
+                                       emb_size=emb_size, hid_size=model_dim, n_layers=2)
         trainer = BiNmtTrainer(exp=exp, model=model, lr=0.01, warmup_steps=1000)
 
         decr = Decoder.new(exp, model, gen_args={'path': 'E1D1'})
