@@ -584,12 +584,10 @@ class Seq2SeqTrainer(BaseTrainer):
                             f'Please increase epoch or clear the existing models')
         losses = []
         for ep in range(self.start_epoch, num_epochs):
-            train_loss = self.run_epoch(train_data, train_mode=True,
-                                        num_batches=train_data.num_batches)
+            train_loss = self.run_epoch(train_data, train_mode=True)
             log.info(f'Epoch {ep} complete.. Training loss in this epoch {train_loss}...')
             with torch.no_grad():
-                val_loss = self.run_epoch(val_data, train_mode=False,
-                                          num_batches=val_data.num_batches)
+                val_loss = self.run_epoch(val_data, train_mode=False)
                 log.info(f'Validation of {ep} complete.. Validation loss in this epoch {val_loss}...')
                 losses.append((ep, train_loss, val_loss))
 
