@@ -3,7 +3,7 @@ model_args:
   hid_size: 512
   n_heads: 8
   n_layers: 6
-  dropout: 0.5
+  dropout: 0.1
 model_type: t2t
 optim:
   args:
