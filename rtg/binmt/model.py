@@ -450,57 +450,7 @@ class NoamOpt:
                        torch.optim.Adam(model.parameters(), lr=0, betas=(0.9, 0.98), eps=1e-9))
 
 
-class LabelSmoothing(nn.Module):
-    def __init__(self, vocab_size: int, padding_idx: int, smoothing=0.0):
-        super(LabelSmoothing, self).__init__()
-        self._size = vocab_size
-        assert 0.0 <= smoothing <= 1.0
-        self.padding_idx = padding_idx
-        self.criterion = nn.KLDivLoss(size_average=False)
-        fill_val = smoothing / (vocab_size - 2)
-        one_hot = torch.full(size=(1, vocab_size), fill_value=fill_val, device=device)
-        one_hot[0][self.padding_idx] = 0
-        self.register_buffer('one_hot', one_hot)
-        self.confidence = 1.0 - smoothing
-
-    def forward(self, x, target):
-        assert x.size(1) == self._size
-        gtruth = target.view(-1)
-        tdata = gtruth.data
-        mask = torch.nonzero(tdata.eq(self.padding_idx)).squeeze()
-        log_likelihood = torch.gather(x.data, 1, tdata.unsqueeze(1))
-
-        smoothed_truth = self.one_hot.repeat(gtruth.size(0), 1)
-        smoothed_truth.scatter_(1, tdata.unsqueeze(1), self.confidence)
-        if mask.numel() > 0:
-            log_likelihood.index_fill_(0, mask, 0)
-            smoothed_truth.index_fill_(0, mask, 0)
-        loss = self.criterion(x, smoothed_truth)
-        # loss is a scalar value (0-dim )
-        # but data parallel expects tensors (for gathering along a dim), so doing this
-        return loss.unsqueeze(0)
-
-
-class SimpleLossCompute:
-    "A simple loss compute and train function."
-
-    def __init__(self, generator, criterion, opt):
-        self.generator = generator
-        self.criterion = criterion
-        self.opt = opt
-
-    def __call__(self, x, y, norm, train_mode=True):
-        x = self.generator(x)
-        scores = x.contiguous().view(-1, x.size(-1))
-        truth = y.contiguous().view(-1)
-        assert norm != 0
-        loss = self.criterion(scores, truth).sum() / norm
-        if train_mode:  # dont do this for validation set
-            loss.backward()
-            self.opt.step()
-            self.opt.zero_grad()
-        return loss.item() * norm
-
+# TODO: Label Smoothing
 
 class BaseTrainer:
 
