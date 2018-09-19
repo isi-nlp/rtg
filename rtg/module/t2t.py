@@ -447,17 +447,17 @@ class T2TTrainer:
         if not self.exp.read_only:
             self.exp.persist_state()
 
-    def run_epoch(self, data_iter: Iterator[Batch], num_batches=None, print_every=10, train_mode=True):
+    def run_epoch(self, data_iter: Iterator[Batch], num_batches=None, train_mode=True):
         """
         :param data_iter: data iterator
         :param num_batches: number of batches in the iterator, None if dont know
-        :param print_every: How often the loss progress be updated on progress bar?
         :param train_mode: is it a training or validation mode
         :return:
         """
         start = time.time()
         total_tokens = 0
         total_loss = 0.0
+        torch.set_grad_enabled(train_mode)
         self.model.train(train_mode)
         with tqdm(data_iter, total=num_batches, unit='batch') as data_bar:
             for i, batch in enumerate(data_bar):
@@ -469,7 +469,8 @@ class T2TTrainer:
                 total_loss += loss
                 total_tokens += num_toks
                 elapsed = time.time() - start
-                data_bar.set_postfix_str(f'Loss:{loss / num_toks:.4f}, {int(num_toks / elapsed)}toks/s', refresh=False)
+                data_bar.set_postfix_str(
+                    f'Loss:{loss / num_toks:.4f}, {int(num_toks / elapsed)}toks/s', refresh=False)
                 start = time.time()
                 # force free memory
                 del batch
