@@ -218,7 +218,7 @@ class TranslationExperiment:
         """
         # TODO: improve this by skipping the model save if the model is not good enough to be saved
         assert not self.read_only
-        name = f'model_{epoch:03d}_{train_score:.4f}_{val_score:.4f}.pkl'
+        name = f'model_{epoch:03d}_{train_score:.6f}_{val_score:.6f}.pkl'
         path = self.model_dir / name
         log.info(f"Saving epoch {epoch} to {path}")
         torch.save(model, str(path))
@@ -228,8 +228,8 @@ class TranslationExperiment:
             os.remove(str(bad_model))
 
         with IO.writer(os.path.join(self.model_dir, 'scores.tsv'), append=True) as f:
-            cols = [str(epoch), datetime.now().isoformat(), name, f'{train_score:.4f}',
-                    f'{val_score:.4f}']
+            cols = [str(epoch), datetime.now().isoformat(), name, f'{train_score:g}',
+                    f'{val_score:g}']
             f.write('\t'.join(cols) + '\n')
 
     @staticmethod
