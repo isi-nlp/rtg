@@ -427,6 +427,8 @@ class Decoder:
                     print(f'\t|took={1000 * (time.time()-start)}ms')
                     for score, hyp in res:
                         print(f'  {score:.4f}\t{hyp}')
+            except ReloadEvent as re:
+                raise re        # send it to caller
             except EOFError as e1:
                 break
             except Exception:
