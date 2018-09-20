@@ -361,8 +361,8 @@ class Decoder:
         import sys
         helps = [(':quit', 'Exit'),
                  (':help', 'Print this help message'),
-                 (':beam <n>', 'Set beam size to n'),
-                 (':hyps <k>', 'Print top k hypotheses'),
+                 (':beam_size <n>', 'Set beam size to n'),
+                 (':num_hyp <k>', 'Print top k hypotheses'),
                  (':debug', 'Enable debug mode'),
                  (':-debug', 'Disable debug mode'),
                  (':models', 'show all available models of this experiment'),
@@ -395,14 +395,15 @@ class Decoder:
                     break
                 elif line == ':help':
                     print_cmds()
-                elif line.startswith(":beam "):
-                    args['beam_size'] = int(line.replace(':beam', '').strip())
+                elif line.startswith(":beam_size "):
+                    args['beam_size'] = int(line.replace(':beam_size', '').strip())
                     print_state = True
-                elif line.startswith(":hyps"):
-                    args['num_hyp'] = int(line.replace(':hyps', '').strip())
+                elif line.startswith(":num_hyp"):
+                    args['num_hyp'] = int(line.replace(':num_hyp', '').strip())
                     print_state = True
                 elif line.startswith(":debug"):
                     self.debug = True
+                    args['debug'] = True
                     print_state = True
                 elif line.startswith(":-debug"):
                     self.debug = False
@@ -418,14 +419,14 @@ class Decoder:
                     models = self.exp.list_models()
                     if 0 <= mod_idx < len(models):
                         mod_path = models[mod_idx]
-                        print(f"\t Reloading model {mod_path}")
+                        print(f"\t Switching to model {mod_path}")
                         raise ReloadEvent(str(mod_path), state=args)
                     else:
                         print(f"\tERROR: Index {mod_idx} is invalid")
                 else:
                     start = time.time()
                     res = self.decode_sentence(line, **args)
-                    print(f'\t|took={1000 * (time.time()-start)}ms')
+                    print(f'\t|took={1000 * (time.time()-start):.3f}ms')
                     for score, hyp in res:
                         print(f'  {score:.4f}\t{hyp}')
             except ReloadEvent as re:
