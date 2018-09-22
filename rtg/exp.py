@@ -33,6 +33,8 @@ class TranslationExperiment:
 
         self.train_file = self.data_dir / 'train.tsv.gz'
         self.valid_file = self.data_dir / 'valid.tsv.gz'
+        # a set of samples to watch the progress qualitatively
+        self.samples_file = self.data_dir / 'samples.tsv.gz'
 
         if not read_only:
             for _dir in [self.model_dir, self.data_dir]:
@@ -159,6 +161,16 @@ class TranslationExperiment:
                                           args['src_len'], args['tgt_len'],
                                           tokenizer=self.tgt_vocab.tokenize)
             self.write_tsv(val_recs, str(self.valid_file).replace('.tsv', '.pieces.tsv'))
+
+        # get samples from validation set
+        n_samples = args.get('num_samples', 5)
+        val_raw_recs = self.read_raw_data(args['valid_src'], args['valid_tgt'], args['truncate'],
+                                          args['src_len'], args['tgt_len'],
+                                          tokenizer=lambda line: line.strip().split())
+        val_raw_recs = list(val_raw_recs)
+        random.shuffle(val_raw_recs)
+        samples = val_raw_recs[:n_samples]
+        self.write_tsv(samples, self.samples_file)
 
     def pre_process_mono(self, args):
         if args.get('shared_vocab'):

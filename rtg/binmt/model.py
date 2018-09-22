@@ -7,7 +7,7 @@ import torch.nn.functional as F
 from rtg import my_tensor as tensor, device, cpu_device
 from rtg.dataprep import PAD_TOK_IDX, BOS_TOK_IDX, Batch, BatchIterable
 from rtg import log, TranslationExperiment as Experiment
-from rtg.utils import Optims
+from rtg.utils import Optims, IO
 from typing import Optional, Mapping
 from tqdm import tqdm
 import random
@@ -528,6 +528,34 @@ class Seq2SeqTrainer(BaseTrainer):
         assert exp.model_type == 'seq2seq'
         super().__init__(exp, model, optim=optim, model_factory=Seq2Seq.make_model, **optim_args)
 
+        if exp.samples_file.exists():
+            with IO.reader(exp.samples_file) as f:
+                self.samples = [line.strip().split('\t') for line in f]
+                log.info(f"Found {len(self.samples)} sample records")
+
+            from rtg.module.decoder import Decoder
+            self.decoder = Decoder.new(self.exp, self.model)
+        else:
+            self.samples = None
+
+    def show_samples(self, beam_size=3, num_hyp=3, max_len=30):
+        """
+        Logs the output of model (at this stage in training) to a set of samples
+        :param beam_size: beam size
+        :param num_hyp: number of hypothesis to output
+        :param max_len: maximum length to decode
+        :return:
+        """
+        if not self.samples:
+            log.info("No samples are chosen by the experiment")
+            return
+        for i, (line, ref) in enumerate(self.samples):
+            result = self.decoder.decode_sentence(line, beam_size=beam_size, num_hyp=num_hyp,
+                                                  max_len=max_len)
+            outs = [f"hyp{j}: {score:.3f} :: {out}" for j, (score, out) in enumerate(result)]
+            outs = '\n'.join(outs)
+            log.info(f"==={i}===\nSRC:{line}\nREF:{ref}\n{outs}")
+
     def train(self, num_epochs: int, batch_size: int, **args):
         log.info(f'Going to train for {num_epochs} epochs; batch_size={batch_size}')
 
@@ -549,6 +577,9 @@ class Seq2SeqTrainer(BaseTrainer):
                 val_loss = self.run_epoch(val_data, train_mode=False)
                 log.info(f'Validation of {ep} complete.. Validation loss in this epoch {val_loss}...')
                 losses.append((ep, train_loss, val_loss))
+
+                # show some samples by logging them
+                self.show_samples()
 
             if keep_models > 0:
                 state = self.model.to(cpu_device).state_dict()
