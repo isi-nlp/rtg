@@ -9,7 +9,7 @@ from torch.autograd import Variable
 from tqdm import tqdm
 from rtg import device, log, TranslationExperiment as Experiment, my_tensor as tensor
 from rtg.dataprep import BatchIterable, Batch
-from rtg.utils import Optims
+from rtg.utils import Optims, IO
 
 
 class T2TModel(nn.Module):
@@ -447,6 +447,34 @@ class T2TTrainer:
         if not self.exp.read_only:
             self.exp.persist_state()
 
+        if exp.samples_file.exists():
+            with IO.reader(exp.samples_file) as f:
+                self.samples = [line.strip().split('\t') for line in f]
+                log.info(f"Found {len(self.samples)} sample records")
+
+            from rtg.module.decoder import Decoder
+            self.decoder = Decoder.new(self.exp, self.model)
+        else:
+            self.samples = None
+
+    def show_samples(self, beam_size=3, num_hyp=3, max_len=30):
+        """
+        Logs the output of model (at this stage in training) to a set of samples
+        :param beam_size: beam size
+        :param num_hyp: number of hypothesis to output
+        :param max_len: maximum length to decode
+        :return:
+        """
+        if not self.samples:
+            log.info("No samples are chosen by the experiment")
+            return
+        for i, (line, ref) in enumerate(self.samples):
+            result = self.decoder.decode_sentence(line, beam_size=beam_size, num_hyp=num_hyp,
+                                                  max_len=max_len)
+            outs = [f"hyp{j}: {score:.3f} :: {out}" for j, (score, out) in enumerate(result)]
+            outs = '\n'.join(outs)
+            log.info(f"==={i}===\nSRC:{line}\nREF:{ref}\n{outs}")
+
     def run_epoch(self, data_iter: Iterator[Batch], num_batches=None, train_mode=True):
         """
         :param data_iter: data iterator
@@ -510,9 +538,14 @@ class T2TTrainer:
         self.model.train()  # Train mode
         for ep in range(self.start_epoch, num_epochs):
             log.info(f"Running epoch:: {ep}")
-            train_loss = self.run_epoch(train_data, num_batches=train_data.num_batches, train_mode=True)
-            val_loss = self.run_epoch(val_data, num_batches=val_data.num_batches, train_mode=False)
-            log.info(f"Finished epoch {ep}. Training Loss {train_loss}, Validation Loss:{val_loss}")
+            train_loss = self.run_epoch(train_data, num_batches=train_data.num_batches,
+                                        train_mode=True)
+            with torch.no_grad():
+                val_loss = self.run_epoch(val_data, num_batches=val_data.num_batches,
+                                          train_mode=False)
+                log.info(f"Finished epoch {ep}. Training Loss {train_loss},"
+                         f" Validation Loss:{val_loss}")
+                self.show_samples()
 
             # Unwrap model state from DataParallel and persist
             state = (self.model.module if isinstance(self.model, nn.DataParallel) else self.model)
