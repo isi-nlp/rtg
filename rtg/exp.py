@@ -4,10 +4,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict, Iterator, List, Tuple, Union, Any
 import torch
+import random
 
 from rtg import log, load_conf
 from rtg.dataprep import RawRecord, ParallelSeqRecord, MonoSeqRecord, Field
-from rtg.utils import IO
+from rtg.utils import IO, line_count
+from itertools import zip_longest
 
 
 class TranslationExperiment:
@@ -96,7 +98,8 @@ class TranslationExperiment:
     def read_raw_lines(src_path: Union[str, Path], tgt_path: Union[str, Path]) \
             -> Iterator[RawRecord]:
         with IO.reader(src_path) as src_lines, IO.reader(tgt_path) as tgt_lines:
-            recs = ((src.strip(), tgt.strip()) for src, tgt in zip(src_lines, tgt_lines))
+            # if you get an exception here --> files have un equal number of lines
+            recs = ((src.strip(), tgt.strip()) for src, tgt in zip_longest(src_lines, tgt_lines))
             recs = ((src, tgt) for src, tgt in recs if src and tgt)
             yield from recs
 
@@ -128,6 +131,10 @@ class TranslationExperiment:
         for val in [args.get('mono_src'), args.get('mono_tgt')]:
             if val:
                 files.extend(val)
+
+        # check if files are parallel
+        assert line_count(args['train_src']) == line_count(args['train_tgt'])
+        assert line_count(args['valid_src']) == line_count(args['valid_tgt'])
 
         self.shared_field = Field.train(args['pieces'], args['max_types'],
                                         self._shared_field_file, files)
@@ -244,7 +251,7 @@ class TranslationExperiment:
         tot_score = float(parts[-2]) + float(parts[-1])
         return tot_score
 
-    def list_models(self, sort: str='mtime', desc: bool=True) -> List[Path]:
+    def list_models(self, sort: str = 'mtime', desc: bool = True) -> List[Path]:
         """
         Lists models in descending order of modification time
         :param sort: how to sort models ?

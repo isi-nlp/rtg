@@ -72,6 +72,20 @@ class Optims(Enum):
         return list(Optims.__members__.keys())
 
 
+def line_count(path, ignore_blanks=False):
+    """count number of lines in file
+    :param path: file path
+    :param ignore_blanks: ignore blank lines
+    """
+    with IO.reader(path) as reader:
+        count = 0
+        for line in reader:
+            if ignore_blanks and not line.strip():
+                continue
+            count += 1
+        return count
+
+
 class IO:
     """File opener and automatic closer"""
 
