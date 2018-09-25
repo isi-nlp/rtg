@@ -13,6 +13,7 @@ from tqdm import tqdm
 import random
 import itertools
 import gc
+import math
 
 
 class Embedder(nn.Embedding):
@@ -483,12 +484,50 @@ class BaseTrainer:
         warmup = optim_args.pop('warmup_steps', 2000)
         optim_args['lr'] = optim_args.get('lr', 0.001)
         optim_args['weight_decay'] = optim_args.get('weight_decay', 1e-5)
+        self.step_size = optim_args.pop('step_size', 512)
+
         optimizer = Optims[optim].new(self.model.parameters(), **optim_args)
         self.optimizer = NoamOpt(model.model_dim * 2, 2, warmup, optimizer)
+
         optim_args['warmup_steps'] = warmup
+        optim_args['step_size'] = self.step_size
         self.exp.optim_args = optim, optim_args
         if not exp.read_only:
             self.exp.persist_state()
+
+    @staticmethod
+    def _get_batch_size_suggestion(step_size, batch_size_approx):
+        """
+        :param step_size: fixed step_size
+        :param batch_size_approx: approximate batch_size
+        :return: a tuple of nearest lower, higher good batch_size
+        """
+        assert 0 < step_size and 0 < batch_size_approx <= step_size
+        lower, higher = None, None
+        # closest lower multiple
+        for i in range(batch_size_approx, 0, -1):
+            if i % step_size == 0:
+                lower = i
+                break
+
+        # closest highest multiple
+        for i in range(batch_size_approx, step_size + 1):
+            if i % step_size == 0:
+                higher = i
+                break
+        return lower, higher
+
+    @staticmethod
+    def _get_step_size_suggestion(step_size_approx, batch_size):
+        """
+        Suggest a nearest good step_size for the given batch_size
+        :param step_size_approx: an approximate step_size
+        :param batch_size: a fixed batch_size
+        :return: a tuple of nearest lower, higher good step_sizes
+        """
+        assert 0 < step_size_approx and 0 < batch_size <= step_size_approx
+        quotient = step_size_approx / batch_size
+        return math.floor(quotient) * batch_size, math.ceil(quotient) * batch_size
 
     @staticmethod
     def sequence_mask(lengths, max_len):
@@ -557,7 +596,18 @@ class Seq2SeqTrainer(BaseTrainer):
             log.info(f"==={i}===\nSRC:{line}\nREF:{ref}\n{outs}")
 
     def train(self, num_epochs: int, batch_size: int, **args):
-        log.info(f'Going to train for {num_epochs} epochs; batch_size={batch_size}')
+        log.info(f'Going to train for {num_epochs} epochs; batch_size={batch_size}'
+                 f'step_size={self.step_size}')
+        if batch_size > self.step_size:
+            raise Exception(f'Step size is {self.step_size} but batch size is {batch_size}')
+        if self.step_size % batch_size != 0:
+            batch_size_sugg = self._get_batch_size_suggestion(self.step_size, batch_size)
+            step_size_sugg = self._get_step_size_suggestion(self.step_size, batch_size)
+            msg = f'step_size should be a multiple of batch_size. ' \
+                  f'You have step_size={self.step_size} and batch_size={batch_size}.' \
+                  f'Suggestion: set step size to either of {step_size_sugg}' \
+                  f'or batch_size to either of {batch_size_sugg}'
+            raise Exception(msg)
 
         train_data = BatchIterable(self.exp.train_file, batch_size=batch_size, batch_first=True,
                                    shuffle=True)
@@ -575,7 +625,7 @@ class Seq2SeqTrainer(BaseTrainer):
             log.info(f'Epoch {ep} complete.. Training loss in this epoch {train_loss}...')
             with torch.no_grad():
                 val_loss = self.run_epoch(val_data, train_mode=False)
-                log.info(f'Validation of {ep} complete.. Validation loss in this epoch {val_loss}...')
+                log.info(f'Validation{ep} complete.. Validation loss in this epoch {val_loss}...')
                 losses.append((ep, train_loss, val_loss))
 
                 # show some samples by logging them
@@ -602,9 +652,14 @@ class Seq2SeqTrainer(BaseTrainer):
         start = time.time()
         self.model.train(train_mode)
         tot_toks = 0
-
+        num_exs = 0
+        if train_mode:
+            assert self.step_size % data_iter.batch_size == 0
+            self.optimizer.zero_grad()
+        learn_rate = ""
         with tqdm(data_iter, total=data_iter.num_batches, unit='batch') as data_bar:
             for i, batch in enumerate(data_bar):
+                num_exs += len(batch)
                 batch = batch.to(device)
                 # Step clear gradients
                 self.model.zero_grad()
@@ -616,12 +671,14 @@ class Seq2SeqTrainer(BaseTrainer):
                 loss = (per_tok_loss * tok_mask.float()).sum().float() / batch.y_toks
                 tot_toks += batch.y_toks
                 tot_loss += loss.item()
-                learn_rate = ""
+
                 if train_mode:
-                    loss.backward()
-                    learn_rate = self.optimizer.step()
-                    self.optimizer.zero_grad()
-                    learn_rate = f'LR={learn_rate:g}'
+                    loss.backward()     # accumulate gradients
+                    # take an optimizer's step after every step_size
+                    if num_exs % self.step_size == 0:
+                        learn_rate = self.optimizer.step()
+                        self.optimizer.zero_grad()
+                        learn_rate = f'LR={learn_rate:g}'
                 elapsed = time.time() - start
                 bar_msg = f'Loss:{loss:.4f}, {int(tot_toks/elapsed)}toks/s {learn_rate}'
                 data_bar.set_postfix_str(bar_msg, refresh=False)
@@ -677,8 +734,18 @@ class BiNmtTrainer(BaseTrainer):
         # TODO: not sure if this is a good idea. check  the effect of unequal ratio of data
         data = itertools.zip_longest(mono_src, mono_tgt)
         tot_toks = 0
+
+        num_exs = 0
+        learn_rate = ""
+        if train_mode:
+            assert self.step_size % mono_src.batch_size == 0
+            assert self.step_size % mono_tgt.batch_size == 0
+            self.optimizer.zero_grad()
+
         with tqdm(data, total=num_batches, unit='batch') as data_bar:
             for i, (src_batch, tgt_batch) in enumerate(data_bar):
+                num_exs += max(len(src_batch) if src_batch else 0,
+                               len(tgt_batch) if tgt_batch else 0)
                 batch_losses = []
                 if src_batch:
                     tot_toks += src_batch.y_toks * 2
@@ -701,12 +768,13 @@ class BiNmtTrainer(BaseTrainer):
 
                 tot_batch_loss_node = sum(batch_losses)
                 tot_batch_loss = tot_batch_loss_node.item()
-                learn_rate = ''
                 if train_mode:
-                    tot_batch_loss_node.backward()
-                    learn_rate = self.optimizer.step()
-                    self.optimizer.zero_grad()
-                    learn_rate = f'LR={learn_rate:g}'
+                    tot_batch_loss_node.backward()      # accumulate gradients
+                    # take an optimizer's step
+                    if num_exs % self.step_size == 0:
+                        learn_rate = self.optimizer.step()
+                        self.optimizer.zero_grad()
+                        learn_rate = f'LR={learn_rate:g}'
                 elapsed = time.time() - start
                 bar_msg = f'Loss:{tot_batch_loss:.4f}, {int(tot_toks/elapsed)}toks/s {learn_rate}'
                 data_bar.set_postfix_str(bar_msg, refresh=False)
@@ -760,11 +828,12 @@ def __test_seq2seq_model__():
     from rtg.dummy import BatchIterable
     from rtg.module.decoder import Decoder
 
-    vocab_size = 50
+    vocab_size = 20
     exp = Experiment("tmp.work", config={'model_type': 'seq2seq'}, read_only=True)
     num_epoch = 100
     emb_size = 100
-    model_dim = 200
+    model_dim = 100
+    batch_size = 64
 
     src = tensor([[2,  4,  5,  6,  7, 8, 9, 10, 11, 12, 13],
                   [2, 13, 12, 11, 10, 9, 8,  7,  6,  5,  4]])
@@ -777,13 +846,12 @@ def __test_seq2seq_model__():
         log.info(f"====== REVERSE={reverse}; VOCAB={vocab_size}======")
         model, args = Seq2Seq.make_model('DummyA', 'DummyB', vocab_size, vocab_size,
                                          emb_size=emb_size, hid_size=model_dim, n_layers=1)
-        trainer = Seq2SeqTrainer(exp=exp, model=model, lr=0.01, warmup_steps=1000)
+        trainer = Seq2SeqTrainer(exp=exp, model=model, lr=0.01, warmup_steps=100, step_size=5*batch_size)
 
         decr = Decoder.new(exp, model)
         assert 2 == Batch.bos_val
 
         def print_res(res):
-
             for score, seq in res:
                 log.info(f'{score:.4f} :: {seq}')
 
@@ -791,11 +859,12 @@ def __test_seq2seq_model__():
         class MyList(list):
             pass
 
-        val_data = MyList(BatchIterable(vocab_size, 50, 5, reverse=reverse, batch_first=True))
+        val_data = MyList(BatchIterable(vocab_size, batch_size, 5, reverse=reverse, batch_first=True))
         val_data.num_batches = len(val_data)
+        val_data.batch_size = batch_size
         for epoch in range(num_epoch):
             model.train()
-            train_data = BatchIterable(vocab_size, 30, 50, seq_len=12, reverse=reverse,
+            train_data = BatchIterable(vocab_size, batch_size, 50, seq_len=12, reverse=reverse,
                                        batch_first=True)
             train_loss = trainer.run_epoch(train_data, train_mode=True)
             val_loss = trainer.run_epoch(val_data, train_mode=False)
@@ -815,6 +884,7 @@ def __test_binmt_model__():
     num_epoch = 100
     emb_size = 100
     model_dim = 100
+    batch_size = 32
 
     src = tensor([[2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
                   [2, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4]])
@@ -827,7 +897,7 @@ def __test_binmt_model__():
         log.info(f"====== REVERSE={reverse}; VOCAB={vocab_size}======")
         model, args = BiNMT.make_model('DummyA', 'DummyB', vocab_size, vocab_size,
                                        emb_size=emb_size, hid_size=model_dim, n_layers=2)
-        trainer = BiNmtTrainer(exp=exp, model=model, lr=0.01, warmup_steps=1000)
+        trainer = BiNmtTrainer(exp=exp, model=model, lr=0.01, warmup_steps=500, step_size=2*batch_size)
 
         decr = Decoder.new(exp, model, gen_args={'path': 'E1D1'})
         assert 2 == Batch.bos_val
@@ -838,9 +908,9 @@ def __test_binmt_model__():
 
         for epoch in range(num_epoch):
             model.train()
-            train_data = BatchIterable(vocab_size, 30, 50, seq_len=10, reverse=reverse,
+            train_data = BatchIterable(vocab_size, batch_size, 50, seq_len=10, reverse=reverse,
                                        batch_first=True)
-            val_data = BatchIterable(vocab_size, 50, 5, reverse=reverse, batch_first=True)
+            val_data = BatchIterable(vocab_size, batch_size, 5, reverse=reverse, batch_first=True)
             train_loss = trainer._run_cycle(train_data, train_data, train_mode=True)
             val_loss = trainer._run_cycle(val_data, val_data, train_mode=False)
             log.info(
