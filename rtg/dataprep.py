@@ -77,6 +77,7 @@ class Field(SentencePieceProcessor):
         :return:
         """
         model_prefix = model_path.replace('.model', '')
+        files = set(files)    # remove duplicates
         arg = f"--input={','.join(files)} --vocab_size={vocab_size} --model_prefix={model_prefix}" \
               f" --model_type={model_type} --pad_id={PAD_TOK[1]} --bos_id={BOS_TOK[1]}" \
               f" --eos_id={EOS_TOK[1]} --unk_id={UNK_TOK[1]} --hard_vocab_limit=false"
