@@ -3,7 +3,7 @@
 import argparse
 from argparse import ArgumentDefaultsHelpFormatter as ArgFormatter
 
-from rtg import TranslationExperiment as Experiment
+from rtg import TranslationExperiment as Experiment, log
 from rtg.module.rnn import RNNTrainer
 from rtg.module.t2t import T2TTrainer
 from rtg.binmt.model import BiNmtTrainer, Seq2SeqTrainer
@@ -14,6 +14,8 @@ def parse_args():
     parser = argparse.ArgumentParser(prog="rtg.train", description="Train NMT model",
                                      formatter_class=ArgFormatter)
     parser.add_argument("work_dir", help="Working directory", type=str)
+    parser.add_argument("-rs", "--seed", help="Seed for random number generator. Set it to zero "
+                                              "to not touch this part.", type=int, default=0)
     parser.add_argument("-ne", "--num-epochs", help="Num epochs", type=int, default=30)
     parser.add_argument("-re", "--resume", action='store_true', dest='resume_train',
                         help="Resume Training. adds --num-epochs more epochs to the most "
@@ -25,12 +27,21 @@ def parse_args():
                         help="Name of optimizer")
     parser.add_argument("-oa", "--optim-args", type=str, default='lr=0.001',
                         help="Comma separated key1=val1,key2=val2 args to optimizer."
-                             " Example: lr=0.01. The arguments depends on the choice of --optim")
+                             " Example: lr=0.001,warmup_steps=1000,step_size=1024. "
+                             "The arguments depends on the choice of --optim")
     return vars(parser.parse_args())
 
 
 def main():
     args = parse_args()
+    seed = args.pop("seed")
+    if seed:
+        log.info(f"Seed for random number generator: {seed}")
+        import random
+        import torch
+        random.seed(seed)
+        torch.manual_seed(seed)
+
     exp = Experiment(args.pop('work_dir'))
     assert exp.has_prepared(), f'Experiment dir {exp.work_dir} is not ready to train. ' \
                                f'Please run "prep" sub task'
