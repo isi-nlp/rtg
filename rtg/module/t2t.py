@@ -39,7 +39,8 @@ class T2TModel(nn.Module):
         return self.decoder(self.tgt_embed(tgt), memory, src_mask, tgt_mask)
 
     @staticmethod
-    def make_model(src_vocab, tgt_vocab, n_layers=4, hid_size=512, ff_size=512, n_heads=4, dropout=0.5):
+    def make_model(src_vocab, tgt_vocab, n_layers=6, hid_size=512, ff_size=2048, n_heads=8,
+                   dropout=0.1):
         "Helper: Construct a model from hyperparameters."
 
         # args for reconstruction of model
@@ -309,7 +310,7 @@ class NoamOpt:
 
 
 class LabelSmoothing(nn.Module):
-    def __init__(self, size: int, padding_idx: int, smoothing=0.0):
+    def __init__(self, size: int, padding_idx: int, smoothing=0.1):
         super(LabelSmoothing, self).__init__()
         self._size = size
         assert 0.0 <= smoothing <= 1.0
@@ -423,26 +424,33 @@ class T2TTrainer:
                 self.model.load_state_dict(torch.load(last_model))
 
         # making optimizer
-        optim_args['lr'] = optim_args.get('lr', 0.001)
+        optim_args['lr'] = optim_args.get('lr', 0.1)
         optim_args['betas'] = optim_args.get('betas', [0.9, 0.98])
         optim_args['eps'] = optim_args.get('eps', 1e-9)
 
-        generator = self.model.generator
-        warm_up_steps = 2000
-        smoothing = 0.1
+        warm_up_steps = optim_args.pop('warmup_steps', 4000)
+        smoothing = optim_args.pop('label_smoothing', 0.1)
         noam_factor = 2
-        criterion = LabelSmoothing(size=generator.vocab, padding_idx=Batch.pad_value, smoothing=smoothing)
+        generator = self.model.generator
+        criterion = LabelSmoothing(size=generator.vocab, padding_idx=Batch.pad_value,
+                                   smoothing=smoothing)
 
         self.model = self.model.to(device)
         device_ids = list(range(torch.cuda.device_count()))
         log.info(f"Going to use {torch.cuda.device_count()} GPUs ; ids:{device_ids}")
         if len(device_ids) > 1:
+            log.warning("Multi GPU mode <<this feature is not tested>>")
             # Multi GPU mode
             self.model = nn.DataParallel(self.model, dim=0, device_ids=device_ids)
 
         inner_opt = Optims[optim].new(self.model.parameters(), **optim_args)
         noam_opt = NoamOpt(generator.d_model, noam_factor, warm_up_steps, inner_opt)
-        self.loss_func = MultiGPULossFunction(generator, criterion, devices=device_ids, opt=noam_opt)
+        self.loss_func = MultiGPULossFunction(generator, criterion, devices=device_ids,
+                                              opt=noam_opt)
+
+        optim_args['warmpup_steps'] = warm_up_steps
+        optim_args['label_smoothing'] = smoothing
+
         self.exp.optim_args = optim, optim_args
         if not self.exp.read_only:
             self.exp.persist_state()
