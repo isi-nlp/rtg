@@ -448,7 +448,7 @@ class T2TTrainer:
         self.loss_func = MultiGPULossFunction(generator, criterion, devices=device_ids,
                                               opt=noam_opt)
 
-        optim_args['warmpup_steps'] = warm_up_steps
+        optim_args['warmup_steps'] = warm_up_steps
         optim_args['label_smoothing'] = smoothing
 
         self.exp.optim_args = optim, optim_args
