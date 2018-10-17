@@ -2,6 +2,7 @@
 import argparse
 import sys
 from argparse import ArgumentDefaultsHelpFormatter as ArgFormatter
+import torch
 
 from rtg import TranslationExperiment as Experiment, log
 from rtg.module.decoder import Decoder, ReloadEvent
@@ -38,6 +39,8 @@ def parse_args():
 
 
 def main():
+    # No grads required
+    torch.set_grad_enabled(False)
     args = parse_args()
     gen_args = {}
 
