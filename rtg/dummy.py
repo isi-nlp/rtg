@@ -4,8 +4,11 @@ from rtg.dataprep import Batch, Example
 import argparse
 from rtg import log, TranslationExperiment as Experiment
 from rtg.utils import IO
+from rtg.dataprep import LoopingIterable
+
 import numpy as np
 from pathlib import Path
+from typing import Optional, Dict, Union, Any
 
 
 class BatchIterable:
@@ -44,6 +47,37 @@ class BatchIterable:
         for i in range(self.num_batches):
             exs = [self.make_an_ex() for _ in range(self.batch_size)]
             yield Batch(exs, sort_dec=True, batch_first=self.batch_first)
+
+
+class DummyExperiment(Experiment):
+    """
+    A dummy experiment for testing;
+    this produces random data and leaves no trace on disk
+    """
+
+    def __init__(self, work_dir: Union[str, Path], read_only=True,
+                 config: Optional[Dict[str, Any]] = None, vocab_size: int = 20,
+                 train_batches=30, val_batches=5):
+        super().__init__(work_dir, read_only, config)
+        self.vocab_size = vocab_size
+        self.train_batches = train_batches
+        self.val_batches = val_batches
+
+    def get_train_data(self, batch_size: int, steps: int = 0, sort_dec=True, batch_first=True,
+                       shuffle=False, copy_xy=False):
+        train_data = BatchIterable(self.vocab_size, batch_size, self.train_batches,
+                                   reverse=False, batch_first=batch_first)
+        if steps > 0:
+            train_data = LoopingIterable(train_data, steps)
+        return train_data
+
+    def get_val_data(self, batch_size: int, sort_dec=True, batch_first=True,
+                     shuffle=False, copy_xy=False):
+        assert not shuffle, 'Not supported'
+        assert not copy_xy, 'Not supported'
+        val_data = BatchIterable(self.vocab_size, batch_size, self.val_batches,
+                                 reverse=False, batch_first=batch_first)
+        return val_data
 
 
 def parse_args():
@@ -103,7 +137,6 @@ def write_parallel(data, src_file, tgt_file):
 
 
 def main(args):
-
     work_dir: Path = args.pop('exp')
 
     work_dir.mkdir(exist_ok=True, parents=True)
