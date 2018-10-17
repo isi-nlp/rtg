@@ -1,5 +1,6 @@
 import torch
 import torch.nn.functional as F
+from torch import nn as nn
 from rtg import log, device, my_tensor as tensor, debug_mode
 from rtg.dataprep import PAD_TOK, BOS_TOK, EOS_TOK, subsequent_mask
 from rtg.module.t2t import T2TModel
@@ -137,6 +138,8 @@ class Decoder:
 
             log.info(f" Restoring state from {model_path}")
             model.load_state_dict(torch.load(model_path))
+        elif isinstance(model, nn.DataParallel):
+            model = model.module
 
         model = model.eval().to(device=device)
         generator = generators[exp.model_type]
