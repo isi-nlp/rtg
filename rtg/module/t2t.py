@@ -1,6 +1,6 @@
 # Tensor 2 Tensor aka Attention is all you need
 # Thanks to http://nlp.seas.harvard.edu/2018/04/03/attention.html
-from typing import Iterator
+from typing import Iterator, Callable, Optional, Tuple
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -8,8 +8,9 @@ import math, copy, time
 from torch.autograd import Variable
 from tqdm import tqdm
 from rtg import device, log, TranslationExperiment as Experiment, my_tensor as tensor
-from rtg.dataprep import BatchIterable, Batch
+from rtg.dataprep import Batch
 from rtg.utils import Optims, IO
+from dataclasses import dataclass
 
 
 class T2TModel(nn.Module):
@@ -277,13 +278,14 @@ class PositionalEncoding(nn.Module):
 class NoamOpt:
     "Optim wrapper that implements rate."
 
-    def __init__(self, model_size, factor, warmup, optimizer):
+    def __init__(self, model_size, factor, warmup, optimizer, step=0):
         self.optimizer = optimizer
-        self._step = 0
+        self._step = step
         self.warmup = warmup
         self.factor = factor
         self.model_size = model_size
         self._rate = 0
+        log.info(f"model_size={model_size}, factor={factor}, warmup={warmup}, step={step}")
 
     def step(self):
         "Update parameters and rate"
@@ -293,6 +295,14 @@ class NoamOpt:
             p['lr'] = rate
         self._rate = rate
         self.optimizer.step()
+
+    @property
+    def curr_step(self):
+        return self._step
+
+    @property
+    def curr_lr(self):
+        return self._rate
 
     def zero_grad(self):
         self.optimizer.zero_grad()
@@ -403,10 +413,49 @@ class MultiGPULossFunction(SimpleLossCompute):
         return total_loss_val * norm
 
 
+@dataclass
+class TrainerState:
+    """A dataclass for storing any running stats the trainer needs to keep track
+     in a step based training"""
+
+    model: T2TModel
+    check_point: int
+    total_toks: int = 0
+    total_loss: float = 0.0
+    steps: int = 0
+    start: float = time.time()
+
+    def reset(self):
+        score = self.total_loss / self.total_toks if self.total_toks != 0 else float('inf')
+        self.total_toks = 0
+        self.total_loss = 0.0
+        self.steps = 0
+        self.start = time.time()
+        return score
+
+    def train_mode(self, mode: bool):
+        torch.set_grad_enabled(mode)
+        self.model.train(mode)
+
+    def step(self, toks, loss):
+        self.steps += 1
+        self.total_toks += toks
+        self.total_loss += loss
+        return self.progress_bar_msg(), self.is_check_point()
+
+    def progress_bar_msg(self):
+        elapsed = time.time() - self.start
+        return f'Loss:{self.total_loss / self.total_toks:.4f},' \
+            f' {int(self.total_toks / elapsed)}toks/s'
+
+    def is_check_point(self):
+        return self.steps == self.check_point
+
+
 class T2TTrainer:
 
     def __init__(self, exp: Experiment = None, model: T2TModel = None, optim='ADAM', **optim_args):
-        self.start_epoch = 0
+        self.start_step = 0
         self.exp = exp
         if model:
             self.model = model
@@ -417,10 +466,10 @@ class T2TTrainer:
             self.model, args = T2TModel.make_model(**args)
             exp.model_args = args
 
-            last_model, last_epoch = self.exp.get_last_saved_model()
+            last_model, last_step = self.exp.get_last_saved_model()
             if last_model:
-                self.start_epoch = last_epoch + 1
-                log.info(f"Resuming training from epoch:{self.start_epoch}, model={last_model}")
+                self.start_step = last_step + 1
+                log.info(f"Resuming training from step:{self.start_step}, model={last_model}")
                 self.model.load_state_dict(torch.load(last_model))
 
         # making optimizer
@@ -432,7 +481,7 @@ class T2TTrainer:
         smoothing = optim_args.pop('label_smoothing', 0.1)
         noam_factor = 2
         generator = self.model.generator
-        criterion = LabelSmoothing(size=generator.vocab, padding_idx=Batch.pad_value,
+        criterion = LabelSmoothing(size=generator.vocab,padding_idx=Batch.pad_value,
                                    smoothing=smoothing)
 
         self.model = self.model.to(device)
@@ -444,9 +493,10 @@ class T2TTrainer:
             self.model = nn.DataParallel(self.model, dim=0, device_ids=device_ids)
 
         inner_opt = Optims[optim].new(self.model.parameters(), **optim_args)
-        noam_opt = NoamOpt(generator.d_model, noam_factor, warm_up_steps, inner_opt)
+        self.opt = NoamOpt(generator.d_model, noam_factor, warm_up_steps, inner_opt,
+                           step=self.start_step)
         self.loss_func = MultiGPULossFunction(generator, criterion, devices=device_ids,
-                                              opt=noam_opt)
+                                              opt=self.opt)
 
         optim_args['warmup_steps'] = warm_up_steps
         optim_args['label_smoothing'] = smoothing
@@ -532,70 +582,89 @@ class T2TTrainer:
                 return i, loss
         return max_iters - 1, loss
 
-    def train(self, num_epochs: int, batch_size: int, **args):
-        log.info(f'Going to train for {num_epochs} epochs; batch_size={batch_size}')
-        keep_models = args.get('keep_models', 4)  # keep last _ models and delete the old
-        if args.get('resume_train'):
-            num_epochs += self.start_epoch
-        elif num_epochs <= self.start_epoch:
-            raise Exception(f'The model was already trained to {self.start_epoch} epochs. '
-                            f'Please increase epoch or clear the existing models')
-        train_data = BatchIterable(self.exp.train_file, batch_size=batch_size, shuffle=True)
-        val_data = BatchIterable(self.exp.valid_file, batch_size=batch_size, shuffle=True)
-        losses = []
-        self.model.train()  # Train mode
-        for ep in range(self.start_epoch, num_epochs):
-            log.info(f"Running epoch:: {ep}")
-            train_loss = self.run_epoch(train_data, num_batches=train_data.num_batches,
-                                        train_mode=True)
-            with torch.no_grad():
-                val_loss = self.run_epoch(val_data, num_batches=val_data.num_batches,
-                                          train_mode=False)
-                log.info(f"Finished epoch {ep}. Training Loss {train_loss},"
-                         f" Validation Loss:{val_loss}")
-                self.show_samples()
+    def make_check_point(self, val_data, train_loss, keep_models):
+        step_num = self.opt.curr_step
+        val_loss = self.run_epoch(val_data, num_batches=val_data.num_batches,
+                                  train_mode=False)
+        log.info(f"Checkpoint at step {step_num}. Training Loss {train_loss},"
+                 f" Validation Loss:{val_loss}")
+        self.show_samples()
 
-            # Unwrap model state from DataParallel and persist
-            state = (self.model.module if isinstance(self.model, nn.DataParallel) else self.model)
-            self.exp.store_model(ep, state.state_dict(), train_score=train_loss,
-                                 val_score=val_loss, keep=keep_models)
-            self.start_epoch += 1
-            losses.append((ep, train_loss, val_loss))
-        summary = '\n'.join(f'{ep:02}\t{tl:.4f}\t{vl:.4f}' for ep, tl, vl in losses)
-        log.info(f"==Summary==:\nEpoch\t TrainLoss \t ValidnLoss \n {summary}")
+        # Unwrap model state from DataParallel and persist
+        state = (self.model.module if isinstance(self.model, nn.DataParallel) else self.model)
+        self.exp.store_model(step_num, state.state_dict(), train_score=train_loss,
+                             val_score=val_loss, keep=keep_models)
+
+    def train(self, steps: int, check_point: int, batch_size: int,
+              check_pt_callback: Optional[Callable]=None, **args):
+        log.info(f'Going to train for {steps} epochs; batch_size={batch_size}; '
+                 f'check point size:{check_point}')
+        keep_models = args.get('keep_models', 4)  # keep last _ models and delete the old
+
+        if steps <= self.start_step:
+            raise Exception(f'The model was already trained to {self.start_step} steps. '
+                            f'Please increase the steps or clear the existing models')
+        train_data = self.exp.get_train_data(batch_size=batch_size,
+                                             steps=steps - self.start_step,
+                                             shuffle=True, batch_first=True)
+        val_data = self.exp.get_val_data(batch_size, shuffle=False, batch_first=True)
+
+        train_state = TrainerState(self.model, check_point=check_point)
+        train_state.train_mode(True)
+        with tqdm(train_data, initial=self.start_step, total=steps, unit='batch') as data_bar:
+            for batch in data_bar:
+                batch = batch.to(device)
+                num_toks = batch.y_toks
+                out = self.model(batch.x_seqs, batch.y_seqs, batch.x_mask, batch.y_mask)
+                # skip the BOS token in  batch.y_seqs
+                loss = self.loss_func(out, batch.y_seqs_nobos, num_toks, True)
+
+                progress_msg, is_check_pt = train_state.step(num_toks, loss)
+                progress_msg += f', LR={self.opt.curr_lr:g}'
+
+                data_bar.set_postfix_str(progress_msg, refresh=False)
+                del batch   # TODO: force free memory
+
+                if is_check_pt:
+                    train_loss = train_state.reset()
+                    train_state.train_mode(False)
+                    self.make_check_point(val_data, train_loss, keep_models=keep_models)
+                    if check_pt_callback:
+                        check_pt_callback(model=self.model,
+                                          step=self.opt.curr_step,
+                                          train_loss=train_loss)
+                    train_state.train_mode(True)
 
 
 def __test_model__():
-    from rtg.dummy import BatchIterable
 
+    from rtg.dummy import DummyExperiment
     vocab_size = 14
-    model, _ = T2TModel.make_model(vocab_size, vocab_size, n_layers=4, hid_size=128, ff_size=256, n_heads=4)
+    model, _ = T2TModel.make_model(vocab_size, vocab_size,
+                                   n_layers=4, hid_size=128, ff_size=256, n_heads=4)
     from rtg.module.decoder import Decoder
 
-    exp = Experiment("work", config={'model_type': 't2t'}, read_only=True)
-    trainer = T2TTrainer(exp=exp, model=model)
+    exp = DummyExperiment("work", config={'model_type': 't2t'}, read_only=True,
+                          vocab_size=vocab_size)
 
-    decr = Decoder.new(exp, model)
+    trainer = T2TTrainer(exp=exp, model=model, warmup_steps=200)
+    decr = Decoder.new(exp, trainer.model)
 
     assert 2 == Batch.bos_val
     src = tensor([[2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
                   [2, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4]])
     src_lens = tensor([src.size(1)] * src.size(0))
 
-    def print_res(res):
+    def check_pt_callback(**args):
+        res = decr.greedy_decode(src, src_lens, max_len=12)
         for score, seq in res:
             log.info(f'{score:.4f} :: {seq}')
 
-    val_data = list(BatchIterable(vocab_size, 50, 5, reverse=False, batch_first=True))
-    for epoch in range(50):
-        model.train()
-        train_data = BatchIterable(vocab_size, 30, 20, reverse=False, batch_first=True)
-        train_loss = trainer.run_epoch(train_data, num_batches=train_data.num_batches, train_mode=True)
-        val_loss = trainer.run_epoch(val_data, num_batches=len(val_data), train_mode=False)
-        log.info(f"Epoch {epoch}, training Loss: {train_loss:.4f} \t validation loss:{val_loss:.4f}")
-        model.eval()
-        res = decr.greedy_decode(src, src_lens, max_len=12)
-        print_res(res)
+    batch_size = 50
+    steps = 500
+    check_point = 10
+    trainer.train(steps=steps, check_point=check_point, batch_size=batch_size,
+                  check_pt_callback=check_pt_callback)
 
 
 if __name__ == '__main__':
