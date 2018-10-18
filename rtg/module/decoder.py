@@ -4,7 +4,6 @@ from torch import nn as nn
 from rtg import log, device, my_tensor as tensor, debug_mode
 from rtg.dataprep import PAD_TOK, BOS_TOK, EOS_TOK, subsequent_mask
 from rtg.module.t2t import T2TModel
-from rtg.module.rnn import RNNModel
 from rtg.binmt.model import Seq2Seq
 from rtg.binmt.bicycle import BiNMT
 from typing import List, Tuple, Type, Dict, Any
@@ -27,28 +26,6 @@ class GeneratorFactory(abc.ABC):
     @abc.abstractmethod
     def generate_next(self, past_ys):
         pass
-
-
-class RNNGenerator(GeneratorFactory):
-    # TODO: this is duplicate of seq2seq model
-
-    def __init__(self, model: RNNModel, x_seqs, x_lens):
-        super().__init__(model)
-        x_seqs = x_seqs.view(-1, len(x_seqs))  # [S, B]  <- [B, S]
-        # [S, B, d], [S, B, d] <-- [S, B], [B]
-        self.enc_outs, enc_hids = model.enc(x_seqs, x_lens, None)
-
-        # [S, B, d]
-        self.dec_hids = model.enc_to_dec_state(enc_hids)
-        self.dec_attn = None
-
-    def generate_next(self, past_ys):
-        last_ys = past_ys[:, -1]
-        next_ys, self.dec_hids, self.dec_attn = self.model.dec(last_ys, self.dec_hids,
-                                                               self.enc_outs)
-        log_probs = F.log_softmax(next_ys, dim=1)
-        return log_probs
-
 
 class Seq2SeqGenerator(GeneratorFactory):
 
@@ -89,12 +66,10 @@ class T2TGenerator(GeneratorFactory):
 
 
 generators = {'t2t': T2TGenerator,
-              'rnn': RNNGenerator,
               'seq2seq': Seq2SeqGenerator,
               'binmt': BiNMTGenerator}
 factories = {
     't2t': T2TModel.make_model,
-    'rnn': RNNModel.make_model,
     'seq2seq': Seq2Seq.make_model,
     'binmt': BiNMT.make_model,
 }
