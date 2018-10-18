@@ -1,25 +1,112 @@
 # Tensor 2 Tensor aka Attention is all you need
 # Thanks to http://nlp.seas.harvard.edu/2018/04/03/attention.html
-from typing import Iterator, Callable, Optional, Tuple
+import copy
+import math
+import time
+from typing import Callable, Optional
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import math, copy, time
 from torch.autograd import Variable
 from tqdm import tqdm
-from rtg import device, log, TranslationExperiment as Experiment, my_tensor as tensor
-from rtg.dataprep import Batch
-from rtg.utils import Optims, IO
-from dataclasses import dataclass
+
+from rtg import device, log, my_tensor as tensor, TranslationExperiment
+from rtg.dataprep import Batch, BatchIterable
+from rtg.module import NMTModel
+from rtg.module.trainer import TrainerState, SteppedTrainer
 
 
-class T2TModel(nn.Module):
+def clones(module, N):
+    "Produce N identical layers."
+    return nn.ModuleList([copy.deepcopy(module) for _ in range(N)])
+
+
+class Generator(nn.Module):
+    "Define standard linear + softmax generation step."
+
+    def __init__(self, d_model: int, vocab: int):
+        super(Generator, self).__init__()
+        self.d_model = d_model
+        self.vocab = vocab
+        self.proj = nn.Linear(d_model, vocab)
+
+    def forward(self, x):
+        return F.log_softmax(self.proj(x), dim=-1)
+
+
+class EncoderLayer(nn.Module):
+    "Encoder is made up of self-attn and feed forward (defined below)"
+
+    def __init__(self, size, self_attn, feed_forward, dropout):
+        super(EncoderLayer, self).__init__()
+        self.self_attn = self_attn
+        self.feed_forward = feed_forward
+        self.sublayer = clones(SublayerConnection(size, dropout), 2)
+        self.size = size
+
+    def forward(self, x, mask):
+        "Follow Figure 1 (left) for connections."
+        x = self.sublayer[0](x, lambda _x: self.self_attn(_x, _x, _x, mask))
+        return self.sublayer[1](x, self.feed_forward)
+
+
+class Encoder(nn.Module):
+    "Core encoder is a stack of N layers"
+
+    def __init__(self, layer: EncoderLayer, N: int):
+        super(Encoder, self).__init__()
+        self.layers = clones(layer, N)
+        self.norm = LayerNorm(layer.size)
+
+    def forward(self, x, mask):
+        "Pass the input (and mask) through each layer in turn."
+        for layer in self.layers:
+            x = layer(x, mask)
+        return self.norm(x)
+
+
+class DecoderLayer(nn.Module):
+    "Decoder is made of self-attn, src-attn, and feed forward (defined below)"
+
+    def __init__(self, size, self_attn, src_attn, feed_forward, dropout):
+        super(DecoderLayer, self).__init__()
+        self.size = size
+        self.self_attn = self_attn
+        self.src_attn = src_attn
+        self.feed_forward = feed_forward
+        self.sublayer = clones(SublayerConnection(size, dropout), 3)
+
+    def forward(self, x, memory, src_mask, tgt_mask):
+        "Follow Figure 1 (right) for connections."
+        m = memory
+        x = self.sublayer[0](x, lambda _x: self.self_attn(_x, _x, _x, tgt_mask))
+        x = self.sublayer[1](x, lambda _x: self.src_attn(_x, m, m, src_mask))
+        return self.sublayer[2](x, self.feed_forward)
+
+
+class Decoder(nn.Module):
+    "Generic N layer decoder with masking."
+
+    def __init__(self, layer: DecoderLayer, N: int):
+        super(Decoder, self).__init__()
+        self.layers = clones(layer, N)
+        self.norm = LayerNorm(layer.size)
+
+    def forward(self, x, memory, src_mask, tgt_mask):
+        for layer in self.layers:
+            x = layer(x, memory, src_mask, tgt_mask)
+        return self.norm(x)
+
+
+class T2TModel(NMTModel):
     """
     A standard Encoder-Decoder architecture. Base for this and many
     other models.
     """
-
-    def __init__(self, encoder, decoder, src_embed, tgt_embed, generator):
+    def __init__(self, encoder: Encoder, decoder: Decoder,
+                 src_embed, tgt_embed,
+                 generator: Generator):
         super(T2TModel, self).__init__()
         self.encoder = encoder
         self.decoder = decoder
@@ -27,6 +114,10 @@ class T2TModel(nn.Module):
         self.tgt_embed = tgt_embed
         self.generator = generator
         self.tgt_vocab = generator.vocab
+
+    @property
+    def model_dim(self):
+        return self.generator.d_model
 
     def forward(self, src, tgt, src_mask, tgt_mask):
         "Take in and process masked src and target sequences."
@@ -73,39 +164,6 @@ class T2TModel(nn.Module):
         return model, args
 
 
-class Generator(nn.Module):
-    "Define standard linear + softmax generation step."
-
-    def __init__(self, d_model, vocab):
-        super(Generator, self).__init__()
-        self.d_model = d_model
-        self.vocab = vocab
-        self.proj = nn.Linear(d_model, vocab)
-
-    def forward(self, x):
-        return F.log_softmax(self.proj(x), dim=-1)
-
-
-def clones(module, N):
-    "Produce N identical layers."
-    return nn.ModuleList([copy.deepcopy(module) for _ in range(N)])
-
-
-class Encoder(nn.Module):
-    "Core encoder is a stack of N layers"
-
-    def __init__(self, layer, N):
-        super(Encoder, self).__init__()
-        self.layers = clones(layer, N)
-        self.norm = LayerNorm(layer.size)
-
-    def forward(self, x, mask):
-        "Pass the input (and mask) through each layer in turn."
-        for layer in self.layers:
-            x = layer(x, mask)
-        return self.norm(x)
-
-
 class LayerNorm(nn.Module):
     "Construct a layernorm module (See citation for details)."
 
@@ -136,55 +194,6 @@ class SublayerConnection(nn.Module):
     def forward(self, x, sublayer):
         "Apply residual connection to any sublayer with the same size."
         return x + self.dropout(sublayer(self.norm(x)))
-
-
-class EncoderLayer(nn.Module):
-    "Encoder is made up of self-attn and feed forward (defined below)"
-
-    def __init__(self, size, self_attn, feed_forward, dropout):
-        super(EncoderLayer, self).__init__()
-        self.self_attn = self_attn
-        self.feed_forward = feed_forward
-        self.sublayer = clones(SublayerConnection(size, dropout), 2)
-        self.size = size
-
-    def forward(self, x, mask):
-        "Follow Figure 1 (left) for connections."
-        x = self.sublayer[0](x, lambda x: self.self_attn(x, x, x, mask))
-        return self.sublayer[1](x, self.feed_forward)
-
-
-class Decoder(nn.Module):
-    "Generic N layer decoder with masking."
-
-    def __init__(self, layer, N):
-        super(Decoder, self).__init__()
-        self.layers = clones(layer, N)
-        self.norm = LayerNorm(layer.size)
-
-    def forward(self, x, memory, src_mask, tgt_mask):
-        for layer in self.layers:
-            x = layer(x, memory, src_mask, tgt_mask)
-        return self.norm(x)
-
-
-class DecoderLayer(nn.Module):
-    "Decoder is made of self-attn, src-attn, and feed forward (defined below)"
-
-    def __init__(self, size, self_attn, src_attn, feed_forward, dropout):
-        super(DecoderLayer, self).__init__()
-        self.size = size
-        self.self_attn = self_attn
-        self.src_attn = src_attn
-        self.feed_forward = feed_forward
-        self.sublayer = clones(SublayerConnection(size, dropout), 3)
-
-    def forward(self, x, memory, src_mask, tgt_mask):
-        "Follow Figure 1 (right) for connections."
-        m = memory
-        x = self.sublayer[0](x, lambda x: self.self_attn(x, x, x, tgt_mask))
-        x = self.sublayer[1](x, lambda x: self.src_attn(x, m, m, src_mask))
-        return self.sublayer[2](x, self.feed_forward)
 
 
 def attention(query, key, value, mask=None, dropout=None):
@@ -275,93 +284,65 @@ class PositionalEncoding(nn.Module):
         return self.dropout(x)
 
 
-class NoamOpt:
-    "Optim wrapper that implements rate."
-
-    def __init__(self, model_size, factor, warmup, optimizer, step=0):
-        self.optimizer = optimizer
-        self._step = step
-        self.warmup = warmup
-        self.factor = factor
-        self.model_size = model_size
-        self._rate = 0
-        log.info(f"model_size={model_size}, factor={factor}, warmup={warmup}, step={step}")
-
-    def step(self):
-        "Update parameters and rate"
-        self._step += 1
-        rate = self.rate()
-        for p in self.optimizer.param_groups:
-            p['lr'] = rate
-        self._rate = rate
-        self.optimizer.step()
-
-    @property
-    def curr_step(self):
-        return self._step
-
-    @property
-    def curr_lr(self):
-        return self._rate
-
-    def zero_grad(self):
-        self.optimizer.zero_grad()
-
-    def rate(self, step=None):
-        "Implement `lrate` above"
-        if step is None:
-            step = self._step
-        return self.factor * (self.model_size ** (-0.5) * min(step ** (-0.5), step * self.warmup ** (-1.5)))
-
-    @staticmethod
-    def get_std_opt(model):
-        return NoamOpt(model.src_embed[0].d_model, 2, 4000,
-                       torch.optim.Adam(model.parameters(), lr=0, betas=(0.9, 0.98), eps=1e-9))
 
 
 class LabelSmoothing(nn.Module):
-    def __init__(self, size: int, padding_idx: int, smoothing=0.1):
+    """
+    Label smoothing
+    """
+    def __init__(self, vocab_size: int, padding_idx: int, smoothing=0.1):
         super(LabelSmoothing, self).__init__()
-        self._size = size
+        self._size = vocab_size
         assert 0.0 <= smoothing <= 1.0
         self.padding_idx = padding_idx
         self.criterion = nn.KLDivLoss(size_average=False)
-        fill_val = smoothing / (size - 2)
-        one_hot = torch.full(size=(1, size), fill_value=fill_val, device=device)
+        fill_val = smoothing / (vocab_size - 2)
+        one_hot = torch.full(size=(1, vocab_size), fill_value=fill_val, device=device)
         one_hot[0][self.padding_idx] = 0
         self.register_buffer('one_hot', one_hot)
         self.confidence = 1.0 - smoothing
 
     def forward(self, x, target):
+        # 'x' is log probabilities, originally [B, T, V], but here [B.T, V]
+        # 'target' is expected word Ids, originally [B, T] but here [B.T]
         assert x.size(1) == self._size
         gtruth = target.view(-1)
         tdata = gtruth.data
+
         mask = torch.nonzero(tdata.eq(self.padding_idx)).squeeze()
-        log_likelihood = torch.gather(x.data, 1, tdata.unsqueeze(1))
+        tdata_2d = tdata.unsqueeze(1)
+
+        log_likelihood = torch.gather(x.data, 1, tdata_2d)
 
         smoothed_truth = self.one_hot.repeat(gtruth.size(0), 1)
-        smoothed_truth.scatter_(1, tdata.unsqueeze(1), self.confidence)
+        smoothed_truth.scatter_(1, tdata_2d, self.confidence)
+
         if mask.numel() > 0:
             log_likelihood.index_fill_(0, mask, 0)
             smoothed_truth.index_fill_(0, mask, 0)
-        loss = self.criterion(x, Variable(smoothed_truth, requires_grad=False))
+        loss = self.criterion(x, smoothed_truth)
+
         # loss is a scalar value (0-dim )
         # but data parallel expects tensors (for gathering along a dim), so doing this
         return loss.unsqueeze(0)
 
 
-class SimpleLossCompute:
-    "A simple loss compute and train function."
+class SimpleLossFunction:
+    """
+    A simple loss function that computes the loss using the criterion given
+    """
 
     def __init__(self, generator, criterion, opt):
         self.generator = generator
         self.criterion = criterion
         self.opt = opt
 
-    def __call__(self, x, y, norm, train_mode=True):
-        x = self.generator(x)
-        scores = x.contiguous().view(-1, x.size(-1))
-        truth = y.contiguous().view(-1)
+    def __call__(self, x_feats, y_seqs, norm, train_mode=True):
+
+        x_probs = self.generator(x_feats)  # B x T x D --> B x T x V
+
+        scores = x_probs.contiguous().view(-1, x_probs.size(-1))    # B x T x V --> B.T x V
+        truth = y_seqs.contiguous().view(-1)  # B x T --> B.T
         assert norm != 0
         loss = self.criterion(scores, truth).sum() / norm
         if train_mode:  # dont do this for validation set
@@ -371,10 +352,10 @@ class SimpleLossCompute:
         return loss.item() * norm
 
 
-class MultiGPULossFunction(SimpleLossCompute):
+class MultiGPULossFunction(SimpleLossFunction):
     """
     Loss function that uses Multiple GPUs
-    TODO: generate outputs in chunks
+    Currently uses DataParallel, but this is only the early version
     """
     def __init__(self, generator, criterion, devices, opt, out_device=None):
         super(MultiGPULossFunction, self).__init__(generator, criterion, opt)
@@ -392,6 +373,8 @@ class MultiGPULossFunction(SimpleLossCompute):
             # let the parent class deal with this
             return super(MultiGPULossFunction, self).__call__(outs, targets, norm, train_mode)
 
+        # FIXME: there seems to be a bug in this below code
+        # TODO: generate outputs in chunks
         batch_dim = 0
         assert outs.shape[batch_dim] == targets.shape[batch_dim]
         sct_outs = nn.parallel.scatter(outs, target_gpus=self.device_ids, dim=batch_dim)
@@ -413,145 +396,45 @@ class MultiGPULossFunction(SimpleLossCompute):
         return total_loss_val * norm
 
 
-@dataclass
-class TrainerState:
-    """A dataclass for storing any running stats the trainer needs to keep track
-     in a step based training"""
+class T2TTrainer(SteppedTrainer):
 
-    model: T2TModel
-    check_point: int
-    total_toks: int = 0
-    total_loss: float = 0.0
-    steps: int = 0
-    start: float = time.time()
+    def __init__(self, exp: TranslationExperiment,
+                 model: Optional[T2TModel] = None,
+                 model_factory: Optional[Callable] = None,
+                 optim: str = 'ADAM',
+                 **optim_args):
+        super().__init__(exp, model, model_factory, optim, **optim_args)
 
-    def reset(self):
-        score = self.total_loss / self.total_toks if self.total_toks != 0 else float('inf')
-        self.total_toks = 0
-        self.total_loss = 0.0
-        self.steps = 0
-        self.start = time.time()
-        return score
-
-    def train_mode(self, mode: bool):
-        torch.set_grad_enabled(mode)
-        self.model.train(mode)
-
-    def step(self, toks, loss):
-        self.steps += 1
-        self.total_toks += toks
-        self.total_loss += loss
-        return self.progress_bar_msg(), self.is_check_point()
-
-    def progress_bar_msg(self):
-        elapsed = time.time() - self.start
-        return f'Loss:{self.total_loss / self.total_toks:.4f},' \
-            f' {int(self.total_toks / elapsed)}toks/s'
-
-    def is_check_point(self):
-        return self.steps == self.check_point
-
-
-class T2TTrainer:
-
-    def __init__(self, exp: Experiment = None, model: T2TModel = None, optim='ADAM', **optim_args):
-        self.start_step = 0
-        self.exp = exp
-        if model:
-            self.model = model
-        else:
-            args = exp.model_args
-            assert args
-            log.info(f"Creating model with args: {args}")
-            self.model, args = T2TModel.make_model(**args)
-            exp.model_args = args
-
-            last_model, last_step = self.exp.get_last_saved_model()
-            if last_model:
-                self.start_step = last_step + 1
-                log.info(f"Resuming training from step:{self.start_step}, model={last_model}")
-                self.model.load_state_dict(torch.load(last_model))
-
-        # making optimizer
-        optim_args['lr'] = optim_args.get('lr', 0.1)
-        optim_args['betas'] = optim_args.get('betas', [0.9, 0.98])
-        optim_args['eps'] = optim_args.get('eps', 1e-9)
-
-        warm_up_steps = optim_args.pop('warmup_steps', 4000)
-        smoothing = optim_args.pop('label_smoothing', 0.1)
-        noam_factor = 2
-        generator = self.model.generator
-        criterion = LabelSmoothing(size=generator.vocab,padding_idx=Batch.pad_value,
-                                   smoothing=smoothing)
-
-        self.model = self.model.to(device)
         device_ids = list(range(torch.cuda.device_count()))
         log.info(f"Going to use {torch.cuda.device_count()} GPUs ; ids:{device_ids}")
-        if len(device_ids) > 1:
-            log.warning("Multi GPU mode <<this feature is not tested>>")
-            # Multi GPU mode
-            self.model = nn.DataParallel(self.model, dim=0, device_ids=device_ids)
 
-        inner_opt = Optims[optim].new(self.model.parameters(), **optim_args)
-        self.opt = NoamOpt(generator.d_model, noam_factor, warm_up_steps, inner_opt,
-                           step=self.start_step)
+        if len(device_ids) > 1:   # Multi GPU mode
+            log.warning("Multi GPU mode <<this feature is not well tested>>")
+            self.model = nn.DataParallel(self.model, dim=0, device_ids=device_ids)
+        generator = self.model.generator
+
+        criterion = LabelSmoothing(vocab_size=generator.vocab,
+                                   padding_idx=Batch.pad_value,
+                                   smoothing=self._smoothing)
+
         self.loss_func = MultiGPULossFunction(generator, criterion, devices=device_ids,
                                               opt=self.opt)
 
-        optim_args['warmup_steps'] = warm_up_steps
-        optim_args['label_smoothing'] = smoothing
-
-        self.exp.optim_args = optim, optim_args
-        if not self.exp.read_only:
-            self.exp.persist_state()
-
-        if exp.samples_file.exists():
-            with IO.reader(exp.samples_file) as f:
-                self.samples = [line.strip().split('\t') for line in f]
-                log.info(f"Found {len(self.samples)} sample records")
-
-            from rtg.module.decoder import Decoder
-            self.decoder = Decoder.new(self.exp, self.model)
-        else:
-            self.samples = None
-
-    def show_samples(self, beam_size=3, num_hyp=3, max_len=30):
-        """
-        Logs the output of model (at this stage in training) to a set of samples
-        :param beam_size: beam size
-        :param num_hyp: number of hypothesis to output
-        :param max_len: maximum length to decode
-        :return:
-        """
-        if not self.samples:
-            log.info("No samples are chosen by the experiment")
-            return
-        for i, (line, ref) in enumerate(self.samples):
-            result = self.decoder.decode_sentence(line, beam_size=beam_size, num_hyp=num_hyp,
-                                                  max_len=max_len)
-            outs = [f"hyp{j}: {score:.3f} :: {out}" for j, (score, out) in enumerate(result)]
-            outs = '\n'.join(outs)
-            log.info(f"==={i}===\nSRC:{line}\nREF:{ref}\n{outs}")
-
-    def run_epoch(self, data_iter: Iterator[Batch], num_batches=None, train_mode=True):
+    def run_valid_epoch(self, data_iter: BatchIterable):
         """
         :param data_iter: data iterator
-        :param num_batches: number of batches in the iterator, None if dont know
-        :param train_mode: is it a training or validation mode
-        :return:
+        :return: loss value
         """
         start = time.time()
         total_tokens = 0
         total_loss = 0.0
-        torch.set_grad_enabled(train_mode)
-        self.model.train(train_mode)
-        with tqdm(data_iter, total=num_batches, unit='batch') as data_bar:
+        with tqdm(data_iter, total=data_iter.num_batches, unit='batch') as data_bar:
             for i, batch in enumerate(data_bar):
                 batch = batch.to(device)
                 num_toks = batch.y_toks
                 out = self.model(batch.x_seqs, batch.y_seqs, batch.x_mask, batch.y_mask)
                 # skip the BOS token in  batch.y_seqs
-                loss = self.loss_func(out, batch.y_seqs_nobos, num_toks, train_mode)
+                loss = self.loss_func(out, batch.y_seqs_nobos, num_toks, False)
                 total_loss += loss
                 total_tokens += num_toks
                 elapsed = time.time() - start
@@ -582,19 +465,6 @@ class T2TTrainer:
                 return i, loss
         return max_iters - 1, loss
 
-    def make_check_point(self, val_data, train_loss, keep_models):
-        step_num = self.opt.curr_step
-        val_loss = self.run_epoch(val_data, num_batches=val_data.num_batches,
-                                  train_mode=False)
-        log.info(f"Checkpoint at step {step_num}. Training Loss {train_loss},"
-                 f" Validation Loss:{val_loss}")
-        self.show_samples()
-
-        # Unwrap model state from DataParallel and persist
-        state = (self.model.module if isinstance(self.model, nn.DataParallel) else self.model)
-        self.exp.store_model(step_num, state.state_dict(), train_score=train_loss,
-                             val_score=val_loss, keep=keep_models)
-
     def train(self, steps: int, check_point: int, batch_size: int,
               check_pt_callback: Optional[Callable]=None, **args):
         log.info(f'Going to train for {steps} epochs; batch_size={batch_size}; '
@@ -615,6 +485,7 @@ class T2TTrainer:
             for batch in data_bar:
                 batch = batch.to(device)
                 num_toks = batch.y_toks
+                self.model.zero_grad()
                 out = self.model(batch.x_seqs, batch.y_seqs, batch.x_mask, batch.y_mask)
                 # skip the BOS token in  batch.y_seqs
                 loss = self.loss_func(out, batch.y_seqs_nobos, num_toks, True)
@@ -642,6 +513,10 @@ def __test_model__():
     vocab_size = 14
     model, _ = T2TModel.make_model(vocab_size, vocab_size,
                                    n_layers=4, hid_size=128, ff_size=256, n_heads=4)
+    if False:
+        for n, p in model.named_parameters():
+            print(n, p.shape)
+
     from rtg.module.decoder import Decoder
 
     exp = DummyExperiment("work", config={'model_type': 't2t'}, read_only=True,
