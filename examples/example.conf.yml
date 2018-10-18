@@ -15,7 +15,8 @@ prep:
   mono_tgt: []
   # make human readable split files
   text_pieces: false
+  shared_vocab: true
 
-# vocabulary
-pieces: unigram
-vocab_size: 8000
+  # vocabulary
+  pieces: unigram
+  max_types: 8000

@@ -1,3 +1,6 @@
+
+# FIXME: this is duplicate of binmt.model.seq2seq , so remove this
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -104,7 +107,7 @@ class AttnRNNDecoder(nn.Module):
 
         # Calculate attention from current RNN state and all encoder outputs;
         # apply to encoder outputs to get weighted average
-        attn_weights = self.attn(rnn_output, encoder_outputs)
+        attn_weights = self.attn(rnn_output, encoder_outputs)        # B x 1 x S
         context = attn_weights.bmm(encoder_outputs.transpose(0, 1))  # B x S=1 x N
 
         # Attentional vector using the RNN hidden state and context vector
@@ -342,7 +345,7 @@ def __test_model__():
         log.info(f"====== REVERSE={reverse}; VOCAB={vocab_size}======")
         model, args = RNNModel.make_model(vocab_size, vocab_size, enc_layers=2, dec_layers=2, rnn_type='lstm')
         log.info(f"Model args:: {args}")
-        trainer = RNNTrainer(exp, model=model)
+        trainer = RNNTrainer(exp, model=model, lr=0.0001)
         decoder = Decoder.new(exp, model)
         val_data = list(BatchIterable(vocab_size, batch_size=30, n_batches=5, reverse=reverse))
         for ep in range(num_epoch):

@@ -1,16 +1,15 @@
 model_args:
-  dec_layers: 2
+  src_lang: FRA
+  tgt_lang: ENG
+  n_layers: 2
   emb_size: 300
-  enc_layers: 2
   hid_size: 300
-  rnn_type: lstm
   src_vocab: 8000
   tgt_vocab: 8000
-model_type: rnn
+model_type: seq2seq
 optim:
-  args:
-    lr: 0.001
   name: ADAM
+  warmup_steps: 2000
 prep:
   mono_src: []
   mono_tgt: []

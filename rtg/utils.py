@@ -7,6 +7,7 @@ import operator as op
 from enum import Enum
 import inspect
 import gzip
+from pathlib import Path
 
 # Size of each element in tensor
 tensor_size = {
@@ -71,11 +72,25 @@ class Optims(Enum):
         return list(Optims.__members__.keys())
 
 
+def line_count(path, ignore_blanks=False):
+    """count number of lines in file
+    :param path: file path
+    :param ignore_blanks: ignore blank lines
+    """
+    with IO.reader(path) as reader:
+        count = 0
+        for line in reader:
+            if ignore_blanks and not line.strip():
+                continue
+            count += 1
+        return count
+
+
 class IO:
     """File opener and automatic closer"""
 
     def __init__(self, path, mode='r', encoding=None, errors=None):
-        self.path = path
+        self.path = path if type(path) is Path else Path(path)
         self.mode = mode
         self.fd = None
         self.encoding = encoding if encoding else 'utf-8' if 't' in mode else None
@@ -83,13 +98,13 @@ class IO:
 
     def __enter__(self):
 
-        if self.path.endswith(".gz"):   # gzip mode
+        if self.path.name.endswith(".gz"):   # gzip mode
             self.fd = gzip.open(self.path, self.mode, encoding=self.encoding, errors=self.errors)
         else:
             if 'b' in self.mode:  # binary mode doesnt take encoding or errors
-                self.fd = open(self.path, self.mode)
+                self.fd = self.path.open(self.mode)
             else:
-                self.fd = open(self.path, self.mode, encoding=self.encoding, errors=self.errors)
+                self.fd = self.path.open(self.mode, encoding=self.encoding, errors=self.errors)
         return self.fd
 
     def __exit__(self, _type, value, traceback):
