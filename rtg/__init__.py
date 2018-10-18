@@ -42,6 +42,6 @@ def load_conf(inp):
 
 from rtg.dataprep import BatchIterable, Batch
 from rtg.exp import TranslationExperiment
-from rtg.module import rnn, t2t, decoder
+from rtg.module import t2t, decoder
 
 

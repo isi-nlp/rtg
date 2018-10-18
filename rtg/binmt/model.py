@@ -377,10 +377,9 @@ class SteppedSeq2SeqTrainer(SteppedTrainer):
 
     def __init__(self, exp: Experiment,
                  model: Optional[Seq2Seq] = None,
-                 model_factory: Optional[Callable] = None,
                  optim: str = 'ADAM',
                  **optim_args):
-        super().__init__(exp, model, model_factory, optim, **optim_args)
+        super().__init__(exp, model, model_factory=Seq2Seq.make_model, optim=optim, **optim_args)
         self.loss_func = SimpleLossFunction(optim=self.opt)
 
     def run_valid_epoch(self, data_iter: BatchIterable) -> float:

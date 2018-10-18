@@ -400,10 +400,9 @@ class T2TTrainer(SteppedTrainer):
 
     def __init__(self, exp: TranslationExperiment,
                  model: Optional[T2TModel] = None,
-                 model_factory: Optional[Callable] = None,
                  optim: str = 'ADAM',
                  **optim_args):
-        super().__init__(exp, model, model_factory, optim, **optim_args)
+        super().__init__(exp, model, model_factory=T2TModel.make_model, optim=optim, **optim_args)
 
         device_ids = list(range(torch.cuda.device_count()))
         log.info(f"Going to use {torch.cuda.device_count()} GPUs ; ids:{device_ids}")
