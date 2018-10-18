@@ -274,7 +274,7 @@ class Batch:
 class BatchIterable:
     # TODO: How to specify Type Hint for this as Iterable[Batch] ?
 
-    def __init__(self, data_path: str, batch_size: int,
+    def __init__(self, data_path: Union[str, Path], batch_size: int,
                  sort_dec=True, batch_first=True, shuffle=False,
                  copy_xy=False):
         """
@@ -313,3 +313,22 @@ class BatchIterable:
     @property
     def num_batches(self):
         return math.ceil(len(self.data) / self.batch_size)
+
+
+class LoopingIterable:
+    """
+    An iterable that keeps looping until a specified number of step count is reached
+    """
+
+    def __init__(self, iterable: BatchIterable, batches: int):
+        self.itr = iterable
+        self.total = batches
+        self.count = 0
+
+    def __iter__(self):
+        while self.count < self.total:
+            for batch in self.itr:
+                yield batch
+                self.count += 1
+                if self.count >= self.total:
+                    break

@@ -7,7 +7,8 @@ import torch
 import random
 
 from rtg import log, load_conf
-from rtg.dataprep import RawRecord, ParallelSeqRecord, MonoSeqRecord, Field
+from rtg.dataprep import (RawRecord, ParallelSeqRecord, MonoSeqRecord,
+                          Field, BatchIterable, LoopingIterable)
 from rtg.utils import IO, line_count
 from itertools import zip_longest
 
@@ -220,8 +221,8 @@ class TranslationExperiment:
         if 'model_args' not in self.config:
             self.config['model_args'] = {}
         args = self.config['model_args']
-        args['src_vocab'] = len(self.src_vocab)
-        args['tgt_vocab'] = len(self.tgt_vocab)
+        args['src_vocab'] = len(self.src_vocab) if self.src_vocab else 0
+        args['tgt_vocab'] = len(self.tgt_vocab) if self.tgt_vocab else 0
         self.config['updated_at'] = datetime.now().isoformat()
         self.store_config()
 
@@ -236,7 +237,9 @@ class TranslationExperiment:
         :return:
         """
         # TODO: improve this by skipping the model save if the model is not good enough to be saved
-        assert not self.read_only
+        if self.read_only:
+            log.warning("Ignoring the store request; experiment is readonly")
+            return
         name = f'model_{epoch:03d}_{train_score:.6f}_{val_score:.6f}.pkl'
         path = self.model_dir / name
         log.info(f"Saving epoch {epoch} to {path}")
@@ -345,3 +348,17 @@ class TranslationExperiment:
     @property
     def tgt_vocab(self):
         return self.shared_field if self.shared_field is not None else self.tgt_field
+
+    def get_train_data(self, batch_size: int, steps: int = 0, sort_dec=True, batch_first=True,
+                       shuffle=False, copy_xy=False):
+        train_data = BatchIterable(self.train_file, batch_size=batch_size, sort_dec=sort_dec,
+                                   batch_first=batch_first, shuffle=shuffle, copy_xy=copy_xy)
+        if steps > 0:
+            train_data = LoopingIterable(train_data, steps)
+        return train_data
+
+    def get_val_data(self, batch_size: int, sort_dec=True, batch_first=True,
+                     shuffle=False, copy_xy=False):
+        return BatchIterable(self.valid_file, batch_size=batch_size, sort_dec=sort_dec,
+                             batch_first=batch_first, shuffle=shuffle, copy_xy=copy_xy)
+

@@ -16,7 +16,7 @@ def parse_args():
     parser.add_argument("work_dir", help="Working directory", type=str)
     parser.add_argument("-rs", "--seed", help="Seed for random number generator. Set it to zero "
                                               "to not touch this part.", type=int, default=0)
-    parser.add_argument("-ne", "--num-epochs", help="Num epochs", type=int, default=30)
+    parser.add_argument("-st", "--steps", help="Total steps", type=int, default=12800)
     parser.add_argument("-re", "--resume", action='store_true', dest='resume_train',
                         help="Resume Training. adds --num-epochs more epochs to the most "
                              "recent model in work-dir", )

@@ -5,7 +5,8 @@ from rtg import log, device, my_tensor as tensor, debug_mode
 from rtg.dataprep import PAD_TOK, BOS_TOK, EOS_TOK, subsequent_mask
 from rtg.module.t2t import T2TModel
 from rtg.module.rnn import RNNModel
-from rtg.binmt.model import Seq2Seq, BiNMT
+from rtg.binmt.model import Seq2Seq
+from rtg.binmt.bicycle import BiNMT
 from typing import List, Tuple, Type, Dict, Any
 from rtg import TranslationExperiment as Experiment
 import traceback

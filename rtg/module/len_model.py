@@ -1,3 +1,5 @@
+# NOTE: this is obsolete ; TG wrote this when he was learning to implement and train networks
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
