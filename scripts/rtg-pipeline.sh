@@ -14,7 +14,7 @@
 OUT=
 CONF_PATH=
 BATCH_SIZE=56
-EPOCHS=30
+STEPS=128000
 KEEP=20
 BEAM_SIZE=4
 
@@ -22,7 +22,7 @@ usage() {
     echo "Usage: $0 -d <exp/dir>
         [-c conf.yml]
         [-b batch_size (default:$BATCH_SIZE)]
-        [-e epochs (default:$EPOCHS)]
+        [-s steps (default:$STEPS)]
         [-k keep_models (default:$KEEP)]
         [-m beam_size (default:$BEAM_SIZE)]" 1>&2;
     exit 1;
@@ -42,8 +42,8 @@ while getopts ":d:c:b:e:k:m:" o; do
         k)
             KEEP=${OPTARG}
             ;;
-        e)
-            EPOCHS=${OPTARG}
+        s)
+            STEPS=${OPTARG}
             ;;
         *)
             usage
@@ -98,7 +98,7 @@ fi
 ####### TRAIN ########
 if [[ ! -f "$OUT/_TRAINED" ]]; then
     log "Step : Starting trainer"
-    cmd="python -m rtg.train $EXP_DIR --num-epochs $EPOCHS --keep-models $KEEP --batch-size $BATCH_SIZE"
+    cmd="python -m rtg.train $EXP_DIR --steps $STEPS --keep-models $KEEP --batch-size $BATCH_SIZE"
     log "$cmd"
     if eval "$cmd"; then
         touch $OUT/_TRAINED
@@ -142,7 +142,7 @@ TEST=$DATA/1S-buildtest
 LDCDEV=$DATA/elisa-som-dev
 LDCTEST=$DATA/elisa-som-test
 
-test_dir=$(printf "$OUT/test_%03d_%03d" $EPOCHS $BEAM_SIZE)
+test_dir=$(printf "$OUT/test_%03d_%03d" $STEPS $BEAM_SIZE)
 mkdir -p $test_dir
 
 printf "$TEST test

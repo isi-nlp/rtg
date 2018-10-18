@@ -16,18 +16,18 @@ def parse_args():
     parser.add_argument("work_dir", help="Working directory", type=str)
     parser.add_argument("-rs", "--seed", help="Seed for random number generator. Set it to zero "
                                               "to not touch this part.", type=int, default=0)
-    parser.add_argument("-st", "--steps", help="Total steps", type=int, default=12800)
-    parser.add_argument("-re", "--resume", action='store_true', dest='resume_train',
-                        help="Resume Training. adds --num-epochs more epochs to the most "
-                             "recent model in work-dir", )
-    parser.add_argument("-bs", "--batch-size", help="Batch size", type=int, default=256)
+    parser.add_argument("-st", "--steps", help="Total steps", type=int, default=128000)
+    parser.add_argument("-cp", "--check-point", help="Store model after every --check-point steps",
+                        type=int, default=1000)
     parser.add_argument("-km", "--keep-models", type=int, default=10,
-                        help="Number of models to keep. Stores one model per epoch")
+                        help="Number of checkpoints to keep.")
+    parser.add_argument("-bs", "--batch-size", help="Mini batch size of training and validation",
+                        type=int, default=256)
     parser.add_argument("-op", "--optim", type=str, default='ADAM', choices=Optims.names(),
                         help="Name of optimizer")
     parser.add_argument("-oa", "--optim-args", type=str, default='lr=0.001',
                         help="Comma separated key1=val1,key2=val2 args to optimizer."
-                             " Example: lr=0.001,warmup_steps=1000,step_size=1024. "
+                             " Example: lr=0.01,warmup_steps=1000 "
                              "The arguments depends on the choice of --optim")
     return vars(parser.parse_args())
 
