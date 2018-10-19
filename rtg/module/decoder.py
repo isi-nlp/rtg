@@ -1,17 +1,18 @@
+import abc
+import time
+import traceback
+from collections import OrderedDict
+from typing import List, Tuple, Type, Dict, Any, Optional
+
 import torch
-import torch.nn.functional as F
 from torch import nn as nn
+
+from rtg import TranslationExperiment as Experiment
 from rtg import log, device, my_tensor as tensor, debug_mode
+from rtg.binmt.bicycle import BiNMT
+from rtg.binmt.model import Seq2Seq
 from rtg.dataprep import PAD_TOK, BOS_TOK, EOS_TOK, subsequent_mask
 from rtg.module.t2t import T2TModel
-from rtg.binmt.model import Seq2Seq
-from rtg.binmt.bicycle import BiNMT
-from typing import List, Tuple, Type, Dict, Any
-from rtg import TranslationExperiment as Experiment
-import traceback
-import time
-import abc
-from pathlib import Path
 
 Hypothesis = Tuple[float, List[int]]
 StrHypothesis = Tuple[float, str]
@@ -26,6 +27,7 @@ class GeneratorFactory(abc.ABC):
     @abc.abstractmethod
     def generate_next(self, past_ys):
         pass
+
 
 class Seq2SeqGenerator(GeneratorFactory):
 
@@ -92,7 +94,8 @@ class Decoder:
     eos_val = EOS_TOK[1]
     default_beam_size = 5
 
-    def __init__(self, model, gen_factory: Type[GeneratorFactory], exp, gen_args=None, debug=debug_mode):
+    def __init__(self, model, gen_factory: Type[GeneratorFactory], exp, gen_args=None,
+                 debug=debug_mode):
         self.model = model
         self.exp = exp
         self.gen_factory = gen_factory
@@ -102,18 +105,52 @@ class Decoder:
     def generator(self, x_seqs, x_lens):
         return self.gen_factory(self.model, x_seqs=x_seqs, x_lens=x_lens, **self.gen_args)
 
+    @staticmethod
+    def average_states(state_dict: OrderedDict, *state_dicts: OrderedDict):
+        all_states = [state_dict] + state_dicts
+        w = 1.0 / len(all_states)
+        if state_dicts:
+            key_set = set(state_dict.keys())
+            assert all(key_set == set(st.keys()) for st in state_dict)
+            for key in key_set:
+                state_dict[key].copy_(torch.sum(*[ w * st[key].data for st in all_states]))
+
+        return state_dict
+
+    @staticmethod
+    def maybe_ensemble_state(exp, model_paths: Optional[List[str]], ensemble: int=1):
+
+        if model_paths and len(model_paths) == 1:
+            log.info(f" Restoring state from {model_paths[0]}")
+            return torch.load(model_paths[0])
+        elif ensemble <= 1:
+            model_path, _ = exp.get_best_known_model()
+            log.info(f" Restoring state from {model_path}")
+            return torch.load(model_path)
+        else:
+            # Average
+            model_paths = exp.list_models()[:ensemble]
+            log.info(f"Averaging  {len(model_paths)} model states :: {model_paths}")
+            return Decoder.average_states(*model_paths)
+
     @classmethod
-    def new(cls, exp: Experiment, model=None, gen_args=None, model_path=None):
+    def new(cls, exp: Experiment, model=None, gen_args=None,
+            model_paths: Optional[List[str]]=None,
+            ensemble: int=1):
+        """
+        create a new decoder
+        :param exp: experiment
+        :param model: Optional pre initialized model
+        :param gen_args: any optional args needed for generator
+        :param model_paths: optional model paths
+        :param ensemble: number of models to use for ensembling (if model is not specified)
+        :return:
+        """
         if model is None:
             factory = factories[exp.model_type]
             model = factory(**exp.model_args)[0]
-            if model_path:
-                assert Path(model_path).is_file()
-            else:
-                model_path, _ = exp.get_best_known_model()
-
-            log.info(f" Restoring state from {model_path}")
-            model.load_state_dict(torch.load(model_path))
+            state = cls.maybe_ensemble_state(exp, model_paths=model_paths, ensemble=ensemble)
+            model.load_state_dict(state)
         elif isinstance(model, nn.DataParallel):
             model = model.module
 
@@ -336,8 +373,6 @@ class Decoder:
         return result
 
     def decode_interactive(self, **args):
-        import readline
-        import sys
         helps = [(':quit', 'Exit'),
                  (':help', 'Print this help message'),
                  (':beam_size <n>', 'Set beam size to n'),
