@@ -64,7 +64,8 @@ def main():
         assert exp.has_trained(),\
             f'Experiment dir {exp.work_dir} is not ready to decode. Please run "train" sub task'
 
-    decoder = Decoder.new(exp, gen_args=gen_args, model_paths=args.pop('model_path', None))
+    decoder = Decoder.new(exp, gen_args=gen_args, model_paths=args.pop('model_path', None),
+                          ensemble=args.pop('ensemble', 1))
     if args.pop('interactive'):
         if args['input'] != sys.stdin or args['output'] != sys.stdout:
             log.warning('--input and --output args are not applicable in --interactive mode')
@@ -77,7 +78,7 @@ def main():
                 decoder.decode_interactive(**args)
                 break  # exit loop if there is no request for reload
             except ReloadEvent as re:
-                decoder = Decoder.new(exp, gen_args=gen_args, model_path=re.model_path)
+                decoder = Decoder.new(exp, gen_args=gen_args, model_paths=re.model_paths)
                 args = re.state
                 # go back to loop and redo interactive shell
     else:

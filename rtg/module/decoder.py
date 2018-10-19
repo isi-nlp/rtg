@@ -82,9 +82,9 @@ class ReloadEvent(Exception):
     -- Its a kind of hack to pass event back to caller and redo interactive shell--
     """
 
-    def __init__(self, model_path, state: Dict[str, Any]):
+    def __init__(self, model_paths, state: Dict[str, Any]):
         super().__init__()
-        self.model_path = model_path
+        self.model_paths = model_paths
         self.state = state
 
 
@@ -107,31 +107,32 @@ class Decoder:
 
     @staticmethod
     def average_states(state_dict: OrderedDict, *state_dicts: OrderedDict):
-        all_states = [state_dict] + state_dicts
-        w = 1.0 / len(all_states)
+        w = 1.0 / (1 + len(state_dicts))
         if state_dicts:
             key_set = set(state_dict.keys())
-            assert all(key_set == set(st.keys()) for st in state_dict)
+            assert all(key_set == set(st.keys()) for st in state_dicts)
             for key in key_set:
-                state_dict[key].copy_(torch.sum(*[ w * st[key].data for st in all_states]))
-
+                state_dict[key] *= w
+                for st in state_dicts:
+                    state_dict[key] += w * st[key]
         return state_dict
 
     @staticmethod
     def maybe_ensemble_state(exp, model_paths: Optional[List[str]], ensemble: int=1):
-
         if model_paths and len(model_paths) == 1:
-            log.info(f" Restoring state from {model_paths[0]}")
+            log.info(f" Restoring state from requested model {model_paths[0]}")
             return torch.load(model_paths[0])
-        elif ensemble <= 1:
+        elif not len(model_paths) and ensemble <= 1:
             model_path, _ = exp.get_best_known_model()
-            log.info(f" Restoring state from {model_path}")
+            log.info(f" Restoring state from best known model: {model_path}")
             return torch.load(model_path)
         else:
-            # Average
-            model_paths = exp.list_models()[:ensemble]
-            log.info(f"Averaging  {len(model_paths)} model states :: {model_paths}")
-            return Decoder.average_states(*model_paths)
+            if not model_paths:
+                # Average
+                model_paths = exp.list_models()[:ensemble]
+            log.info(f"Averaging {len(model_paths)} model states :: {model_paths}")
+            states = [torch.load(mp) for mp in model_paths]
+            return Decoder.average_states(*states)
 
     @classmethod
     def new(cls, exp: Experiment, model=None, gen_args=None,
@@ -151,6 +152,7 @@ class Decoder:
             model = factory(**exp.model_args)[0]
             state = cls.maybe_ensemble_state(exp, model_paths=model_paths, ensemble=ensemble)
             model.load_state_dict(state)
+            log.info("Successfully restored the model state.")
         elif isinstance(model, nn.DataParallel):
             model = model.module
 
@@ -429,14 +431,17 @@ class Decoder:
                     for i, mod_path in enumerate(self.exp.list_models()):
                         print(f"\t{i}\t{mod_path}")
                 elif line.startswith(":model"):
-                    mod_idx = int(line.replace(":model", "").strip())
+                    mod_idxs = [int(x) for x in line.replace(":model", "").strip().split()]
                     models = self.exp.list_models()
-                    if 0 <= mod_idx < len(models):
-                        mod_path = models[mod_idx]
-                        print(f"\t Switching to model {mod_path}")
-                        raise ReloadEvent(str(mod_path), state=args)
-                    else:
-                        print(f"\tERROR: Index {mod_idx} is invalid")
+                    mod_paths = []
+                    for mod_idx in mod_idxs:
+                        if 0 <= mod_idx < len(models):
+                            mod_paths.append(str(models[mod_idx]))
+                        else:
+                            print(f"\tERROR: Index {mod_idx} is invalid")
+                    if mod_paths:
+                        print(f"\t Switching to models {mod_paths}")
+                        raise ReloadEvent(mod_paths, state=args)
                 else:
                     start = time.time()
                     res = self.decode_sentence(line, **args)
