@@ -132,8 +132,8 @@ class T2TModel(NMTModel):
 
     @staticmethod
     def make_model(src_vocab, tgt_vocab, n_layers=6, hid_size=512, ff_size=2048, n_heads=8,
-                   dropout=0.1):
-        "Helper: Construct a model from hyperparameters."
+                   dropout=0.1, tied_emb='three-way'):
+        "Helper: Construct a model from hyper parameters."
 
         # args for reconstruction of model
         args = {'src_vocab': src_vocab,
@@ -142,7 +142,8 @@ class T2TModel(NMTModel):
                 'hid_size': hid_size,
                 'ff_size': ff_size,
                 'n_heads': n_heads,
-                'dropout': dropout
+                'dropout': dropout,
+                'tied_emb': tied_emb
                 }
         c = copy.deepcopy
         attn = MultiHeadedAttention(n_heads, hid_size)
@@ -154,7 +155,15 @@ class T2TModel(NMTModel):
         src_emb = nn.Sequential(Embeddings(hid_size, src_vocab), PositionalEncoding(hid_size, dropout))
         tgt_emb = nn.Sequential(Embeddings(hid_size, tgt_vocab), PositionalEncoding(hid_size, dropout))
         generator = Generator(hid_size, tgt_vocab)
+
         model = T2TModel(encoder, decoder, src_emb, tgt_emb, generator)
+        if tied_emb:
+            assert src_vocab == tgt_vocab
+            log.info("Tying the embedding weights, two ways: (SrcIn == TgtIn")
+            model.src_embed[0].lut.weight = model.tgt_embed[0].lut.weight
+            if tied_emb == 'three-way':
+                log.info("Tying the embedding weights, three ways: (SrcIn == TgtIn == TgtOut")
+                model.generator.proj.weight = model.tgt_embed[0].lut.weight
 
         # This was important from their code.
         # Initialize parameters with Glorot / fan_avg.
