@@ -4,16 +4,16 @@
 # Created: 10/17/18
 import torch
 import torch.nn as nn
-from rtg import log, TranslationExperiment as Experiment, device, BatchIterable, Batch
+from rtg import log, TranslationExperiment as Experiment, device, BatchIterable
 from rtg.module import NMTModel
 from rtg.utils import Optims, IO
 
 
 from abc import abstractmethod
-from typing import Optional, Callable, Tuple, Iterator
+from typing import Optional, Callable
 from dataclasses import dataclass
-from torch.autograd import Variable
 import time
+from tensorboardX import SummaryWriter
 
 
 class NoamOpt:
@@ -152,6 +152,8 @@ class SteppedTrainer:
         optim_args['warmup_steps'] = warm_up_steps
         optim_args['label_smoothing'] = self._smoothing
 
+        self.tbd = SummaryWriter(log_dir=exp.work_dir)
+
         self.exp.optim_args = optim, optim_args
         if not self.exp.read_only:
             self.exp.persist_state()
@@ -176,10 +178,13 @@ class SteppedTrainer:
             log.info("No samples are chosen by the experiment")
             return
         for i, (line, ref) in enumerate(self.samples):
+            step_num = self.opt.curr_step
+
             result = self.decoder.decode_sentence(line, beam_size=beam_size, num_hyp=num_hyp,
                                                   max_len=max_len)
             outs = [f"hyp{j}: {score:.3f} :: {out}" for j, (score, out) in enumerate(result)]
             outs = '\n'.join(outs)
+            self.tbd.add_text(f'sample/{i}/', outs, step_num)
             log.info(f"==={i}===\nSRC:{line}\nREF:{ref}\n{outs}")
 
     def make_check_point(self, val_data: BatchIterable, train_loss: float, keep_models: int):
@@ -196,6 +201,8 @@ class SteppedTrainer:
                  f" Validation Loss:{val_loss:g}")
         self.show_samples()
 
+        self.tbd.add_scalar(f'loss/train', train_loss, step_num)
+        self.tbd.add_scalar(f'loss/valid', val_loss, step_num)
         # Unwrap model state from DataParallel and persist
         state = (self.model.module if isinstance(self.model, nn.DataParallel) else self.model)
         self.exp.store_model(step_num, state.state_dict(), train_score=train_loss,
