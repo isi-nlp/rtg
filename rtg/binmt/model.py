@@ -417,6 +417,9 @@ class SteppedSeq2SeqTrainer(SteppedTrainer):
                 outp_log_probs = self.model(batch)
 
                 loss = self.loss_func(outp_log_probs, batch, True)
+                self.tbd.add_scalars('training', {'step_loss': loss,
+                                                  'learn_rate': self.opt.curr_lr},
+                                     self.opt.curr_step)
                 bar_msg, is_check_pt = train_state.step(batch.y_toks, loss)
                 bar_msg += f', LR={self.opt.curr_lr:g}'
                 data_bar.set_postfix_str(bar_msg, refresh=False)
