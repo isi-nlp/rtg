@@ -1,5 +1,5 @@
 import os
-from typing import List, Iterator, Tuple, Union
+from typing import List, Iterator, Tuple, Union, Optional
 import torch
 from rtg import log
 from . import my_tensor as tensor, device
@@ -67,13 +67,15 @@ class Field(SentencePieceProcessor):
         return ''.join(tokens).replace('▁', ' ').strip()
 
     @staticmethod
-    def train(model_type: str, vocab_size: int, model_path: str, files: Iterator[str]):
+    def train(model_type: str, vocab_size: int, model_path: str, files: Iterator[str],
+              no_split_toks: Optional[List[str]]=None):
         """
         Train Sentence Piece Model
         :param model_type: sentence piece model type: {unigram, BPE, word, char}
         :param vocab_size: target vocabulary size
         :param model_path: where to store model
         :param files: input files
+        :param no_split_toks: Don't split these tokens
         :return:
         """
         model_prefix = model_path.replace('.model', '')
@@ -81,6 +83,8 @@ class Field(SentencePieceProcessor):
         arg = f"--input={','.join(files)} --vocab_size={vocab_size} --model_prefix={model_prefix}" \
               f" --model_type={model_type} --pad_id={PAD_TOK[1]} --bos_id={BOS_TOK[1]}" \
               f" --eos_id={EOS_TOK[1]} --unk_id={UNK_TOK[1]} --hard_vocab_limit=false"
+        if no_split_toks:
+            arg += f" --user_defined_symbols={','.join(no_split_toks)}"
         log.info(f"SPM: {arg}")
         SentencePieceTrainer.Train(arg)
         log.info("Training complete")

@@ -127,9 +127,8 @@ class TranslationExperiment:
                 recs = (rec for rec in recs if 0 < len(rec) <= max_len)
             yield from recs
 
-    def pre_process_parallel(self, args):
-        assert args['shared_vocab']
-        # TODO support individual vocab types
+    def pre_process_parallel(self, args: Dict[str, Any]):
+        assert args['shared_vocab']     # TODO support individual vocab types
         files = [args['train_src'], args['train_tgt']]
         for val in [args.get('mono_src'), args.get('mono_tgt')]:
             if val:
@@ -139,8 +138,10 @@ class TranslationExperiment:
         assert line_count(args['train_src']) == line_count(args['train_tgt'])
         assert line_count(args['valid_src']) == line_count(args['valid_tgt'])
 
+        no_split_toks = args.get('no_split_toks')
         self.shared_field = Field.train(args['pieces'], args['max_types'],
-                                        self._shared_field_file, files)
+                                        self._shared_field_file, files,
+                                        no_split_toks=no_split_toks)
 
         # create Piece IDs
         train_recs = self.read_raw_data(args['train_src'], args['train_tgt'], args['truncate'],
@@ -174,17 +175,21 @@ class TranslationExperiment:
         self.write_tsv(samples, self.samples_file)
 
     def pre_process_mono(self, args):
+        no_split_toks = args.get('no_split_toks')
         if args.get('shared_vocab'):
             files = [args['mono_train_src'], args['mono_train_tgt']]
             self.shared_field = Field.train(args['pieces'],
                                             args['max_types'],
-                                            self._shared_field_file, files)
+                                            self._shared_field_file, files,
+                                            no_split_toks=no_split_toks)
         else:
             self.src_field = Field.train(args['pieces'], args['max_src_types'],
-                                         self._src_field_file, [args['mono_train_src']])
+                                         self._src_field_file, [args['mono_train_src']],
+                                         no_split_toks=no_split_toks)
 
             self.tgt_field = Field.train(args['pieces'], args['max_tgt_types'],
-                                         self._tgt_field_file, [args['mono_train_tgt']])
+                                         self._tgt_field_file, [args['mono_train_tgt']],
+                                         no_split_toks=no_split_toks)
 
         def _prep_file(raw_file, out_file, do_truncate, max_len, field: Field):
             recs = self.read_mono_raw_data(raw_file, do_truncate, max_len, field.encode_as_ids)

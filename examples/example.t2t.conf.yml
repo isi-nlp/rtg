@@ -30,6 +30,9 @@ prep:
   shared_vocab: true
   max_types: 16000
   pieces: unigram
+  no_split_toks:
+    - <tok1>
+    - <tok2>
 
 src_lang: FRA
 tgt_lang: ENG
