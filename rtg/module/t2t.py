@@ -159,11 +159,13 @@ class T2TModel(NMTModel):
         model = T2TModel(encoder, decoder, src_emb, tgt_emb, generator)
         if tied_emb:
             assert src_vocab == tgt_vocab
-            log.info("Tying the embedding weights, two ways: (SrcIn == TgtIn")
-            model.src_embed[0].lut.weight = model.tgt_embed[0].lut.weight
             if tied_emb == 'three-way':
                 log.info("Tying the embedding weights, three ways: (SrcIn == TgtIn == TgtOut")
+                model.src_embed[0].lut.weight = model.tgt_embed[0].lut.weight
                 model.generator.proj.weight = model.tgt_embed[0].lut.weight
+            else:
+                log.info("Tying the embedding weights, two ways: (SrcIn == TgtIn")
+                model.src_embed[0].lut.weight = model.tgt_embed[0].lut.weight
 
         # This was important from their code.
         # Initialize parameters with Glorot / fan_avg.
@@ -497,6 +499,9 @@ class T2TTrainer(SteppedTrainer):
                 out = self.model(batch.x_seqs, batch.y_seqs, batch.x_mask, batch.y_mask)
                 # skip the BOS token in  batch.y_seqs
                 loss = self.loss_func(out, batch.y_seqs_nobos, num_toks, True)
+                self.tbd.add_scalars('training', {'step_loss': loss,
+                                                  'learn_rate': self.opt.curr_lr},
+                                     self.opt.curr_step)
 
                 progress_msg, is_check_pt = train_state.step(num_toks, loss)
                 progress_msg += f', LR={self.opt.curr_lr:g}'

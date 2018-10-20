@@ -162,6 +162,9 @@ class SteppedTrainer:
             with IO.reader(exp.samples_file) as f:
                 self.samples = [line.strip().split('\t') for line in f]
                 log.info(f"Found {len(self.samples)} sample records")
+                if self.start_step == 0:
+                    for samp_num, sample in enumerate(self.samples):
+                        self.tbd.add_text(f"sample/{samp_num}", sample, 0)
 
             from rtg.module.decoder import Decoder
             self.decoder = Decoder.new(self.exp, self.model)
@@ -179,12 +182,11 @@ class SteppedTrainer:
             return
         for i, (line, ref) in enumerate(self.samples):
             step_num = self.opt.curr_step
-
             result = self.decoder.decode_sentence(line, beam_size=beam_size, num_hyp=num_hyp,
                                                   max_len=max_len)
             outs = [f"hyp{j}: {score:.3f} :: {out}" for j, (score, out) in enumerate(result)]
+            self.tbd.add_text(f'sample/{i}', " || ".join(outs), step_num)
             outs = '\n'.join(outs)
-            self.tbd.add_text(f'sample/{i}/', outs, step_num)
             log.info(f"==={i}===\nSRC:{line}\nREF:{ref}\n{outs}")
 
     def make_check_point(self, val_data: BatchIterable, train_loss: float, keep_models: int):
@@ -201,8 +203,8 @@ class SteppedTrainer:
                  f" Validation Loss:{val_loss:g}")
         self.show_samples()
 
-        self.tbd.add_scalar(f'loss/train', train_loss, step_num)
-        self.tbd.add_scalar(f'loss/valid', val_loss, step_num)
+        self.tbd.add_scalars(f'losses', {'train_loss': train_loss,
+                                         'valid_loss': val_loss}, step_num)
         # Unwrap model state from DataParallel and persist
         state = (self.model.module if isinstance(self.model, nn.DataParallel) else self.model)
         self.exp.store_model(step_num, state.state_dict(), train_score=train_loss,
