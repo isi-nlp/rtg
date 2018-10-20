@@ -408,7 +408,7 @@ class SteppedSeq2SeqTrainer(SteppedTrainer):
 
     def train(self, steps: int, check_point: int, batch_size: int,
               check_pt_callback: Optional[Callable] = None, **args):
-        log.info(f'Going to train for {steps} epochs; batch_size={batch_size}; '
+        log.info(f'Going to train for {steps} steps; batch_size={batch_size}; '
                  f'check point size:{check_point}')
         keep_models = args.get('keep_models', 4)  # keep last _ models and delete the old
 

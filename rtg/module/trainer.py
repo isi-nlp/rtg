@@ -152,7 +152,7 @@ class SteppedTrainer:
         optim_args['warmup_steps'] = warm_up_steps
         optim_args['label_smoothing'] = self._smoothing
 
-        self.tbd = SummaryWriter(log_dir=exp.work_dir)
+        self.tbd = SummaryWriter(log_dir=str(exp.work_dir))
 
         self.exp.optim_args = optim, optim_args
         if not self.exp.read_only:
@@ -164,7 +164,7 @@ class SteppedTrainer:
                 log.info(f"Found {len(self.samples)} sample records")
                 if self.start_step == 0:
                     for samp_num, sample in enumerate(self.samples):
-                        self.tbd.add_text(f"sample/{samp_num}", sample, 0)
+                        self.tbd.add_text(f"sample/{samp_num}", " || ".join(sample), 0)
 
             from rtg.module.decoder import Decoder
             self.decoder = Decoder.new(self.exp, self.model)
