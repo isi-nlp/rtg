@@ -1,21 +1,16 @@
-import torch
-from torch import nn
-import time
-
-import torch.nn.functional as F
-
-from rtg import my_tensor as tensor, device, cpu_device
-from rtg.dataprep import PAD_TOK_IDX, BOS_TOK_IDX, Batch, BatchIterable
-from rtg import log, TranslationExperiment as Experiment
-from rtg.utils import Optims, IO
-from typing import Optional, Mapping, Callable
-from tqdm import tqdm
 import random
-import itertools
-import gc
-import math
-from rtg.module.trainer import NoamOpt, TrainerState, SteppedTrainer
+from typing import Optional, Callable
+
+import torch
+import torch.nn.functional as F
+from torch import nn
+from tqdm import tqdm
+
+from rtg import log, TranslationExperiment as Experiment
+from rtg import my_tensor as tensor, device
+from rtg.dataprep import PAD_TOK_IDX, BOS_TOK_IDX, Batch, BatchIterable
 from rtg.module import NMTModel
+from rtg.module.trainer import TrainerState, SteppedTrainer
 
 
 class Embedder(nn.Embedding):

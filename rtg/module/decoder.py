@@ -374,7 +374,10 @@ class Decoder:
             result.append((score, out))
         return result
 
+    # noinspection PyUnresolvedReferences
     def decode_interactive(self, **args):
+        import sys
+        import readline
         helps = [(':quit', 'Exit'),
                  (':help', 'Print this help message'),
                  (':beam_size <n>', 'Set beam size to n'),
