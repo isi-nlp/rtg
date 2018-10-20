@@ -301,7 +301,8 @@ class Seq2Seq(NMTModel):
 
     @staticmethod
     def make_model(src_lang, tgt_lang, src_vocab: int, tgt_vocab: int, emb_size: int = 300,
-                   hid_size: int = 300, n_layers: int = 2, attention=False, dropout=0.33):
+                   hid_size: int = 300, n_layers: int = 2, attention=False, dropout=0.33,
+                   tied_emb: Optional[str] = None):
         args = {
             'src_lang': src_lang,
             'tgt_lang': tgt_lang,
@@ -311,11 +312,24 @@ class Seq2Seq(NMTModel):
             'hid_size': hid_size,
             'n_layers': n_layers,
             'attention': attention,
-            'dropout': dropout
+            'dropout': dropout,
+            'tied_emb': tied_emb
         }
         src_embedder = Embedder(src_lang, src_vocab, emb_size)
         tgt_embedder = Embedder(tgt_lang, tgt_vocab, emb_size)
         tgt_generator = Generator(tgt_lang, vec_size=hid_size, vocab_size=tgt_vocab)
+        if tied_emb:
+            assert src_vocab == tgt_vocab
+            if tied_emb == 'three-way':
+                log.info('Tying embedding three way : SrcIn == TgtIn == TgtOut')
+                src_embedder.weight = tgt_embedder.weight
+                tgt_generator.proj.weight = tgt_embedder.weight
+            elif tied_emb == 'two-way':
+                log.info('Tying embedding two way : SrcIn == TgtIn')
+                src_embedder.weight = tgt_embedder.weight
+            else:
+                raise Exception('Invalid argument to tied_emb; Known: {three-way, two-way}')
+
         enc = SeqEncoder(src_embedder, hid_size, n_layers=n_layers, bidirectional=True,
                          dropout=dropout)
         if attention:

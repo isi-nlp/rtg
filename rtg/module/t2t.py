@@ -163,9 +163,11 @@ class T2TModel(NMTModel):
                 log.info("Tying the embedding weights, three ways: (SrcIn == TgtIn == TgtOut")
                 model.src_embed[0].lut.weight = model.tgt_embed[0].lut.weight
                 model.generator.proj.weight = model.tgt_embed[0].lut.weight
-            else:
+            elif tied_emb == 'two-way':
                 log.info("Tying the embedding weights, two ways: (SrcIn == TgtIn")
                 model.src_embed[0].lut.weight = model.tgt_embed[0].lut.weight
+            else:
+                raise Exception('Invalid argument to tied_emb; Known: {three-way, two-way}')
 
         # This was important from their code.
         # Initialize parameters with Glorot / fan_avg.
