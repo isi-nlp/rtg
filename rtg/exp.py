@@ -33,6 +33,7 @@ class TranslationExperiment:
         self._trained_flag = self.work_dir / '_TRAINED'
 
         self.train_file = self.data_dir / 'train.tsv.gz'
+        self.finetune_file = self.data_dir / 'finetune.tsv.gz'
         self.valid_file = self.data_dir / 'valid.tsv.gz'
         # a set of samples to watch the progress qualitatively
         self.samples_file = self.data_dir / 'samples.tsv.gz'
@@ -128,7 +129,7 @@ class TranslationExperiment:
             yield from recs
 
     def pre_process_parallel(self, args: Dict[str, Any]):
-        assert args['shared_vocab']     # TODO support individual vocab types
+        assert args['shared_vocab']  # TODO support individual vocab types
         files = [args['train_src'], args['train_tgt']]
         for val in [args.get('mono_src'), args.get('mono_tgt')]:
             if val:
@@ -163,6 +164,9 @@ class TranslationExperiment:
                                           args['src_len'], args['tgt_len'],
                                           tokenizer=self.tgt_vocab.tokenize)
             self.write_tsv(val_recs, str(self.valid_file).replace('.tsv', '.pieces.tsv'))
+
+        if args.get("finetune_src") or args.get("finetune_tgt"):
+            self.pre_process_finetune(args)
 
         # get samples from validation set
         n_samples = args.get('num_samples', 5)
@@ -208,8 +212,30 @@ class TranslationExperiment:
         _prep_file(args['mono_valid_tgt'], self.mono_valid_tgt, args['truncate'], args['tgt_len'],
                    self.tgt_vocab)
 
-    def pre_process(self, args=None):
+    def pre_process_finetune(self, args=None):
+        """
+        Pre process records for fine tuning
+        :param args:
+        :return:
+        """
+        log.info("Going to prep fine tune files")
+        args = args if args else self.config['prep']
+        assert 'finetune_src' in args
+        assert 'finetune_tgt' in args
+        # create Piece IDs
+        finetune_recs = self.read_raw_data(args['finetune_src'], args['finetune_tgt'],
+                                           args['truncate'], args['src_len'], args['tgt_len'],
+                                           tokenizer=self.src_vocab.encode_as_ids)
+        self.write_tsv(finetune_recs, self.finetune_file)
 
+        if args.get('text_files'):
+            # Redo again as plain text files
+            finetune_recs = self.read_raw_data(args['finetune_src'], args['finetune_tgt'],
+                                               args['truncate'], args['src_len'], args['tgt_len'],
+                                               tokenizer=self.src_vocab.tokenize)
+            self.write_tsv(finetune_recs, str(self.finetune_file).replace('.tsv', '.pieces.tsv'))
+
+    def pre_process(self, args=None):
         args = args if args else self.config['prep']
         if self._unsupervised:
             self.pre_process_mono(args)
@@ -355,8 +381,16 @@ class TranslationExperiment:
         return self.shared_field if self.shared_field is not None else self.tgt_field
 
     def get_train_data(self, batch_size: int, steps: int = 0, sort_dec=True, batch_first=True,
-                       shuffle=False, copy_xy=False):
-        train_data = BatchIterable(self.train_file, batch_size=batch_size, sort_dec=sort_dec,
+                       shuffle=False, copy_xy=False, fine_tune=False):
+        inp_file = self.train_file
+        if fine_tune:
+            if not self.finetune_file.exists():
+                # user may have added fine tune file later
+                self.pre_process_finetune()
+            log.info("Using Fine tuning corpus instead of training corpus")
+            inp_file = self.finetune_file
+
+        train_data = BatchIterable(inp_file, batch_size=batch_size, sort_dec=sort_dec,
                                    batch_first=batch_first, shuffle=shuffle, copy_xy=copy_xy)
         if steps > 0:
             train_data = LoopingIterable(train_data, steps)
@@ -366,4 +400,3 @@ class TranslationExperiment:
                      shuffle=False, copy_xy=False):
         return BatchIterable(self.valid_file, batch_size=batch_size, sort_dec=sort_dec,
                              batch_first=batch_first, shuffle=shuffle, copy_xy=copy_xy)
-

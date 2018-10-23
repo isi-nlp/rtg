@@ -478,9 +478,9 @@ class T2TTrainer(SteppedTrainer):
         return max_iters - 1, loss
 
     def train(self, steps: int, check_point: int, batch_size: int,
-              check_pt_callback: Optional[Callable]=None, **args):
+              check_pt_callback: Optional[Callable]=None, fine_tune=False, **args):
         log.info(f'Going to train for {steps} epochs; batch_size={batch_size}; '
-                 f'check point size:{check_point}')
+                 f'check point size:{check_point}; fine_tune={fine_tune}')
         keep_models = args.get('keep_models', 4)  # keep last _ models and delete the old
 
         if steps <= self.start_step:
@@ -488,7 +488,7 @@ class T2TTrainer(SteppedTrainer):
                             f'Please increase the steps or clear the existing models')
         train_data = self.exp.get_train_data(batch_size=batch_size,
                                              steps=steps - self.start_step,
-                                             shuffle=True, batch_first=True)
+                                             shuffle=True, batch_first=True, fine_tune=fine_tune)
         val_data = self.exp.get_val_data(batch_size, shuffle=False, batch_first=True)
 
         train_state = TrainerState(self.model, check_point=check_point)
