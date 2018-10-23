@@ -287,21 +287,21 @@ class TranslationExperiment:
 
     @staticmethod
     def _path_to_validn_score(path):
-        parts = str(path).replace('.pkl', '').split('_')
+        parts = str(path.name).replace('.pkl', '').split('_')
         valid_score = float(parts[-1])
         return valid_score
 
     @staticmethod
-    def _path_to_step_no(path):
-        parts = str(path).replace('.pkl', '').split('_')
-        step_no = int(parts[1])
-        return step_no
-
-    @staticmethod
     def _path_to_total_score(path):
-        parts = str(path).replace('.pkl', '').split('_')
+        parts = str(path.name).replace('.pkl', '').split('_')
         tot_score = float(parts[-2]) + float(parts[-1])
         return tot_score
+
+    @staticmethod
+    def _path_to_step_no(path):
+        parts = str(path.name).replace('.pkl', '').split('_')
+        step_no = int(parts[-3])
+        return step_no
 
     def list_models(self, sort: str = 'step', desc: bool = True) -> List[Path]:
         """
