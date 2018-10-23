@@ -292,50 +292,60 @@ class TranslationExperiment:
         return valid_score
 
     @staticmethod
+    def _path_to_step_no(path):
+        parts = str(path).replace('.pkl', '').split('_')
+        step_no = int(parts[1])
+        return step_no
+
+    @staticmethod
     def _path_to_total_score(path):
         parts = str(path).replace('.pkl', '').split('_')
         tot_score = float(parts[-2]) + float(parts[-1])
         return tot_score
 
-    def list_models(self, sort: str = 'mtime', desc: bool = True) -> List[Path]:
+    def list_models(self, sort: str = 'step', desc: bool = True) -> List[Path]:
         """
         Lists models in descending order of modification time
         :param sort: how to sort models ?
-          - default is `mtime`, which uses modification time to sort
           - valid_score: sort based on score on validation set
           - total_score: sort based on validation_score + training_score
+          - mtime: sort by modification time
+          - step (default): sort by step number
         :param desc: True to sort in reverse (default); False to sort in ascending
         :return: list of model paths
         """
         paths = self.model_dir.glob('model_*.pkl')
-        if sort == 'valid_score':
-            paths = sorted(paths, key=self._path_to_validn_score, reverse=desc)
-        elif sort == 'total_score':
-            paths = sorted(paths, key=self._path_to_total_score, reverse=desc)
-        elif not sort or sort == 'mtime':
-            # default score
-            paths = sorted(paths, key=lambda p: p.stat().st_mtime, reverse=desc)
+        sorters = {
+            'valid_score': self._path_to_validn_score,
+            'total_score': self._path_to_total_score,
+            'mtime': lambda p: p.stat().st_mtime,
+            'step': self._path_to_step_no
+        }
+        if sort not in sorters:
+            raise Exception(f'Sort {sort} not supported. valid options: {sorters.keys()}')
+        return sorted(paths, key=sorters[sort], reverse=desc)
+
+    def _get_first_model(self, sort: str, desc: bool) -> Tuple[Optional[Path], int]:
+        """
+        Gets the first model that matches the given sort criteria
+        :param sort: sort mechanism
+        :param desc: True for descending, False for ascending
+        :return: Tuple[Optional[Path], step_num:int]
+        """
+        models = self.list_models(sort=sort, desc=desc)
+        if models:
+            _, step, train_score, valid_score = models[0].name.replace('.pkl', '').split('_')
+            return models[0], int(step)
         else:
-            raise Exception(f'Sort {sort} not supported. sort=None for default sort')
-        return paths
+            return None, -1
 
     def get_best_known_model(self) -> Tuple[Optional[Path], int]:
         """Gets best Known model (best on lowest scores on training and validation sets)
         """
-        models = self.list_models(sort='total_score', desc=False)
-        if models:
-            _, epoch, train_score, valid_score = models[0].name.replace('.pkl', '').split('_')
-            return models[0], int(epoch)
-        else:
-            return None, -1
+        return self._get_first_model(sort='total_score', desc=False)
 
     def get_last_saved_model(self) -> Tuple[Optional[Path], int]:
-        models = self.list_models(sort='mtime', desc=True)
-        if models:
-            _, epoch, train_score, valid_score = models[0].name.replace('.pkl', '').split('_')
-            return models[0], int(epoch)
-        else:
-            return None, -1
+        return self._get_first_model(sort='step', desc=True)
 
     @property
     def model_args(self) -> Optional[Dict]:
