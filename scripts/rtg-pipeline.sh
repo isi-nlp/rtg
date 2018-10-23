@@ -3,7 +3,7 @@
 #$ -P material
 #$ -cwd
 #$ -pe mt 6
-#$ -l h_vmem=8G,h_rt=24:00:00,gpu=1
+#$ -l h_vmem=12G,h_rt=24:00:00,gpu=1
 #$ -l 'h=!vista04'
 
 # Pipeline script for MT
@@ -15,8 +15,11 @@ OUT=
 CONF_PATH=
 BATCH_SIZE=56
 STEPS=128000
-KEEP=20
+KEEP=10
 BEAM_SIZE=4
+CHECKPOINT=2000
+ENSEMBLE=1
+FINE_TUNE=
 
 usage() {
     echo "Usage: $0 -d <exp/dir>
@@ -24,11 +27,13 @@ usage() {
         [-b batch_size (default:$BATCH_SIZE)]
         [-s steps (default:$STEPS)]
         [-k keep_models (default:$KEEP)]
+        [-n ensemble_models (default:$ENSEMBLE)]
+        [-f (flag to enable fine tuning corpus for training)]
         [-m beam_size (default:$BEAM_SIZE)]" 1>&2;
     exit 1;
 }
 
-while getopts ":d:c:b:e:k:m:" o; do
+while getopts ":fd:c:b:s:k:m:n:" o; do
     case "${o}" in
         d)
             OUT=${OPTARG}
@@ -45,6 +50,12 @@ while getopts ":d:c:b:e:k:m:" o; do
         s)
             STEPS=${OPTARG}
             ;;
+        n)
+            ENSEMBLE=${OPTARG}
+            ;;
+        f)
+            FINE_TUNE="yes"
+            ;;
         *)
             usage
             ;;
@@ -58,8 +69,8 @@ EXP_DIR=$OUT
 
 # These needs to be changed
 source ~tg/.bashrc
-source activate torch
-export PYTHONPATH=.:~tg/work/libs2/rtg
+source activate torch-3.7
+export PYTHONPATH=.:~tg/work/libs2/rtg-master
 
 export LD_LIBRARY_PATH=~jonmay/cuda-9.0/lib64:~jonmay/cuda/lib64:/usr/local/lib
 NUM_GPUS=$(echo $CUDA_VISIBLE_DEVICES | tr ',' '\n' | wc -l)
@@ -98,7 +109,8 @@ fi
 ####### TRAIN ########
 if [[ ! -f "$OUT/_TRAINED" ]]; then
     log "Step : Starting trainer"
-    cmd="python -m rtg.train $EXP_DIR --steps $STEPS --keep-models $KEEP --batch-size $BATCH_SIZE"
+    cmd="python -m rtg.train $EXP_DIR -oa 'lr=0.1,warmup_steps=8000' --check-point $CHECKPOINT --steps $STEPS --keep-models $KEEP --batch-size $BATCH_SIZE"
+    [[ $FINE_TUNE ]] && cmd="$cmd --fine-tune"
     log "$cmd"
     if eval "$cmd"; then
         touch $OUT/_TRAINED
@@ -114,7 +126,7 @@ function decode {
     # accepts two args: <src-file> <out-file>
     FROM=$1
     TO=$2
-    cmd="python -m rtg.decode $EXP_DIR --beam-size $BEAM_SIZE --input $FROM --output $TO"
+    cmd="python -m rtg.decode $EXP_DIR --beam-size $BEAM_SIZE --ensemble $ENSEMBLE --input $FROM --output $TO"
     log "$cmd"
     eval "$cmd"
 }
@@ -142,7 +154,7 @@ TEST=$DATA/1S-buildtest
 LDCDEV=$DATA/elisa-som-dev
 LDCTEST=$DATA/elisa-som-test
 
-test_dir=$(printf "$OUT/test_%03d_%03d" $STEPS $BEAM_SIZE)
+test_dir=$( printf "$OUT/test_step%03d_beam%03d_ens%03d" $STEPS $BEAM_SIZE $ENSEMBLE )
 mkdir -p $test_dir
 
 printf "$TEST test
