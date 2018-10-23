@@ -383,9 +383,11 @@ class TranslationExperiment:
     def get_train_data(self, batch_size: int, steps: int = 0, sort_dec=True, batch_first=True,
                        shuffle=False, copy_xy=False, fine_tune=False):
         inp_file = self.train_file
-        if fine_tune and not self.finetune_file.exists():
-            # user may have added fine tune file later
-            self.pre_process_finetune()
+        if fine_tune:
+            if not self.finetune_file.exists():
+                # user may have added fine tune file later
+                self.pre_process_finetune()
+            log.info("Using Fine tuning corpus instead of training corpus")
             inp_file = self.finetune_file
 
         train_data = BatchIterable(inp_file, batch_size=batch_size, sort_dec=sort_dec,
