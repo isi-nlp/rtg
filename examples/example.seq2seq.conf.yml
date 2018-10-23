@@ -24,6 +24,8 @@ prep:
   shared_vocab: true
   max_types: 8000
   pieces: unigram
+  finetune_src: data/finetune.src
+  finetune_tgt: data/finetune.tgt
 src_lang: FRA
 tgt_lang: ENG
 updated_at: '2018-07-25T15:50:52.578881'

@@ -29,6 +29,9 @@ def parse_args():
                         help="Comma separated key1=val1,key2=val2 args to optimizer."
                              " Example: lr=0.01,warmup_steps=1000 "
                              "The arguments depends on the choice of --optim")
+
+    parser.add_argument("-ft", "--fine-tune", action='store_true',
+                        help="Use fine tune corpus instead of train corpus.")
     return vars(parser.parse_args())
 
 

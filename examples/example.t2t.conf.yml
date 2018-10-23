@@ -33,6 +33,8 @@ prep:
   no_split_toks:
     - <tok1>
     - <tok2>
+  finetune_src: data/finetune.src
+  finetune_tgt: data/finetune.tgt
 
 src_lang: FRA
 tgt_lang: ENG
