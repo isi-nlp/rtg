@@ -5,12 +5,13 @@ from pathlib import Path
 from typing import Optional, Dict, Iterator, List, Tuple, Union, Any
 import torch
 import random
-
+import numpy as np
 from rtg import log, load_conf
 from rtg.dataprep import (RawRecord, ParallelSeqRecord, MonoSeqRecord,
                           Field, BatchIterable, LoopingIterable)
 from rtg.utils import IO, line_count
 from itertools import zip_longest
+from collections import defaultdict
 
 
 class TranslationExperiment:
@@ -37,6 +38,10 @@ class TranslationExperiment:
         self.valid_file = self.data_dir / 'valid.tsv.gz'
         # a set of samples to watch the progress qualitatively
         self.samples_file = self.data_dir / 'samples.tsv.gz'
+
+        self.emb_src_file = self.data_dir / 'emb_src.pkl'
+        self.emb_tgt_file = self.data_dir / 'emb_tgt.pkl'
+        self.emb_shared_file = self.data_dir / 'emb_shared.pkl'
 
         if not read_only:
             for _dir in [self.model_dir, self.data_dir]:
@@ -235,13 +240,79 @@ class TranslationExperiment:
                                                tokenizer=self.src_vocab.tokenize)
             self.write_tsv(finetune_recs, str(self.finetune_file).replace('.tsv', '.pieces.tsv'))
 
+    def maybe_pre_process_embeds(self):
+        args = self.config['prep']
+        mapping = {
+            'emb_src': self.emb_src_file,
+            'emb_tgt': self.emb_tgt_file,
+            'emb_shared': self.emb_shared_file
+        }
+
+        if not any(x in args for x in mapping):
+            log.info("No pre trained embeddings are found in config; skipping it")
+            return
+
+        def _read_vocab(path: Path) -> List[str]:
+            with path.open(encoding='utf-8') as f:
+                return [line.strip()[0] for line in f]
+
+        def _map_and_store(inp: Path, vocab_file: Path, out: Path):
+            id_to_str = _read_vocab(vocab_file)
+            str_to_id = {tok: idx for idx, tok in enumerate(id_to_str)}
+            assert len(id_to_str) == len(id_to_str)
+            vocab_size = len(id_to_str)
+
+            matched_set, ignored_set, pre_trained_set = set(), set(), set()
+            with inp.open(encoding='utf-8') as in_fh:
+                header = in_fh.readline()
+                parts = header.strip().split()
+                if len(parts) == 2:
+                    tot, dim = int(parts[0]), int(parts[1])
+                    matrix = np.zeros(shape=(vocab_size, dim))
+                else:
+                    assert len(parts) > 2
+                    word, vec = parts[0], [float(x) for x in parts[1:]]
+                    dim = len(vec)
+                    matrix = np.zeros(shape=(vocab_size, dim))
+                    pre_trained_set.add(word)
+                    if word in str_to_id:
+                        matrix[str_to_id[word]] = vec
+                        matched_set.add(word)
+                    else:
+                        ignored_set.add(word)
+
+                for line in in_fh:
+                    parts = line.strip().split()
+                    word = parts[0]
+                    pre_trained_set.add(word)
+                    if word in str_to_id:
+                        matrix[str_to_id[word]] = [float(x) for x in parts[1:]]
+                        matched_set.add(word)
+                    else:
+                        ignored_set.add(word)
+
+                vocab_set = set(id_to_str)
+
+                return matrix
+
+        for key, (vocab, outp) in mapping.items():
+            if key in args:
+                inp = Path(args[key])
+                field_name = key.split('_')[-1]
+                voc_file = self.data_dir / f'sentpiece.{field_name}.vocab'
+                assert inp.exists()
+                assert voc_file.exists()
+
+                log.info(f"Processing {key}: {inp}")
+                _map_and_store(inp, voc_file, outp)
+
     def pre_process(self, args=None):
         args = args if args else self.config['prep']
         if self._unsupervised:
             self.pre_process_mono(args)
         else:
             self.pre_process_parallel(args)
-
+        self.maybe_pre_process_embeds()
         # update state on disk
         self.persist_state()
         self._prepared_flag.touch()
@@ -389,6 +460,10 @@ class TranslationExperiment:
     @property
     def tgt_vocab(self):
         return self.shared_field if self.shared_field is not None else self.tgt_field
+
+    @property
+    def shared_vocab(self):
+        return self.shared_field
 
     def get_train_data(self, batch_size: int, steps: int = 0, sort_dec=True, batch_first=True,
                        shuffle=False, copy_xy=False, fine_tune=False):

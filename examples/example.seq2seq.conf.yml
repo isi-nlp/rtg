@@ -26,6 +26,8 @@ prep:
   pieces: unigram
   finetune_src: data/finetune.src
   finetune_tgt: data/finetune.tgt
+  pre_emb_src: data/vectors.src.txt
+  pre_emb_tgt: data/vectors.tgt.txt
 src_lang: FRA
 tgt_lang: ENG
 updated_at: '2018-07-25T15:50:52.578881'
