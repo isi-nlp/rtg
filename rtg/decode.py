@@ -18,9 +18,11 @@ def parse_args():
                              " from the experiment directory will be used."
                              " If multiple paths are specified, then an ensembling is performed by"
                              " averaging the param weights")
-    parser.add_argument("-if", '--input', type=argparse.FileType('r'), default=sys.stdin,
+    parser.add_argument("-if", '--input', default=sys.stdin,
+                        type=argparse.FileType('r', encoding='utf-8', errors='ignore'),
                         help='Input file path. default is STDIN')
-    parser.add_argument("-of", '--output', type=argparse.FileType('w'), default=sys.stdout,
+    parser.add_argument("-of", '--output', default=sys.stdout,
+                        type=argparse.FileType('w', encoding='utf-8', errors='ignore'),
                         help='Output File path. default is STDOUT')
     parser.add_argument("-bs", '--beam-size', type=int, default=5,
                         help='Beam size. beam_size=1 is greedy, '
