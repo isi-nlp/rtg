@@ -409,19 +409,6 @@ class SteppedSeq2SeqTrainer(SteppedTrainer):
         super().__init__(exp, model, model_factory=Seq2Seq.make_model, optim=optim, **optim_args)
         self.loss_func = SimpleLossFunction(optim=self.opt)
 
-    def init_embeddings(self):
-        src_emb_mat = self.exp.pre_trained_src_emb
-        if src_emb_mat is None:
-            log.info("NOT initializing pre-trained source embedding")
-        else:
-            self.model.init_src_embedding(src_emb_mat)
-
-        tgt_emb_mat = self.exp.pre_trained_tgt_emb
-        if tgt_emb_mat is None:
-            log.info("NOT Initializing pre-trained target embeddings")
-        else:
-            self.model.init_tgt_embedding(src_emb_mat)
-
     def run_valid_epoch(self, data_iter: BatchIterable) -> float:
         state = TrainerState(self.model, -1)
         with tqdm(data_iter, total=data_iter.num_batches, unit='batch') as data_bar:

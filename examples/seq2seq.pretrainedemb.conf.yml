@@ -12,7 +12,6 @@ optim:
   name: ADAM
   warmup_steps: 2000
 trainer_args:
-  steps: 128000
   init_emb: true
 
 prep:

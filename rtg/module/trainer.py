@@ -172,13 +172,20 @@ class SteppedTrainer:
         do_init_embedding = (self.start_step == 0
                              and self.exp.config.get('trainer_args', {}).get('init_emb'))
         if do_init_embedding:
-            # either both are present or both are absent
-            assert self.exp.emb_src_file.exists() == self.exp.emb_tgt_file.exists()
             self.init_embeddings()
 
-    @abstractmethod
     def init_embeddings(self):
-        pass
+        src_emb_mat = self.exp.pre_trained_src_emb
+        if src_emb_mat is None:
+            log.info("NOT initializing pre-trained source embedding")
+        else:
+            self.model.init_src_embedding(src_emb_mat)
+
+        tgt_emb_mat = self.exp.pre_trained_tgt_emb
+        if tgt_emb_mat is None:
+            log.info("NOT Initializing pre-trained target embeddings")
+        else:
+            self.model.init_tgt_embedding(tgt_emb_mat)
 
     def show_samples(self, beam_size=3, num_hyp=3, max_len=30):
         """
