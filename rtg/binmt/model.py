@@ -260,17 +260,17 @@ class Seq2Seq(NMTModel):
     def init_src_embedding(self, weights):
         log.info("Initializing source embeddings")
         assert weights.shape == self.enc.emb.weight.shape
-        self.enc.emb.weight.data.copy(weights.data)
+        self.enc.emb.weight.data.copy_(weights.data)
 
     def init_tgt_embedding(self, weights, input=True, output=True):
         if input:
             log.info("Initializing target input embeddings")
             assert weights.shape == self.dec.prev_emb.weight.shape
-            self.dec.prev_emb.weight.data.copy(weights.data)
+            self.dec.prev_emb.weight.data.copy_(weights.data)
         if output:
             log.info("Initializing target output embeddings")
             assert weights.shape == self.dec.generator.proj.weight.shape
-            self.dec.generator.proj.weight.data.copy(weights.data)
+            self.dec.generator.proj.weight.data.copy_(weights.data)
 
     @property
     def model_dim(self):
@@ -411,16 +411,16 @@ class SteppedSeq2SeqTrainer(SteppedTrainer):
 
     def init_embeddings(self):
         src_emb_mat = self.exp.pre_trained_src_emb
-        if src_emb_mat:
-            self.model.init_src_embedding(src_emb_mat)
+        if src_emb_mat is None:
+            log.info("NOT initializing pre-trained source embedding")
         else:
-            log.info("NOT initializing source embedding")
+            self.model.init_src_embedding(src_emb_mat)
 
         tgt_emb_mat = self.exp.pre_trained_tgt_emb
-        if tgt_emb_mat:
-            self.model.init_tgt_embedding(src_emb_mat)
+        if tgt_emb_mat is None:
+            log.info("NOT Initializing pre-trained target embeddings")
         else:
-            log.info("NOT Initializing target embeddings")
+            self.model.init_tgt_embedding(src_emb_mat)
 
     def run_valid_epoch(self, data_iter: BatchIterable) -> float:
         state = TrainerState(self.model, -1)

@@ -41,7 +41,6 @@ class TranslationExperiment:
 
         self.emb_src_file = self.data_dir / 'emb_src.pt'
         self.emb_tgt_file = self.data_dir / 'emb_tgt.pt'
-        self.emb_shared_file = self.data_dir / 'emb_shared.pt'
 
         if not read_only:
             for _dir in [self.model_dir, self.data_dir]:
@@ -241,20 +240,14 @@ class TranslationExperiment:
             self.write_tsv(finetune_recs, str(self.finetune_file).replace('.tsv', '.pieces.tsv'))
 
     def maybe_pre_process_embeds(self):
-        args = self.config['prep']
-        mapping = {
-            'emb_src': self.emb_src_file,
-            'emb_tgt': self.emb_tgt_file,
-            'emb_shared': self.emb_shared_file
-        }
 
-        if not any(x in args for x in mapping):
-            log.info("No pre trained embeddings are found in config; skipping it")
-            return
-
-        def _read_vocab(path: Path) -> List[str]:
+        def _read_vocab(path: Path, do_clean=True) -> List[str]:
             with IO.reader(path) as rdr:
-                return [line.strip().split()[0] for line in rdr]
+                vocab = (line.strip().split()[0] for line in rdr)
+                if do_clean:
+                    # sentence piece starts with '▁' character
+                    vocab = [word[1:] if word[0] == '▁' else word for word in vocab]
+                return vocab
 
         def _map_and_store(inp: Path, vocab_file: Path):
             id_to_str = _read_vocab(vocab_file)
@@ -319,13 +312,24 @@ class TranslationExperiment:
                 for key, val in dict.items():
                     out.write(f"{key}\t{val}\n")
 
+        args = self.config['prep']
+        mapping = {
+            'pre_emb_src': self.emb_src_file,
+            'pre_emb_tgt': self.emb_tgt_file
+        }
+        if not any(x in args for x in mapping):
+            log.info("No pre trained embeddings are found in config; skipping it")
+            return
+
         for key, outp in mapping.items():
             if key in args:
                 inp = Path(args[key])
-                field_name = key.split('_')[-1]   # emb_src --> src ; emb_shared --> shared
-                voc_file = self.data_dir / f'sentpiece.{field_name}.vocab'
                 assert inp.exists()
-                assert voc_file.exists()
+                voc_file = self.data_dir / f'sentpiece.shared.vocab'
+                if not voc_file.exists():
+                    field_name = key.split('_')[-1]   # emb_src --> src ; emb_tgt --> tgt
+                    voc_file = self.data_dir / f'sentpiece.{field_name}.vocab'
+                    assert voc_file.exists()
 
                 log.info(f"Processing {key}: {inp}")
                 emb_matrix, report = _map_and_store(inp, voc_file)
@@ -502,13 +506,11 @@ class TranslationExperiment:
 
     @property
     def pre_trained_src_emb(self):
-        file = self.get_first_found_file([self.emb_src_file, self.emb_shared_file])
-        return torch.load(file) if file else None
+        return torch.load(self.emb_src_file) if self.emb_src_file.exists() else None
 
     @property
     def pre_trained_tgt_emb(self):
-        file = self.get_first_found_file([self.emb_tgt_file, self.emb_shared_file])
-        return torch.load(file) if file else None
+        return torch.load(self.emb_tgt_file) if self.emb_tgt_file.exists() else None
 
     def get_train_data(self, batch_size: int, steps: int = 0, sort_dec=True, batch_first=True,
                        shuffle=False, copy_xy=False, fine_tune=False):

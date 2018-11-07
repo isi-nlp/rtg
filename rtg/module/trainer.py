@@ -172,11 +172,7 @@ class SteppedTrainer:
         do_init_embedding = (self.start_step == 0
                              and self.exp.config.get('trainer_args', {}).get('init_emb'))
         if do_init_embedding:
-            # either individual (src/tgt) or shared, but not both
-            assert not (self.exp.emb_src_file.exists() and self.exp.emb_shared_file.exists())
-            assert not (self.exp.emb_tgt_file.exists() and self.exp.emb_shared_file.exists())
-
-            # if individual (src/tgt), then either both are present or both are absent
+            # either both are present or both are absent
             assert self.exp.emb_src_file.exists() == self.exp.emb_tgt_file.exists()
             self.init_embeddings()
 
