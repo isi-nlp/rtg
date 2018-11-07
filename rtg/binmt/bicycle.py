@@ -2,8 +2,15 @@
 #
 # Author: Thamme Gowda [tg at isi dot edu] 
 # Created: 10/17/18
-from .model import *
 
+from .model import *
+from typing import Mapping
+from time import time
+from rtg import cpu_device, device, log
+import math
+from rtg.module.trainer import NoamOpt
+from rtg.utils import Optims
+import itertools
 
 # NOTE: this is out of sync
 
@@ -88,6 +95,7 @@ class BiNMT(nn.Module):
 
 
 # TODO: Label Smoothing
+
 
 class BaseTrainer:
 

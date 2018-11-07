@@ -169,6 +169,19 @@ class SteppedTrainer:
             from rtg.module.decoder import Decoder
             self.decoder = Decoder.new(self.exp, self.model)
 
+        do_init_embedding = self.start_step == 0 and self.exp.config.get('trainer_args')
+        if do_init_embedding:
+            # either individual (src/tgt) or shared, but not both
+            assert not (self.exp.emb_src_file.exists() and self.exp.emb_shared_file.exists())
+            assert not (self.exp.emb_tgt_file.exists() and self.exp.emb_shared_file.exists())
+
+            # if individual (src/tgt), then either both are present or both are absent
+            assert self.exp.emb_src_file.exists() == self.exp.emb_tgt_file.exists()
+            self.init_embeddings()
+
+    @abstractmethod
+    def init_embeddings(self): pass
+
     def show_samples(self, beam_size=3, num_hyp=3, max_len=30):
         """
         Logs the output of model (at this stage in training) to a set of samples

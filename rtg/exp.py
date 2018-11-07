@@ -39,9 +39,9 @@ class TranslationExperiment:
         # a set of samples to watch the progress qualitatively
         self.samples_file = self.data_dir / 'samples.tsv.gz'
 
-        self.emb_src_file = self.data_dir / 'emb_src.pkl'
-        self.emb_tgt_file = self.data_dir / 'emb_tgt.pkl'
-        self.emb_shared_file = self.data_dir / 'emb_shared.pkl'
+        self.emb_src_file = self.data_dir / 'emb_src.pt'
+        self.emb_tgt_file = self.data_dir / 'emb_tgt.pt'
+        self.emb_shared_file = self.data_dir / 'emb_shared.pt'
 
         if not read_only:
             for _dir in [self.model_dir, self.data_dir]:
@@ -253,30 +253,30 @@ class TranslationExperiment:
             return
 
         def _read_vocab(path: Path) -> List[str]:
-            with path.open(encoding='utf-8') as f:
-                return [line.strip()[0] for line in f]
+            with IO.reader(path) as rdr:
+                return [line.strip().split()[0] for line in rdr]
 
-        def _map_and_store(inp: Path, vocab_file: Path, out: Path):
+        def _map_and_store(inp: Path, vocab_file: Path):
             id_to_str = _read_vocab(vocab_file)
             str_to_id = {tok: idx for idx, tok in enumerate(id_to_str)}
             assert len(id_to_str) == len(id_to_str)
             vocab_size = len(id_to_str)
 
-            matched_set, ignored_set, pre_trained_set = set(), set(), set()
+            matched_set, ignored_set, duplicate_set = set(), set(), set()
+
             with inp.open(encoding='utf-8') as in_fh:
                 header = in_fh.readline()
                 parts = header.strip().split()
                 if len(parts) == 2:
                     tot, dim = int(parts[0]), int(parts[1])
-                    matrix = np.zeros(shape=(vocab_size, dim))
+                    matrix = torch.zeros(vocab_size, dim)
                 else:
                     assert len(parts) > 2
                     word, vec = parts[0], [float(x) for x in parts[1:]]
                     dim = len(vec)
-                    matrix = np.zeros(shape=(vocab_size, dim))
-                    pre_trained_set.add(word)
+                    matrix = torch.zeros(vocab_size, dim)
                     if word in str_to_id:
-                        matrix[str_to_id[word]] = vec
+                        matrix[str_to_id[word]] = torch.tensor(vec, dtype=torch.float)
                         matched_set.add(word)
                     else:
                         ignored_set.add(word)
@@ -284,27 +284,53 @@ class TranslationExperiment:
                 for line in in_fh:
                     parts = line.strip().split()
                     word = parts[0]
-                    pre_trained_set.add(word)
                     if word in str_to_id:
-                        matrix[str_to_id[word]] = [float(x) for x in parts[1:]]
+                        if word in matched_set:
+                            duplicate_set.add(word)
+                        # Note: this overwrites duplicate words
+                        vec = [float(x) for x in parts[1:]]
+                        matrix[str_to_id[word]] = torch.tensor(vec, dtype=torch.float)
                         matched_set.add(word)
                     else:
                         ignored_set.add(word)
+            pre_trained = matched_set | ignored_set
+            vocab_set = set(id_to_str)
+            oovs = vocab_set - matched_set
+            stats = {
+                'pre_trained': len(pre_trained),
+                'vocab': len(vocab_set),
+                'matched': len(matched_set),
+                'ignored': len(ignored_set),
+                'oov': len(oovs)
+            }
+            stats.update({
+                'oov_rate': stats['oov'] / stats['vocab'],
+                'match_rate': stats['matched'] / stats['vocab'],
+                'useless_rate': stats['ignored'] / stats['pre_trained'],
+                'useful_rate': stats['matched'] / stats['pre_trained']
+            })
+            return matrix, stats
 
-                vocab_set = set(id_to_str)
+        def _write_emb_matrix(matrix, path: str):
+            torch.save(matrix, path)
 
-                return matrix
+        def _write_dict(dict, path: Path):
+            with IO.writer(path) as out:
+                for key, val in dict.items():
+                    out.write(f"{key}\t{val}\n")
 
-        for key, (vocab, outp) in mapping.items():
+        for key, outp in mapping.items():
             if key in args:
                 inp = Path(args[key])
-                field_name = key.split('_')[-1]
+                field_name = key.split('_')[-1]   # emb_src --> src ; emb_shared --> shared
                 voc_file = self.data_dir / f'sentpiece.{field_name}.vocab'
                 assert inp.exists()
                 assert voc_file.exists()
 
                 log.info(f"Processing {key}: {inp}")
-                _map_and_store(inp, voc_file, outp)
+                emb_matrix, report = _map_and_store(inp, voc_file)
+                _write_dict(report, Path(str(outp) + '.report.txt'))
+                _write_emb_matrix(emb_matrix, str(outp))
 
     def pre_process(self, args=None):
         args = args if args else self.config['prep']
@@ -464,6 +490,25 @@ class TranslationExperiment:
     @property
     def shared_vocab(self):
         return self.shared_field
+
+    @staticmethod
+    def get_first_found_file(paths: List[Path]):
+        """returns the first file that is not None, and actually exists on disc;
+        If no file is valid, it returns None"""
+        for p in paths:
+            if p and p.exists():
+                return p
+        return None
+
+    @property
+    def pre_trained_src_emb(self):
+        file = self.get_first_found_file([self.emb_src_file, self.emb_shared_file])
+        return torch.load(file) if file else None
+
+    @property
+    def pre_trained_tgt_emb(self):
+        file = self.get_first_found_file([self.emb_tgt_file, self.emb_shared_file])
+        return torch.load(file) if file else None
 
     def get_train_data(self, batch_size: int, steps: int = 0, sort_dec=True, batch_first=True,
                        shuffle=False, copy_xy=False, fine_tune=False):

@@ -6,10 +6,18 @@ model_args:
   hid_size: 300
   src_vocab: 8000
   tgt_vocab: 8000
+
 model_type: seq2seq
 optim:
   name: ADAM
   warmup_steps: 2000
+trainer_args:
+  steps: 128000
+  init_emb:
+    - src
+    - tgt_in
+    - tgt_out
+
 prep:
   mono_src: []
   mono_tgt: []
