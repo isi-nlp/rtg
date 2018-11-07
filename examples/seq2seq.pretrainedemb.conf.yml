@@ -11,6 +11,9 @@ model_type: seq2seq
 optim:
   name: ADAM
   warmup_steps: 2000
+trainer_args:
+  init_emb: true
+
 prep:
   mono_src: []
   mono_tgt: []
@@ -23,10 +26,10 @@ prep:
   valid_src: data/valid.src
   valid_tgt: data/valid.tgt
   shared_vocab: true
-  max_types: 8000
-  pieces: unigram
-  finetune_src: data/finetune.src
-  finetune_tgt: data/finetune.tgt
+  max_types: 50000
+  pieces: word
+  pre_emb_src: data/cc.fr.300.vec
+  pre_emb_tgt: data/cc.en.300.vec
 src_lang: FRA
 tgt_lang: ENG
 updated_at: '2018-07-25T15:50:52.578881'

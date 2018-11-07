@@ -104,16 +104,43 @@ class T2TModel(NMTModel):
     A standard Encoder-Decoder architecture. Base for this and many
     other models.
     """
+
     def __init__(self, encoder: Encoder, decoder: Decoder,
                  src_embed, tgt_embed,
                  generator: Generator):
         super(T2TModel, self).__init__()
-        self.encoder = encoder
-        self.decoder = decoder
+        self.encoder: Encoder = encoder
+        self.decoder: Decoder = decoder
         self.src_embed = src_embed
         self.tgt_embed = tgt_embed
         self.generator = generator
         self.tgt_vocab = generator.vocab
+
+    def init_src_embedding(self, weights):
+        log.info("Initializing source embeddings")
+        log.info(f"Embedding matrix object ids: "
+                 f" src_inp: {id(self.src_embed[0].lut.weight.data)}"
+                 f" tgt_inp: {id(self.tgt_embed[0].lut.weight.data)} "
+                 f" tgt_out: {id(self.generator.proj.weight.data)}")
+        assert weights.shape == self.src_embed[0].lut.weight.shape
+        self.src_embed[0].lut.weight.data.copy_(weights.data)
+        self.generator.proj.weight = self.tgt_embed[0].lut.weight
+
+    def init_tgt_embedding(self, weights, input=True, output=True):
+        log.info(f"Are embedding tied ? see object ids: "
+                 f" src_inp: {id(self.src_embed[0].lut.weight.data)}"
+                 f" tgt_inp: {id(self.tgt_embed[0].lut.weight.data)} "
+                 f" tgt_out: {id(self.generator.proj.weight.data)}")
+        if input:
+            log.info(f"Initializing target input embeddings:"
+                     f" {weights.shape} ==> {self.tgt_embed[0].lut.weight.shape}")
+            assert weights.shape == self.tgt_embed[0].lut.weight.shape
+            self.tgt_embed[0].lut.weight.data.copy_(weights.data)
+        if output:
+            log.info(f"Initializing target output embeddings:"
+                     f" {weights.shape} ==> {self.generator.proj.weight.shape}")
+            assert weights.shape == self.generator.proj.weight.shape
+            self.generator.proj.weight.data.copy_(weights.data)
 
     @property
     def model_dim(self):
@@ -152,8 +179,10 @@ class T2TModel(NMTModel):
         encoder = Encoder(EncoderLayer(hid_size, c(attn), c(ff), dropout), n_layers)
         decoder = Decoder(DecoderLayer(hid_size, c(attn), c(attn), c(ff), dropout), n_layers)
 
-        src_emb = nn.Sequential(Embeddings(hid_size, src_vocab), PositionalEncoding(hid_size, dropout))
-        tgt_emb = nn.Sequential(Embeddings(hid_size, tgt_vocab), PositionalEncoding(hid_size, dropout))
+        src_emb = nn.Sequential(Embeddings(hid_size, src_vocab),
+                                PositionalEncoding(hid_size, dropout))
+        tgt_emb = nn.Sequential(Embeddings(hid_size, tgt_vocab),
+                                PositionalEncoding(hid_size, dropout))
         generator = Generator(hid_size, tgt_vocab)
 
         model = T2TModel(encoder, decoder, src_emb, tgt_emb, generator)
@@ -286,7 +315,8 @@ class PositionalEncoding(nn.Module):
         # Compute the positional encodings once in log space.
         pe = torch.zeros(max_len, d_model)
         position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
-        div_term = torch.exp(torch.arange(0, d_model, 2, dtype=torch.float) * -(math.log(10000.0) / d_model))
+        div_term = torch.exp(
+            torch.arange(0, d_model, 2, dtype=torch.float) * -(math.log(10000.0) / d_model))
         pe[:, 0::2] = torch.sin(position * div_term)
         pe[:, 1::2] = torch.cos(position * div_term)
         pe = pe.unsqueeze(0)
@@ -297,12 +327,11 @@ class PositionalEncoding(nn.Module):
         return self.dropout(x)
 
 
-
-
 class LabelSmoothing(nn.Module):
     """
     Label smoothing
     """
+
     def __init__(self, vocab_size: int, padding_idx: int, smoothing=0.1):
         super(LabelSmoothing, self).__init__()
         self._size = vocab_size
@@ -351,10 +380,9 @@ class SimpleLossFunction:
         self.opt = opt
 
     def __call__(self, x_feats, y_seqs, norm, train_mode=True):
-
         x_probs = self.generator(x_feats)  # B x T x D --> B x T x V
 
-        scores = x_probs.contiguous().view(-1, x_probs.size(-1))    # B x T x V --> B.T x V
+        scores = x_probs.contiguous().view(-1, x_probs.size(-1))  # B x T x V --> B.T x V
         truth = y_seqs.contiguous().view(-1)  # B x T --> B.T
         assert norm != 0
         loss = self.criterion(scores, truth).sum() / norm
@@ -370,6 +398,7 @@ class MultiGPULossFunction(SimpleLossFunction):
     Loss function that uses Multiple GPUs
     Currently uses DataParallel, but this is only the early version
     """
+
     def __init__(self, generator, criterion, devices, opt, out_device=None):
         super(MultiGPULossFunction, self).__init__(generator, criterion, opt)
         self.multi_gpu = False
@@ -420,7 +449,7 @@ class T2TTrainer(SteppedTrainer):
         device_ids = list(range(torch.cuda.device_count()))
         log.info(f"Going to use {torch.cuda.device_count()} GPUs ; ids:{device_ids}")
 
-        if len(device_ids) > 1:   # Multi GPU mode
+        if len(device_ids) > 1:  # Multi GPU mode
             log.warning("Multi GPU mode <<this feature is not well tested>>")
             self.model = nn.DataParallel(self.model, dim=0, device_ids=device_ids)
         generator = self.model.generator
@@ -478,7 +507,7 @@ class T2TTrainer(SteppedTrainer):
         return max_iters - 1, loss
 
     def train(self, steps: int, check_point: int, batch_size: int,
-              check_pt_callback: Optional[Callable]=None, fine_tune=False, **args):
+              check_pt_callback: Optional[Callable] = None, fine_tune=False, **args):
         log.info(f'Going to train for {steps} epochs; batch_size={batch_size}; '
                  f'check point size:{check_point}; fine_tune={fine_tune}')
         keep_models = args.get('keep_models', 4)  # keep last _ models and delete the old
@@ -509,7 +538,7 @@ class T2TTrainer(SteppedTrainer):
                 progress_msg += f', LR={self.opt.curr_lr:g}'
 
                 data_bar.set_postfix_str(progress_msg, refresh=False)
-                del batch   # TODO: force free memory
+                del batch  # TODO: force free memory
 
                 if is_check_pt:
                     train_loss = train_state.reset()
@@ -523,7 +552,6 @@ class T2TTrainer(SteppedTrainer):
 
 
 def __test_model__():
-
     from rtg.dummy import DummyExperiment
     vocab_size = 14
     model, _ = T2TModel.make_model(vocab_size, vocab_size,

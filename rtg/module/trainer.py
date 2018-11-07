@@ -8,7 +8,6 @@ from rtg import log, TranslationExperiment as Experiment, device, BatchIterable
 from rtg.module import NMTModel
 from rtg.utils import Optims, IO
 
-
 from abc import abstractmethod
 from typing import Optional, Callable
 from dataclasses import dataclass
@@ -54,7 +53,8 @@ class NoamOpt:
         "Implement `lrate` above"
         if step is None:
             step = self._step
-        return self.factor * (self.model_size ** (-0.5) * min(step ** (-0.5), step * self.warmup ** (-1.5)))
+        return self.factor * (
+                self.model_size ** (-0.5) * min(step ** (-0.5), step * self.warmup ** (-1.5)))
 
     @staticmethod
     def get_std_opt(model):
@@ -99,7 +99,7 @@ class TrainerState:
     def progress_bar_msg(self):
         elapsed = time.time() - self.start
         return f'Loss:{self.total_loss / self.total_toks:.4f},' \
-            f' {int(self.total_toks / elapsed)}toks/s'
+               f' {int(self.total_toks / elapsed)}toks/s'
 
     def is_check_point(self):
         return self.steps == self.check_point
@@ -169,6 +169,24 @@ class SteppedTrainer:
             from rtg.module.decoder import Decoder
             self.decoder = Decoder.new(self.exp, self.model)
 
+        do_init_embedding = (self.start_step == 0
+                             and self.exp.config.get('trainer_args', {}).get('init_emb'))
+        if do_init_embedding:
+            self.init_embeddings()
+
+    def init_embeddings(self):
+        src_emb_mat = self.exp.pre_trained_src_emb
+        if src_emb_mat is None:
+            log.info("NOT initializing pre-trained source embedding")
+        else:
+            self.model.init_src_embedding(src_emb_mat)
+
+        tgt_emb_mat = self.exp.pre_trained_tgt_emb
+        if tgt_emb_mat is None:
+            log.info("NOT Initializing pre-trained target embeddings")
+        else:
+            self.model.init_tgt_embedding(tgt_emb_mat)
+
     def show_samples(self, beam_size=3, num_hyp=3, max_len=30):
         """
         Logs the output of model (at this stage in training) to a set of samples
@@ -232,4 +250,3 @@ class SteppedTrainer:
         :return:
         """
         pass
-

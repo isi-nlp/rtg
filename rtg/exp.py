@@ -5,12 +5,13 @@ from pathlib import Path
 from typing import Optional, Dict, Iterator, List, Tuple, Union, Any
 import torch
 import random
-
+import numpy as np
 from rtg import log, load_conf
 from rtg.dataprep import (RawRecord, ParallelSeqRecord, MonoSeqRecord,
                           Field, BatchIterable, LoopingIterable)
 from rtg.utils import IO, line_count
 from itertools import zip_longest
+from collections import defaultdict
 
 
 class TranslationExperiment:
@@ -37,6 +38,9 @@ class TranslationExperiment:
         self.valid_file = self.data_dir / 'valid.tsv.gz'
         # a set of samples to watch the progress qualitatively
         self.samples_file = self.data_dir / 'samples.tsv.gz'
+
+        self.emb_src_file = self.data_dir / 'emb_src.pt'
+        self.emb_tgt_file = self.data_dir / 'emb_tgt.pt'
 
         if not read_only:
             for _dir in [self.model_dir, self.data_dir]:
@@ -235,13 +239,110 @@ class TranslationExperiment:
                                                tokenizer=self.src_vocab.tokenize)
             self.write_tsv(finetune_recs, str(self.finetune_file).replace('.tsv', '.pieces.tsv'))
 
+    def maybe_pre_process_embeds(self):
+
+        def _read_vocab(path: Path, do_clean=True) -> List[str]:
+            with IO.reader(path) as rdr:
+                vocab = (line.strip().split()[0] for line in rdr)
+                if do_clean:
+                    # sentence piece starts with '▁' character
+                    vocab = [word[1:] if word[0] == '▁' else word for word in vocab]
+                return vocab
+
+        def _map_and_store(inp: Path, vocab_file: Path):
+            id_to_str = _read_vocab(vocab_file)
+            str_to_id = {tok: idx for idx, tok in enumerate(id_to_str)}
+            assert len(id_to_str) == len(id_to_str)
+            vocab_size = len(id_to_str)
+
+            matched_set, ignored_set, duplicate_set = set(), set(), set()
+
+            with inp.open(encoding='utf-8') as in_fh:
+                header = in_fh.readline()
+                parts = header.strip().split()
+                if len(parts) == 2:
+                    tot, dim = int(parts[0]), int(parts[1])
+                    matrix = torch.zeros(vocab_size, dim)
+                else:
+                    assert len(parts) > 2
+                    word, vec = parts[0], [float(x) for x in parts[1:]]
+                    dim = len(vec)
+                    matrix = torch.zeros(vocab_size, dim)
+                    if word in str_to_id:
+                        matrix[str_to_id[word]] = torch.tensor(vec, dtype=torch.float)
+                        matched_set.add(word)
+                    else:
+                        ignored_set.add(word)
+
+                for line in in_fh:
+                    parts = line.strip().split()
+                    word = parts[0]
+                    if word in str_to_id:
+                        if word in matched_set:
+                            duplicate_set.add(word)
+                        # Note: this overwrites duplicate words
+                        vec = [float(x) for x in parts[1:]]
+                        matrix[str_to_id[word]] = torch.tensor(vec, dtype=torch.float)
+                        matched_set.add(word)
+                    else:
+                        ignored_set.add(word)
+            pre_trained = matched_set | ignored_set
+            vocab_set = set(id_to_str)
+            oovs = vocab_set - matched_set
+            stats = {
+                'pre_trained': len(pre_trained),
+                'vocab': len(vocab_set),
+                'matched': len(matched_set),
+                'ignored': len(ignored_set),
+                'oov': len(oovs)
+            }
+            stats.update({
+                'oov_rate': stats['oov'] / stats['vocab'],
+                'match_rate': stats['matched'] / stats['vocab'],
+                'useless_rate': stats['ignored'] / stats['pre_trained'],
+                'useful_rate': stats['matched'] / stats['pre_trained']
+            })
+            return matrix, stats
+
+        def _write_emb_matrix(matrix, path: str):
+            torch.save(matrix, path)
+
+        def _write_dict(dict, path: Path):
+            with IO.writer(path) as out:
+                for key, val in dict.items():
+                    out.write(f"{key}\t{val}\n")
+
+        args = self.config['prep']
+        mapping = {
+            'pre_emb_src': self.emb_src_file,
+            'pre_emb_tgt': self.emb_tgt_file
+        }
+        if not any(x in args for x in mapping):
+            log.info("No pre trained embeddings are found in config; skipping it")
+            return
+
+        for key, outp in mapping.items():
+            if key in args:
+                inp = Path(args[key])
+                assert inp.exists()
+                voc_file = self.data_dir / f'sentpiece.shared.vocab'
+                if not voc_file.exists():
+                    field_name = key.split('_')[-1]   # emb_src --> src ; emb_tgt --> tgt
+                    voc_file = self.data_dir / f'sentpiece.{field_name}.vocab'
+                    assert voc_file.exists()
+
+                log.info(f"Processing {key}: {inp}")
+                emb_matrix, report = _map_and_store(inp, voc_file)
+                _write_dict(report, Path(str(outp) + '.report.txt'))
+                _write_emb_matrix(emb_matrix, str(outp))
+
     def pre_process(self, args=None):
         args = args if args else self.config['prep']
         if self._unsupervised:
             self.pre_process_mono(args)
         else:
             self.pre_process_parallel(args)
-
+        self.maybe_pre_process_embeds()
         # update state on disk
         self.persist_state()
         self._prepared_flag.touch()
@@ -389,6 +490,27 @@ class TranslationExperiment:
     @property
     def tgt_vocab(self):
         return self.shared_field if self.shared_field is not None else self.tgt_field
+
+    @property
+    def shared_vocab(self):
+        return self.shared_field
+
+    @staticmethod
+    def get_first_found_file(paths: List[Path]):
+        """returns the first file that is not None, and actually exists on disc;
+        If no file is valid, it returns None"""
+        for p in paths:
+            if p and p.exists():
+                return p
+        return None
+
+    @property
+    def pre_trained_src_emb(self):
+        return torch.load(self.emb_src_file) if self.emb_src_file.exists() else None
+
+    @property
+    def pre_trained_tgt_emb(self):
+        return torch.load(self.emb_tgt_file) if self.emb_tgt_file.exists() else None
 
     def get_train_data(self, batch_size: int, steps: int = 0, sort_dec=True, batch_first=True,
                        shuffle=False, copy_xy=False, fine_tune=False):

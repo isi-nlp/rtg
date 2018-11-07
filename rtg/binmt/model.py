@@ -5,6 +5,7 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 from tqdm import tqdm
+import numpy as np
 
 from rtg import log, TranslationExperiment as Experiment
 from rtg import my_tensor as tensor, device
@@ -51,7 +52,7 @@ class SeqEncoder(nn.Module):
     def __init__(self, embedder: Embedder, out_size: int, n_layers: int,
                  bidirectional: bool = True, dropout=0.5):
         super().__init__()
-        self.emb = embedder
+        self.emb: Embedder = embedder
         self.dropout = nn.Dropout(dropout)
         self.emb_size = self.emb.emb_size
         self.out_size = out_size
@@ -62,8 +63,10 @@ class SeqEncoder(nn.Module):
         if self.bidirectional:
             assert self.out_size % 2 == 0
             out_size = out_size // 2
-        self.rnn_node = nn.LSTM(self.emb_size, out_size, num_layers=self.n_layers,
-                                bidirectional=self.bidirectional, batch_first=True,
+        self.rnn_node = nn.LSTM(self.emb_size, out_size,
+                                num_layers=self.n_layers,
+                                bidirectional=self.bidirectional,
+                                batch_first=True,
                                 dropout=dropout if n_layers > 1 else 0)
 
     def forward(self, input_seqs: torch.Tensor, input_lengths, hidden=None, pre_embedded=False):
@@ -110,7 +113,7 @@ class SeqDecoder(nn.Module):
         super(SeqDecoder, self).__init__()
         self.prev_emb = prev_emb_node
         self.dropout = nn.Dropout(dropout)
-        self.generator = generator
+        self.generator: Generator = generator
         self.n_layers = n_layers
         self.emb_size = self.prev_emb.emb_size
         self.hid_size = self.generator.vec_size
@@ -243,8 +246,8 @@ class Seq2Seq(NMTModel):
 
     def __init__(self, enc: SeqEncoder, dec: SeqDecoder, bridge: Seq2SeqBridge = None):
         super(Seq2Seq, self).__init__()
-        self.enc = enc
-        self.dec = dec
+        self.enc: SeqEncoder = enc
+        self.dec: SeqDecoder = dec
         if bridge:
             # enc --> bridge.dec --> bridge.enc --> dec
             assert enc.out_size == bridge.inp_size
@@ -253,6 +256,21 @@ class Seq2Seq(NMTModel):
             # enc --> dec
             assert enc.out_size == dec.hid_size
         self.bridge = bridge
+
+    def init_src_embedding(self, weights):
+        log.info("Initializing source embeddings")
+        assert weights.shape == self.enc.emb.weight.shape
+        self.enc.emb.weight.data.copy_(weights.data)
+
+    def init_tgt_embedding(self, weights, input=True, output=True):
+        if input:
+            log.info("Initializing target input embeddings")
+            assert weights.shape == self.dec.prev_emb.weight.shape
+            self.dec.prev_emb.weight.data.copy_(weights.data)
+        if output:
+            log.info("Initializing target output embeddings")
+            assert weights.shape == self.dec.generator.proj.weight.shape
+            self.dec.generator.proj.weight.data.copy_(weights.data)
 
     @property
     def model_dim(self):
