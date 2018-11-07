@@ -8,7 +8,6 @@ from rtg import log, TranslationExperiment as Experiment, device, BatchIterable
 from rtg.module import NMTModel
 from rtg.utils import Optims, IO
 
-
 from abc import abstractmethod
 from typing import Optional, Callable
 from dataclasses import dataclass
@@ -54,7 +53,8 @@ class NoamOpt:
         "Implement `lrate` above"
         if step is None:
             step = self._step
-        return self.factor * (self.model_size ** (-0.5) * min(step ** (-0.5), step * self.warmup ** (-1.5)))
+        return self.factor * (
+                self.model_size ** (-0.5) * min(step ** (-0.5), step * self.warmup ** (-1.5)))
 
     @staticmethod
     def get_std_opt(model):
@@ -99,7 +99,7 @@ class TrainerState:
     def progress_bar_msg(self):
         elapsed = time.time() - self.start
         return f'Loss:{self.total_loss / self.total_toks:.4f},' \
-            f' {int(self.total_toks / elapsed)}toks/s'
+               f' {int(self.total_toks / elapsed)}toks/s'
 
     def is_check_point(self):
         return self.steps == self.check_point
@@ -169,7 +169,8 @@ class SteppedTrainer:
             from rtg.module.decoder import Decoder
             self.decoder = Decoder.new(self.exp, self.model)
 
-        do_init_embedding = self.start_step == 0 and self.exp.config.get('trainer_args')
+        do_init_embedding = (self.start_step == 0
+                             and self.exp.config.get('trainer_args', {}).get('init_emb'))
         if do_init_embedding:
             # either individual (src/tgt) or shared, but not both
             assert not (self.exp.emb_src_file.exists() and self.exp.emb_shared_file.exists())
@@ -180,7 +181,8 @@ class SteppedTrainer:
             self.init_embeddings()
 
     @abstractmethod
-    def init_embeddings(self): pass
+    def init_embeddings(self):
+        pass
 
     def show_samples(self, beam_size=3, num_hyp=3, max_len=30):
         """
@@ -245,4 +247,3 @@ class SteppedTrainer:
         :return:
         """
         pass
-
