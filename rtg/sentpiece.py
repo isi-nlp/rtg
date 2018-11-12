@@ -14,6 +14,9 @@ UNK_TOK = '<unk>', 1
 BOS_TOK = '<s>', 2
 EOS_TOK = '</s>', 3
 
+ADD_BOS = False
+ADD_EOS = False
+
 
 class Field(SentencePieceProcessor):
     """A wrapper class for sentence piece trainer and processor"""
@@ -22,18 +25,18 @@ class Field(SentencePieceProcessor):
         super(Field, self).__init__()
         assert self.load(path)
 
-    def tokenize(self, text: str, add_bos=True, add_eos=True) -> List[bytes]:
+    def tokenize(self, text: str, add_bos=ADD_BOS, add_eos=ADD_EOS) -> List[bytes]:
         text = text.strip()
         if not text:
             return []
         pieces: List[bytes] = self.encode_as_pieces(text.encode())
         if add_bos and pieces[0] != BOS_TOK[0]:
-            pieces.insert(0, BOS_TOK[0].encode())
+            pieces.insert(0, BOS_TOK[0])
         if add_eos and pieces[-1] != EOS_TOK[0]:
-            pieces.append(EOS_TOK[0].encode())
+            pieces.append(EOS_TOK[0])
         return pieces
 
-    def encode_as_ids(self, text: str, add_bos=True, add_eos=True) -> List[int]:
+    def encode_as_ids(self, text: str, add_bos=ADD_BOS, add_eos=ADD_EOS) -> List[int]:
         ids = super(Field, self).encode_as_ids(text)
         if add_bos and ids[0] != BOS_TOK[1]:
             ids.insert(0, BOS_TOK[1])
@@ -86,7 +89,7 @@ def main(model, inp, out, ids, detokenize):
                     pieces = [str(x) for x in piece_ids]
                 else:
                     pieces = spm.tokenize(line)
-                    pieces = [str(x, encoding='utf-8') for x in pieces]
+                    pieces = [x if type(x) is str else str(x, encoding='utf-8') for x in pieces]
                 out_line = " ".join(pieces) + "\n"
             out.write(out_line)
         msg = ('Detokenized' if detokenize else 'Tokenized') + f" lines={count}"
