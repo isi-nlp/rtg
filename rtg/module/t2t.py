@@ -198,6 +198,10 @@ class T2TModel(NMTModel):
             else:
                 raise Exception('Invalid argument to tied_emb; Known: {three-way, two-way}')
 
+        if exp and exp.aln_emb_src_file.exists():
+                log.warning("Aligned embeddings are provided but this model doesnt support it.")
+                log.warning("If you really cared for this feature, come back and implement it.")
+
         # This was important from their code.
         # Initialize parameters with Glorot / fan_avg.
         for p in model.parameters():
