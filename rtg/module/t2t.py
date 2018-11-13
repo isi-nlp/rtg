@@ -159,7 +159,7 @@ class T2TModel(NMTModel):
 
     @staticmethod
     def make_model(src_vocab, tgt_vocab, n_layers=6, hid_size=512, ff_size=2048, n_heads=8,
-                   dropout=0.1, tied_emb='three-way', exp: Experiment=None):
+                   dropout=0.1, tied_emb='three-way', exp: Experiment = None):
         "Helper: Construct a model from hyper parameters."
 
         # args for reconstruction of model
@@ -199,8 +199,8 @@ class T2TModel(NMTModel):
                 raise Exception('Invalid argument to tied_emb; Known: {three-way, two-way}')
 
         if exp and exp.aln_emb_src_file.exists():
-                log.warning("Aligned embeddings are provided but this model doesnt support it.")
-                log.warning("If you really cared for this feature, come back and implement it.")
+            log.warning("Aligned embeddings are provided but this model doesnt support it.")
+            log.warning("If you really cared for this feature, come back and implement it.")
 
         # This was important from their code.
         # Initialize parameters with Glorot / fan_avg.
@@ -558,18 +558,24 @@ class T2TTrainer(SteppedTrainer):
 def __test_model__():
     from rtg.dummy import DummyExperiment
     vocab_size = 14
-    model, _ = T2TModel.make_model(vocab_size, vocab_size,
-                                   n_layers=4, hid_size=128, ff_size=256, n_heads=4)
+    args = {
+        'src_vocab': vocab_size,
+        'tgt_vocab': vocab_size,
+        'n_layers': 4,
+        'hid_size': 128,
+        'ff_size': 256,
+        'n_heads': 4
+    }
     if False:
         for n, p in model.named_parameters():
             print(n, p.shape)
 
     from rtg.module.decoder import Decoder
 
-    exp = DummyExperiment("work", config={'model_type': 't2t'}, read_only=True,
+    exp = DummyExperiment("work.tmp.t2t", config={'model_type': 't2t'}, read_only=True,
                           vocab_size=vocab_size)
-
-    trainer = T2TTrainer(exp=exp, model=model, warmup_steps=200)
+    exp.model_args = args
+    trainer = T2TTrainer(exp=exp, warmup_steps=200)
     decr = Decoder.new(exp, trainer.model)
 
     assert 2 == Batch.bos_val
