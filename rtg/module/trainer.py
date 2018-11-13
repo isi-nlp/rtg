@@ -4,6 +4,7 @@
 # Created: 10/17/18
 import torch
 import torch.nn as nn
+import rtg
 from rtg import log, TranslationExperiment as Experiment, device, BatchIterable
 from rtg.module import NMTModel
 from rtg.utils import Optims, IO
@@ -117,6 +118,7 @@ class SteppedTrainer:
                  **optim_args):
         self.start_step = 0
         self.exp = exp
+        optim_state = None
         if model:
             self.model = model
         else:
@@ -130,7 +132,11 @@ class SteppedTrainer:
             if last_model:
                 self.start_step = last_step + 1
                 log.info(f"Resuming training from step:{self.start_step}, model={last_model}")
-                self.model.load_state_dict(torch.load(last_model))
+                state = torch.load(last_model)
+                model_state = state['model_state'] if 'model_state' in state else state
+                if 'optim_state' in state:
+                    optim_state = state['optim_state']
+                self.model.load_state_dict(model_state)
             else:
                 log.info("No earlier check point found. Looks like this is a fresh start")
 
@@ -146,6 +152,9 @@ class SteppedTrainer:
         self.model = self.model.to(device)
 
         inner_opt = Optims[optim].new(self.model.parameters(), **optim_args)
+        if optim_state:
+            log.info("restoring optimizer state from checkpoint")
+            inner_opt.load_state_dict(optim_state)
         self.opt = NoamOpt(self.model.model_dim, noam_factor, warm_up_steps, inner_opt,
                            step=self.start_step)
 
@@ -224,8 +233,17 @@ class SteppedTrainer:
         self.tbd.add_scalars(f'losses', {'train_loss': train_loss,
                                          'valid_loss': val_loss}, step_num)
         # Unwrap model state from DataParallel and persist
-        state = (self.model.module if isinstance(self.model, nn.DataParallel) else self.model)
-        self.exp.store_model(step_num, state.state_dict(), train_score=train_loss,
+        model = (self.model.module if isinstance(self.model, nn.DataParallel) else self.model)
+        state = {
+            'model_state': model.state_dict(),
+            'optim_state': self.opt.optimizer.state_dict(),
+            'step': step_num,
+            'train_loss': train_loss,
+            'val_loss': val_loss,
+            'time': time.time(),
+            'rtg_version': rtg.__version__
+        }
+        self.exp.store_model(step_num, state, train_score=train_loss,
                              val_score=val_loss, keep=keep_models)
 
     @abstractmethod
