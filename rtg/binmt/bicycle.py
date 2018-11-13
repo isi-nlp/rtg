@@ -53,7 +53,8 @@ class BiNMT(nn.Module):
 
     @staticmethod
     def make_model(src_lang, tgt_lang, src_vocab: int, tgt_vocab: int, emb_size: int = 300,
-                   hid_size: int = 300, n_layers: int = 2, attention=False, dropout=0.5):
+                   hid_size: int = 300, n_layers: int = 2, attention=False, dropout=0.5,
+                   exp: Optional[Experiment] = None):
         args = {
             'src_lang': src_lang,
             'tgt_lang': tgt_lang,

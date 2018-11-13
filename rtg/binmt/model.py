@@ -49,25 +49,31 @@ class Generator(nn.Module):
 
 class SeqEncoder(nn.Module):
 
-    def __init__(self, embedder: Embedder, out_size: int, n_layers: int,
-                 bidirectional: bool = True, dropout=0.5):
+    def __init__(self, embedder: Embedder, hid_size: int, n_layers: int,
+                 bidirectional: bool = True, dropout=0.5, ext_embedder: Embedder = None):
         super().__init__()
         self.emb: Embedder = embedder
         self.dropout = nn.Dropout(dropout)
+        # Input size of RNN, which is same as embedding vector size
         self.emb_size = self.emb.emb_size
-        self.out_size = out_size
+        # the output size of RNN, ie. hidden representation size
+        self.hid_size = hid_size
         self.n_layers = n_layers
         self.bidirectional = bidirectional
 
-        out_size = self.out_size
+        hid_size = self.hid_size
         if self.bidirectional:
-            assert self.out_size % 2 == 0
-            out_size = out_size // 2
-        self.rnn_node = nn.LSTM(self.emb_size, out_size,
+            assert hid_size % 2 == 0
+            hid_size = hid_size // 2
+        self.rnn_node = nn.LSTM(self.emb_size, hid_size,
                                 num_layers=self.n_layers,
                                 bidirectional=self.bidirectional,
                                 batch_first=True,
                                 dropout=dropout if n_layers > 1 else 0)
+        # if external embeddings are provided
+        self.ext_embedder = ext_embedder
+        # The output feature vectors vectors
+        self.out_size = self.hid_size + (self.ext_embedder.emb_size if ext_embedder else 0)
 
     def forward(self, input_seqs: torch.Tensor, input_lengths, hidden=None, pre_embedded=False):
         assert len(input_seqs) == len(input_lengths)
@@ -78,6 +84,7 @@ class SeqEncoder(nn.Module):
         else:
             batch_size, seq_len = input_seqs.shape
             embedded = self.emb(input_seqs).view(batch_size, seq_len, self.emb_size)
+
         embedded = self.dropout(embedded)
         packed = nn.utils.rnn.pack_padded_sequence(embedded, input_lengths, batch_first=True)
         outputs, hidden = self.rnn_node(packed, hidden)
@@ -85,7 +92,13 @@ class SeqEncoder(nn.Module):
                                                                    padding_value=PAD_TOK_IDX)
         # Sum bidirectional outputs
         # outputs = outputs[:, :, :self.hid_size] + outputs[:, :, self.hid_size:]
-        return outputs, self.to_dec_state(hidden)
+        dec_state = self.to_dec_state(hidden)
+        if self.ext_embedder is not None:
+            ext_embs = self.ext_embedder(input_seqs).view(batch_size, seq_len,
+                                                          self.ext_embedder.emb_size)
+            ext_embs = self.dropout(ext_embs)
+            outputs = torch.cat((outputs, ext_embs), dim=-1)
+        return outputs, dec_state
 
     def to_dec_state(self, enc_state):
         # get the last layer's last time step output
@@ -145,19 +158,32 @@ class SeqDecoder(nn.Module):
             return rnn_output, hidden, None
 
 
-class GeneralAttn(nn.Module):
+class AttnModel(nn.Module):
     """
     Attention model
     """
 
-    def __init__(self, hid_size):
-        super(GeneralAttn, self).__init__()
-        self.inp_size = hid_size
-        self.out_size = hid_size
-        self.attn = nn.Linear(self.inp_size, self.out_size)
+    def __init__(self, inp_size, out_size=None, att_type='dot'):
+        """
+        :param inp_size: Input size on which the the attention
+        :param out_size: Output of attention
+        """
+        super(AttnModel, self).__init__()
+        self.inp_size = inp_size
+        self.out_size = out_size if out_size is not None else inp_size
+        if att_type == 'dot':
+            assert self.inp_size == self.out_size
+        elif att_type == 'general':
+            self.attn_W = nn.Linear(self.inp_size, self.out_size)
+        self.attn_type = att_type
+        self.attn_func = {
+            'dot': self.dot_attn,
+            'general': self.general_attn
+        }[self.attn_type]
 
-    def forward(self, this_rnn_out, encoder_outs):
-        # hidden      : [B, D]
+    @staticmethod
+    def dot_attn(this_rnn_out, encoder_outs):
+        # this_rnn_out: [B, D]
         # encoder_out : [B, S, D]
         #    [B, D] --> [B, S, D] ;; repeat hidden sequence_len times
         this_run_out = this_rnn_out.unsqueeze(1).expand_as(encoder_outs)
@@ -165,17 +191,36 @@ class GeneralAttn(nn.Module):
         #    [B, S]  <-- [B, S, D]
         # element wise multiply, then sum along the last dim (i.e. model_dim)
         weights = (encoder_outs * this_run_out).sum(dim=-1)
+        return weights
 
+    def general_attn(self, this_rnn_out, encoder_outs):
+        # First map the encoder_outs to new vector space using attn_W
+        mapped_enc_outs = self.attn_W(encoder_outs)
+        # Then compute the dot
+        return self.dot_attn(this_rnn_out, mapped_enc_outs)
+
+    def forward(self, this_rnn_out, encoder_outs):
+        assert encoder_outs.shape[-1] == self.inp_size
+        assert this_rnn_out.shape[-1] == self.out_size
+
+        weights = self.attn_func(this_rnn_out, encoder_outs)
         # Normalize energies to weights in range 0 to 1
         return F.softmax(weights, dim=1)
 
 
 class AttnSeqDecoder(SeqDecoder):
     def __init__(self, prev_emb_node: Embedder, generator: Generator, n_layers: int,
-                 dropout: float=0.5):
+                 ctx_size: Optional[int]=None,
+                 dropout: float = 0.5, attention='dot'):
         super(AttnSeqDecoder, self).__init__(prev_emb_node, generator, n_layers, dropout=dropout)
-        self.attn = GeneralAttn(self.hid_size)
-        self.merge = nn.Linear(self.hid_size + self.attn.out_size, self.hid_size)
+
+        if attention and type(attention) is bool:
+            # historical reasons, it was boolean in the beginning
+            attention = 'dot'
+        ctx_size = ctx_size if ctx_size else self.hid_size
+        self.attn = AttnModel(inp_size=ctx_size, out_size=self.hid_size, att_type=attention)
+        # Output from decoder rnn + ctx
+        self.merge = nn.Linear(self.hid_size + ctx_size, self.hid_size)
 
     def forward(self, enc_outs, prev_out, last_hidden, gen_probs=True):
         # Note: we run this one step at a time
@@ -224,7 +269,7 @@ class Seq2SeqBridge(nn.Module):
         self.dec = dec
         self.enc = enc
         self.inp_size = dec.hid_size
-        self.out_size = enc.out_size
+        self.out_size = enc.hid_size
 
     def forward(self, enc_outs, enc_hids, max_len):
         batch_size = len(enc_outs)
@@ -250,11 +295,11 @@ class Seq2Seq(NMTModel):
         self.dec: SeqDecoder = dec
         if bridge:
             # enc --> bridge.dec --> bridge.enc --> dec
-            assert enc.out_size == bridge.inp_size
+            assert enc.hid_size == bridge.inp_size
             assert bridge.out_size == dec.hid_size
         else:
             # enc --> dec
-            assert enc.out_size == dec.hid_size
+            assert enc.hid_size == dec.hid_size
         self.bridge = bridge
 
     def init_src_embedding(self, weights):
@@ -274,7 +319,7 @@ class Seq2Seq(NMTModel):
 
     @property
     def model_dim(self):
-        return self.enc.out_size
+        return self.enc.hid_size
 
     def encode(self, x_seqs, x_lens, hids=None, max_y_len=256):
         enc_outs, enc_hids = self.enc(x_seqs, x_lens, hids)
@@ -291,14 +336,6 @@ class Seq2Seq(NMTModel):
 
         dec_inps = tensor([[BOS_TOK_IDX]] * batch_size, dtype=torch.long)
         dec_hids = enc_hids
-        """
-        # extract vector at given last stamp (as per the seq length)
-        t_dim = 1
-        lastt_idx = (batch.x_len - 1).view(-1, 1).expand(-1, self.enc.out_size).unsqueeze(t_dim)
-        lastt_out = enc_outs.gather(dim=t_dim, index=lastt_idx).squeeze(t_dim)
-        lastt_out = lastt_out.expand(self.dec.n_layers, batch_size, self.dec.generator.vec_size)
-        dec_hids = (lastt_out, lastt_out)   # copy enc output to h and c of LSTM
-        """
         outp_probs = torch.zeros((batch.max_y_len - 1, batch_size), device=device)
 
         for t in range(1, batch.max_y_len):
@@ -319,8 +356,8 @@ class Seq2Seq(NMTModel):
 
     @staticmethod
     def make_model(src_lang, tgt_lang, src_vocab: int, tgt_vocab: int, emb_size: int = 300,
-                   hid_size: int = 300, n_layers: int = 2, attention=False, dropout=0.33,
-                   tied_emb: Optional[str] = None):
+                   hid_size: int = 300, n_layers: int = 2, attention='general', dropout=0.33,
+                   tied_emb: Optional[str] = 'three-way', exp: Experiment=None):
         args = {
             'src_lang': src_lang,
             'tgt_lang': tgt_lang,
@@ -348,11 +385,31 @@ class Seq2Seq(NMTModel):
             else:
                 raise Exception('Invalid argument to tied_emb; Known: {three-way, two-way}')
 
+        ext_embedder = None
+        if exp:
+            if exp.aln_emb_src_file.exists():
+                log.info("Loading aligned embeddings.")
+                aln_emb_weights = torch.load(str(exp.aln_emb_src_file))
+                log.info(f"Loaded aligned embeddings: shape={aln_emb_weights.shape}")
+                assert aln_emb_weights.shape[0] == src_vocab, \
+                    f'aln_emb_src vocabulary ({aln_emb_weights.shape[0]})' \
+                    f' should be same as src_vocab ({src_vocab})'
+                ext_embedder = Embedder.from_pretrained(aln_emb_weights, freeze=True)
+                if attention != 'general':
+                    log.warning("Using attention=general because it is necessary for"
+                                " aligned embeddings")
+                    attention = 'general'
+                    args['attention'] = attention
+
         enc = SeqEncoder(src_embedder, hid_size, n_layers=n_layers, bidirectional=True,
-                         dropout=dropout)
+                         dropout=dropout, ext_embedder=ext_embedder)
         if attention:
-            log.info("Using attention models for decoding")
-            dec = AttnSeqDecoder(tgt_embedder, tgt_generator, n_layers=n_layers, dropout=dropout)
+            log.info(f"Using attention={attention} models for decoding")
+            dec = AttnSeqDecoder(tgt_embedder, tgt_generator,
+                                 ctx_size=enc.out_size,
+                                 n_layers=n_layers,
+                                 dropout=dropout,
+                                 attention=attention)
         else:
             log.info("NOT Using attention models for decoding")
             dec = SeqDecoder(tgt_embedder, tgt_generator, n_layers=n_layers, dropout=dropout)
@@ -472,19 +529,19 @@ def __test_seq2seq_model__():
     from rtg.dummy import DummyExperiment
     from rtg.module.decoder import Decoder
 
-    vocab_size = 20
+    vocab_size = 50
     batch_size = 30
     exp = DummyExperiment("tmp.work", config={'model_type': 'seq'
                                                             '2seq'},
                           read_only=True, vocab_size=vocab_size)
     emb_size = 100
     model_dim = 100
-    steps = 1000
+    steps = 3000
     check_pt = 100
 
     assert 2 == Batch.bos_val
-    src = tensor([[2,  4,  5,  6,  7, 8, 9, 10, 11, 12, 13],
-                  [2, 13, 12, 11, 10, 9, 8,  7,  6,  5,  4]])
+    src = tensor([[2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
+                  [2, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4]])
     src_lens = tensor([src.size(1)] * src.size(0))
 
     for reverse in (False,):
@@ -508,5 +565,3 @@ def __test_seq2seq_model__():
 
 if __name__ == '__main__':
     __test_seq2seq_model__()
-
-

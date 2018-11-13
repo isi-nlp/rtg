@@ -11,7 +11,7 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 from tqdm import tqdm
 
-from rtg import device, log, my_tensor as tensor, TranslationExperiment
+from rtg import device, log, my_tensor as tensor, TranslationExperiment as Experiment
 from rtg.dataprep import Batch, BatchIterable
 from rtg.module import NMTModel
 from rtg.module.trainer import TrainerState, SteppedTrainer
@@ -159,7 +159,7 @@ class T2TModel(NMTModel):
 
     @staticmethod
     def make_model(src_vocab, tgt_vocab, n_layers=6, hid_size=512, ff_size=2048, n_heads=8,
-                   dropout=0.1, tied_emb='three-way'):
+                   dropout=0.1, tied_emb='three-way', exp: Experiment=None):
         "Helper: Construct a model from hyper parameters."
 
         # args for reconstruction of model
@@ -197,6 +197,10 @@ class T2TModel(NMTModel):
                 model.src_embed[0].lut.weight = model.tgt_embed[0].lut.weight
             else:
                 raise Exception('Invalid argument to tied_emb; Known: {three-way, two-way}')
+
+        if exp and exp.aln_emb_src_file.exists():
+                log.warning("Aligned embeddings are provided but this model doesnt support it.")
+                log.warning("If you really cared for this feature, come back and implement it.")
 
         # This was important from their code.
         # Initialize parameters with Glorot / fan_avg.
@@ -440,7 +444,7 @@ class MultiGPULossFunction(SimpleLossFunction):
 
 class T2TTrainer(SteppedTrainer):
 
-    def __init__(self, exp: TranslationExperiment,
+    def __init__(self, exp: Experiment,
                  model: Optional[T2TModel] = None,
                  optim: str = 'ADAM',
                  **optim_args):

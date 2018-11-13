@@ -124,7 +124,7 @@ class SteppedTrainer:
             assert args
             assert model_factory
             log.info(f"Creating model with args: {args}")
-            self.model, args = model_factory(**args)
+            self.model, args = model_factory(exp=exp, **args)
             exp.model_args = args
             last_model, last_step = self.exp.get_last_saved_model()
             if last_model:
