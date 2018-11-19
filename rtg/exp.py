@@ -52,7 +52,7 @@ class TranslationExperiment:
         self.config = config if config else load_conf(self._config_file)
 
         self.shared_field, self.src_field, self.tgt_field = [
-            Field(f) if Path(f).exists() else None
+            Field(str(f)) if f.exists() else None
             for f in (self._shared_field_file, self._src_field_file, self._tgt_field_file)]
 
         # Either shared field  OR  individual  src and tgt fields

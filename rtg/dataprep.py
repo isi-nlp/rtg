@@ -34,7 +34,7 @@ TokStream = Union[Iterator[Iterator[str]], Iterator[str]]
 class Field(SentencePieceProcessor):
     """A wrapper class for sentence piece trainer and processor"""
 
-    def __init__(self, path):
+    def __init__(self, path: str):
         super(Field, self).__init__()
         assert self.load(path)
 
