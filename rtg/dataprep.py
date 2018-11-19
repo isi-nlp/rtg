@@ -222,6 +222,7 @@ class Batch:
         if not batch_first:      # transpose
             self.x_seqs = self.x_seqs.t()
 
+        # [ Batch x Time=1 x Len ] :: input has one time step
         self.x_mask = (self.x_seqs != self.pad_value).unsqueeze(1)
         first_y = batch[0].y
         self.has_y = first_y is not None
@@ -246,6 +247,7 @@ class Batch:
             if not batch_first:    # transpose
                 self.y_seqs = self.y_seqs.t()
                 self.y_seqs_nobos = self.y_seqs_nobos.t()
+            # [ Batch x MaxLen x Len ] :: target has max len time steps
             self.y_mask = self.make_std_mask(self.y_seqs)
         elif self.copy_xy:
             self.has_y = True

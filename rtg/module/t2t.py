@@ -88,9 +88,9 @@ class DecoderLayer(nn.Module):
 class Decoder(nn.Module):
     "Generic N layer decoder with masking."
 
-    def __init__(self, layer: DecoderLayer, N: int):
+    def __init__(self, layer: DecoderLayer, n_layers: int):
         super(Decoder, self).__init__()
-        self.layers = clones(layer, N)
+        self.layers = clones(layer, n_layers)
         self.norm = LayerNorm(layer.size)
 
     def forward(self, x, memory, src_mask, tgt_mask):
@@ -243,15 +243,41 @@ class SublayerConnection(nn.Module):
 
 
 def attention(query, key, value, mask=None, dropout=None):
-    "Compute 'Scaled Dot Product Attention'"
+    """
+    Compute 'Scaled Dot Product Attention'
+    :param query:
+    :param key:
+    :param value:
+    :param mask:
+    :param dropout:
+    :return:
+    """
+
     d_k = query.size(-1)
+    # Beware: this is a batch multiplier!
+    # See https://pytorch.org/docs/stable/torch.html?highlight=matmul#torch.matmul
     scores = torch.matmul(query, key.transpose(-2, -1)) / math.sqrt(d_k)
+    # scores: [BatchSize x Heads x Time=SeqLen x SeqLen ]
     if mask is not None:
+        # How masking works:
+        # src_mask is [BatchSize x 1=Heads x 1=Time x SeqLen ]  --> used in enc self_attn
+        # tgt_mask is [BatchSize x 1=Heads x SeqLen=Time x SeqLen ]
+        #               --> used in dec self_attn and dec_to_enc_attn
+        # 1=Heads gets broad casted for all the heads
+        # 1=Time is not broad casting, since it is used with encoder, we can encode the
+        #    whole encoder seqs at once (unlike decoder, which goes at one time step at a time)
+        # SeqLen=Time is a magic for the Target Sequences to only rely on the previous time steps
+        #
+        # Now, if you got this, take a moment to thanks http://nlp.seas.harvard.edu/rush.html
+        # for devising this concise code. I needed a lot of time to understand how this code works!
+        #
         scores = scores.masked_fill(mask == 0, -1e9)
-    p_attn = F.softmax(scores, dim=-1)
+    p_attn = F.softmax(scores, dim=-1)   # [BatchSize x Heads x Time=SeqLen x SeqLen ]
     if dropout is not None:
         p_attn = dropout(p_attn)
-    return torch.matmul(p_attn, value), p_attn
+    # Beware: this is a batch multiplier!
+    ctx_vals = torch.matmul(p_attn, value)
+    return ctx_vals, p_attn
 
 
 class MultiHeadedAttention(nn.Module):
@@ -270,19 +296,26 @@ class MultiHeadedAttention(nn.Module):
         "Implements Figure 2"
         if mask is not None:
             # Same mask applied to all h heads.
-            mask = mask.unsqueeze(1)
-        nbatches = query.size(0)
+            mask = mask.unsqueeze(1)    # [BatchSize x 1 x Time x SeqLen]  1=Broadcast for all heads
+        batch_size = query.size(0)
 
         # 1) Do all the linear projections in batch from d_model => h x d_k
         query, key, value = \
-            [l(x).view(nbatches, -1, self.h, self.d_k).transpose(1, 2)
+            [l(x).view(batch_size, -1, self.h, self.d_k).transpose(1, 2)
              for l, x in zip(self.linears, (query, key, value))]
+        # Q,K,V  --> input, linear: [BatchSize x SeqLen x ModelDim]
+        #        --> view: [BatchSize x SeqLen x Heads x ModelDim/Heads ]
+        #        --> transpose: [BatchSize x Heads x SeqLen x ModelDim/Heads ]
 
         # 2) Apply attention on all the projected vectors in batch.
         x, self.attn = attention(query, key, value, mask=mask, dropout=self.dropout)
+        # x : [BatchSize x Heads x SeqLen x ModelDim/Heads ]
 
         # 3) "Concat" using a view and apply a final linear.
-        x = x.transpose(1, 2).contiguous().view(nbatches, -1, self.h * self.d_k)
+        x = x.transpose(1, 2).contiguous().view(batch_size, -1, self.h * self.d_k)
+        # x : transpose [BatchSize x SeqLen x Heads x ModelDim/Heads ]
+        # x : view [BatchSize x SeqLen x ModelDim ]
+
         return self.linears[-1](x)
 
 
