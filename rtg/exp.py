@@ -27,9 +27,9 @@ class TranslationExperiment:
         self.data_dir = work_dir / 'data'
         self.model_dir = work_dir / 'models'
         self._config_file = work_dir / 'conf.yml'
-        self._shared_field_file = str(self.data_dir / 'sentpiece.shared.model')
-        self._src_field_file = str(self.data_dir / 'sentpiece.src.model')
-        self._tgt_field_file = str(self.data_dir / 'sentpiece.tgt.model')
+        self._shared_field_file = self.data_dir / 'sentpiece.shared.model'
+        self._src_field_file = self.data_dir / 'sentpiece.src.model'
+        self._tgt_field_file = self.data_dir / 'sentpiece.tgt.model'
         self._prepared_flag = self.work_dir / '_PREPARED'
         self._trained_flag = self.work_dir / '_TRAINED'
 
@@ -41,7 +41,7 @@ class TranslationExperiment:
 
         self.emb_src_file = self.data_dir / 'emb_src.pt'
         self.emb_tgt_file = self.data_dir / 'emb_tgt.pt'
-        self.aln_emb_src_file = self.data_dir / 'aln_emb_src.pt'    # src embs aligned to tgt
+        self.aln_emb_src_file = self.data_dir / 'aln_emb_src.pt'  # src embs aligned to tgt
 
         if not read_only:
             for _dir in [self.model_dir, self.data_dir]:
@@ -144,10 +144,13 @@ class TranslationExperiment:
         assert line_count(args['train_src']) == line_count(args['train_tgt'])
         assert line_count(args['valid_src']) == line_count(args['valid_tgt'])
 
-        no_split_toks = args.get('no_split_toks')
-        self.shared_field = Field.train(args['pieces'], args['max_types'],
-                                        self._shared_field_file, files,
-                                        no_split_toks=no_split_toks)
+        if self._shared_field_file.exists():
+            log.info(f"{self._shared_field_file} exists. Skipping shared vocab creation")
+        else:
+            no_split_toks = args.get('no_split_toks')
+            self.shared_field = Field.train(args['pieces'], args['max_types'],
+                                            str(self._shared_field_file), files,
+                                            no_split_toks=no_split_toks)
 
         # create Piece IDs
         train_recs = self.read_raw_data(args['train_src'], args['train_tgt'], args['truncate'],
@@ -187,18 +190,27 @@ class TranslationExperiment:
         no_split_toks = args.get('no_split_toks')
         if args.get('shared_vocab'):
             files = [args['mono_train_src'], args['mono_train_tgt']]
-            self.shared_field = Field.train(args['pieces'],
-                                            args['max_types'],
-                                            self._shared_field_file, files,
-                                            no_split_toks=no_split_toks)
+            if self._shared_field_file.exists():
+                log.info(f"{self._shared_field_file} exists. Skipping shared vocab creation")
+            else:
+                self.shared_field = Field.train(args['pieces'],
+                                                args['max_types'],
+                                                str(self._shared_field_file), files,
+                                                no_split_toks=no_split_toks)
         else:
-            self.src_field = Field.train(args['pieces'], args['max_src_types'],
-                                         self._src_field_file, [args['mono_train_src']],
-                                         no_split_toks=no_split_toks)
+            if self._src_field_file.exists():
+                log.info(f"{self._src_field_file} exists. Skipping source vocab creation... ")
+            else:
+                self.src_field = Field.train(args['pieces'], args['max_src_types'],
+                                             str(self._src_field_file), [args['mono_train_src']],
+                                             no_split_toks=no_split_toks)
 
-            self.tgt_field = Field.train(args['pieces'], args['max_tgt_types'],
-                                         self._tgt_field_file, [args['mono_train_tgt']],
-                                         no_split_toks=no_split_toks)
+            if self._tgt_field_file.exists():
+                log.info(f"{self._tgt_field_file} exists. Skipping target vocab creation")
+            else:
+                self.tgt_field = Field.train(args['pieces'], args['max_tgt_types'],
+                                             str(self._tgt_field_file), [args['mono_train_tgt']],
+                                             no_split_toks=no_split_toks)
 
         def _prep_file(raw_file, out_file, do_truncate, max_len, field: Field):
             recs = self.read_mono_raw_data(raw_file, do_truncate, max_len, field.encode_as_ids)
@@ -329,7 +341,7 @@ class TranslationExperiment:
                 assert inp.exists()
                 voc_file = self.data_dir / f'sentpiece.shared.vocab'
                 if not voc_file.exists():
-                    field_name = key.split('_')[-1]   # emb_src --> src ; emb_tgt --> tgt
+                    field_name = key.split('_')[-1]  # emb_src --> src ; emb_tgt --> tgt
                     voc_file = self.data_dir / f'sentpiece.{field_name}.vocab'
                     assert voc_file.exists()
 

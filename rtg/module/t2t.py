@@ -266,9 +266,9 @@ def attention(query, key, value, mask=None, dropout=None):
         # 1=Heads gets broad casted for all the heads
         # 1=Time is not broad casting, since it is used with encoder, we can encode the
         #    whole encoder seqs at once (unlike decoder, which goes at one time step at a time)
-        # SeqLen=Time is a magic for the Target Sequences to only rely on the previous time steps
+        # SeqLen=Time is a magic for the Decoding sequences to only rely on the previous time steps
         #
-        # Now, if you got this, take a moment to thanks http://nlp.seas.harvard.edu/rush.html
+        # Now, if you got this, take a moment to thank http://nlp.seas.harvard.edu/rush.html
         # for devising this concise code. I needed a lot of time to understand how this code works!
         #
         scores = scores.masked_fill(mask == 0, -1e9)
