@@ -21,12 +21,13 @@ class Embedder(nn.Embedding):
     """
 
     def __init__(self, name: str, vocab_size: int, emb_size: int,
-                 weights: Optional[torch.Tensor] = None):
+                 weights: Optional[torch.Tensor] = None, freeze: bool=False):
         self.name = name
         self.vocab_size = vocab_size
         self.emb_size = emb_size
         super(Embedder, self).__init__(self.vocab_size, self.emb_size, padding_idx=PAD_TOK_IDX,
                                        _weight=weights)
+        self.weight.requires_grad = not freeze
 
 
 class Generator(nn.Module):
@@ -370,6 +371,7 @@ class Seq2Seq(NMTModel):
             'dropout': dropout,
             'tied_emb': tied_emb
         }
+        log.info(f"Make RNN NMT model, args= {args}")
         src_embedder = Embedder(src_lang, src_vocab, emb_size)
         tgt_embedder = Embedder(tgt_lang, tgt_vocab, emb_size)
         tgt_generator = Generator(tgt_lang, vec_size=hid_size, vocab_size=tgt_vocab)
@@ -390,11 +392,17 @@ class Seq2Seq(NMTModel):
             if exp.aln_emb_src_file.exists():
                 log.info("Loading aligned embeddings.")
                 aln_emb_weights = torch.load(str(exp.aln_emb_src_file))
+                rows, cols = aln_emb_weights.shape
                 log.info(f"Loaded aligned embeddings: shape={aln_emb_weights.shape}")
-                assert aln_emb_weights.shape[0] == src_vocab, \
-                    f'aln_emb_src vocabulary ({aln_emb_weights.shape[0]})' \
+                assert rows == src_vocab, \
+                    f'aln_emb_src vocabulary ({rows})' \
                     f' should be same as src_vocab ({src_vocab})'
-                ext_embedder = Embedder.from_pretrained(aln_emb_weights, freeze=True)
+
+                ext_embedder = Embedder(name=src_lang,
+                                        vocab_size=rows,
+                                        emb_size=cols,
+                                        weights=aln_emb_weights,
+                                        freeze=True)
                 if attention != 'general':
                     log.warning("Using attention=general because it is necessary for"
                                 " aligned embeddings")
