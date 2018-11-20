@@ -256,7 +256,7 @@ class TranslationExperiment:
 
         def _read_vocab(path: Path) -> List[str]:
             with IO.reader(path) as rdr:
-                vocab = (line.strip().split()[0] for line in rdr)
+                vocab = [line.strip().split()[0] for line in rdr]
                 if do_clean:
                     # sentence piece starts with '▁' character
                     vocab = [word[1:] if word[0] == '▁' else word for word in vocab]
