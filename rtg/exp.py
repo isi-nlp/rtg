@@ -252,9 +252,9 @@ class TranslationExperiment:
                                                tokenizer=self.src_vocab.tokenize)
             self.write_tsv(finetune_recs, str(self.finetune_file).replace('.tsv', '.pieces.tsv'))
 
-    def maybe_pre_process_embeds(self):
+    def maybe_pre_process_embeds(self, do_clean=False):
 
-        def _read_vocab(path: Path, do_clean=True) -> List[str]:
+        def _read_vocab(path: Path) -> List[str]:
             with IO.reader(path) as rdr:
                 vocab = (line.strip().split()[0] for line in rdr)
                 if do_clean:
