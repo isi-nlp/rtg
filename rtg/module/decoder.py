@@ -118,20 +118,27 @@ class Decoder:
         return state_dict
 
     @staticmethod
+    def _checkpt_to_model_state(checkpt_path: str):
+        state = torch.load(checkpt_path)
+        if 'model_state' in state:
+            state = state['model_state']
+        return state
+
+    @staticmethod
     def maybe_ensemble_state(exp, model_paths: Optional[List[str]], ensemble: int=1):
         if model_paths and len(model_paths) == 1:
             log.info(f" Restoring state from requested model {model_paths[0]}")
-            return torch.load(model_paths[0])
-        elif not len(model_paths) and ensemble <= 1:
+            return Decoder._checkpt_to_model_state(model_paths[0])
+        elif not model_paths and ensemble <= 1:
             model_path, _ = exp.get_best_known_model()
             log.info(f" Restoring state from best known model: {model_path}")
-            return torch.load(model_path)
+            return Decoder._checkpt_to_model_state(model_path)
         else:
             if not model_paths:
                 # Average
                 model_paths = exp.list_models()[:ensemble]
             log.info(f"Averaging {len(model_paths)} model states :: {model_paths}")
-            states = [torch.load(mp) for mp in model_paths]
+            states = [Decoder._checkpt_to_model_state(mp) for mp in model_paths]
             return Decoder.average_states(*states)
 
     @classmethod
