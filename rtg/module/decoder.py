@@ -156,7 +156,7 @@ class Decoder:
         """
         if model is None:
             factory = factories[exp.model_type]
-            model = factory(**exp.model_args)[0]
+            model = factory(exp=exp, **exp.model_args)[0]
             state = cls.maybe_ensemble_state(exp, model_paths=model_paths, ensemble=ensemble)
             model.load_state_dict(state)
             log.info("Successfully restored the model state.")
