@@ -107,7 +107,13 @@ fi
 
 
 ####### TRAIN ########
-if [[ ! -f "$OUT/_TRAINED" ]]; then
+ignore_flag=
+if [[ -f $OUT/models/scores.tsv ]]; then
+    last_step=$(tail -1 $OUT/models/scores.tsv | cut -f1)
+    [[ -n $last_step && $last_step -lt $STEPS ]] && ignore_flag="yes"
+fi
+
+if [[ -n $ignore_flag || ! -f "$OUT/_TRAINED" ]]; then
     log "Step : Starting trainer"
     cmd="python -m rtg.train $EXP_DIR -oa 'lr=0.1,warmup_steps=8000' --check-point $CHECKPOINT --steps $STEPS --keep-models $KEEP --batch-size $BATCH_SIZE"
     [[ $FINE_TUNE ]] && cmd="$cmd --fine-tune"
