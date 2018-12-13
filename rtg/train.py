@@ -4,8 +4,8 @@ import argparse
 from argparse import ArgumentDefaultsHelpFormatter as ArgFormatter
 
 from rtg import TranslationExperiment as Experiment, log
-from rtg.module.t2t import T2TTrainer
-from rtg.binmt.model import SteppedSeq2SeqTrainer
+from rtg.module.tfmnmt import TransformerTrainer
+from rtg.module.rnnnmt import SteppedRNNNMTTrainer
 from rtg.binmt.bicycle import BiNmtTrainer
 from rtg.utils import log_tensor_sizes, Optims
 
@@ -58,9 +58,9 @@ def main():
         optim_args.update({k.strip(): float(v) for k, v in pairs})
 
     trainer = {
-        't2t': T2TTrainer,
+        't2t': TransformerTrainer,
         'binmt': BiNmtTrainer,
-        'seq2seq': SteppedSeq2SeqTrainer,
+        'seq2seq': SteppedRNNNMTTrainer,
     }[exp.model_type](exp, optim=args.pop('optim'), **optim_args)
     try:
         trainer.train(**args)

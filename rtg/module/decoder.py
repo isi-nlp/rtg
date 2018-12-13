@@ -10,9 +10,9 @@ from torch import nn as nn
 from rtg import TranslationExperiment as Experiment
 from rtg import log, device, my_tensor as tensor, debug_mode
 from rtg.binmt.bicycle import BiNMT
-from rtg.binmt.model import Seq2Seq
+from rtg.module.rnnnmt import RNNNMT
 from rtg.dataprep import PAD_TOK, BOS_TOK, EOS_TOK, subsequent_mask
-from rtg.module.t2t import T2TModel
+from rtg.module.tfmnmt import TransformerNMT
 
 Hypothesis = Tuple[float, List[int]]
 StrHypothesis = Tuple[float, str]
@@ -31,7 +31,7 @@ class GeneratorFactory(abc.ABC):
 
 class Seq2SeqGenerator(GeneratorFactory):
 
-    def __init__(self, model: Seq2Seq, x_seqs, x_lens):
+    def __init__(self, model: RNNNMT, x_seqs, x_lens):
         super().__init__(model)
         # [S, B, d], [S, B, d] <-- [S, B], [B]
         self.enc_outs, enc_hids = model.encode(x_seqs, x_lens, None)
@@ -56,7 +56,7 @@ class BiNMTGenerator(Seq2SeqGenerator):
 
 class T2TGenerator(GeneratorFactory):
 
-    def __init__(self, model: T2TModel, x_seqs, x_lens=None):
+    def __init__(self, model: TransformerNMT, x_seqs, x_lens=None):
         super().__init__(model)
         self.x_mask = (x_seqs != Decoder.pad_val).unsqueeze(1)
         self.memory = self.model.encode(x_seqs, self.x_mask)
@@ -71,8 +71,8 @@ generators = {'t2t': T2TGenerator,
               'seq2seq': Seq2SeqGenerator,
               'binmt': BiNMTGenerator}
 factories = {
-    't2t': T2TModel.make_model,
-    'seq2seq': Seq2Seq.make_model,
+    't2t': TransformerNMT.make_model,
+    'seq2seq': RNNNMT.make_model,
     'binmt': BiNMT.make_model,
 }
 

@@ -99,7 +99,7 @@ class Decoder(nn.Module):
         return self.norm(x)
 
 
-class T2TModel(NMTModel):
+class TransformerNMT(NMTModel):
     """
     A standard Encoder-Decoder architecture. Base for this and many
     other models.
@@ -108,7 +108,7 @@ class T2TModel(NMTModel):
     def __init__(self, encoder: Encoder, decoder: Decoder,
                  src_embed, tgt_embed,
                  generator: Generator):
-        super(T2TModel, self).__init__()
+        super(TransformerNMT, self).__init__()
         self.encoder: Encoder = encoder
         self.decoder: Decoder = decoder
         self.src_embed = src_embed
@@ -185,7 +185,7 @@ class T2TModel(NMTModel):
                                 PositionalEncoding(hid_size, dropout))
         generator = Generator(hid_size, tgt_vocab)
 
-        model = T2TModel(encoder, decoder, src_emb, tgt_emb, generator)
+        model = TransformerNMT(encoder, decoder, src_emb, tgt_emb, generator)
         if tied_emb:
             assert src_vocab == tgt_vocab
             if tied_emb == 'three-way':
@@ -475,13 +475,13 @@ class MultiGPULossFunction(SimpleLossFunction):
         return total_loss_val * norm
 
 
-class T2TTrainer(SteppedTrainer):
+class TransformerTrainer(SteppedTrainer):
 
     def __init__(self, exp: Experiment,
-                 model: Optional[T2TModel] = None,
+                 model: Optional[TransformerNMT] = None,
                  optim: str = 'ADAM',
                  **optim_args):
-        super().__init__(exp, model, model_factory=T2TModel.make_model, optim=optim, **optim_args)
+        super().__init__(exp, model, model_factory=TransformerNMT.make_model, optim=optim, **optim_args)
 
         device_ids = list(range(torch.cuda.device_count()))
         log.info(f"Going to use {torch.cuda.device_count()} GPUs ; ids:{device_ids}")
@@ -608,7 +608,7 @@ def __test_model__():
     exp = DummyExperiment("work.tmp.t2t", config={'model_type': 't2t'}, read_only=True,
                           vocab_size=vocab_size)
     exp.model_args = args
-    trainer = T2TTrainer(exp=exp, warmup_steps=200)
+    trainer = TransformerTrainer(exp=exp, warmup_steps=200)
     decr = Decoder.new(exp, trainer.model)
 
     assert 2 == Batch.bos_val
