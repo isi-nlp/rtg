@@ -14,14 +14,16 @@ PAD_TOK = '<pad>', 0
 UNK_TOK = '<unk>', 1
 BOS_TOK = '<s>', 2
 EOS_TOK = '</s>', 3
+CLS_TOK = '<cls>', 4
 
 BOS_TOK_IDX = BOS_TOK[1]
 EOS_TOK_IDX = EOS_TOK[1]
 PAD_TOK_IDX = PAD_TOK[1]
 UNK_TOK_IDX = UNK_TOK[1]
+CLS_TOK_IDX = CLS_TOK[1]
 
 
-RESERVED_TOKS = [PAD_TOK, UNK_TOK, BOS_TOK, EOS_TOK]
+RESERVED_TOKS = [PAD_TOK, UNK_TOK, BOS_TOK, EOS_TOK, CLS_TOK]
 
 
 RawRecord = Tuple[str, str]
