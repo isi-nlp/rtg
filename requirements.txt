@@ -1,10 +1,7 @@
-python >= 3.6
+python >= 3.7
 pytorch >= 0.4.0
 tqdm
 numpy
 pyyaml
 sentencepiece
 tensorboardX
-
-# ignore this, pycharm doesn't know that pytorch provides torch module, so it bugged me to add this line
-torch

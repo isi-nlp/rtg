@@ -45,7 +45,7 @@ class Field(SentencePieceProcessor):
         if add_bos and ids[0] != BOS_TOK[1]:
             ids.insert(0, BOS_TOK[1])
         if add_eos and ids[-1] != EOS_TOK[1]:
-            ids.append(BOS_TOK[1])
+            ids.append(EOS_TOK[1])
         return ids
 
     def decode_ids(self, ids: List[int], trunc_eos=False) -> str:
