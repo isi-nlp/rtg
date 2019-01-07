@@ -241,8 +241,11 @@ class SteppedTrainer:
             'train_loss': train_loss,
             'val_loss': val_loss,
             'time': time.time(),
-            'rtg_version': rtg.__version__
+            'rtg_version': rtg.__version__,
+            'model_type': self.exp.model_type,
+            'model_args': self.exp.model_args,
         }
+
         self.exp.store_model(step_num, state, train_score=train_loss,
                              val_score=val_loss, keep=keep_models)
 
