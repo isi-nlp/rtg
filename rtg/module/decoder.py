@@ -180,16 +180,17 @@ class Decoder:
     def combo_new(cls, exp: Experiment, model_paths: List[str], weights: List[float]):
         assert len(model_paths) == len(weights), 'one weight per model needed'
         assert abs(sum(weights) - 1) < 1e-3, 'weights must sum to 1'
+        log.info(f"Combo mode of {len(model_paths)} models :\n {list(zip(model_paths, weights))}")
         model_paths = [Path(m) for m in model_paths]
         models = load_models(model_paths, exp)
         from rtg.syscomb import Combo
         combo = Combo(models)
-        return cls.new(exp, model=combo)
+        return cls.new(exp, model=combo, model_type='combo')
 
     @classmethod
     def new(cls, exp: Experiment, model=None, gen_args=None,
             model_paths: Optional[List[str]]=None,
-            ensemble: int=1):
+            ensemble: int=1, model_type: Optional[str]=None):
         """
         create a new decoder
         :param exp: experiment
@@ -197,10 +198,13 @@ class Decoder:
         :param gen_args: any optional args needed for generator
         :param model_paths: optional model paths
         :param ensemble: number of models to use for ensembling (if model is not specified)
+        :param model_type: model_type ; when not specified, model_type will be read from experiment
         :return:
         """
+        if not model_type:
+            model_type = exp.model_type
         if model is None:
-            factory = factories[exp.model_type]
+            factory = factories[model_type]
             model = factory(exp=exp, **exp.model_args)[0]
             state = cls.maybe_ensemble_state(exp, model_paths=model_paths, ensemble=ensemble)
             model.load_state_dict(state)
@@ -209,7 +213,7 @@ class Decoder:
             model = model.module
 
         model = model.eval().to(device=device)
-        generator = generators[exp.model_type]
+        generator = generators[model_type]
         return cls(model, generator, exp, gen_args)
 
     def greedy_decode(self, x_seqs, x_lens, max_len, **args) -> List[Hypothesis]:

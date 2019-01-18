@@ -195,11 +195,11 @@ class TransformerNMT(NMTModel):
         if tied_emb:
             assert src_vocab == tgt_vocab
             if tied_emb == 'three-way':
-                log.info("Tying the embedding weights, three ways: (SrcIn == TgtIn == TgtOut")
+                log.info("Tying the embedding weights, three ways: (SrcIn == TgtIn == TgtOut)")
                 model.src_embed[0].lut.weight = model.tgt_embed[0].lut.weight
                 model.generator.proj.weight = model.tgt_embed[0].lut.weight
             elif tied_emb == 'two-way':
-                log.info("Tying the embedding weights, two ways: (SrcIn == TgtIn")
+                log.info("Tying the embedding weights, two ways: (SrcIn == TgtIn)")
                 model.src_embed[0].lut.weight = model.tgt_embed[0].lut.weight
             else:
                 raise Exception('Invalid argument to tied_emb; Known: {three-way, two-way}')
