@@ -3,6 +3,7 @@ import time
 import traceback
 from collections import OrderedDict
 from typing import List, Tuple, Type, Dict, Any, Optional
+from pathlib import Path
 
 import torch
 from torch import nn as nn
@@ -67,14 +68,48 @@ class T2TGenerator(GeneratorFactory):
         return log_probs
 
 
+class ComboGenerator(GeneratorFactory):
+    from rtg.syscomb import Combo
+
+    def __init__(self, model: Combo, x_seqs, *args, **kwargs):
+        super().__init__(model)
+        self.x_mask = (x_seqs != Decoder.pad_val).unsqueeze(1)
+        self.memory = self.model.encode(x_seqs, self.x_mask)
+
+    def generate_next(self, past_ys):
+        y_mask = subsequent_mask(past_ys.size(1))
+        log_probs = self.model.generate_next(self.memory, self.x_mask, past_ys, y_mask)
+        return log_probs
+
+
 generators = {'t2t': T2TGenerator,
               'seq2seq': Seq2SeqGenerator,
-              'binmt': BiNMTGenerator}
+              'binmt': BiNMTGenerator,
+              'combo': ComboGenerator}
 factories = {
     't2t': TransformerNMT.make_model,
     'seq2seq': RNNNMT.make_model,
     'binmt': BiNMT.make_model,
 }
+
+
+def load_models(models: List[Path], exp: Experiment):
+    res = []
+    for i, model_path in enumerate(models):
+        assert model_path.exists()
+
+        log.info(f"Load Model {i}: {model_path} ")
+        chkpt = torch.load(str(model_path))
+        state = chkpt['model_state']
+        model_type = chkpt['model_type']
+        model_args = chkpt['model_args']
+        # Dummy experiment wrapper
+        factory = factories[model_type]
+        model = factory(exp=exp, **model_args)[0]
+        model.load_state_dict(state)
+        log.info(f"Successfully restored the model state of {i} : {model_type}")
+        res.append(model)
+    return res
 
 
 class ReloadEvent(Exception):
@@ -140,6 +175,16 @@ class Decoder:
             log.info(f"Averaging {len(model_paths)} model states :: {model_paths}")
             states = [Decoder._checkpt_to_model_state(mp) for mp in model_paths]
             return Decoder.average_states(*states)
+
+    @classmethod
+    def combo_new(cls, exp: Experiment, model_paths: List[str], weights: List[float]):
+        assert len(model_paths) == len(weights), 'one weight per model needed'
+        assert abs(sum(weights) - 1) < 1e-3, 'weights must sum to 1'
+        model_paths = [Path(m) for m in model_paths]
+        models = load_models(model_paths, exp)
+        from rtg.syscomb import Combo
+        combo = Combo(models)
+        return cls.new(exp, model=combo)
 
     @classmethod
     def new(cls, exp: Experiment, model=None, gen_args=None,
