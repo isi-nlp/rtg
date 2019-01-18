@@ -5,13 +5,11 @@ from pathlib import Path
 from typing import Optional, Dict, Iterator, List, Tuple, Union, Any
 import torch
 import random
-import numpy as np
 from rtg import log, load_conf
 from rtg.dataprep import (RawRecord, ParallelSeqRecord, MonoSeqRecord,
                           Field, BatchIterable, LoopingIterable)
 from rtg.utils import IO, line_count
 from itertools import zip_longest
-from collections import defaultdict
 
 
 class TranslationExperiment:
@@ -36,6 +34,7 @@ class TranslationExperiment:
         self.train_file = self.data_dir / 'train.tsv.gz'
         self.finetune_file = self.data_dir / 'finetune.tsv.gz'
         self.valid_file = self.data_dir / 'valid.tsv.gz'
+        self.combo_file = self.data_dir / 'combo.tsv.gz'
         # a set of samples to watch the progress qualitatively
         self.samples_file = self.data_dir / 'samples.tsv.gz'
 
@@ -135,10 +134,6 @@ class TranslationExperiment:
 
     def pre_process_parallel(self, args: Dict[str, Any]):
         assert args['shared_vocab']  # TODO support individual vocab types
-        files = [args['train_src'], args['train_tgt']]
-        for val in [args.get('mono_src'), args.get('mono_tgt')]:
-            if val:
-                files.extend(val)
 
         # check if files are parallel
         assert line_count(args['train_src']) == line_count(args['train_tgt'])
@@ -147,31 +142,19 @@ class TranslationExperiment:
         if self._shared_field_file.exists():
             log.info(f"{self._shared_field_file} exists. Skipping shared vocab creation")
         else:
+            files = [args['train_src'], args['train_tgt']]
+            for val in [args.get('mono_src'), args.get('mono_tgt')]:
+                if val:
+                    files.extend(val)
             no_split_toks = args.get('no_split_toks')
             self.shared_field = Field.train(args['pieces'], args['max_types'],
                                             str(self._shared_field_file), files,
                                             no_split_toks=no_split_toks)
 
-        # create Piece IDs
-        train_recs = self.read_raw_data(args['train_src'], args['train_tgt'], args['truncate'],
-                                        args['src_len'], args['tgt_len'],
-                                        tokenizer=self.src_vocab.encode_as_ids)
-        self.write_tsv(train_recs, self.train_file)
-        val_recs = self.read_raw_data(args['valid_src'], args['valid_tgt'], args['truncate'],
-                                      args['src_len'], args['tgt_len'],
-                                      tokenizer=self.tgt_vocab.encode_as_ids)
-        self.write_tsv(val_recs, self.valid_file)
-
-        if args.get('text_files'):
-            # Redo again as plain text files
-            train_recs = self.read_raw_data(args['train_src'], args['train_tgt'], args['truncate'],
-                                            args['src_len'], args['tgt_len'],
-                                            tokenizer=self.src_vocab.tokenize)
-            self.write_tsv(train_recs, str(self.train_file).replace('.tsv', '.pieces.tsv'))
-            val_recs = self.read_raw_data(args['valid_src'], args['valid_tgt'], args['truncate'],
-                                          args['src_len'], args['tgt_len'],
-                                          tokenizer=self.tgt_vocab.tokenize)
-            self.write_tsv(val_recs, str(self.valid_file).replace('.tsv', '.pieces.tsv'))
+        self._pre_process_parallel('train_src', 'train_tgt', out_file=self.train_file, args=args,
+                                   line_check=False)
+        self._pre_process_parallel('valid_src', 'valid_tgt', out_file=self.valid_file, args=args,
+                                   line_check=False)
 
         if args.get("finetune_src") or args.get("finetune_tgt"):
             self.pre_process_finetune(args)
@@ -229,28 +212,35 @@ class TranslationExperiment:
         _prep_file(args['mono_valid_tgt'], self.mono_valid_tgt, args['truncate'], args['tgt_len'],
                    self.tgt_vocab)
 
-    def pre_process_finetune(self, args=None):
+    def _pre_process_parallel(self, src_key: str, tgt_key: str, out_file: Path,
+                              args: Optional[Dict[str, Any]] = None, line_check=True):
         """
-        Pre process records for fine tuning
-        :param args:
+        Pre process records of a parallel corpus
+        :param args: all arguments for 'prep' task
+        :param src_key: key that contains source sequences
+        :param tgt_key: key that contains target sequences
+        :param out_file: path to store processed TSV data (compresses if name ends with .gz)
         :return:
         """
-        log.info("Going to prep fine tune files")
         args = args if args else self.config['prep']
-        assert 'finetune_src' in args
-        assert 'finetune_tgt' in args
+        log.info(f"Going to prep files {src_key} and {tgt_key}")
+        assert src_key in args, f'{src_key} not found in experiment config or args'
+        assert tgt_key in args, f'{tgt_key} not found in experiment config or args'
+        if line_check:
+            assert line_count(args[src_key]) == line_count(args[tgt_key]), \
+                f'{args[src_key]} and {args[tgt_key]} must have same number of lines'
         # create Piece IDs
-        finetune_recs = self.read_raw_data(args['finetune_src'], args['finetune_tgt'],
+        parallel_recs = self.read_raw_data(args[src_key], args[tgt_key],
                                            args['truncate'], args['src_len'], args['tgt_len'],
                                            tokenizer=self.src_vocab.encode_as_ids)
-        self.write_tsv(finetune_recs, self.finetune_file)
+        self.write_tsv(parallel_recs, out_file)
 
         if args.get('text_files'):
             # Redo again as plain text files
-            finetune_recs = self.read_raw_data(args['finetune_src'], args['finetune_tgt'],
+            parallel_recs = self.read_raw_data(args[src_key], args[tgt_key],
                                                args['truncate'], args['src_len'], args['tgt_len'],
                                                tokenizer=self.src_vocab.tokenize)
-            self.write_tsv(finetune_recs, str(self.finetune_file).replace('.tsv', '.pieces.tsv'))
+            self.write_tsv(parallel_recs, str(out_file).replace('.tsv', '.pieces.tsv'))
 
     def maybe_pre_process_embeds(self, do_clean=False):
 
@@ -532,7 +522,7 @@ class TranslationExperiment:
         if fine_tune:
             if not self.finetune_file.exists():
                 # user may have added fine tune file later
-                self.pre_process_finetune()
+                self._pre_process_parallel('finetune_src', 'finetune_tgt', self.finetune_file)
             log.info("Using Fine tuning corpus instead of training corpus")
             inp_file = self.finetune_file
 
@@ -546,3 +536,14 @@ class TranslationExperiment:
                      shuffle=False, copy_xy=False):
         return BatchIterable(self.valid_file, batch_size=batch_size, sort_dec=sort_dec,
                              batch_first=batch_first, shuffle=shuffle, copy_xy=copy_xy)
+
+    def get_combo_data(self, batch_size: int, steps: int = 0, sort_dec=True, batch_first=True,
+                       shuffle=False):
+        if not self.combo_file.exists():
+            # user may have added fine tune file later
+            self._pre_process_parallel('combo_src', 'combo_tgt', self.combo_file)
+        data = BatchIterable(self.combo_file, batch_size=batch_size, sort_dec=sort_dec,
+                             batch_first=batch_first, shuffle=shuffle)
+        if steps > 0:
+            data = LoopingIterable(data, steps)
+        return data

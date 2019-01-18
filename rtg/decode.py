@@ -3,9 +3,12 @@ import argparse
 import sys
 from argparse import ArgumentDefaultsHelpFormatter as ArgFormatter
 import torch
+from pathlib import Path
 
 from rtg import TranslationExperiment as Experiment, log
 from rtg.module.decoder import Decoder, ReloadEvent
+from rtg.utils import IO
+import yaml
 
 
 def parse_args():
@@ -45,7 +48,31 @@ def parse_args():
 
     parser.add_argument("-en", '--ensemble', type=int, default=1,
                         help='Ensemble best --ensemble models by averaging them')
-    return vars(parser.parse_args())
+
+    parser.add_argument("-cb", '--sys-comb', type=Path,
+                        help='System combine models at the softmax layer using the weights'
+                             ' specified in this file. When this argument is supplied, model_path '
+                             'argument is ignored.')
+    args = vars(parser.parse_args())
+    return args
+
+
+def validate_args(args, exp: Experiment):
+    if not args.pop('skip_check'):  # if --skip-check is not requested
+        assert exp.has_prepared(), \
+            f'Experiment dir {exp.work_dir} is not ready to train. Please run "prep" sub task'
+        assert exp.has_trained(), \
+            f'Experiment dir {exp.work_dir} is not ready to decode.' \
+            f' Please run "train" sub task or --skip-check to ignore this'
+
+    if args.get("sys_comb"):
+        with IO.reader(args['sys_comb']) as fh:
+            weights = yaml.load(fh)['weights']
+            args['model_path'], args['weights'] = zip(*weights.items())
+            for model in args['model_path']:
+                assert Path(model).exists(), model
+            assert abs(sum(args['weights']) - 1) < 1e-3, \
+                f'Weights from --sys-comb file should sum to 1.0, given={args["weights"]}'
 
 
 def main():
@@ -53,22 +80,24 @@ def main():
     torch.set_grad_enabled(False)
     args = parse_args()
     gen_args = {}
-
     exp = Experiment(args.pop('work_dir'), read_only=True)
+    validate_args(args, exp)
+
     if exp.model_type == 'binmt':
         if not args.get('path'):
             Exception('--binmt-path argument is needed for BiNMT model.')
         gen_args['path'] = args.pop('binmt_path')
 
-    if not args.pop('skip_check'):  # if --skip-check is not requested
-        assert exp.has_prepared(),\
-            f'Experiment dir {exp.work_dir} is not ready to train. Please run "prep" sub task'
-        assert exp.has_trained(),\
-            f'Experiment dir {exp.work_dir} is not ready to decode. Please run "train" sub task'
-
-    decoder = Decoder.new(exp, gen_args=gen_args, model_paths=args.pop('model_path', None),
-                          ensemble=args.pop('ensemble', 1))
+    weights = args.get('weights')
+    if weights:
+        decoder = Decoder.combo_new(exp, model_paths=args.pop('model_path'),
+                                    weights=weights)
+    else:
+        decoder = Decoder.new(exp, gen_args=gen_args, model_paths=args.pop('model_path', None),
+                              ensemble=args.pop('ensemble', 1))
     if args.pop('interactive'):
+        if weights:
+            log.warning("Interactive shell not reloadable for combo mode. FIXME: TODO:")
         if args['input'] != sys.stdin or args['output'] != sys.stdout:
             log.warning('--input and --output args are not applicable in --interactive mode')
         args.pop('input')

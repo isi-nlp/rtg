@@ -3,6 +3,7 @@ import time
 import traceback
 from collections import OrderedDict
 from typing import List, Tuple, Type, Dict, Any, Optional
+from pathlib import Path
 
 import torch
 from torch import nn as nn
@@ -67,14 +68,48 @@ class T2TGenerator(GeneratorFactory):
         return log_probs
 
 
+class ComboGenerator(GeneratorFactory):
+    from rtg.syscomb import Combo
+
+    def __init__(self, model: Combo, x_seqs, *args, **kwargs):
+        super().__init__(model)
+        self.x_mask = (x_seqs != Decoder.pad_val).unsqueeze(1)
+        self.memory = self.model.encode(x_seqs, self.x_mask)
+
+    def generate_next(self, past_ys):
+        y_mask = subsequent_mask(past_ys.size(1))
+        log_probs = self.model.generate_next(self.memory, self.x_mask, past_ys, y_mask)
+        return log_probs
+
+
 generators = {'t2t': T2TGenerator,
               'seq2seq': Seq2SeqGenerator,
-              'binmt': BiNMTGenerator}
+              'binmt': BiNMTGenerator,
+              'combo': ComboGenerator}
 factories = {
     't2t': TransformerNMT.make_model,
     'seq2seq': RNNNMT.make_model,
     'binmt': BiNMT.make_model,
 }
+
+
+def load_models(models: List[Path], exp: Experiment):
+    res = []
+    for i, model_path in enumerate(models):
+        assert model_path.exists()
+
+        log.info(f"Load Model {i}: {model_path} ")
+        chkpt = torch.load(str(model_path))
+        state = chkpt['model_state']
+        model_type = chkpt['model_type']
+        model_args = chkpt['model_args']
+        # Dummy experiment wrapper
+        factory = factories[model_type]
+        model = factory(exp=exp, **model_args)[0]
+        model.load_state_dict(state)
+        log.info(f"Successfully restored the model state of {i} : {model_type}")
+        res.append(model)
+    return res
 
 
 class ReloadEvent(Exception):
@@ -142,9 +177,20 @@ class Decoder:
             return Decoder.average_states(*states)
 
     @classmethod
+    def combo_new(cls, exp: Experiment, model_paths: List[str], weights: List[float]):
+        assert len(model_paths) == len(weights), 'one weight per model needed'
+        assert abs(sum(weights) - 1) < 1e-3, 'weights must sum to 1'
+        log.info(f"Combo mode of {len(model_paths)} models :\n {list(zip(model_paths, weights))}")
+        model_paths = [Path(m) for m in model_paths]
+        models = load_models(model_paths, exp)
+        from rtg.syscomb import Combo
+        combo = Combo(models)
+        return cls.new(exp, model=combo, model_type='combo')
+
+    @classmethod
     def new(cls, exp: Experiment, model=None, gen_args=None,
             model_paths: Optional[List[str]]=None,
-            ensemble: int=1):
+            ensemble: int=1, model_type: Optional[str]=None):
         """
         create a new decoder
         :param exp: experiment
@@ -152,10 +198,13 @@ class Decoder:
         :param gen_args: any optional args needed for generator
         :param model_paths: optional model paths
         :param ensemble: number of models to use for ensembling (if model is not specified)
+        :param model_type: model_type ; when not specified, model_type will be read from experiment
         :return:
         """
+        if not model_type:
+            model_type = exp.model_type
         if model is None:
-            factory = factories[exp.model_type]
+            factory = factories[model_type]
             model = factory(exp=exp, **exp.model_args)[0]
             state = cls.maybe_ensemble_state(exp, model_paths=model_paths, ensemble=ensemble)
             model.load_state_dict(state)
@@ -164,7 +213,7 @@ class Decoder:
             model = model.module
 
         model = model.eval().to(device=device)
-        generator = generators[exp.model_type]
+        generator = generators[model_type]
         return cls(model, generator, exp, gen_args)
 
     def greedy_decode(self, x_seqs, x_lens, max_len, **args) -> List[Hypothesis]:

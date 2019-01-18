@@ -31,8 +31,9 @@ class Generator(nn.Module):
         self.vocab = vocab
         self.proj = nn.Linear(d_model, vocab)
 
-    def forward(self, x):
-        return F.log_softmax(self.proj(x), dim=-1)
+    def forward(self, x, log=True):
+        x = self.proj(x)
+        return (F.log_softmax if log else F.softmax)(x, dim=-1)
 
 
 class EncoderLayer(nn.Module):
@@ -146,10 +147,15 @@ class TransformerNMT(NMTModel):
     def model_dim(self):
         return self.generator.d_model
 
-    def forward(self, src, tgt, src_mask, tgt_mask):
+    @property
+    def vocab_size(self):
+        return self.tgt_vocab
+
+    def forward(self, src, tgt, src_mask, tgt_mask, gen_probs=False):
         "Take in and process masked src and target sequences."
         enc_outs = self.encode(src, src_mask)
-        return self.decode(enc_outs, src_mask, tgt, tgt_mask)
+        feats = self.decode(enc_outs, src_mask, tgt, tgt_mask)
+        return self.generator(feats, log=False) if gen_probs else feats
 
     def encode(self, src, src_mask):
         return self.encoder(self.src_embed(src), src_mask)
@@ -159,7 +165,7 @@ class TransformerNMT(NMTModel):
 
     @staticmethod
     def make_model(src_vocab, tgt_vocab, n_layers=6, hid_size=512, ff_size=2048, n_heads=8,
-                   dropout=0.1, tied_emb='three-way', exp: Experiment = None):
+                   dropout=0.1, tied_emb='three-way', exp: Experiment=None):
         "Helper: Construct a model from hyper parameters."
 
         # args for reconstruction of model
@@ -189,11 +195,11 @@ class TransformerNMT(NMTModel):
         if tied_emb:
             assert src_vocab == tgt_vocab
             if tied_emb == 'three-way':
-                log.info("Tying the embedding weights, three ways: (SrcIn == TgtIn == TgtOut")
+                log.info("Tying the embedding weights, three ways: (SrcIn == TgtIn == TgtOut)")
                 model.src_embed[0].lut.weight = model.tgt_embed[0].lut.weight
                 model.generator.proj.weight = model.tgt_embed[0].lut.weight
             elif tied_emb == 'two-way':
-                log.info("Tying the embedding weights, two ways: (SrcIn == TgtIn")
+                log.info("Tying the embedding weights, two ways: (SrcIn == TgtIn)")
                 model.src_embed[0].lut.weight = model.tgt_embed[0].lut.weight
             else:
                 raise Exception('Invalid argument to tied_emb; Known: {three-way, two-way}')
@@ -423,7 +429,7 @@ class SimpleLossFunction:
         truth = y_seqs.contiguous().view(-1)  # B x T --> B.T
         assert norm != 0
         loss = self.criterion(scores, truth).sum() / norm
-        if train_mode:  # dont do this for validation set
+        if train_mode:  # don't do this for validation set
             loss.backward()
             self.opt.step()
             self.opt.zero_grad()
@@ -438,9 +444,8 @@ class MultiGPULossFunction(SimpleLossFunction):
 
     def __init__(self, generator, criterion, devices, opt, out_device=None):
         super(MultiGPULossFunction, self).__init__(generator, criterion, opt)
-        self.multi_gpu = False
-        if len(devices) > 1:
-            self.multi_gpu = True
+        self.multi_gpu = len(devices) > 1
+        if self.multi_gpu:
             self.device_ids = devices
             self.out_device = out_device if out_device is not None else devices[0]
             # Send out to different gpus.
@@ -528,7 +533,7 @@ class TransformerTrainer(SteppedTrainer):
     def overfit_batch(self, batch, max_iters=100, stop_loss=0.01):
         """
         Try to over fit given batch (for testing purpose only, as suggested in
-         https://twitter.com/karpathy/status/1013244313327681536)
+         https://twitter.com/karpathy/status/1013244313327681536 )
         """
         tokens = 0
         loss = float('inf')
