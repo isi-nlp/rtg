@@ -43,11 +43,18 @@ class Combo(nn.Module):
             assert all(x >= 0 for x in w)
             assert abs(sum(w) - 1.0) < 0.00001
             w_init = w
-        self.weight = nn.Parameter(torch.tensor(w_init, device=device, dtype=torch.float))
+        self.weight = nn.Parameter(torch.tensor(w_init, dtype=torch.float))
         self.tgt_vocab_size = models[0].vocab_size
         for m in models:
             assert m.vocab_size == self.tgt_vocab_size
         self.vocab_size = models[0].vocab_size
+
+    def to(self, device):
+        super().to(device)
+        #self.weights = self.weights.to(device)
+        # the python list  cuts the pytorch graph, so we need to do this
+        self.models = [m.to(device) for m in self.models]
+        return self
 
     def forward(self, batch):
         # [n=models x batch x time ]
@@ -102,7 +109,7 @@ class SysCombTrainer:
 
         from rtg.module.decoder import load_models
         combo = Combo(load_models(models, exp), model_paths=models, w=wt)
-        self.combo = combo
+        self.combo = combo.to(device)
         self.exp = exp
         self.optim = torch.optim.Adam(combo.parameters(), lr=lr)
         self.criterion = LabelSmoothing(vocab_size=combo.vocab_size,
@@ -114,6 +121,7 @@ class SysCombTrainer:
         batches = self.exp.get_combo_data(batch_size=batch_size, steps=steps)
         with tqdm(batches, total=steps, unit='step') as data_bar:
             for i, batch in enumerate(data_bar):
+                batch = batch.to(device)
                 y_probs = self.combo(batch)  # B x T x V
                 loss = self.loss_func(y_probs, y_seqs=batch.y_seqs, norm=batch.y_toks)
                 progress_msg = f'loss={loss}, weights={self.combo.model_weights}'

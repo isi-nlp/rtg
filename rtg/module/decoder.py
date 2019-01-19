@@ -99,7 +99,7 @@ def load_models(models: List[Path], exp: Experiment):
         assert model_path.exists()
 
         log.info(f"Load Model {i}: {model_path} ")
-        chkpt = torch.load(str(model_path))
+        chkpt = torch.load(str(model_path), map_location=device)
         state = chkpt['model_state']
         model_type = chkpt['model_type']
         model_args = chkpt['model_args']
