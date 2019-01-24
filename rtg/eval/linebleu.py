@@ -28,7 +28,7 @@ def n_gram_precision(cand: List[str], ref: List[str], n: int) -> float:
     cand_grams = [tuple(cand[i: i + n]) for i in range(len(cand) - n + 1)]
     if not cand_grams:
         # sequence is shorter than n
-        return 1.0 . # precision of emty is fine, recall is bad
+        return 1.0    # precision of emty is fine, recall is bad
     ref_grams = [tuple(ref[i: i + n]) for i in range(len(ref) - n + 1)]
     # Count of ngrams
     cand_grams_ct = Counter(cand_grams)
