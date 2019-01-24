@@ -39,7 +39,7 @@ def n_gram_precision(cand: List[str], ref: List[str], n: int) -> float:
     return precision
 
 
-def bleu(cand: Union[str, List[str]], ref: Union[str, List[str]], n: int = 4) -> float:
+def sentence_bleu(cand: Union[str, List[str]], ref: Union[str, List[str]], n: int = 4) -> float:
     """
     Computes bleu between two sequences.
     Note: implemented by following http://www.statmt.org/book/slides/08-evaluation.pdf slide 16
@@ -65,15 +65,32 @@ def bleu(cand: Union[str, List[str]], ref: Union[str, List[str]], n: int = 4) ->
     return bleu_score
 
 
-def main(cands, refs, n, out):
+def nltk_sentence_bleu(cand, ref):
+    from nltk.translate.bleu_score import sentence_bleu as nltk_sent_bleu
+    assert type(cand) is type(ref)
+
+    if isinstance(cand, str):
+        cand = cand.strip().split()
+        ref = ref.strip().split()
+    return nltk_sent_bleu([ref], cand)
+
+
+def main(cands, refs, n, out, no_refs=False, no_cands=False):
     for cand, ref in zip_longest(cands, refs):
         if cand is None or ref is None:
             raise Exception("Candidate and reference files have unequal lengths."
                             " Expected same line count in both files")
         cand, ref = cand.strip(), ref.strip()
-        score = bleu(cand, ref, n=n)
-        line = f'{score:g}\t{cand}\t{ref}\n'
-        out.write(line)
+        score = sentence_bleu(cand, ref, n=n)
+        score2 = nltk_sentence_bleu(cand, ref)
+        if score2 < 1e-12:
+            score2 = 0.0
+        line = f'{score:g}\t{score2:g}'
+        if not no_cands:
+            line += f'\t{cand}'
+        if not no_refs:
+            line += f'\t{ref}'
+        out.write(line + '\n')
 
 
 if __name__ == '__main__':
@@ -85,6 +102,10 @@ if __name__ == '__main__':
                    help='Reference (aka human label) file')
     p.add_argument('-n', '--n', type=int, default=4,
                    help='maximum n as in ngram.')
+    p.add_argument('-nr', '--no-refs', help='Do not write references to --out',
+                   action='store_true')
+    p.add_argument('-nc', '--no-cands', help='Do not write candidates to --out',
+                   action='store_true')
     p.add_argument('-o', '--out', type=argparse.FileType('w'), default=sys.stdout,
                    help='Output file path to store the result.')
     p.add_argument('-v', '--verbose', action='store_true', help='verbose mode')
