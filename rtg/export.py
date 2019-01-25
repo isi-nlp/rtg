@@ -68,7 +68,7 @@ def add_boolean(parser, name, help, dest=None, default=True):
     group = parser.add_mutually_exclusive_group()
     dest = dest if dest else name.lower().replace('-', '_')
     group.add_argument(f'--{name}', dest=dest, action='store_true', default=default, help=help)
-    group.add_argument(f'--no-{name}', dest=dest, action='store_false', default=default,
+    group.add_argument(f'--no-{name}', dest=dest, action='store_false', default=not default,
                        help=f"See --{name}")
 
 
