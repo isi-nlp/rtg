@@ -362,7 +362,8 @@ class TranslationExperiment:
         self.config['updated_at'] = datetime.now().isoformat()
         self.store_config()
 
-    def store_model(self, epoch: int, model, train_score: float, val_score: float, keep: int):
+    def store_model(self, epoch: int, model, train_score: float, val_score: float, keep: int,
+                    prefix='model'):
         """
         saves model to a given path
         :param epoch: epoch number of model
@@ -370,13 +371,14 @@ class TranslationExperiment:
         :param train_score: score of model on training split
         :param val_score: score of model on validation split
         :param keep: number of good models to keep, bad models will be deleted
+        :param prefix: prefix to store model. default is "model"
         :return:
         """
         # TODO: improve this by skipping the model save if the model is not good enough to be saved
         if self.read_only:
             log.warning("Ignoring the store request; experiment is readonly")
             return
-        name = f'model_{epoch:03d}_{train_score:.6f}_{val_score:.6f}.pkl'
+        name = f'{prefix}_{epoch:03d}_{train_score:.6f}_{val_score:.6f}.pkl'
         path = self.model_dir / name
         log.info(f"Saving epoch {epoch} to {path}")
         torch.save(model, str(path))
@@ -439,7 +441,7 @@ class TranslationExperiment:
         """
         models = self.list_models(sort=sort, desc=desc)
         if models:
-            _, step, train_score, valid_score = models[0].name.replace('.pkl', '').split('_')
+            step, train_score, valid_score = models[0].name.replace('.pkl', '').split('_')[-3:]
             return models[0], int(step)
         else:
             return None, -1
@@ -547,3 +549,21 @@ class TranslationExperiment:
         if steps > 0:
             data = LoopingIterable(data, steps)
         return data
+
+    def copy_vocabs(self, other):
+        """
+        Copies vocabulary files from self to other
+        :param other: other experiment
+        :return:
+        """
+        other: TranslationExperiment = other
+        for source, destination in [(self._src_field_file, other._src_field_file),
+                                    (self._tgt_field_file, other._tgt_field_file),
+                                    (self._shared_field_file, other._shared_field_file)]:
+            if source.exists():
+                log.info(f"{source} --> {destination}")
+                destination.write_bytes(source.read_bytes())
+                src_txt_file = source.with_name(source.name.replace('.model', '.vocab'))
+                if src_txt_file.exists():
+                    dst_txt_file = destination.with_name(destination.name.replace('.model', '.vocab'))
+                    dst_txt_file.write_bytes(src_txt_file.read_bytes())
