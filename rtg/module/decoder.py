@@ -97,19 +97,24 @@ def load_models(models: List[Path], exp: Experiment):
     res = []
     for i, model_path in enumerate(models):
         assert model_path.exists()
-
         log.info(f"Load Model {i}: {model_path} ")
         chkpt = torch.load(str(model_path), map_location=device)
-        state = chkpt['model_state']
-        model_type = chkpt['model_type']
-        model_args = chkpt['model_args']
-        # Dummy experiment wrapper
-        factory = factories[model_type]
-        model = factory(exp=exp, **model_args)[0]
-        model.load_state_dict(state)
-        log.info(f"Successfully restored the model state of {i} : {model_type}")
+        model = instantiate_model(chkpt)
         res.append(model)
     return res
+
+
+def instantiate_model(checkpt_state, exp=None):
+    chkpt = checkpt_state
+    state = chkpt['model_state']
+    model_type = chkpt['model_type']
+    model_args = chkpt['model_args']
+    # Dummy experiment wrapper
+    factory = factories[model_type]
+    model = factory(exp=exp, **model_args)[0]
+    model.load_state_dict(state)
+    log.info(f"Successfully restored the model state of : {model_type}")
+    return model
 
 
 class ReloadEvent(Exception):
