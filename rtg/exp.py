@@ -519,7 +519,7 @@ class TranslationExperiment:
         return torch.load(self.emb_tgt_file) if self.emb_tgt_file.exists() else None
 
     def get_train_data(self, batch_size: int, steps: int = 0, sort_dec=True, batch_first=True,
-                       shuffle=False, copy_xy=False, fine_tune=False):
+                       shuffle=False, fine_tune=False):
         inp_file = self.train_file
         if fine_tune:
             if not self.finetune_file.exists():
@@ -529,15 +529,15 @@ class TranslationExperiment:
             inp_file = self.finetune_file
 
         train_data = BatchIterable(inp_file, batch_size=batch_size, sort_dec=sort_dec,
-                                   batch_first=batch_first, shuffle=shuffle, copy_xy=copy_xy)
+                                   batch_first=batch_first, shuffle=shuffle)
         if steps > 0:
             train_data = LoopingIterable(train_data, steps)
         return train_data
 
     def get_val_data(self, batch_size: int, sort_dec=True, batch_first=True,
-                     shuffle=False, copy_xy=False):
+                     shuffle=False):
         return BatchIterable(self.valid_file, batch_size=batch_size, sort_dec=sort_dec,
-                             batch_first=batch_first, shuffle=shuffle, copy_xy=copy_xy)
+                             batch_first=batch_first, shuffle=shuffle)
 
     def get_combo_data(self, batch_size: int, steps: int = 0, sort_dec=True, batch_first=True,
                        shuffle=False):

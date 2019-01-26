@@ -39,8 +39,6 @@ class BatchIterable:
     def make_an_ex(self):
         data = np.random.randint(self.n_reserved_toks, self.vocab_size, size=(self.seq_len,))
         tgt = self.vocab_size + (self.n_reserved_toks - 1) - data if self.reverse else data
-        tgt[0] = Batch.bos_val
-        data[0] = Batch.bos_val
         return Example(data.tolist(), tgt.tolist())
 
     def __iter__(self):

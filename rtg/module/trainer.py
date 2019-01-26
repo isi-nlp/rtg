@@ -161,7 +161,7 @@ class SteppedTrainer:
         optim_args['warmup_steps'] = warm_up_steps
         optim_args['label_smoothing'] = self._smoothing
 
-        self.tbd = SummaryWriter(log_dir=str(exp.work_dir))
+        self.tbd = SummaryWriter(log_dir=str(exp.work_dir / 'tensorboard'))
 
         self.exp.optim_args = optim, optim_args
         if not self.exp.read_only:
