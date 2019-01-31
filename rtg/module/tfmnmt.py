@@ -516,7 +516,8 @@ class TransformerTrainer(SteppedTrainer):
                 batch = batch.to(device)
                 num_toks = batch.y_toks
                 x_mask = (batch.x_seqs != batch.pad_value).unsqueeze(1)
-                bos_step = torch.full((len(batch), 1), fill_value=Batch.bos_val, dtype=torch.long)
+                bos_step = torch.full((len(batch), 1), fill_value=Batch.bos_val, dtype=torch.long,
+                                      device=device)
                 y_seqs_with_bos = torch.cat([bos_step, batch.y_seqs], dim=1)
                 y_mask = Batch.make_target_mask(y_seqs_with_bos)
                 out = self.model(batch.x_seqs, y_seqs_with_bos, x_mask, y_mask)
@@ -577,7 +578,8 @@ class TransformerTrainer(SteppedTrainer):
                 num_toks = batch.y_toks
                 self.model.zero_grad()
                 x_mask = (batch.x_seqs != batch.pad_value).unsqueeze(1)
-                bos_step = torch.full((len(batch), 1), fill_value=Batch.bos_val, dtype=torch.long)
+                bos_step = torch.full((len(batch), 1), fill_value=Batch.bos_val, dtype=torch.long,
+                                      device=device)
                 y_seqs_with_bos = torch.cat([bos_step, batch.y_seqs], dim=1)
                 y_mask = Batch.make_target_mask(y_seqs_with_bos)
                 out = self.model(batch.x_seqs, y_seqs_with_bos, x_mask, y_mask)
