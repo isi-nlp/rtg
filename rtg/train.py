@@ -62,7 +62,9 @@ def main():
         't2t': TransformerTrainer,
         'binmt': BiNmtTrainer,
         'seq2seq': SteppedRNNNMTTrainer,
-        'rnnlm': RnnLmTrainer
+        'rnnlm': RnnLmTrainer,
+        'tfmnmt': TransformerTrainer,
+        'rnnmt': SteppedRNNNMTTrainer
     }[exp.model_type](exp, optim=args.pop('optim'), **optim_args)
     try:
         trainer.train(**args)

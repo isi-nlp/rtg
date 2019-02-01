@@ -85,11 +85,16 @@ class ComboGenerator(GeneratorFactory):
 generators = {'t2t': T2TGenerator,
               'seq2seq': Seq2SeqGenerator,
               'binmt': BiNMTGenerator,
-              'combo': ComboGenerator}
+              'combo': ComboGenerator,
+              'tfmnmt': T2TGenerator,
+              'rnnmt': Seq2SeqGenerator,
+              }
 factories = {
     't2t': TransformerNMT.make_model,
     'seq2seq': RNNNMT.make_model,
     'binmt': BiNMT.make_model,
+    'tfmnmt': TransformerNMT.make_model,
+    'rnnmt': RNNNMT.make_model,
 }
 
 
@@ -165,7 +170,7 @@ class Decoder:
         return state
 
     @staticmethod
-    def maybe_ensemble_state(exp, model_paths: Optional[List[str]], ensemble: int=1):
+    def maybe_ensemble_state(exp, model_paths: Optional[List[str]], ensemble: int = 1):
         if model_paths and len(model_paths) == 1:
             log.info(f" Restoring state from requested model {model_paths[0]}")
             return Decoder._checkpt_to_model_state(model_paths[0])
@@ -194,8 +199,8 @@ class Decoder:
 
     @classmethod
     def new(cls, exp: Experiment, model=None, gen_args=None,
-            model_paths: Optional[List[str]]=None,
-            ensemble: int=1, model_type: Optional[str]=None):
+            model_paths: Optional[List[str]] = None,
+            ensemble: int = 1, model_type: Optional[str] = None):
         """
         create a new decoder
         :param exp: experiment
@@ -393,7 +398,7 @@ class Decoder:
                 'E1': self.exp.src_vocab,
                 'E2': self.exp.tgt_vocab
             }[self.gen_args['path'][:2]]
-        else:   # all others go from source as input to target as output
+        else:  # all others go from source as input to target as output
             return self.exp.src_vocab
 
     @property
@@ -513,7 +518,7 @@ class Decoder:
                     for score, hyp in res:
                         print(f'  {score:.4f}\t{hyp}')
             except ReloadEvent as re:
-                raise re        # send it to caller
+                raise re  # send it to caller
             except EOFError as e1:
                 break
             except Exception:
