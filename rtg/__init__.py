@@ -37,11 +37,6 @@ def profile(func, *args):
     return profiler(func, *args)
 
 
-def load_conf(inp):
-    with open(inp, encoding='utf-8') as fh:
-        return yaml.load(fh)
-
-
 from rtg.dataprep import BatchIterable, Batch
 from rtg.exp import TranslationExperiment
 from rtg.module import tfmnmt, decoder

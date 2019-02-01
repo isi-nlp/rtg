@@ -256,7 +256,7 @@ class SteppedTrainer:
         :param data_iter: data iterator, either training or validation
         :return: score which is a loss
         """
-        pass
+        raise NotImplementedError()
 
     @abstractmethod
     def train(self, steps: int, check_point: int, batch_size: int,
@@ -270,4 +270,4 @@ class SteppedTrainer:
         :param args: any extra args
         :return:
         """
-        pass
+        raise NotImplementedError()

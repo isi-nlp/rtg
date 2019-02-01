@@ -136,12 +136,13 @@ class SeqDecoder(nn.Module):
                                 bidirectional=False, batch_first=True,
                                 dropout=dropout if n_layers > 1 else 0)
 
-    def forward(self, enc_outs, prev_out, last_hidden, gen_probs=True):
+    def forward(self, enc_outs: Optional, prev_out, last_hidden, gen_probs=True):
         # Note: we run this one step at a time
 
         # Get the embedding of the current input word (last output word)
         batch_size = prev_out.size(0)
-        assert len(enc_outs) == batch_size
+        if enc_outs is not None:
+            assert len(enc_outs) == batch_size
         # S=B x 1 x N
         embedded = self.prev_emb(prev_out).view(batch_size, 1, self.prev_emb.emb_size)
         embedded = self.dropout(embedded)
