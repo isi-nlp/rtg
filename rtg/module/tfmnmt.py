@@ -515,9 +515,17 @@ class TransformerTrainer(SteppedTrainer):
             for i, batch in enumerate(data_bar):
                 batch = batch.to(device)
                 num_toks = batch.y_toks
-                out = self.model(batch.x_seqs, batch.y_seqs, batch.x_mask, batch.y_mask)
-                # skip the BOS token in  batch.y_seqs
-                loss = self.loss_func(out, batch.y_seqs_nobos, num_toks, False)
+                x_mask = (batch.x_seqs != batch.pad_value).unsqueeze(1)
+                bos_step = torch.full((len(batch), 1), fill_value=Batch.bos_val, dtype=torch.long,
+                                      device=device)
+                y_seqs_with_bos = torch.cat([bos_step, batch.y_seqs], dim=1)
+                y_mask = Batch.make_target_mask(y_seqs_with_bos)
+                out = self.model(batch.x_seqs, y_seqs_with_bos, x_mask, y_mask)
+                # [Batch x Time x D]
+                # skip the last time step (the one with EOS as input)
+                out = out[:, :-1, :]
+                # assumption:  y_seqs has EOS, and not BOS
+                loss = self.loss_func(out, batch.y_seqs, num_toks, False)
                 total_loss += loss
                 total_tokens += num_toks
                 elapsed = time.time() - start
@@ -569,9 +577,17 @@ class TransformerTrainer(SteppedTrainer):
                 batch = batch.to(device)
                 num_toks = batch.y_toks
                 self.model.zero_grad()
-                out = self.model(batch.x_seqs, batch.y_seqs, batch.x_mask, batch.y_mask)
-                # skip the BOS token in  batch.y_seqs
-                loss = self.loss_func(out, batch.y_seqs_nobos, num_toks, True)
+                x_mask = (batch.x_seqs != batch.pad_value).unsqueeze(1)
+                bos_step = torch.full((len(batch), 1), fill_value=Batch.bos_val, dtype=torch.long,
+                                      device=device)
+                y_seqs_with_bos = torch.cat([bos_step, batch.y_seqs], dim=1)
+                y_mask = Batch.make_target_mask(y_seqs_with_bos)
+                out = self.model(batch.x_seqs, y_seqs_with_bos, x_mask, y_mask)
+                # [Batch x Time x D]
+                # skip the last time step (the one with EOS as input)
+                out = out[:, :-1, :]
+                # assumption:  y_seqs has EOS, and not BOS
+                loss = self.loss_func(out, batch.y_seqs, num_toks, True)
                 self.tbd.add_scalars('training', {'step_loss': loss,
                                                   'learn_rate': self.opt.curr_lr},
                                      self.opt.curr_step)
@@ -617,8 +633,8 @@ def __test_model__():
     decr = Decoder.new(exp, trainer.model)
 
     assert 2 == Batch.bos_val
-    src = tensor([[2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
-                  [2, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4]])
+    src = tensor([[4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
+                  [13, 12, 11, 10, 9, 8, 7, 6, 5, 4]])
     src_lens = tensor([src.size(1)] * src.size(0))
 
     def check_pt_callback(**args):

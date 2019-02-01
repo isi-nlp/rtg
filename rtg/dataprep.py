@@ -191,22 +191,20 @@ class Batch:
     bos_val = BOS_TOK[1]
     eos_val = EOS_TOK[1]
 
-    _x_attrs = ['x_len', 'x_seqs', 'x_mask']
-    _y_attrs = ['y_len', 'y_seqs', 'y_seqs_nobos', 'y_mask']
+    _x_attrs = ['x_len', 'x_seqs']
+    _y_attrs = ['y_len', 'y_seqs']
 
-    def __init__(self, batch: List[Example], sort_dec=False, batch_first=True, copy_xy=False):
+    def __init__(self, batch: List[Example], sort_dec=False, batch_first=True,
+                 add_eos_x=True, add_eos_y=True):
         """
         :param batch: List fo Examples
         :param sort_dec: True if the examples be sorted as descending order of their source sequence lengths
         :Param Batch_First: first dimension is batch
-        :param copy_xy: copy x to y
         """
-        for ex in batch:  # check and insert BOS and EOS
-            if ex.x[0] != self.bos_val:
-                ex.x.insert(0, self.bos_val)
-            if ex.x[-1] != self.eos_val:
-                ex.x.append(self.eos_val)
-        self.copy_xy = copy_xy
+        if add_eos_x:
+            for ex in batch:  # check and insert EOS
+                if ex.x[-1] != self.eos_val:
+                    ex.x.append(self.eos_val)
         self.batch_first = batch_first
         if sort_dec:
             batch = sorted(batch, key=lambda _: len(_.x), reverse=True)
@@ -224,55 +222,36 @@ class Batch:
         if not batch_first:      # transpose
             self.x_seqs = self.x_seqs.t()
 
-        # [ Batch x Time=1 x Len ] :: input has one time step
-        self.x_mask = (self.x_seqs != self.pad_value).unsqueeze(1)
         first_y = batch[0].y
         self.has_y = first_y is not None
         if self.has_y:
-            assert not self.copy_xy
-            for ex in batch:    # check and insert BOS to output seqs
-                if ex.y[0] != self.bos_val:
-                    ex.y.insert(0, self.bos_val)
-                if ex.y[-1] != self.eos_val:
-                    ex.y.append(self.eos_val)
+            if add_eos_y:
+                for ex in batch:    # check and insert BOS to output seqs
+                    if ex.y[-1] != self.eos_val:
+                        ex.y.append(self.eos_val)
 
-            self.y_len = tensor([len(e.y) for e in batch])  # Excluding either BOS or EOS tokens
+            self.y_len = tensor([len(e.y) for e in batch])
             self.y_toks = self.y_len.sum().float().item()
             self.max_y_len = self.y_len.max().item()
-            y_seqs = torch.full(size=(self._len, self.max_y_len + 1), fill_value=self.pad_value,
+            y_seqs = torch.full(size=(self._len, self.max_y_len), fill_value=self.pad_value,
                                 dtype=torch.long)
             for i, ex in enumerate(batch):
                 y_seqs[i, :len(ex.y)] = torch.tensor(ex.y, dtype=torch.long)
-
-            self.y_seqs_nobos = y_seqs[:, 1:].to(device)  # predictions
-            self.y_seqs = y_seqs[:, :-1].to(device)
+            self.y_seqs = y_seqs.to(device)
             if not batch_first:    # transpose
                 self.y_seqs = self.y_seqs.t()
-                self.y_seqs_nobos = self.y_seqs_nobos.t()
-            # [ Batch x MaxLen x Len ] :: target has max len time steps
-            self.y_mask = self.make_std_mask(self.y_seqs)
-        elif self.copy_xy:
-            self.has_y = True
-            self.y_toks = self.x_toks
-            self.y_len = self.x_len
-            self.max_y_len = self.max_x_len
-            self.y_seqs = self.x_seqs
-            self.y_seqs_nobos = self.x_seqs[:, 1:]
 
     def __len__(self):
         return self._len
 
     def to(self, device):
         """Move this batch to given device"""
-        for name in self._x_attrs:
+        for name in self._x_attrs + (self._y_attrs if self.has_y else []):
             setattr(self, name, getattr(self, name).to(device))
-        if self.has_y:
-            for name in self._y_attrs:
-                setattr(self, name, getattr(self, name).to(device))
         return self
 
     @staticmethod
-    def make_std_mask(tgt, pad=pad_value):
+    def make_target_mask(tgt, pad=pad_value):
         "Create a mask to hide padding and future words."
         tgt_mask = (tgt != pad).unsqueeze(1)
         tgt_mask = tgt_mask & subsequent_mask(tgt.size(-1)).type_as(tgt_mask.data)
@@ -283,33 +262,28 @@ class BatchIterable:
     # TODO: How to specify Type Hint for this as Iterable[Batch] ?
 
     def __init__(self, data_path: Union[str, Path], batch_size: int,
-                 sort_dec=True, batch_first=True, shuffle=False,
-                 copy_xy=False):
+                 sort_dec=True, batch_first=True, shuffle=False):
         """
         Iterator for reading training data in batches
         :param data_path: path to TSV file
         :param batch_size: number of examples per batch
         :param sort_dec: should the records within batch be sorted descending order of sequence length?
-        :param copy_xy: copy x to y, (use it when data is monolingual and you want to make a copy)
         """
         self.data = TSVData(data_path, shuffle=shuffle)
         self.batch_size = batch_size
         self.sort_dec = sort_dec
         self.batch_first = batch_first
-        self.copy_xy = copy_xy
 
     def read_all(self):
         batch = []
         for ex in self.data:
             batch.append(ex)
             if len(batch) >= self.batch_size:
-                yield Batch(batch, sort_dec=self.sort_dec, batch_first=self.batch_first,
-                            copy_xy=self.copy_xy)
+                yield Batch(batch, sort_dec=self.sort_dec, batch_first=self.batch_first)
                 batch = []
         if batch:
             log.debug(f"\nLast batch, size={len(batch)}")
-            yield Batch(batch, sort_dec=self.sort_dec, batch_first=self.batch_first,
-                        copy_xy=self.copy_xy)
+            yield Batch(batch, sort_dec=self.sort_dec, batch_first=self.batch_first)
 
     def __iter__(self):
         yield from self.read_all()

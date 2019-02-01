@@ -84,7 +84,8 @@ class SeqEncoder(nn.Module):
             assert emb_size == self.emb_size
         else:
             batch_size, seq_len = input_seqs.shape
-            embedded = self.emb(input_seqs).view(batch_size, seq_len, self.emb_size)
+            embs = self.emb(input_seqs)
+            embedded = embs.view(batch_size, seq_len, self.emb_size)
 
         embedded = self.dropout(embedded)
         packed = nn.utils.rnn.pack_padded_sequence(embedded, input_lengths, batch_first=True)
@@ -534,6 +535,15 @@ class SteppedRNNNMTTrainer(SteppedTrainer):
 
 
 def __test_seq2seq_model__():
+    """
+        batch_size = 4
+        p = '/Users/tg/work/me/rtg/saral/runs/1S-rnn-basic'
+        exp = Experiment(p)
+        steps = 3000
+        check_pt = 100
+        trainer = SteppedRNNNMTTrainer(exp=exp, lr=0.01, warmup_steps=100)
+        trainer.train(steps=steps, check_point=check_pt, batch_size=batch_size)
+    """
     from rtg.dummy import DummyExperiment
     from rtg.module.decoder import Decoder
 
@@ -548,8 +558,8 @@ def __test_seq2seq_model__():
     check_pt = 100
 
     assert 2 == Batch.bos_val
-    src = tensor([[2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
-                  [2, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4]])
+    src = tensor([[4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
+                  [13, 12, 11, 10, 9, 8, 7, 6, 5, 4]])
     src_lens = tensor([src.size(1)] * src.size(0))
 
     for reverse in (False,):
@@ -557,7 +567,7 @@ def __test_seq2seq_model__():
         #  first, just copy the numbers, i.e. y = x
         #  second, reverse the numbers y=(V + reserved - x)
         log.info(f"====== REVERSE={reverse}; VOCAB={vocab_size}======")
-        model, args = RNNNMT.make_model('DummyA', 'DummyB', vocab_size, vocab_size, attention=True,
+        model, args = RNNNMT.make_model('DummyA', 'DummyB', vocab_size, vocab_size, attention='dot',
                                         emb_size=emb_size, hid_size=model_dim, n_layers=1)
         trainer = SteppedRNNNMTTrainer(exp=exp, model=model, lr=0.01, warmup_steps=100)
         decr = Decoder.new(exp, model)
