@@ -183,6 +183,22 @@ def subsequent_mask(size):
     return mask
 
 
+def padded_sequence_mask(lengths, max_len=None):
+    """
+    :param lengths: a sequence of lenghts
+    :param max_len: pad upto this length
+    :return:
+    """
+    max_len = max_len if max_len else lengths.max()
+    batch_size = lengths.size(0)
+    # create a row [0, 1, ... s] and duplicate this row batch_size times --> [B, S]
+    seq_range_expand = torch.arange(0, max_len, dtype=torch.long,
+                                    device=device).expand(batch_size, max_len)
+    # make lengths vectors to [B x 1] and duplicate columns to [B, S]
+    seq_length_expand = lengths.unsqueeze(1).expand_as(seq_range_expand)
+    return seq_range_expand < seq_length_expand  # 0 if padding, 1 otherwise
+
+
 class Batch:
     """
     An object of this class holds a batch of examples

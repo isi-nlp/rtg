@@ -9,7 +9,7 @@ import numpy as np
 
 from rtg import log, TranslationExperiment as Experiment
 from rtg import my_tensor as tensor, device
-from rtg.dataprep import PAD_TOK_IDX, BOS_TOK_IDX, Batch, BatchIterable
+from rtg.dataprep import PAD_TOK_IDX, BOS_TOK_IDX, Batch, BatchIterable, padded_sequence_mask
 from rtg.module import NMTModel
 from rtg.module.trainer import TrainerState, SteppedTrainer
 
@@ -444,20 +444,10 @@ class SimpleLossFunction:
     def __init__(self, optim):
         self.optim = optim
 
-    @staticmethod
-    def sequence_mask(lengths, max_len):
-        batch_size = lengths.size(0)
-        # create a row [0, 1, ... s] and duplicate this row batch_size times --> [B, S]
-        seq_range_expand = torch.arange(0, max_len, dtype=torch.long,
-                                        device=device).expand(batch_size, max_len)
-        # make lengths vectors to [B x 1] and duplicate columns to [B, S]
-        seq_length_expand = lengths.unsqueeze(1).expand_as(seq_range_expand)
-        return seq_range_expand < seq_length_expand  # 0 if padding, 1 otherwise
-
     def __call__(self, log_probs, batch: Batch, train_mode: bool) -> float:
         per_tok_loss = -log_probs
 
-        tok_mask = self.sequence_mask(batch.y_len, batch.max_y_len - 1)
+        tok_mask = padded_sequence_mask(batch.y_len, batch.max_y_len - 1)
         norm = batch.y_toks
         loss = (per_tok_loss * tok_mask.float()).sum().float() / norm
         if train_mode:
