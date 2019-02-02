@@ -11,7 +11,7 @@ from torch import nn as nn
 from rtg import TranslationExperiment as Experiment
 from rtg import log, device, my_tensor as tensor, debug_mode
 from rtg.binmt.bicycle import BiNMT
-from rtg.module.rnnnmt import RNNNMT
+from rtg.module.rnnmt import RNNMT
 from rtg.dataprep import PAD_TOK, BOS_TOK, EOS_TOK, subsequent_mask
 from rtg.module.tfmnmt import TransformerNMT
 
@@ -32,7 +32,7 @@ class GeneratorFactory(abc.ABC):
 
 class Seq2SeqGenerator(GeneratorFactory):
 
-    def __init__(self, model: RNNNMT, x_seqs, x_lens):
+    def __init__(self, model: RNNMT, x_seqs, x_lens):
         super().__init__(model)
         # [S, B, d], [S, B, d] <-- [S, B], [B]
         self.enc_outs, enc_hids = model.encode(x_seqs, x_lens, None)
@@ -91,10 +91,10 @@ generators = {'t2t': T2TGenerator,
               }
 factories = {
     't2t': TransformerNMT.make_model,
-    'seq2seq': RNNNMT.make_model,
+    'seq2seq': RNNMT.make_model,
     'binmt': BiNMT.make_model,
     'tfmnmt': TransformerNMT.make_model,
-    'rnnmt': RNNNMT.make_model,
+    'rnnmt': RNNMT.make_model,
 }
 
 

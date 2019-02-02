@@ -5,7 +5,6 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 from tqdm import tqdm
-import numpy as np
 
 from rtg import log, TranslationExperiment as Experiment
 from rtg import my_tensor as tensor, device
@@ -290,10 +289,10 @@ class Seq2SeqBridge(nn.Module):
         return enc_outs, enc_hids
 
 
-class RNNNMT(NMTModel):
+class RNNMT(NMTModel):
 
     def __init__(self, enc: SeqEncoder, dec: SeqDecoder, bridge: Seq2SeqBridge = None):
-        super(RNNNMT, self).__init__()
+        super(RNNMT, self).__init__()
         self.enc: SeqEncoder = enc
         self.dec: SeqDecoder = dec
         if bridge:
@@ -424,7 +423,7 @@ class RNNNMT(NMTModel):
             log.info("NOT Using attention models for decoding")
             dec = SeqDecoder(tgt_embedder, tgt_generator, n_layers=n_layers, dropout=dropout)
 
-        model = RNNNMT(enc, dec)
+        model = RNNMT(enc, dec)
         # Initialize parameters with Glorot / fan_avg.
         for p in model.parameters():
             if p.dim() > 1:
@@ -457,13 +456,13 @@ class SimpleLossFunction:
         return loss.item() * norm
 
 
-class SteppedRNNNMTTrainer(SteppedTrainer):
+class SteppedRNNMTTrainer(SteppedTrainer):
 
     def __init__(self, exp: Experiment,
-                 model: Optional[RNNNMT] = None,
+                 model: Optional[RNNMT] = None,
                  optim: str = 'ADAM',
                  **optim_args):
-        super().__init__(exp, model, model_factory=RNNNMT.make_model, optim=optim, **optim_args)
+        super().__init__(exp, model, model_factory=RNNMT.make_model, optim=optim, **optim_args)
         self.loss_func = SimpleLossFunction(optim=self.opt)
 
     def run_valid_epoch(self, data_iter: BatchIterable) -> float:
@@ -558,9 +557,9 @@ def __test_seq2seq_model__():
         #  first, just copy the numbers, i.e. y = x
         #  second, reverse the numbers y=(V + reserved - x)
         log.info(f"====== REVERSE={reverse}; VOCAB={vocab_size}======")
-        model, args = RNNNMT.make_model('DummyA', 'DummyB', vocab_size, vocab_size, attention='dot',
-                                        emb_size=emb_size, hid_size=model_dim, n_layers=1)
-        trainer = SteppedRNNNMTTrainer(exp=exp, model=model, lr=0.01, warmup_steps=100)
+        model, args = RNNMT.make_model('DummyA', 'DummyB', vocab_size, vocab_size, attention='dot',
+                                       emb_size=emb_size, hid_size=model_dim, n_layers=1)
+        trainer = SteppedRNNMTTrainer(exp=exp, model=model, lr=0.01, warmup_steps=100)
         decr = Decoder.new(exp, model)
 
         def check_pt_callback(**args):

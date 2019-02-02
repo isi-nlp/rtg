@@ -10,7 +10,7 @@ from rtg import log, device, my_tensor as tensor
 from rtg.dataprep import BOS_TOK_IDX, padded_sequence_mask
 
 import inspect
-from rtg.module.rnnnmt import Embedder, Generator, SeqDecoder
+from rtg.module.rnnmt import Embedder, Generator, SeqDecoder
 from rtg import TranslationExperiment as Experiment
 import random
 from rtg.module.trainer import TrainerState, SteppedTrainer

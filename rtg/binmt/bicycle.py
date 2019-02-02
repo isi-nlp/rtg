@@ -3,7 +3,7 @@
 # Author: Thamme Gowda [tg at isi dot edu] 
 # Created: 10/17/18
 
-from rtg.module.rnnnmt import *
+from rtg.module.rnnmt import *
 from typing import Mapping
 from time import time
 from rtg import cpu_device, device, log
@@ -31,16 +31,16 @@ class BiNMT(nn.Module):
 
         self.model_dim: int = enc1.out_size
 
-        self.paths: Mapping[str, RNNNMT] = {
-            'E1D1': RNNNMT(enc1, dec1),  # ENC1 --> DEC1
-            'E2D2': RNNNMT(enc2, dec2),  # ENC2 --> DEC2
+        self.paths: Mapping[str, RNNMT] = {
+            'E1D1': RNNMT(enc1, dec1),  # ENC1 --> DEC1
+            'E2D2': RNNMT(enc2, dec2),  # ENC2 --> DEC2
             # ENC1 --> DEC2 --> ENC2 --> DEC1
-            'E1D2E2D1': RNNNMT(enc1, dec1, bridge=Seq2SeqBridge(dec2, enc2)),
+            'E1D2E2D1': RNNMT(enc1, dec1, bridge=Seq2SeqBridge(dec2, enc2)),
             # ENC2 --> DEC1 --> ENC1 --> DEC2
-            'E2D1E1D2': RNNNMT(enc2, dec2, bridge=Seq2SeqBridge(dec1, enc1)),
+            'E2D1E1D2': RNNMT(enc2, dec2, bridge=Seq2SeqBridge(dec1, enc1)),
             ## parallel
-            'E1D2': RNNNMT(enc1, dec2),
-            'E2D1': RNNNMT(enc2, dec1),
+            'E1D2': RNNMT(enc1, dec2),
+            'E2D1': RNNMT(enc2, dec1),
         }
         # TODO: parallel data when available (semi supervised)
         # 1. ENC1 --> DEC2
