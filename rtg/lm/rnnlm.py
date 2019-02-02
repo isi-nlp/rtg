@@ -111,9 +111,16 @@ class RnnLmTrainer(SteppedTrainer):
               check_pt_callback: Optional[Callable] = None, **args):
         train_state = TrainerState(self.model, check_point=check_point)
         train_state.train_mode(True)
-        train_data = self.exp.get_mono_data('train', 'tgt', batch_size=batch_size,
-                                            batch_first=True, sort_dec=True)
-        val_data = self.exp.get_mono_data('valid', 'tgt', batch_size=batch_size,
+        if self.start_step >= steps:
+            log.warning(f"Already trained to  {self.start_step}. Considering it as done.")
+            return
+        rem_steps = steps - self.start_step
+        side = 'tgt'     # TODO: this should be inferrable or configurable instead of hardcoded
+
+        train_data = self.exp.get_mono_data('train', side, batch_size=batch_size,
+                                            batch_first=True, sort_dec=True,
+                                            num_batches=rem_steps, shuffle=True)
+        val_data = self.exp.get_mono_data('valid', side, batch_size=batch_size,
                                           batch_first=True, sort_dec=True)
 
         keep_models = 8
@@ -126,7 +133,6 @@ class RnnLmTrainer(SteppedTrainer):
                                              train_mode=True)
                 bar_msg, is_check_pt = train_state.step(batch.x_toks, loss)
                 data_bar.set_postfix_str(bar_msg, refresh=True)
-
                 del batch       # TODO: force free memory
                 if is_check_pt:
                     train_loss = train_state.reset()
@@ -137,6 +143,7 @@ class RnnLmTrainer(SteppedTrainer):
                                           step=self.opt.curr_step,
                                           train_loss=train_loss)
                     train_state.train_mode(True)
+        log.info("End of training session")
 
 
 def test_lm():
