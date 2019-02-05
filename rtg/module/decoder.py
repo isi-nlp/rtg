@@ -12,11 +12,13 @@ from rtg import TranslationExperiment as Experiment
 from rtg import log, device, my_tensor as tensor, debug_mode
 from rtg.binmt.bicycle import BiNMT
 from rtg.module.rnnmt import RNNMT
+from rtg.lm.rnnlm import RnnLm
 from rtg.dataprep import PAD_TOK, BOS_TOK, EOS_TOK, subsequent_mask
 from rtg.module.tfmnmt import TransformerNMT
 
 Hypothesis = Tuple[float, List[int]]
 StrHypothesis = Tuple[float, str]
+INTERACTIVE = False
 
 
 # TODO: simplify the generators
@@ -82,12 +84,36 @@ class ComboGenerator(GeneratorFactory):
         return log_probs
 
 
+class RnnLmGenerator(GeneratorFactory):
+
+    def __init__(self, model: RnnLm, x_seqs, x_lens):
+        super().__init__(model)
+        self.dec_hids = None
+        if INTERACTIVE:
+            # interactive mode use input as prefix
+            n = x_seqs.shape[1] - 1 if x_seqs[0, -1] == EOS_TOK[1] else x_seqs.shape[1]
+            for i in range(n):
+                self.log_probs, self.dec_hids, _ = self.model(None, x_seqs[:, i], self.dec_hids)
+            self.consumed = False
+
+    def generate_next(self, past_ys):
+        if INTERACTIVE and not self.consumed:
+            assert past_ys[0, -1] == BOS_TOK[1]  # we are doing it right?
+            self.consumed = True
+            return self.log_probs
+
+        last_ys = past_ys[:, -1]
+        log_probs, self.dec_hids, _ = self.model(None, last_ys, self.dec_hids)
+        return log_probs
+
+
 generators = {'t2t': T2TGenerator,
               'seq2seq': Seq2SeqGenerator,
               'binmt': BiNMTGenerator,
               'combo': ComboGenerator,
               'tfmnmt': T2TGenerator,
               'rnnmt': Seq2SeqGenerator,
+              'rnnlm': RnnLmGenerator
               }
 factories = {
     't2t': TransformerNMT.make_model,
@@ -95,6 +121,7 @@ factories = {
     'binmt': BiNMT.make_model,
     'tfmnmt': TransformerNMT.make_model,
     'rnnmt': RNNMT.make_model,
+    'rnnlm': RnnLm.make_model
 }
 
 
@@ -164,7 +191,7 @@ class Decoder:
 
     @staticmethod
     def _checkpt_to_model_state(checkpt_path: str):
-        state = torch.load(checkpt_path)
+        state = torch.load(checkpt_path, map_location=device)
         if 'model_state' in state:
             state = state['model_state']
         return state
@@ -461,6 +488,8 @@ class Decoder:
                 print(f"\t{cmd:15}\t-\t{msg}")
 
         print("Launching Interactive shell...")
+        global INTERACTIVE
+        INTERACTIVE = True
         print_cmds()
         print_state = True
         while True:
