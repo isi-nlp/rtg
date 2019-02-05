@@ -5,17 +5,22 @@ from pathlib import Path
 from typing import Optional, Dict, Iterator, List, Tuple, Union, Any
 import torch
 import random
-from rtg import log, load_conf
+from rtg import log
 from rtg.dataprep import (RawRecord, ParallelSeqRecord, MonoSeqRecord,
                           Field, BatchIterable, LoopingIterable)
 from rtg.utils import IO, line_count
 from itertools import zip_longest
 
 
+def load_conf(inp: Union[str, Path]):
+    with IO.reader(inp) as fh:
+        return yaml.load(fh)
+
+
 class TranslationExperiment:
 
     def __init__(self, work_dir: Union[str, Path], read_only=False,
-                 config: Optional[Dict[str, Any]] = None):
+                 config: Union[str, Path, Optional[Dict[str, Any]]] = None):
         if type(work_dir) is str:
             work_dir = Path(work_dir)
 
@@ -46,7 +51,7 @@ class TranslationExperiment:
             for _dir in [self.model_dir, self.data_dir]:
                 if not _dir.exists():
                     _dir.mkdir(parents=True)
-        if type(config) is str:
+        if isinstance(config, str) or isinstance(config, Path):
             config = load_conf(config)
         self.config = config if config else load_conf(self._config_file)
 
@@ -60,7 +65,7 @@ class TranslationExperiment:
         # both are set or both are unset
         assert (self.src_field is None) == (self.tgt_field is None)
 
-        self._unsupervised = self.model_type in {'binmt'}
+        self._unsupervised = self.model_type in {'binmt', 'rnnlm'}
         if self._unsupervised:
             self.mono_train_src = self.data_dir / 'mono.train.src.gz'
             self.mono_train_tgt = self.data_dir / 'mono.train.tgt.gz'
@@ -142,10 +147,9 @@ class TranslationExperiment:
         if self._shared_field_file.exists():
             log.info(f"{self._shared_field_file} exists. Skipping shared vocab creation")
         else:
-            files = [args['train_src'], args['train_tgt']]
-            for val in [args.get('mono_src'), args.get('mono_tgt')]:
-                if val:
-                    files.extend(val)
+            files = [args['mono_train_src'], args['mono_train_tgt']]
+            # monolingual files for vocab creation
+            files += [args[key] for key in ['mono_src', 'mono_tgt'] if key in args]
             no_split_toks = args.get('no_split_toks')
             self.shared_field = Field.train(args['pieces'], args['max_types'],
                                             str(self._shared_field_file), files,
@@ -157,7 +161,7 @@ class TranslationExperiment:
                                    line_check=False)
 
         if args.get("finetune_src") or args.get("finetune_tgt"):
-            self.pre_process_finetune(args)
+            self._pre_process_parallel('finetune_src', 'finetune_tgt', self.finetune_file)
 
         # get samples from validation set
         n_samples = args.get('num_samples', 5)
@@ -170,46 +174,67 @@ class TranslationExperiment:
         self.write_tsv(samples, self.samples_file)
 
     def pre_process_mono(self, args):
+
+        mono_files = [args[key] for key in ['mono_train_src', 'mono_train_tgt'] if key in args]
+        assert mono_files, "At least one of 'mono_train_src', 'mono_train_tgt' should be set"
+        log.info(f"Found mono files: {mono_files}")
         no_split_toks = args.get('no_split_toks')
         if args.get('shared_vocab'):
-            files = [args['mono_train_src'], args['mono_train_tgt']]
             if self._shared_field_file.exists():
                 log.info(f"{self._shared_field_file} exists. Skipping shared vocab creation")
             else:
+                log.info("Going to build shared vocab from mono files")
                 self.shared_field = Field.train(args['pieces'],
                                                 args['max_types'],
-                                                str(self._shared_field_file), files,
+                                                str(self._shared_field_file), mono_files,
                                                 no_split_toks=no_split_toks)
-        else:
+        else:  # separate vocabularies
+            # Source vocabulary
             if self._src_field_file.exists():
                 log.info(f"{self._src_field_file} exists. Skipping source vocab creation... ")
             else:
-                self.src_field = Field.train(args['pieces'], args['max_src_types'],
-                                             str(self._src_field_file), [args['mono_train_src']],
-                                             no_split_toks=no_split_toks)
+                if 'mono_train_src' in args:
+                    log.info("Going to build source vocab from mono_train_src")
+                    self.src_field = Field.train(args['pieces'], args['max_src_types'],
+                                                 str(self._src_field_file),
+                                                 [args['mono_train_src']],
+                                                 no_split_toks=no_split_toks)
+                else:
+                    log.warning("Skipping source vocab creation since mono_train_src is not given")
 
+            # target vocabulary
             if self._tgt_field_file.exists():
                 log.info(f"{self._tgt_field_file} exists. Skipping target vocab creation")
             else:
-                self.tgt_field = Field.train(args['pieces'], args['max_tgt_types'],
-                                             str(self._tgt_field_file), [args['mono_train_tgt']],
-                                             no_split_toks=no_split_toks)
+                if 'mono_train_tgt' in args:
+                    log.info("Going to build target vocab from mono_train_tgt")
+                    self.tgt_field = Field.train(args['pieces'], args['max_tgt_types'],
+                                                 str(self._tgt_field_file),
+                                                 [args['mono_train_tgt']],
+                                                 no_split_toks=no_split_toks)
+                else:
+                    log.warning("Skipping target vocab creation since mono_train_src is not given")
 
-        def _prep_file(raw_file, out_file, do_truncate, max_len, field: Field):
+        def _prep_file(file_key, out_file, do_truncate, max_len, field: Field):
+            if file_key not in args:
+                log.warning(f'Skipped: {file_key} because it is not found in config')
+                return
+
+            raw_file = args[file_key]
             recs = self.read_mono_raw_data(raw_file, do_truncate, max_len, field.encode_as_ids)
             self.write_mono_lines(recs, out_file)
             if args.get('text_files'):
                 recs = self.read_mono_raw_data(raw_file, do_truncate, max_len, field.tokenize)
                 self.write_mono_lines(recs, str(out_file).replace('.tsv', '.pieces.tsv'))
 
-        _prep_file(args['mono_train_src'], self.mono_train_src, args['truncate'], args['src_len'],
+        _prep_file('mono_train_src', self.mono_train_src, args['truncate'], args['src_len'],
                    self.src_vocab)
-        _prep_file(args['mono_train_tgt'], self.mono_train_tgt, args['truncate'], args['tgt_len'],
+        _prep_file('mono_train_tgt', self.mono_train_tgt, args['truncate'], args['tgt_len'],
                    self.tgt_vocab)
 
-        _prep_file(args['mono_valid_src'], self.mono_valid_src, args['truncate'], args['src_len'],
+        _prep_file('mono_valid_src', self.mono_valid_src, args['truncate'], args['src_len'],
                    self.src_vocab)
-        _prep_file(args['mono_valid_tgt'], self.mono_valid_tgt, args['truncate'], args['tgt_len'],
+        _prep_file('mono_valid_tgt', self.mono_valid_tgt, args['truncate'], args['tgt_len'],
                    self.tgt_vocab)
 
     def _pre_process_parallel(self, src_key: str, tgt_key: str, out_file: Path,
@@ -357,8 +382,15 @@ class TranslationExperiment:
         if 'model_args' not in self.config:
             self.config['model_args'] = {}
         args = self.config['model_args']
-        args['src_vocab'] = len(self.src_vocab) if self.src_vocab else 0
-        args['tgt_vocab'] = len(self.tgt_vocab) if self.tgt_vocab else 0
+        if self.model_type in {'rnnlm'}:
+            # Not needed for certain models
+            # TODO: improve the design of this thing
+            args['vocab_size'] = max(len(self.src_vocab) if self.src_vocab else 0,
+                                     len(self.tgt_vocab) if self.tgt_vocab else 0)
+        else:
+            args['src_vocab'] = len(self.src_vocab) if self.src_vocab else 0
+            args['tgt_vocab'] = len(self.tgt_vocab) if self.tgt_vocab else 0
+
         self.config['updated_at'] = datetime.now().isoformat()
         self.store_config()
 
@@ -565,5 +597,36 @@ class TranslationExperiment:
                 destination.write_bytes(source.read_bytes())
                 src_txt_file = source.with_name(source.name.replace('.model', '.vocab'))
                 if src_txt_file.exists():
-                    dst_txt_file = destination.with_name(destination.name.replace('.model', '.vocab'))
+                    dst_txt_file = destination.with_name(
+                        destination.name.replace('.model', '.vocab'))
                     dst_txt_file.write_bytes(src_txt_file.read_bytes())
+
+    def get_mono_data(self, split: str, side: str, batch_size: int, sort_dec: bool = False,
+                      batch_first: bool = False, shuffle: bool = False, num_batches: int = 0):
+        """
+        reads monolingual data
+        :param split: name of the split. choices = {train, valid}
+        :param side: which side ? choices = {src, tgt}
+        :param batch_size: what should be batch size. example =64
+        :param sort_dec: should the seqs in batch be sorted descending order of length ?
+        :param batch_first: should the first dimension be batch instead of time step ?
+        :param shuffle: should the seqs be shuffled before reading (and for each re-reading
+            if num_batches is too large)
+        :param num_batches: how many batches to read?
+        :return: iterator of batches
+        """
+        assert side in ('src', 'tgt')
+        assert split in ('train', 'valid')
+        inp_file = {
+            ('train', 'src'): self.mono_train_src,
+            ('train', 'tgt'): self.mono_train_tgt,
+            ('valid', 'src'): self.mono_valid_src,
+            ('valid', 'tgt'): self.mono_valid_tgt,
+        }[(split, side)]
+        assert inp_file.exists()
+        # read this file
+        data = BatchIterable(inp_file, batch_size=batch_size, sort_dec=sort_dec,
+                             batch_first=batch_first, shuffle=shuffle)
+        if num_batches > 0:
+            data = LoopingIterable(data, num_batches)
+        return data

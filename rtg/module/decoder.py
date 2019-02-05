@@ -11,12 +11,14 @@ from torch import nn as nn
 from rtg import TranslationExperiment as Experiment
 from rtg import log, device, my_tensor as tensor, debug_mode
 from rtg.binmt.bicycle import BiNMT
-from rtg.module.rnnnmt import RNNNMT
+from rtg.module.rnnmt import RNNMT
+from rtg.lm.rnnlm import RnnLm
 from rtg.dataprep import PAD_TOK, BOS_TOK, EOS_TOK, subsequent_mask
 from rtg.module.tfmnmt import TransformerNMT
 
 Hypothesis = Tuple[float, List[int]]
 StrHypothesis = Tuple[float, str]
+INTERACTIVE = False
 
 
 # TODO: simplify the generators
@@ -32,7 +34,7 @@ class GeneratorFactory(abc.ABC):
 
 class Seq2SeqGenerator(GeneratorFactory):
 
-    def __init__(self, model: RNNNMT, x_seqs, x_lens):
+    def __init__(self, model: RNNMT, x_seqs, x_lens):
         super().__init__(model)
         # [S, B, d], [S, B, d] <-- [S, B], [B]
         self.enc_outs, enc_hids = model.encode(x_seqs, x_lens, None)
@@ -82,14 +84,44 @@ class ComboGenerator(GeneratorFactory):
         return log_probs
 
 
+class RnnLmGenerator(GeneratorFactory):
+
+    def __init__(self, model: RnnLm, x_seqs, x_lens):
+        super().__init__(model)
+        self.dec_hids = None
+        if INTERACTIVE:
+            # interactive mode use input as prefix
+            n = x_seqs.shape[1] - 1 if x_seqs[0, -1] == EOS_TOK[1] else x_seqs.shape[1]
+            for i in range(n):
+                self.log_probs, self.dec_hids, _ = self.model(None, x_seqs[:, i], self.dec_hids)
+            self.consumed = False
+
+    def generate_next(self, past_ys):
+        if INTERACTIVE and not self.consumed:
+            assert past_ys[0, -1] == BOS_TOK[1]  # we are doing it right?
+            self.consumed = True
+            return self.log_probs
+
+        last_ys = past_ys[:, -1]
+        log_probs, self.dec_hids, _ = self.model(None, last_ys, self.dec_hids)
+        return log_probs
+
+
 generators = {'t2t': T2TGenerator,
               'seq2seq': Seq2SeqGenerator,
               'binmt': BiNMTGenerator,
-              'combo': ComboGenerator}
+              'combo': ComboGenerator,
+              'tfmnmt': T2TGenerator,
+              'rnnmt': Seq2SeqGenerator,
+              'rnnlm': RnnLmGenerator
+              }
 factories = {
     't2t': TransformerNMT.make_model,
-    'seq2seq': RNNNMT.make_model,
+    'seq2seq': RNNMT.make_model,
     'binmt': BiNMT.make_model,
+    'tfmnmt': TransformerNMT.make_model,
+    'rnnmt': RNNMT.make_model,
+    'rnnlm': RnnLm.make_model
 }
 
 
@@ -159,13 +191,13 @@ class Decoder:
 
     @staticmethod
     def _checkpt_to_model_state(checkpt_path: str):
-        state = torch.load(checkpt_path)
+        state = torch.load(checkpt_path, map_location=device)
         if 'model_state' in state:
             state = state['model_state']
         return state
 
     @staticmethod
-    def maybe_ensemble_state(exp, model_paths: Optional[List[str]], ensemble: int=1):
+    def maybe_ensemble_state(exp, model_paths: Optional[List[str]], ensemble: int = 1):
         if model_paths and len(model_paths) == 1:
             log.info(f" Restoring state from requested model {model_paths[0]}")
             return Decoder._checkpt_to_model_state(model_paths[0])
@@ -194,8 +226,8 @@ class Decoder:
 
     @classmethod
     def new(cls, exp: Experiment, model=None, gen_args=None,
-            model_paths: Optional[List[str]]=None,
-            ensemble: int=1, model_type: Optional[str]=None):
+            model_paths: Optional[List[str]] = None,
+            ensemble: int = 1, model_type: Optional[str] = None):
         """
         create a new decoder
         :param exp: experiment
@@ -393,7 +425,7 @@ class Decoder:
                 'E1': self.exp.src_vocab,
                 'E2': self.exp.tgt_vocab
             }[self.gen_args['path'][:2]]
-        else:   # all others go from source as input to target as output
+        else:  # all others go from source as input to target as output
             return self.exp.src_vocab
 
     @property
@@ -456,6 +488,8 @@ class Decoder:
                 print(f"\t{cmd:15}\t-\t{msg}")
 
         print("Launching Interactive shell...")
+        global INTERACTIVE
+        INTERACTIVE = True
         print_cmds()
         print_state = True
         while True:
@@ -513,7 +547,7 @@ class Decoder:
                     for score, hyp in res:
                         print(f'  {score:.4f}\t{hyp}')
             except ReloadEvent as re:
-                raise re        # send it to caller
+                raise re  # send it to caller
             except EOFError as e1:
                 break
             except Exception:
