@@ -65,7 +65,7 @@ class TranslationExperiment:
         # both are set or both are unset
         assert (self.src_field is None) == (self.tgt_field is None)
 
-        self._unsupervised = self.model_type in {'binmt', 'rnnlm'}
+        self._unsupervised = self.model_type in {'binmt', 'rnnlm', 'tfmlm'}
         if self._unsupervised:
             self.mono_train_src = self.data_dir / 'mono.train.src.gz'
             self.mono_train_tgt = self.data_dir / 'mono.train.tgt.gz'
@@ -382,12 +382,13 @@ class TranslationExperiment:
         if 'model_args' not in self.config:
             self.config['model_args'] = {}
         args = self.config['model_args']
-        if self.model_type in {'rnnlm'}:
-            # Not needed for certain models
+        if self.model_type in {'rnnlm', 'tfmlm'}:
+            # Language models
             # TODO: improve the design of this thing
             args['vocab_size'] = max(len(self.src_vocab) if self.src_vocab else 0,
                                      len(self.tgt_vocab) if self.tgt_vocab else 0)
         else:
+            # Translation models
             args['src_vocab'] = len(self.src_vocab) if self.src_vocab else 0
             args['tgt_vocab'] = len(self.tgt_vocab) if self.tgt_vocab else 0
 
