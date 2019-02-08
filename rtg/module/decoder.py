@@ -10,10 +10,11 @@ from torch import nn as nn
 
 from rtg import TranslationExperiment as Experiment
 from rtg import log, device, my_tensor as tensor, debug_mode
+from rtg.dataprep import PAD_TOK, BOS_TOK, EOS_TOK, subsequent_mask
 from rtg.binmt.bicycle import BiNMT
 from rtg.module.rnnmt import RNNMT
 from rtg.lm.rnnlm import RnnLm
-from rtg.dataprep import PAD_TOK, BOS_TOK, EOS_TOK, subsequent_mask
+from rtg.lm.tfmlm import TfmLm
 from rtg.module.tfmnmt import TransformerNMT
 
 Hypothesis = Tuple[float, List[int]]
@@ -107,13 +108,38 @@ class RnnLmGenerator(GeneratorFactory):
         return log_probs
 
 
+class TfmLmGenerator(GeneratorFactory):
+
+    def __init__(self, model: TfmLm, x_seqs, x_lens):
+        super().__init__(model)
+        if INTERACTIVE:
+            self.x_seqs = x_seqs
+            self.x_lens = x_lens
+            for i in x_lens[1:]:
+                # this feature was only meant to be used with a single sequence (probably beamed)
+                # all seqs should've same length (else, padding assumption breaks in generate_next)
+                assert x_lens[0] == i
+
+    def generate_next(self, past_ys):
+        if INTERACTIVE:
+            # treat input (i.e. x_seqs) as a prefix for generation
+            past_ys = torch.cat([self.x_seqs, past_ys], dim=1)
+
+        seq_mask = subsequent_mask(past_ys.size(1))
+        out = self.model(past_ys, seq_mask, gen_probs=False)
+        # only generate probs for the last time step
+        log_probs = self.model.generator(out[:, -1])
+        return log_probs
+
+
 generators = {'t2t': T2TGenerator,
               'seq2seq': Seq2SeqGenerator,
               'binmt': BiNMTGenerator,
               'combo': ComboGenerator,
               'tfmnmt': T2TGenerator,
               'rnnmt': Seq2SeqGenerator,
-              'rnnlm': RnnLmGenerator
+              'rnnlm': RnnLmGenerator,
+              'tfmlm': TfmLmGenerator
               }
 factories = {
     't2t': TransformerNMT.make_model,
@@ -121,7 +147,8 @@ factories = {
     'binmt': BiNMT.make_model,
     'tfmnmt': TransformerNMT.make_model,
     'rnnmt': RNNMT.make_model,
-    'rnnlm': RnnLm.make_model
+    'rnnlm': RnnLm.make_model,
+    'tfmlm': TfmLm.make_model
 }
 
 
