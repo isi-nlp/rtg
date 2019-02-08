@@ -206,7 +206,10 @@ class SysCombTrainer:
                 combo_spec = yaml.load(rdr)
             weights = combo_spec['weights']
             assert len(weights) == len(models)  # same models as before: no messing allowed
-            wt = [weights[str(m)] for m in models]
+            model_path_strs = [str(m) for m in models]
+            for m in model_path_strs:
+                assert m in weights, f'{m} not found in weights file.'
+            wt = [weights[str(m)] for m in model_path_strs]
             log.info(f"restoring previously stored weights {wt}")
 
         from rtg.module.decoder import load_models
