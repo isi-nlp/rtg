@@ -65,6 +65,11 @@ def validate_args(args, exp: Experiment):
             f'Experiment dir {exp.work_dir} is not ready to decode.' \
             f' Please run "train" sub task or --skip-check to ignore this'
 
+    weights_file = exp.work_dir / 'combo-weights.yml'
+    if not args.get('sys_comb') and weights_file.exists():
+        log.warning("Found default combo weights, switching to combo mode")
+        args['sys_comb'] = weights_file
+
     if args.get("sys_comb"):
         with IO.reader(args['sys_comb']) as fh:
             weights = yaml.load(fh)['weights']
