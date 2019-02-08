@@ -3,6 +3,7 @@
 import copy
 import math
 import time
+import inspect
 from typing import Callable, Optional
 
 import torch
@@ -167,21 +168,19 @@ class TransformerNMT(NMTModel):
     def decode(self, memory, src_mask, tgt, tgt_mask):
         return self.decoder(self.tgt_embed(tgt), memory, src_mask, tgt_mask)
 
-    @staticmethod
-    def make_model(src_vocab, tgt_vocab, n_layers=6, hid_size=512, ff_size=2048, n_heads=8,
+    @classmethod
+    def make_model(cls, src_vocab, tgt_vocab, n_layers=6, hid_size=512, ff_size=2048, n_heads=8,
                    dropout=0.1, tied_emb='three-way', exp: Experiment=None):
         "Helper: Construct a model from hyper parameters."
 
-        # args for reconstruction of model
-        args = {'src_vocab': src_vocab,
-                'tgt_vocab': tgt_vocab,
-                'n_layers': n_layers,
-                'hid_size': hid_size,
-                'ff_size': ff_size,
-                'n_heads': n_heads,
-                'dropout': dropout,
-                'tied_emb': tied_emb
-                }
+        # get all args for reconstruction at a later phase
+        _, _, _, args = inspect.getargvalues(inspect.currentframe())
+        for exclusion in ['cls', 'exp']:
+            del args[exclusion]  # exclude some args
+        # In case you are wondering, why I didnt use **kwargs here:
+        #   these args are read from conf file where user can introduce errors, so the parameter
+        #   validation and default value assignment is implicitly done by function call for us :)
+
         c = copy.deepcopy
         attn = MultiHeadedAttention(n_heads, hid_size)
         ff = PositionwiseFeedForward(hid_size, ff_size, dropout)
@@ -489,8 +488,9 @@ class TransformerTrainer(SteppedTrainer):
     def __init__(self, exp: Experiment,
                  model: Optional[TransformerNMT] = None,
                  optim: str = 'ADAM',
+                 model_factory=TransformerNMT.make_model,
                  **optim_args):
-        super().__init__(exp, model, model_factory=TransformerNMT.make_model, optim=optim, **optim_args)
+        super().__init__(exp, model, model_factory=model_factory, optim=optim, **optim_args)
 
         device_ids = list(range(torch.cuda.device_count()))
         log.info(f"Going to use {torch.cuda.device_count()} GPUs ; ids:{device_ids}")
