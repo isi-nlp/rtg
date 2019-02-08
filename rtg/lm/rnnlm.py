@@ -15,20 +15,34 @@ from rtg import TranslationExperiment as Experiment
 import random
 from rtg.module.trainer import TrainerState, SteppedTrainer
 from tqdm import tqdm
+from . import LanguageModel
 
 
-class RnnLm(SeqDecoder):
+class RnnLm(SeqDecoder, LanguageModel):
 
     def __init__(self, embedder: Embedder, generator: Generator, n_layers: int = 1,
                  dropout: float = 0.1):
         super().__init__(prev_emb_node=embedder, generator=generator, n_layers=n_layers,
                          dropout=dropout)
         assert embedder.emb_size == generator.vec_size
-        self.model_dim = embedder.emb_size
+        self._model_dim = embedder.emb_size
+        self._vocab_size = generator.vocab_size
+
+    @property
+    def model_dim(self):
+        return self._model_dim
+
+    @property
+    def model_type(self):
+        return 'rnnlm'
+
+    @property
+    def vocab_size(self):
+        return self._vocab_size
 
     @classmethod
     def make_model(cls, lang: str, vocab_size: int, model_dim: int = 300, n_layers: int = 1,
-             dropout: float = 0.1, exp: Experiment=None, ):
+             dropout: float = 0.1, exp: Experiment=None):
         # get all args for reconstruction at a later phase
         _, _, _, kwargs = inspect.getargvalues(inspect.currentframe())
         for exclusion in ['cls', 'exp']:

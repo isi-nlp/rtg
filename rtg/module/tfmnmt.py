@@ -31,9 +31,9 @@ class Generator(nn.Module):
         self.vocab = vocab
         self.proj = nn.Linear(d_model, vocab)
 
-    def forward(self, x, log=True):
+    def forward(self, x, log_probs=True):
         x = self.proj(x)
-        return (F.log_softmax if log else F.softmax)(x, dim=-1)
+        return (F.log_softmax if log_probs else F.softmax)(x, dim=-1)
 
 
 class EncoderLayer(nn.Module):
@@ -151,11 +151,15 @@ class TransformerNMT(NMTModel):
     def vocab_size(self):
         return self.tgt_vocab
 
-    def forward(self, src, tgt, src_mask, tgt_mask, gen_probs=False):
+    @property
+    def model_type(self):
+        return 'tfmnmt'
+
+    def forward(self, src, tgt, src_mask, tgt_mask, gen_probs=False, log_probs=True):
         "Take in and process masked src and target sequences."
         enc_outs = self.encode(src, src_mask)
         feats = self.decode(enc_outs, src_mask, tgt, tgt_mask)
-        return self.generator(feats, log=False) if gen_probs else feats
+        return self.generator(feats, log_probs=log_probs) if gen_probs else feats
 
     def encode(self, src, src_mask):
         return self.encoder(self.src_embed(src), src_mask)

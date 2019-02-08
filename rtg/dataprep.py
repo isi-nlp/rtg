@@ -1,5 +1,5 @@
 import os
-from typing import List, Iterator, Tuple, Union, Optional
+from typing import List, Iterator, Tuple, Union, Optional, Iterable
 import torch
 from rtg import log
 from . import my_tensor as tensor, device
@@ -217,10 +217,15 @@ class Batch:
         :param sort_dec: True if the examples be sorted as descending order of their source sequence lengths
         :Param Batch_First: first dimension is batch
         """
+        self.eos_x = add_eos_x
+        self.eos_y = add_eos_y
         if add_eos_x:
             for ex in batch:  # check and insert EOS
                 if ex.x[-1] != self.eos_val:
                     ex.x.append(self.eos_val)
+        else:
+            for ex in batch:  # making sure no EOS is in there
+                assert ex.x[-1] != self.eos_val
         self.batch_first = batch_first
         if sort_dec:
             batch = sorted(batch, key=lambda _: len(_.x), reverse=True)
@@ -242,10 +247,12 @@ class Batch:
         self.has_y = first_y is not None
         if self.has_y:
             if add_eos_y:
-                for ex in batch:    # check and insert BOS to output seqs
+                for ex in batch:    # check and insert EOS to output seqs
                     if ex.y[-1] != self.eos_val:
                         ex.y.append(self.eos_val)
-
+            else:
+                for ex in batch:    # Making sure no EOS is there
+                    assert ex.y[-1] != self.eos_val
             self.y_len = tensor([len(e.y) for e in batch])
             self.y_toks = self.y_len.sum().float().item()
             self.max_y_len = self.y_len.max().item()
@@ -274,8 +281,7 @@ class Batch:
         return tgt_mask
 
 
-class BatchIterable:
-    # TODO: How to specify Type Hint for this as Iterable[Batch] ?
+class BatchIterable(Iterable[Batch]):
 
     def __init__(self, data_path: Union[str, Path], batch_size: int,
                  sort_dec=True, batch_first=True, shuffle=False):
@@ -301,19 +307,19 @@ class BatchIterable:
             log.debug(f"\nLast batch, size={len(batch)}")
             yield Batch(batch, sort_dec=self.sort_dec, batch_first=self.batch_first)
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[Batch]:
         yield from self.read_all()
 
     @property
-    def num_items(self):
+    def num_items(self) -> int:
         return len(self.data)
 
     @property
-    def num_batches(self):
-        return math.ceil(len(self.data) / self.batch_size)
+    def num_batches(self) -> int:
+        return int(math.ceil(len(self.data) / self.batch_size))
 
 
-class LoopingIterable:
+class LoopingIterable(Iterable[Batch]):
     """
     An iterable that keeps looping until a specified number of step count is reached
     """
@@ -323,7 +329,7 @@ class LoopingIterable:
         self.total = batches
         self.count = 0
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[Batch]:
         while self.count < self.total:
             for batch in self.itr:
                 yield batch

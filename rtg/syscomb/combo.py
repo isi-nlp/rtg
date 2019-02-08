@@ -15,7 +15,58 @@ from rtg.module.tfmnmt import LabelSmoothing
 from rtg.dataprep import PAD_TOK_IDX
 from rtg import log
 from rtg.utils import IO
+from rtg.lm.rnnlm import RnnLm
 import yaml
+from rtg.dataprep import Batch
+
+
+class RnnLmWrapper(nn.Module):
+
+    def __init__(self, model: RnnLm):
+        super().__init__()
+        self.model = model
+        self.rnn_state = None
+        self.prev_seq_len = 0
+
+    @property
+    def vocab_size(self):
+        return self.model.vocab_size
+
+    @property
+    def model_type(self):
+        return self.model_type
+
+    def encode(self, x_seqs, x_lens):
+        pass  # No Op
+
+    def decode(self, ys, gen_probs=True, log_probs=False):
+
+        seq_len = ys.shape[1]
+        if seq_len == 1:
+            # Note: we need to keep track of rnn_state; but the API was designed for the transformer
+            #  model which doesnt have the state concept. So this is a hacky way to get stuff done
+            #  without redesigning the API
+            # new sequence --> reset the state
+            self.rnn_state = None
+            self.prev_seq_len = 0
+        assert seq_len == self.prev_seq_len + 1
+        last_ys = ys[:, -1]
+        out_probs, self.rnn_state, _ = self.model(None, last_ys, last_hidden=self.rnn_state,
+                                                  gen_probs=gen_probs, log_probs=log_probs)
+        self.prev_seq_len += 1
+        return out_probs
+
+    def forward(self, x_seqs, y_seqs, x_mask, y_mask, gen_probs: bool = True, log_probs=False):
+        assert gen_probs
+        # x_seqs and x_mask are useless for a Language Model
+        batch, max_time = y_seqs.shape
+        result = torch.zeros(batch, max_time, self.model.vocab_size, device=device)
+        rnn_state = None
+        x_mem = None
+        for i in range(max_time):
+            result[:, i, :], rnn_state, _ = self.model(x_mem, y_seqs[:, i], last_hidden=rnn_state,
+                                                       gen_probs=gen_probs, log_probs=log_probs)
+        return result
 
 
 class Combo(nn.Module):
@@ -27,11 +78,16 @@ class Combo(nn.Module):
     The weights of a model should be learned from a dataset held out from train and test.
     """
 
-    def __init__(self, models: List[NMTModel], model_paths: Optional[List[Path]]=None,
-                 w: Optional[List[float]]=None):
+    wrappers = dict(rnnlm=RnnLmWrapper)
+
+    def __init__(self, models: List[NMTModel], model_paths: Optional[List[Path]] = None,
+                 w: Optional[List[float]] = None):
         super().__init__()
         assert type(models) is list
         # TODO: check if list breaks the computation graph? we don't want to propagate the loss
+        # Optionally wrap models in wrappers
+        models = [self.wrappers[m.model_type](m) if m.model_type in self.wrappers
+                  else m for m in models]
         self.models = models
         self.model_paths = model_paths
         self.n_models = len(models)
@@ -51,7 +107,7 @@ class Combo(nn.Module):
 
     def to(self, device):
         super().to(device)
-        #self.weights = self.weights.to(device)
+        # self.weights = self.weights.to(device)
         # the python list  cuts the pytorch graph, so we need to do this
         self.models = [m.to(device) for m in self.models]
         return self
@@ -60,8 +116,18 @@ class Combo(nn.Module):
         # [n=models x batch x time ]
         w_probs = F.softmax(self.weight, dim=0)
         result_distr = None
+
+        x_seqs = batch.x_seqs
+        x_mask = (batch.x_seqs != batch.pad_value).unsqueeze(1)
+        bos_step = torch.full((len(batch), 1), fill_value=Batch.bos_val, dtype=torch.long,
+                              device=device)
+        y_seqs_with_bos = torch.cat([bos_step, batch.y_seqs], dim=1)
+        y_mask = Batch.make_target_mask(y_seqs_with_bos)
+
         for i, model in enumerate(self.models):
-            distr_i = model(batch.x_seqs, batch.y_seqs, batch.x_mask, batch.y_mask, gen_probs=True)
+            distr_i = model(x_seqs, y_seqs_with_bos, x_mask, y_mask,
+                            gen_probs=True, log_probs=False)
+            distr_i = distr_i[:, :-1, :]  # Skip the output after the EOS time step
             # assumption: model did not give log_probs, it gave raw probs (sums to 1)
             distr_i = w_probs[i] * distr_i.detach()
             if i == 0:
@@ -80,8 +146,12 @@ class Combo(nn.Module):
         batch_size = x_mask.shape[0]
         result = torch.zeros(batch_size, self.tgt_vocab_size, device=device)
         for x_mem, model, w in zip(x_mems, self.models, self.model_weights):
-            y_feats = model.decode(x_mem, x_mask, past_ys, y_mask)
-            probs = model.generator(y_feats[:, -1], log=False)
+            if isinstance(model, RnnLmWrapper):
+                probs = model.decode(past_ys, gen_probs=True, log_probs=False)
+            else:
+                # model is a TransformerNMT
+                y_feats = model.decode(x_mem, x_mask, past_ys, y_mask)
+                probs = model.generator(y_feats[:, -1], log_probs=False)
             result += w * probs
         return result.log()
 

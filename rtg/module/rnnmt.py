@@ -43,8 +43,9 @@ class Generator(nn.Module):
         self.vocab_size = vocab_size
         self.proj = nn.Linear(self.vec_size, self.vocab_size)
 
-    def forward(self, x):
-        return F.log_softmax(self.proj(x), dim=-1)
+    def forward(self, x, log_probs=True):
+        x_feats = self.proj(x)
+        return (F.log_softmax if log_probs else F.softmax)(x_feats, dim=-1)
 
 
 class SeqEncoder(nn.Module):
@@ -135,7 +136,7 @@ class SeqDecoder(nn.Module):
                                 bidirectional=False, batch_first=True,
                                 dropout=dropout if n_layers > 1 else 0)
 
-    def forward(self, enc_outs: Optional, prev_out, last_hidden, gen_probs=True):
+    def forward(self, enc_outs: Optional, prev_out, last_hidden, gen_probs=True, log_probs=True):
         # Note: we run this one step at a time
 
         # Get the embedding of the current input word (last output word)
@@ -153,7 +154,7 @@ class SeqDecoder(nn.Module):
 
         if gen_probs:
             # Finally predict next token
-            next_word_distr = self.generator(rnn_output)
+            next_word_distr = self.generator(rnn_output, log_probs=log_probs)
             # Return final output, hidden state, and attention weights (for visualization)
             return next_word_distr, hidden, None
         else:
@@ -224,7 +225,7 @@ class AttnSeqDecoder(SeqDecoder):
         # Output from decoder rnn + ctx
         self.merge = nn.Linear(self.hid_size + ctx_size, self.hid_size)
 
-    def forward(self, enc_outs, prev_out, last_hidden, gen_probs=True):
+    def forward(self, enc_outs, prev_out, last_hidden, gen_probs=True, log_probs=True):
         # Note: we run this one step at a time
 
         # Get the embedding of the current input word (last output word)
@@ -254,7 +255,7 @@ class AttnSeqDecoder(SeqDecoder):
 
         if gen_probs:
             # predict next token
-            output_probs = self.generator(concat_output)
+            output_probs = self.generator(concat_output, log_probs=log_probs)
             # Return final output, hidden state, and attention weights (for visualization)
             return output_probs, hidden, attn_weights
         else:
@@ -322,6 +323,14 @@ class RNNMT(NMTModel):
     @property
     def model_dim(self):
         return self.enc.hid_size
+
+    @property
+    def model_type(self):
+        return 'rnnmt'
+
+    @property
+    def vocab_size(self):
+        return self.dec.generator.vocab_size
 
     def encode(self, x_seqs, x_lens, hids=None, max_y_len=256):
         enc_outs, enc_hids = self.enc(x_seqs, x_lens, hids)
