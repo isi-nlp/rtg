@@ -16,6 +16,7 @@ from rtg.module.rnnmt import RNNMT
 from rtg.lm.rnnlm import RnnLm
 from rtg.lm.tfmlm import TfmLm
 from rtg.module.tfmnmt import TransformerNMT
+from rtg.dataprep import Field
 
 Hypothesis = Tuple[float, List[int]]
 StrHypothesis = Tuple[float, str]
@@ -445,7 +446,7 @@ class Decoder:
         return result
 
     @property
-    def inp_vocab(self):
+    def inp_vocab(self) -> Field:
         # the choice of vocabulary can be tricky, because of bidirectional model
         if self.exp.model_type == 'binmt':
             return {
@@ -456,7 +457,7 @@ class Decoder:
             return self.exp.src_vocab
 
     @property
-    def out_vocab(self):
+    def out_vocab(self) -> Field:
         # the choice of vocabulary can be tricky, because of bidirectional model
         if self.exp.model_type == 'binmt':
             return {
@@ -493,6 +494,16 @@ class Decoder:
                 log.debug(f"Beam {i}: score:{score:.4f} :: {out}")
             result.append((score, out))
         return result
+
+    def next_word_distr(self, past_seq, x_seqs=None, x_lens=None):
+        """
+        Gets log distribution of next word
+        :param past_seq: paste sequence
+        :param x_seqs: optional; source sequence,
+        :param x_lens: optional; source sequence length
+        :return: log probability distribution of next word
+        """
+        return self.generator(x_seqs=x_seqs, x_lens=x_lens).generate_next(past_seq)
 
     # noinspection PyUnresolvedReferences
     def decode_interactive(self, **args):

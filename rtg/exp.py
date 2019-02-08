@@ -527,11 +527,11 @@ class TranslationExperiment:
         return self.shared_field if self.shared_field is not None else self.src_field
 
     @property
-    def tgt_vocab(self):
+    def tgt_vocab(self) -> Field:
         return self.shared_field if self.shared_field is not None else self.tgt_field
 
     @property
-    def shared_vocab(self):
+    def shared_vocab(self) -> Field:
         return self.shared_field
 
     @staticmethod
