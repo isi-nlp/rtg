@@ -229,7 +229,8 @@ class SysCombTrainer:
                 batch = batch.to(device)
                 y_probs = self.combo(batch)  # B x T x V
                 loss = self.loss_func(y_probs, y_seqs=batch.y_seqs, norm=batch.y_toks)
-                progress_msg = f'loss={loss}, weights={self.combo.model_weights}'
+                wt_str = ','.join(f'{wt:g}' for wt in self.combo.weight)
+                progress_msg = f'loss={loss:g}, weights={wt_str}'
                 data_bar.set_postfix_str(progress_msg, refresh=False)
 
         weights = dict(zip([str(x) for x in self.combo.model_paths],
