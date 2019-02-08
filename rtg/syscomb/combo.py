@@ -16,11 +16,15 @@ from rtg.dataprep import PAD_TOK_IDX
 from rtg import log
 from rtg.utils import IO
 from rtg.lm.rnnlm import RnnLm
+from rtg.lm.tfmlm import TfmLm
 import yaml
 from rtg.dataprep import Batch
 
 
 class RnnLmWrapper(nn.Module):
+    """
+    Wraps a RNN language model to provide a translation model like API for Sys Comb
+    """
 
     def __init__(self, model: RnnLm):
         super().__init__()
@@ -69,6 +73,34 @@ class RnnLmWrapper(nn.Module):
         return result
 
 
+class TfmLmWrapper(nn.Module):
+    """
+    Wraps a Transformer language model to provide a translation model like API for  Sys Comb
+    """
+
+    def __init__(self, model: TfmLm):
+        super().__init__()
+        self.model = model
+        self.generator = model.generator
+
+    @property
+    def vocab_size(self):
+        return self.model.vocab_size
+
+    @property
+    def model_type(self):
+        return self.model_type
+
+    def encode(self, x_seqs, x_lens):
+        pass  # No Op
+
+    def decode(self, x_mem, x_mask, past_ys, y_mask):
+        return self.model(past_ys, y_mask, gen_probs=False)
+
+    def forward(self, x_seqs, y_seqs, x_mask, y_mask, gen_probs: bool = True, log_probs=False):
+        return self.model(y_seqs, y_mask, gen_probs=gen_probs, log_probs=log_probs)
+
+
 class Combo(nn.Module):
     """
     This module combines multiple models by ensembling the last layer.
@@ -78,7 +110,7 @@ class Combo(nn.Module):
     The weights of a model should be learned from a dataset held out from train and test.
     """
 
-    wrappers = dict(rnnlm=RnnLmWrapper)
+    wrappers = dict(rnnlm=RnnLmWrapper, tfmlm=TfmLmWrapper)
 
     def __init__(self, models: List[NMTModel], model_paths: Optional[List[Path]] = None,
                  w: Optional[List[float]] = None):
