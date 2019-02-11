@@ -9,6 +9,7 @@ from rtg.module.decoder import Decoder
 from rtg import TranslationExperiment as Experiment, device
 from typing import TextIO
 from tqdm import tqdm
+import math
 
 
 def log_perplexity(decoder: Decoder, test_data: TextIO):
@@ -86,6 +87,7 @@ def main():
 
     log_pp = log_perplexity(decoder, args['test'])
     print(f'Log perplexity: {log_pp:g}')
+    print(f'Perplexity: {math.exp(log_pp):g}')
 
 
 if __name__ == '__main__':
