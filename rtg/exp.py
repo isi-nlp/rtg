@@ -147,7 +147,7 @@ class TranslationExperiment:
         if self._shared_field_file.exists():
             log.info(f"{self._shared_field_file} exists. Skipping shared vocab creation")
         else:
-            files = [args['mono_train_src'], args['mono_train_tgt']]
+            files = [args['train_src'], args['train_tgt']]
             # monolingual files for vocab creation
             files += [args[key] for key in ['mono_src', 'mono_tgt'] if key in args]
             no_split_toks = args.get('no_split_toks')
