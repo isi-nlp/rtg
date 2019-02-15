@@ -110,7 +110,7 @@ class TransformerNMT(NMTModel):
     def __init__(self, encoder: Encoder, decoder: Decoder,
                  src_embed, tgt_embed,
                  generator: Generator):
-        super(TransformerNMT, self).__init__()
+        super().__init__()
         self.encoder: Encoder = encoder
         self.decoder: Decoder = decoder
         self.src_embed = src_embed
@@ -168,9 +168,21 @@ class TransformerNMT(NMTModel):
     def decode(self, memory, src_mask, tgt, tgt_mask):
         return self.decoder(self.tgt_embed(tgt), memory, src_mask, tgt_mask)
 
+    def tie_embeddings(self, tie: str):
+        assert self.src_embed[0].vocab == self.tgt_embed[0].vocab
+        if tie == 'three-way':
+            log.info("Tying the embedding weights, three ways: (SrcIn == TgtIn == TgtOut)")
+            self.src_embed[0].lut.weight = self.tgt_embed[0].lut.weight
+            self.generator.proj.weight = self.tgt_embed[0].lut.weight
+        elif tie == 'two-way':
+            log.info("Tying the embedding weights, two ways: (SrcIn == TgtIn)")
+            self.src_embed[0].lut.weight = self.tgt_embed[0].lut.weight
+        else:
+            raise Exception('Invalid argument to tied_emb; Known: {three-way, two-way}')
+
     @classmethod
     def make_model(cls, src_vocab, tgt_vocab, n_layers=6, hid_size=512, ff_size=2048, n_heads=8,
-                   dropout=0.1, tied_emb='three-way', exp: Experiment=None):
+                   dropout=0.1, tied_emb='three-way', exp: Experiment = None):
         "Helper: Construct a model from hyper parameters."
 
         # get all args for reconstruction at a later phase
@@ -194,18 +206,10 @@ class TransformerNMT(NMTModel):
                                 PositionalEncoding(hid_size, dropout))
         generator = Generator(hid_size, tgt_vocab)
 
-        model = TransformerNMT(encoder, decoder, src_emb, tgt_emb, generator)
+        model = cls(encoder, decoder, src_emb, tgt_emb, generator)
+
         if tied_emb:
-            assert src_vocab == tgt_vocab
-            if tied_emb == 'three-way':
-                log.info("Tying the embedding weights, three ways: (SrcIn == TgtIn == TgtOut)")
-                model.src_embed[0].lut.weight = model.tgt_embed[0].lut.weight
-                model.generator.proj.weight = model.tgt_embed[0].lut.weight
-            elif tied_emb == 'two-way':
-                log.info("Tying the embedding weights, two ways: (SrcIn == TgtIn)")
-                model.src_embed[0].lut.weight = model.tgt_embed[0].lut.weight
-            else:
-                raise Exception('Invalid argument to tied_emb; Known: {three-way, two-way}')
+            model.tie_embeddings(tied_emb)
 
         if exp and exp.aln_emb_src_file.exists():
             log.warning("Aligned embeddings are provided but this model doesnt support it.")
@@ -281,7 +285,7 @@ def attention(query, key, value, mask=None, dropout=None):
         # for devising this concise code. I needed a lot of time to understand how this code works!
         #
         scores = scores.masked_fill(mask == 0, -1e9)
-    p_attn = F.softmax(scores, dim=-1)   # [BatchSize x Heads x Time=SeqLen x SeqLen ]
+    p_attn = F.softmax(scores, dim=-1)  # [BatchSize x Heads x Time=SeqLen x SeqLen ]
     if dropout is not None:
         p_attn = dropout(p_attn)
     # Beware: this is a batch multiplier!
@@ -305,7 +309,7 @@ class MultiHeadedAttention(nn.Module):
         "Implements Figure 2"
         if mask is not None:
             # Same mask applied to all h heads.
-            mask = mask.unsqueeze(1)    # [BatchSize x 1 x Time x SeqLen]  1=Broadcast for all heads
+            mask = mask.unsqueeze(1)  # [BatchSize x 1 x Time x SeqLen]  1=Broadcast for all heads
         batch_size = query.size(0)
 
         # 1) Do all the linear projections in batch from d_model => h x d_k
@@ -344,6 +348,7 @@ class PositionwiseFeedForward(nn.Module):
 class Embeddings(nn.Module):
     def __init__(self, d_model, vocab):
         super(Embeddings, self).__init__()
+        self.vocab = vocab
         self.lut = nn.Embedding(vocab, d_model)
         self.d_model = d_model
 
