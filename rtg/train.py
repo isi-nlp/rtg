@@ -5,7 +5,7 @@ from argparse import ArgumentDefaultsHelpFormatter as ArgFormatter
 
 from rtg import TranslationExperiment as Experiment, log
 from rtg.module.tfmnmt import TransformerTrainer
-from rtg.module.mtfmnmt import MTransformerNMT
+from rtg.module.mtfmnmt import MTransformerTrainer
 from rtg.module.rnnmt import SteppedRNNMTTrainer
 from rtg.binmt.bicycle import BiNmtTrainer
 from rtg.lm.rnnlm import RnnLmTrainer
@@ -68,7 +68,7 @@ def main():
         'rnnmt': SteppedRNNMTTrainer,
         'rnnlm': RnnLmTrainer,
         'tfmlm': TfmLmTrainer,
-        'mtfmnmt': MTransformerNMT
+        'mtfmnmt': MTransformerTrainer
     }[exp.model_type](exp, optim=args.pop('optim'), **optim_args)
     try:
         trainer.train(**args)
