@@ -106,6 +106,29 @@ class TrainerState:
         return self.steps == self.check_point
 
 
+class NoOpSummaryWriter(SummaryWriter):
+    """
+    A No-Op TensorBordX for tests and such experiments that doesnt want to leave
+    footprints on file system.
+    Note: that this does not extend all methods of SummaryWriter
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def add_text(self, *args, **kwargs):
+        pass
+
+    def add_scalar(self, *args, **kwargs):
+        pass
+
+    def add_scalars(self, *args, **kwargs):
+        pass
+
+    def add_embedding(self, *args, **kwargs):
+        pass
+
+
 class SteppedTrainer:
     """
     A base class for Trainers that use step based training (not epoch based training)
@@ -160,8 +183,10 @@ class SteppedTrainer:
 
         optim_args['warmup_steps'] = warm_up_steps
         optim_args['label_smoothing'] = self._smoothing
-
-        self.tbd = SummaryWriter(log_dir=str(exp.work_dir / 'tensorboard'))
+        if self.exp.read_only:
+            self.tbd = NoOpSummaryWriter()
+        else:
+            self.tbd = SummaryWriter(log_dir=str(exp.work_dir / 'tensorboard'))
 
         self.exp.optim_args = optim, optim_args
         if not self.exp.read_only:

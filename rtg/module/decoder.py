@@ -16,6 +16,7 @@ from rtg.module.rnnmt import RNNMT
 from rtg.lm.rnnlm import RnnLm
 from rtg.lm.tfmlm import TfmLm
 from rtg.module.tfmnmt import TransformerNMT
+from rtg.module.mtfmnmt import MTransformerNMT
 from rtg.dataprep import Field
 
 Hypothesis = Tuple[float, List[int]]
@@ -68,6 +69,19 @@ class T2TGenerator(GeneratorFactory):
 
     def generate_next(self, past_ys):
         out = self.model.decode(self.memory, self.x_mask, past_ys, subsequent_mask(past_ys.size(1)))
+        log_probs = self.model.generator(out[:, -1])
+        return log_probs
+
+
+class MTfmGenerator(GeneratorFactory):
+
+    def __init__(self, model: TransformerNMT, x_seqs, x_lens=None):
+        super().__init__(model)
+        x_mask = (x_seqs != Decoder.pad_val).unsqueeze(1)
+        self.sent_repr = self.model.encode(x_seqs, x_mask)
+
+    def generate_next(self, past_ys):
+        out = self.model.decode(self.sent_repr, past_ys, subsequent_mask(past_ys.size(1)))
         log_probs = self.model.generator(out[:, -1])
         return log_probs
 
@@ -140,7 +154,8 @@ generators = {'t2t': T2TGenerator,
               'tfmnmt': T2TGenerator,
               'rnnmt': Seq2SeqGenerator,
               'rnnlm': RnnLmGenerator,
-              'tfmlm': TfmLmGenerator
+              'tfmlm': TfmLmGenerator,
+              'mtfmnmt': MTfmGenerator
               }
 factories = {
     't2t': TransformerNMT.make_model,
@@ -149,7 +164,8 @@ factories = {
     'tfmnmt': TransformerNMT.make_model,
     'rnnmt': RNNMT.make_model,
     'rnnlm': RnnLm.make_model,
-    'tfmlm': TfmLm.make_model
+    'tfmlm': TfmLm.make_model,
+    'mtfmnmt': MTransformerNMT.make_model
 }
 
 
