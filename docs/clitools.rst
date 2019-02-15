@@ -18,7 +18,6 @@
 
 ## Train a Model
 
-
     $ python -m rtg.train -h
     usage: rtg.train [-h] [-rs SEED] [-st STEPS] [-cp CHECK_POINT]
                      [-km KEEP_MODELS] [-bs BATCH_SIZE] [-op {ADAM,SGD}]
