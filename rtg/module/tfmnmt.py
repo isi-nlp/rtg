@@ -436,6 +436,7 @@ class SimpleLossFunction:
         scores = x_probs.contiguous().view(-1, x_probs.size(-1))  # B x T x V --> B.T x V
         truth = y_seqs.contiguous().view(-1)  # B x T --> B.T
         assert norm != 0
+        # TODO: normalize by per sequence length, not just the total number of tokens
         loss = self.criterion(scores, truth).sum() / norm
         if train_mode:  # don't do this for validation set
             loss.backward()
