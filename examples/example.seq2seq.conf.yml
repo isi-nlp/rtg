@@ -6,7 +6,8 @@ model_args:
   hid_size: 300
   src_vocab: 8000
   tgt_vocab: 8000
-
+  attention: general
+  tied_emb: three-way
 model_type: seq2seq
 optim:
   name: ADAM
@@ -30,4 +31,3 @@ prep:
 src_lang: FRA
 tgt_lang: ENG
 updated_at: '2018-07-25T15:50:52.578881'
-
