@@ -7,49 +7,67 @@
 import inspect
 import copy
 import torch
-import math
 import torch.nn as nn
+from torch.nn import functional as F
 
 from rtg.module.tfmnmt import (Encoder, EncoderLayer, PositionwiseFeedForward, PositionalEncoding,
                                Generator, MultiHeadedAttention, Embeddings, TransformerNMT,
-                               TransformerTrainer)
+                               TransformerTrainer, SublayerConnection, LayerNorm, clones)
 from rtg import TranslationExperiment as Experiment, log
 from rtg.dataprep import PAD_TOK_IDX as pad_idx
 
-""""In NMT, DecoderLayer also has source attention.
-But here, decoder layer is just like Encoder layer: self_attn and feed forward"""
-from rtg.module.tfmnmt import EncoderLayer as MDecoderLayer
-from rtg.module.tfmnmt import Encoder as MDecoder
 
+class DecoderBlock(nn.Module):
+    """
+    A block in decoder that makes use of sentence representation
+    TODO: block is a boring name; there gotta be a more creative name for this step
+    """
 
-class MEmbeddings(nn.Module):
-
-    def __init__(self, d_model, vocab):
+    def __init__(self, d_model, d_ff, dropout=0.1):
         super().__init__()
-        self.lut = nn.Embedding(vocab, d_model, padding_idx=pad_idx)
-        self.vocab = vocab
-        self.d_model = d_model
-        # merge [sent_repr; embedding] --> d_model
-        self.merge = nn.Linear(2 * d_model, d_model)
-        self.scaler = math.sqrt(self.d_model)
+        self.w_1 = nn.Linear(d_model + d_model, d_ff)
+        self.w_2 = nn.Linear(d_ff, d_model)
+        self.dropout = nn.Dropout(dropout)
 
-    def forward(self, x):
-        # this gets wrapped in Sequential, which takes only one arg
-        word_ids, sent_repr = x
-        batch, max_len = word_ids.shape
-        embs = self.lut(word_ids) * self.scaler
+    def forward(self, x, sent_repr):
+        # Assumption x:[Batch x SeqLen x ModelDim]
+        # sent_repr: x:[Batch x ModelDim] --> [Batch x SeqLen x ModelDim]
+        #  for efficiency we expand sent_repr at caller as
+        #        sent_repr = sent_repr.unsqueeze(1).expand_as(x)
+        #  and assume they are good to concat here
+        concatd = torch.cat([sent_repr, x], dim=-1)
+        return self.w_2(self.dropout(F.relu(self.w_1(concatd))))
 
-        # seq_lens = (word_ids != pad_idx).sum(dim=1, dtype=torch.float)
-        # sent_repr = sent_repr * seq_lens.unsqueeze(1)
-        # sent_repr = F.tanh(sent_repr)
-        sent_repr = sent_repr * self.scaler
 
-        embs = embs.view(batch, max_len, self.d_model)
-        assert sent_repr.shape == (batch, self.d_model)
-        sent_repr = sent_repr.view(batch, 1, self.d_model).expand_as(embs)
-        concatd = torch.cat([sent_repr, embs], dim=-1)
-        merged = self.merge(concatd)
-        return merged
+class MDecoderLayer(nn.Module):
+    "Decoder is made of self-attn, dec-block, and feed forward (defined below)"
+
+    def __init__(self, size, self_attn, dec_block, dropout):
+        super().__init__()
+        self.size = size
+        self.self_attn = self_attn
+        self.dec_block = dec_block
+        self.sublayer = clones(SublayerConnection(size, dropout), 2)
+
+    def forward(self, x, tgt_mask, sent_repr):
+        """ decoder layer: self_attn, dec_block, feedforward"""
+        x = self.sublayer[0](x, lambda _x: self.self_attn(_x, _x, _x, tgt_mask))
+        x = self.sublayer[1](x, lambda _x: self.dec_block(_x, sent_repr))
+        return x
+
+
+class MDecoder(nn.Module):
+    "Generic N layer decoder with masking."
+
+    def __init__(self, layer: MDecoderLayer, n_layers: int):
+        super().__init__()
+        self.layers = clones(layer, n_layers)
+        self.norm = LayerNorm(layer.size)
+
+    def forward(self, x, tgt_mask, sent_repr):
+        for layer in self.layers:
+            x = layer(x, tgt_mask, sent_repr)
+        return self.norm(x)
 
 
 class MTransformerNMT(TransformerNMT):
@@ -77,12 +95,17 @@ class MTransformerNMT(TransformerNMT):
         c = copy.deepcopy
         attn = MultiHeadedAttention(n_heads, hid_size)
         ff = PositionwiseFeedForward(hid_size, ff_size, dropout)
-        encoder = Encoder(EncoderLayer(hid_size, c(attn), c(ff), dropout), n_layers)
-        decoder = MDecoder(MDecoderLayer(hid_size, c(attn), c(ff), dropout), n_layers)
+
+        enc_layer = EncoderLayer(hid_size, c(attn), c(ff), dropout)
+        encoder = Encoder(enc_layer, n_layers)  # clones n times
+
+        dec_block = DecoderBlock(hid_size, ff_size, dropout)
+        dec_layer = MDecoderLayer(hid_size, c(attn), dec_block, dropout)
+        decoder = MDecoder(dec_layer, n_layers)
 
         src_emb = nn.Sequential(Embeddings(hid_size, src_vocab),
                                 PositionalEncoding(hid_size, dropout))
-        tgt_emb = nn.Sequential(MEmbeddings(hid_size, tgt_vocab),
+        tgt_emb = nn.Sequential(Embeddings(hid_size, tgt_vocab),
                                 PositionalEncoding(hid_size, dropout))
         generator = Generator(hid_size, tgt_vocab)
 
@@ -90,11 +113,7 @@ class MTransformerNMT(TransformerNMT):
         if tied_emb:
             model.tie_embeddings(tied_emb)
 
-        # This was important from their code.
-        # Initialize parameters with Glorot / fan_avg.
-        for p in model.parameters():
-            if p.dim() > 1:
-                nn.init.xavier_uniform_(p)
+        model.init_params()
         return model, args
 
     def forward(self, src, tgt, src_mask, tgt_mask, gen_probs=False, log_probs=True):
@@ -117,9 +136,11 @@ class MTransformerNMT(TransformerNMT):
         sent_repr = enc_feats[:, 0, :]  # CLS token features
         return sent_repr
 
-    def decode(self, sent_repr, tgt, tgt_mask):
-        embs = self.tgt_embed((tgt, sent_repr))
-        return self.decoder(embs, tgt_mask)
+    def decode(self, sent_repr, tgt, tgt_mask, **extra):
+        assert not extra  # no extra stuff;  added to keep the lint happy
+        embs = self.tgt_embed(tgt)
+        sent_repr = sent_repr.unsqueeze(1).expand_as(embs)
+        return self.decoder(embs, tgt_mask, sent_repr)
 
 
 class MTransformerTrainer(TransformerTrainer):
