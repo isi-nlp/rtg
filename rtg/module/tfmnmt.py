@@ -510,8 +510,7 @@ class TransformerTrainer(SteppedTrainer):
                                    padding_idx=Batch.pad_value,
                                    smoothing=self._smoothing)
 
-        self.loss_func = MultiGPULossFunction(generator, criterion, devices=device_ids,
-                                              opt=self.opt)
+        self.loss_func = SimpleLossFunction(generator, criterion, opt=self.opt)
 
     def run_valid_epoch(self, data_iter: BatchIterable):
         """
