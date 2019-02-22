@@ -23,10 +23,9 @@ class DecoderBlock(nn.Module):
     TODO: block is a boring name; there gotta be a more creative name for this step
     """
 
-    def __init__(self, d_model, d_ff, dropout=0.1):
+    def __init__(self, d_model, dropout=0.1):
         super().__init__()
-        self.w_1 = nn.Linear(d_model + d_model, d_ff)
-        self.w_2 = nn.Linear(d_ff, d_model)
+        self.merge = nn.Linear(d_model + d_model, d_model)
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x, sent_repr):
@@ -36,23 +35,25 @@ class DecoderBlock(nn.Module):
         #        sent_repr = sent_repr.unsqueeze(1).expand_as(x)
         #  and assume they are good to concat here
         concatd = torch.cat([sent_repr, x], dim=-1)
-        return self.w_2(self.dropout(F.relu(self.w_1(concatd))))
+        return self.merge(self.dropout(F.softmax(concatd)))
 
 
 class MDecoderLayer(nn.Module):
     "Decoder is made of self-attn, dec-block, and feed forward (defined below)"
 
-    def __init__(self, size, self_attn, dec_block, dropout):
+    def __init__(self, size, self_attn, dec_block, feed_fwd, dropout):
         super().__init__()
         self.size = size
         self.self_attn = self_attn
         self.dec_block = dec_block
-        self.sublayer = clones(SublayerConnection(size, dropout), 2)
+        self.feed_fwd = feed_fwd
+        self.sublayer = clones(SublayerConnection(size, dropout), 3)
 
     def forward(self, x, tgt_mask, sent_repr):
         """ decoder layer: self_attn, dec_block, feedforward"""
         x = self.sublayer[0](x, lambda _x: self.self_attn(_x, _x, _x, tgt_mask))
         x = self.sublayer[1](x, lambda _x: self.dec_block(_x, sent_repr))
+        x = self.sublayer[2](x, self.feed_fwd)
         return x
 
 
@@ -99,8 +100,8 @@ class MTransformerNMT(TransformerNMT):
         enc_layer = EncoderLayer(hid_size, c(attn), c(ff), dropout)
         encoder = Encoder(enc_layer, n_layers)  # clones n times
 
-        dec_block = DecoderBlock(hid_size, ff_size, dropout)
-        dec_layer = MDecoderLayer(hid_size, c(attn), dec_block, dropout)
+        dec_block = DecoderBlock(hid_size, dropout)
+        dec_layer = MDecoderLayer(hid_size, c(attn), c(dec_block), c(ff), dropout)
         decoder = MDecoder(dec_layer, n_layers)
 
         src_emb = nn.Sequential(Embeddings(hid_size, src_vocab),
@@ -124,12 +125,12 @@ class MTransformerNMT(TransformerNMT):
         return self.generator(feats, log_probs=log_probs) if gen_probs else feats
 
     def encode(self, src, src_mask):
-        batch_size = src.shape[0]
+        # batch_size = src.shape[0]
         # ADD CLS token
-        #cls_col = torch.full((batch_size, 1), fill_value=cls_idx, device=device, dtype=torch.long)
-        #src = torch.cat([cls_col, src], dim=1)
+        # cls_col = torch.full((batch_size, 1), fill_value=cls_idx, device=device, dtype=torch.long)
+        # src = torch.cat([cls_col, src], dim=1)
         # assuming first col of mask is proper
-        #src_mask = torch.cat([src_mask[:, :, :1], src_mask], dim=-1)
+        # src_mask = torch.cat([src_mask[:, :, :1], src_mask], dim=-1)
 
         embs = self.src_embed(src)
         enc_feats = self.encoder(embs, src_mask)
