@@ -27,7 +27,7 @@ class Generator(nn.Module):
     "Define standard linear + softmax generation step."
 
     def __init__(self, d_model: int, vocab: int):
-        super(Generator, self).__init__()
+        super().__init__()
         self.d_model = d_model
         self.vocab = vocab
         self.proj = nn.Linear(d_model, vocab)
@@ -41,7 +41,7 @@ class EncoderLayer(nn.Module):
     "Encoder is made up of self-attn and feed forward (defined below)"
 
     def __init__(self, size, self_attn, feed_forward, dropout):
-        super(EncoderLayer, self).__init__()
+        super().__init__()
         self.self_attn = self_attn
         self.feed_forward = feed_forward
         self.sublayer = clones(SublayerConnection(size, dropout), 2)
@@ -57,7 +57,7 @@ class Encoder(nn.Module):
     "Core encoder is a stack of N layers"
 
     def __init__(self, layer: EncoderLayer, N: int):
-        super(Encoder, self).__init__()
+        super().__init__()
         self.layers = clones(layer, N)
         self.norm = LayerNorm(layer.size)
 
@@ -72,7 +72,7 @@ class DecoderLayer(nn.Module):
     "Decoder is made of self-attn, src-attn, and feed forward (defined below)"
 
     def __init__(self, size, self_attn, src_attn, feed_forward, dropout):
-        super(DecoderLayer, self).__init__()
+        super().__init__()
         self.size = size
         self.self_attn = self_attn
         self.src_attn = src_attn
@@ -91,7 +91,7 @@ class Decoder(nn.Module):
     "Generic N layer decoder with masking."
 
     def __init__(self, layer: DecoderLayer, n_layers: int):
-        super(Decoder, self).__init__()
+        super().__init__()
         self.layers = clones(layer, n_layers)
         self.norm = LayerNorm(layer.size)
 
@@ -227,7 +227,7 @@ class LayerNorm(nn.Module):
     "Construct a layernorm module (See citation for details)."
 
     def __init__(self, features, eps=1e-6):
-        super(LayerNorm, self).__init__()
+        super().__init__()
         self.a_2 = nn.Parameter(torch.ones(features))
         self.b_2 = nn.Parameter(torch.zeros(features))
         self.eps = eps
@@ -246,7 +246,7 @@ class SublayerConnection(nn.Module):
     """
 
     def __init__(self, size, dropout):
-        super(SublayerConnection, self).__init__()
+        super().__init__()
         self.norm = LayerNorm(size)
         self.dropout = nn.Dropout(dropout)
 
@@ -296,7 +296,7 @@ def attention(query, key, value, mask=None, dropout=None):
 class MultiHeadedAttention(nn.Module):
     def __init__(self, h, d_model, dropout=0.1):
         "Take in model size and number of heads."
-        super(MultiHeadedAttention, self).__init__()
+        super().__init__()
         assert d_model % h == 0
         # We assume d_v always equals d_k
         self.d_k = d_model // h
@@ -336,7 +336,7 @@ class PositionwiseFeedForward(nn.Module):
     "Implements FFN equation."
 
     def __init__(self, d_model, d_ff, dropout=0.1):
-        super(PositionwiseFeedForward, self).__init__()
+        super().__init__()
         self.w_1 = nn.Linear(d_model, d_ff)
         self.w_2 = nn.Linear(d_ff, d_model)
         self.dropout = nn.Dropout(dropout)
@@ -347,7 +347,7 @@ class PositionwiseFeedForward(nn.Module):
 
 class Embeddings(nn.Module):
     def __init__(self, d_model, vocab):
-        super(Embeddings, self).__init__()
+        super().__init__()
         self.vocab = vocab
         self.lut = nn.Embedding(vocab, d_model)
         self.d_model = d_model
@@ -360,7 +360,7 @@ class PositionalEncoding(nn.Module):
     "Implement the PE function."
 
     def __init__(self, d_model, dropout, max_len=5000):
-        super(PositionalEncoding, self).__init__()
+        super().__init__()
         self.dropout = nn.Dropout(p=dropout)
 
         # Compute the positional encodings once in log space.
@@ -384,7 +384,7 @@ class LabelSmoothing(nn.Module):
     """
 
     def __init__(self, vocab_size: int, padding_idx: int, smoothing=0.1):
-        super(LabelSmoothing, self).__init__()
+        super().__init__()
         self._size = vocab_size
         assert 0.0 <= smoothing <= 1.0
         self.padding_idx = padding_idx
@@ -452,7 +452,7 @@ class MultiGPULossFunction(SimpleLossFunction):
     """
 
     def __init__(self, generator, criterion, devices, opt, out_device=None):
-        super(MultiGPULossFunction, self).__init__(generator, criterion, opt)
+        super().__init__(generator, criterion, opt)
         self.multi_gpu = len(devices) > 1
         if self.multi_gpu:
             self.device_ids = devices
@@ -464,7 +464,7 @@ class MultiGPULossFunction(SimpleLossFunction):
     def __call__(self, outs, targets, norm, train_mode=True):
         if not self.multi_gpu:
             # let the parent class deal with this
-            return super(MultiGPULossFunction, self).__call__(outs, targets, norm, train_mode)
+            return super().__call__(outs, targets, norm, train_mode)
 
         # FIXME: there seems to be a bug in this below code
         # TODO: generate outputs in chunks
