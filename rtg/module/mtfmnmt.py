@@ -35,7 +35,7 @@ class DecoderBlock(nn.Module):
         #        sent_repr = sent_repr.unsqueeze(1).expand_as(x)
         #  and assume they are good to concat here
         concatd = torch.cat([sent_repr, x], dim=-1)
-        return self.merge(self.dropout(F.softmax(concatd)))
+        return self.merge(concatd)
 
 
 class MDecoderLayer(nn.Module):
