@@ -4,7 +4,7 @@ import copy
 import math
 import time
 import inspect
-from typing import Callable, Optional
+from typing import Callable, Optional, List
 
 import torch
 import torch.nn as nn
@@ -448,7 +448,6 @@ class SimpleLossFunction:
 
 @dataclass
 class ChunkedLossCompute(SimpleLossFunction):
-
     chunk_size: int = 10
 
     def __call__(self, x_feats, y_seqs, norm, train_mode=True, chunk_size=None):
@@ -459,18 +458,18 @@ class ChunkedLossCompute(SimpleLossFunction):
         out_grads = []
         for i in range(0, x_feats.shape[1], chunk_size):
             # grad network is cut here
-            chunked_feats = torch.tensor(x_feats.data[:, i:i+chunk_size],
+            chunked_feats = torch.tensor(x_feats.data[:, i:i + chunk_size],
                                          requires_grad=train_mode, device=x_feats.device)
             chunked_dist = self.generator(chunked_feats)
 
-            chunked_dist = chunked_dist.view(-1, chunked_dist.shape[-1])    # B x C x V -> B.C x V
-            chunked_ys = y_seqs[:, i:i+chunk_size].contiguous().view(-1)     # B x C -> B.C
+            chunked_dist = chunked_dist.view(-1, chunked_dist.shape[-1])  # B x C x V -> B.C x V
+            chunked_ys = y_seqs[:, i:i + chunk_size].contiguous().view(-1)  # B x C -> B.C
             loss = self.criterion(chunked_dist, chunked_ys)
             loss = loss.sum() / norm
             total += loss.item()
             if train_mode:
                 loss.backward()
-                out_grads.append(chunked_feats.grad.data.clone())   # grads are collected
+                out_grads.append(chunked_feats.grad.data.clone())  # grads are collected
         if train_mode:
             out_grad = torch.tensor(torch.cat(out_grads, dim=1),
                                     requires_grad=train_mode, device=x_feats.device)
@@ -480,49 +479,75 @@ class ChunkedLossCompute(SimpleLossFunction):
         return total * norm
 
 
-class MultiGPULossFunction(SimpleLossFunction):
-    # FIXME : this is broken
-    """
-    Loss function that uses Multiple GPUs
-    Currently uses DataParallel, but this is only the early version
-    """
+class MultiGPULossFunction(ChunkedLossCompute):
 
-    def __init__(self, generator, criterion, devices, opt, out_device=None):
-        super().__init__(generator, criterion, opt)
+    def __init__(self, generator: Generator, criterion: LabelSmoothing, opt: Optimizer,
+                 chunk_size: int, devices: List, out_device=None):
+        super().__init__(generator, criterion, opt, chunk_size)
         self.multi_gpu = len(devices) > 1
-        if self.multi_gpu:
-            self.device_ids = devices
-            self.out_device = out_device if out_device is not None else devices[0]
-            # Send out to different gpus.
-            self.criterion = nn.parallel.replicate(criterion, devices=devices)
-            self.generator = nn.parallel.replicate(generator, devices=self.device_ids)
+        self.devices = devices
+        self.out_device = out_device if out_device is not None else devices[0]
+        # Send out to different gpus.
+        self.criterion = nn.parallel.replicate(criterion, devices=devices)
+        self.generator = nn.parallel.replicate(generator, devices=self.devices)
 
-    def __call__(self, outs, targets, norm, train_mode=True):
+    def __call__(self, x_feats, y_seqs, norm, train_mode=True, chunk_size=None):
+        """
         if not self.multi_gpu:
             # let the parent class deal with this
-            return super().__call__(outs, targets, norm, train_mode)
-
-        # FIXME: there seems to be a bug in this below code
-        # TODO: generate outputs in chunks
+            return super()(x_feats, y_seqs, norm, train_mode, chunk_size)
+        """
         batch_dim = 0
-        assert outs.shape[batch_dim] == targets.shape[batch_dim]
-        sct_outs = nn.parallel.scatter(outs, target_gpus=self.device_ids, dim=batch_dim)
-        sct_tgts = nn.parallel.scatter(targets, target_gpus=self.device_ids, dim=batch_dim)
-        assert len(sct_outs) == len(sct_tgts)
-        sct_generators = self.generator[:len(sct_outs)]
-        sct_criteria = self.criterion[:len(sct_outs)]
-        sct_preds = nn.parallel.parallel_apply(sct_generators, sct_outs)
-        pairs = [(pred.contiguous().view(-1, pred.size(-1)),
-                  tgt.contiguous().view(-1)) for pred, tgt in zip(sct_preds, sct_tgts)]
-        sct_losses = nn.parallel.parallel_apply(sct_criteria, pairs)
-        sent_losses = nn.parallel.gather(sct_losses, target_device=self.out_device, dim=batch_dim)
-        total_loss = (sent_losses.sum() / norm)
-        total_loss_val = total_loss.item()
+        assert x_feats.shape[batch_dim] == y_seqs.shape[batch_dim]
+        # naming: sct = Scattered   chk = Chunked
+        sct_feats = nn.parallel.scatter(x_feats, target_gpus=self.devices, dim=batch_dim)
+        sct_ys = nn.parallel.scatter(y_seqs, target_gpus=self.devices, dim=batch_dim)
+        assert len(sct_feats) == len(sct_ys)
+        n_scts = len(sct_feats)  # if the batch is smaller than n_gpus; only use a subset
+        sct_generators = self.generator[:n_scts]
+        sct_criteria = self.criterion[:n_scts]
+
+        chunk_size = chunk_size if chunk_size else self.chunk_size
+        assert chunk_size > 0
+        seq_len = x_feats.shape[1]  # B x L x D
+        assert seq_len == y_seqs.shape[-1]  # B x L
+        total_loss = 0
+        sct_chk_grads = [[] for _ in range(n_scts)]
+        for i in range(0, seq_len, chunk_size):
+            chk_sct_feats = [torch.tensoror(sf.data[:, i:i + chunk_size],
+                                            requires_grad=train_mode, device=x_feats.device)
+                             for sf in sct_feats]
+            chk_sct_dist = nn.parallel.parallel_apply(sct_generators, chk_sct_feats)
+
+            args_pair = [(chk_distr.contiguous().view(-1, chk_distr.shape[-1]),
+                          sy[:, i:i + chunk_size].contiguous().view(-1))
+                         for chk_distr, sy in zip(chk_sct_dist, sct_ys)]
+            chk_sct_loss = nn.parallel.parallel_apply(sct_criteria, args_pair)
+
+            # update total loss
+            chk_losses = nn.paralle.gather(chk_sct_loss, target_device=self.out_device)
+            chk_loss = chk_losses.sum() / norm
+            total_loss += chk_loss.item()
+
+            if train_mode:
+                chk_loss.backward()
+                for chk_grads, chk_feats in zip(sct_chk_grads, chk_sct_feats):
+                    chk_grads.append(chk_feats.grad.data.clone())
+
+        # back prop all loss through the rest of the network
         if train_mode:
-            total_loss.backward()
+            # concat chunks along seq_len for each scatter
+            sct_grad = [torch.tensor(torch.cat(chk_grads, dim=1),
+                                     requires_grad=train_mode, device=x_feats.device)
+                        for chk_grads in sct_chk_grads]
+            # gather all scatter to single device
+            out_grad = nn.paralle.gather(sct_grad, target_device=x_feats.device)
+            # back prop the rest of network
+            # TODO: backward pass runs on a single GPU :( :'( improve this!
+            x_feats.backward(gradient=out_grad)
             self.opt.step()
             self.opt.zero_grad()
-        return total_loss_val * norm
+        return total_loss * norm
 
 
 class TransformerTrainer(SteppedTrainer):
@@ -533,21 +558,26 @@ class TransformerTrainer(SteppedTrainer):
                  model_factory=TransformerNMT.make_model,
                  **optim_args):
         super().__init__(exp, model, model_factory=model_factory, optim=optim, **optim_args)
-
-        device_ids = list(range(torch.cuda.device_count()))
-        log.info(f"Going to use {torch.cuda.device_count()} GPUs ; ids:{device_ids}")
-
-        if len(device_ids) > 1:  # Multi GPU mode
-            log.warning("Multi GPU mode <<this feature is not well tested>>")
-            self.model = nn.DataParallel(self.model, dim=0, device_ids=device_ids)
         generator = self.model.generator
-
         criterion = LabelSmoothing(vocab_size=generator.vocab,
                                    padding_idx=Batch.pad_value,
                                    smoothing=self._smoothing)
 
-        self.loss_func = ChunkedLossCompute(generator=generator, criterion=criterion, opt=self.opt,
-                                            chunk_size=10)
+        device_ids = list(range(torch.cuda.device_count()))
+        chunk_size = self.exp.config.get('trainer_args', {}).get('chunk_size', 10)
+        log.info(f"Going to use {torch.cuda.device_count()} GPUs ; ids:{device_ids};"
+                 f" Chunk_size={chunk_size}")
+
+        if len(device_ids) > 1:  # Multi GPU mode
+            log.warning("Multi GPU mode <<this feature is not well tested>>")
+            self.model = nn.DataParallel(self.model, dim=0, device_ids=device_ids)
+            self.loss_func = MultiGPULossFunction(generator=generator, criterion=criterion,
+                                                  opt=self.opt,
+                                                  chunk_size=chunk_size, devices=device_ids)
+        else:
+            self.loss_func = ChunkedLossCompute(generator=generator, criterion=criterion,
+                                                opt=self.opt,
+                                                chunk_size=chunk_size)
 
     def run_valid_epoch(self, data_iter: BatchIterable):
         """
