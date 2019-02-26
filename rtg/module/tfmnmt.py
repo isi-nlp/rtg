@@ -458,8 +458,7 @@ class ChunkedLossCompute(SimpleLossFunction):
         out_grads = []
         for i in range(0, x_feats.shape[1], chunk_size):
             # grad network is cut here
-            chunked_feats = torch.tensor(x_feats.data[:, i:i + chunk_size],
-                                         requires_grad=train_mode, device=x_feats.device)
+            chunked_feats = x_feats[:, i:i + chunk_size].clone().detach().requires_grad_(train_mode)
             chunked_dist = self.generator(chunked_feats)
 
             chunked_dist = chunked_dist.view(-1, chunked_dist.shape[-1])  # B x C x V -> B.C x V
@@ -471,8 +470,7 @@ class ChunkedLossCompute(SimpleLossFunction):
                 loss.backward()
                 out_grads.append(chunked_feats.grad.data.clone())  # grads are collected
         if train_mode:
-            out_grad = torch.tensor(torch.cat(out_grads, dim=1),
-                                    requires_grad=train_mode, device=x_feats.device)
+            out_grad = torch.cat(out_grads, dim=1)
             x_feats.backward(gradient=out_grad)
             self.opt.step()
             self.opt.zero_grad()
@@ -485,10 +483,11 @@ class MultiGPULossFunction(ChunkedLossCompute):
                  chunk_size: int, devices: List, out_device=None):
         super().__init__(generator, criterion, opt, chunk_size)
         self.multi_gpu = len(devices) > 1
+        assert self.multi_gpu
         self.devices = devices
         self.out_device = out_device if out_device is not None else devices[0]
-        # Send out to different gpus.
-        self.criterion = nn.parallel.replicate(criterion, devices=devices)
+        # Send to different gpus; ahead of time
+        self.criterion = nn.parallel.replicate(criterion, devices=self.devices)
         self.generator = nn.parallel.replicate(generator, devices=self.devices)
 
     def __call__(self, x_feats, y_seqs, norm, train_mode=True, chunk_size=None):
@@ -504,8 +503,9 @@ class MultiGPULossFunction(ChunkedLossCompute):
         sct_ys = nn.parallel.scatter(y_seqs, target_gpus=self.devices, dim=batch_dim)
         assert len(sct_feats) == len(sct_ys)
         n_scts = len(sct_feats)  # if the batch is smaller than n_gpus; only use a subset
-        sct_generators = self.generator[:n_scts]
+
         sct_criteria = self.criterion[:n_scts]
+        sct_generators = self.generator[:n_scts]
 
         chunk_size = chunk_size if chunk_size else self.chunk_size
         assert chunk_size > 0
@@ -513,9 +513,9 @@ class MultiGPULossFunction(ChunkedLossCompute):
         assert seq_len == y_seqs.shape[-1]  # B x L
         total_loss = 0
         sct_chk_grads = [[] for _ in range(n_scts)]
+
         for i in range(0, seq_len, chunk_size):
-            chk_sct_feats = [torch.tensoror(sf.data[:, i:i + chunk_size],
-                                            requires_grad=train_mode, device=x_feats.device)
+            chk_sct_feats = [sf[:, i:i + chunk_size].clone().detach().requires_grad_(train_mode)
                              for sf in sct_feats]
             chk_sct_dist = nn.parallel.parallel_apply(sct_generators, chk_sct_feats)
 
@@ -525,7 +525,7 @@ class MultiGPULossFunction(ChunkedLossCompute):
             chk_sct_loss = nn.parallel.parallel_apply(sct_criteria, args_pair)
 
             # update total loss
-            chk_losses = nn.paralle.gather(chk_sct_loss, target_device=self.out_device)
+            chk_losses = nn.parallel.gather(chk_sct_loss, target_device=self.out_device)
             chk_loss = chk_losses.sum() / norm
             total_loss += chk_loss.item()
 
@@ -537,11 +537,9 @@ class MultiGPULossFunction(ChunkedLossCompute):
         # back prop all loss through the rest of the network
         if train_mode:
             # concat chunks along seq_len for each scatter
-            sct_grad = [torch.tensor(torch.cat(chk_grads, dim=1),
-                                     requires_grad=train_mode, device=x_feats.device)
-                        for chk_grads in sct_chk_grads]
+            sct_grad = [torch.cat(chk_grads, dim=1) for chk_grads in sct_chk_grads]
             # gather all scatter to single device
-            out_grad = nn.paralle.gather(sct_grad, target_device=x_feats.device)
+            out_grad = nn.parallel.gather(sct_grad, target_device=x_feats.device)
             # back prop the rest of network
             # TODO: backward pass runs on a single GPU :( :'( improve this!
             x_feats.backward(gradient=out_grad)
