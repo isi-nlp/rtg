@@ -15,7 +15,9 @@ from tqdm import tqdm
 from rtg import device, log, my_tensor as tensor, TranslationExperiment as Experiment
 from rtg.dataprep import Batch, BatchIterable
 from rtg.module import NMTModel
-from rtg.module.trainer import TrainerState, SteppedTrainer
+from rtg.module.trainer import TrainerState, SteppedTrainer, NoamOpt
+from torch.optim import Optimizer
+from dataclasses import dataclass
 
 
 def clones(module, N):
@@ -420,15 +422,14 @@ class LabelSmoothing(nn.Module):
         return loss.unsqueeze(0)
 
 
+@dataclass
 class SimpleLossFunction:
     """
     A simple loss function that computes the loss using the criterion given
     """
-
-    def __init__(self, generator, criterion, opt):
-        self.generator = generator
-        self.criterion = criterion
-        self.opt = opt
+    generator: Generator
+    criterion: LabelSmoothing
+    opt: Optimizer
 
     def __call__(self, x_feats, y_seqs, norm, train_mode=True):
         x_probs = self.generator(x_feats)  # B x T x D --> B x T x V
@@ -445,7 +446,42 @@ class SimpleLossFunction:
         return loss.item() * norm
 
 
+@dataclass
+class ChunkedLossCompute(SimpleLossFunction):
+
+    chunk_size: int = 10
+
+    def __call__(self, x_feats, y_seqs, norm, train_mode=True, chunk_size=None):
+        chunk_size = chunk_size if chunk_size else self.chunk_size
+        assert chunk_size > 0
+        assert norm > 0
+        total = 0
+        out_grads = []
+        for i in range(0, x_feats.shape[1], chunk_size):
+            # grad network is cut here
+            chunked_feats = torch.tensor(x_feats.data[:, i:i+chunk_size],
+                                         requires_grad=train_mode, device=x_feats.device)
+            chunked_dist = self.generator(chunked_feats)
+
+            chunked_dist = chunked_dist.view(-1, chunked_dist.shape[-1])    # B x C x V -> B.C x V
+            chunked_ys = y_seqs[:, i:i+chunk_size].contiguous().view(-1)     # B x C -> B.C
+            loss = self.criterion(chunked_dist, chunked_ys)
+            loss = loss.sum() / norm
+            total += loss.item()
+            if train_mode:
+                loss.backward()
+                out_grads.append(chunked_feats.grad.data.clone())   # grads are collected
+        if train_mode:
+            out_grad = torch.tensor(torch.cat(out_grads, dim=1),
+                                    requires_grad=train_mode, device=x_feats.device)
+            x_feats.backward(gradient=out_grad)
+            self.opt.step()
+            self.opt.zero_grad()
+        return total * norm
+
+
 class MultiGPULossFunction(SimpleLossFunction):
+    # FIXME : this is broken
     """
     Loss function that uses Multiple GPUs
     Currently uses DataParallel, but this is only the early version
@@ -510,7 +546,8 @@ class TransformerTrainer(SteppedTrainer):
                                    padding_idx=Batch.pad_value,
                                    smoothing=self._smoothing)
 
-        self.loss_func = SimpleLossFunction(generator, criterion, opt=self.opt)
+        self.loss_func = ChunkedLossCompute(generator=generator, criterion=criterion, opt=self.opt,
+                                            chunk_size=10)
 
     def run_valid_epoch(self, data_iter: BatchIterable):
         """
@@ -635,7 +672,7 @@ def __test_model__():
 
     from rtg.module.decoder import Decoder
 
-    exp = DummyExperiment("work.tmp.t2t", config={'model_type': 't2t'}, read_only=True,
+    exp = DummyExperiment("work.tmp.t2t", config={'model_type': 'tfmnmt'}, read_only=True,
                           vocab_size=vocab_size)
     exp.model_args = args
     trainer = TransformerTrainer(exp=exp, warmup_steps=200)
