@@ -479,15 +479,16 @@ class ChunkedLossCompute(SimpleLossFunction):
 
 class MultiGPULossFunction(ChunkedLossCompute):
 
-    def __init__(self, generator: Generator, criterion: LabelSmoothing, opt: Optimizer,
+    def __init__(self, dp_module: nn.DataParallel, criterion: LabelSmoothing, opt: Optimizer,
                  chunk_size: int, devices: List, out_device=None):
-        super().__init__(generator, criterion, opt, chunk_size)
+        super().__init__(None, criterion, opt, chunk_size)
         self.multi_gpu = len(devices) > 1
         assert self.multi_gpu
         self.devices = devices
         self.out_device = out_device if out_device is not None else devices[0]
-        self.criterion = criterion
-        self.generator = generator
+        assert isinstance(dp_module, nn.DataParallel)
+        self.dp_module: nn.DataParallel = dp_module
+        self.sct_criteria = nn.parallel.replicate(self.criterion, devices=self.devices)
 
     def __call__(self, x_feats, y_seqs, norm, train_mode=True, chunk_size=None):
         """
@@ -503,8 +504,11 @@ class MultiGPULossFunction(ChunkedLossCompute):
         assert len(sct_feats) == len(sct_ys)
         n_scts = len(sct_feats)  # if the batch is smaller than n_gpus; only use a subset
 
-        sct_criteria = nn.parallel.replicate(self.criterion, devices=self.devices)[:n_scts]
-        sct_generators = nn.parallel.replicate(self.generator, devices=self.devices)[:n_scts]
+        sct_criteria = self.sct_criteria[:n_scts]
+        # use generator from data parallel, because the generator params maybe tied to embeddings
+        # TODO: I am not 100% sure if this actually works
+        generator = self.dp_module.module.generator
+        sct_generators = nn.parallel.replicate(generator, devices=self.devices)[:n_scts]
 
         chunk_size = chunk_size if chunk_size else self.chunk_size
         assert chunk_size > 0
@@ -567,7 +571,7 @@ class TransformerTrainer(SteppedTrainer):
 
         if len(device_ids) > 1:  # Multi GPU mode
             log.warning("Multi GPU mode <<this feature is not well tested>>")
-            # self.model = nn.DataParallel(self.model, dim=0, device_ids=device_ids)
+            self.model = nn.DataParallel(self.model, dim=0, device_ids=device_ids)
             self.loss_func = MultiGPULossFunction(generator=generator, criterion=criterion,
                                                   opt=self.opt,
                                                   chunk_size=chunk_size, devices=device_ids)
