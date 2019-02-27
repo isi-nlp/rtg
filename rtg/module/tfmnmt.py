@@ -486,9 +486,8 @@ class MultiGPULossFunction(ChunkedLossCompute):
         assert self.multi_gpu
         self.devices = devices
         self.out_device = out_device if out_device is not None else devices[0]
-        # Send to different gpus; ahead of time
-        self.criterion = nn.parallel.replicate(criterion, devices=self.devices)
-        self.generator = nn.parallel.replicate(generator, devices=self.devices)
+        self.criterion = criterion
+        self.generator = generator
 
     def __call__(self, x_feats, y_seqs, norm, train_mode=True, chunk_size=None):
         """
@@ -504,8 +503,8 @@ class MultiGPULossFunction(ChunkedLossCompute):
         assert len(sct_feats) == len(sct_ys)
         n_scts = len(sct_feats)  # if the batch is smaller than n_gpus; only use a subset
 
-        sct_criteria = self.criterion[:n_scts]
-        sct_generators = self.generator[:n_scts]
+        sct_criteria = nn.parallel.replicate(self.criterion, devices=self.devices)[:n_scts]
+        sct_generators = nn.parallel.replicate(self.generator, devices=self.devices)[:n_scts]
 
         chunk_size = chunk_size if chunk_size else self.chunk_size
         assert chunk_size > 0
@@ -568,14 +567,13 @@ class TransformerTrainer(SteppedTrainer):
 
         if len(device_ids) > 1:  # Multi GPU mode
             log.warning("Multi GPU mode <<this feature is not well tested>>")
-            self.model = nn.DataParallel(self.model, dim=0, device_ids=device_ids)
+            # self.model = nn.DataParallel(self.model, dim=0, device_ids=device_ids)
             self.loss_func = MultiGPULossFunction(generator=generator, criterion=criterion,
                                                   opt=self.opt,
                                                   chunk_size=chunk_size, devices=device_ids)
         else:
             self.loss_func = ChunkedLossCompute(generator=generator, criterion=criterion,
-                                                opt=self.opt,
-                                                chunk_size=chunk_size)
+                                                opt=self.opt, chunk_size=chunk_size)
 
     def run_valid_epoch(self, data_iter: BatchIterable):
         """
