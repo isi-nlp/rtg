@@ -36,7 +36,7 @@ class DecoderBlock(nn.Module):
         #        sent_repr = sent_repr.unsqueeze(1).expand_as(x)
         #  and assume they are good to concat here
         scores = self.w1(x) + self.w2(sent_repr)
-        weights = F.sigmoid(scores)
+        weights = scores.sigmoid()
         return sent_repr * weights  # element wise scale
 
 
