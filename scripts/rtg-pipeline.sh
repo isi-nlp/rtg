@@ -3,8 +3,8 @@
 #$ -P material
 #$ -cwd
 #$ -pe mt 6
-#$ -l h_vmem=12G,h_rt=24:00:00,gpu=1
-#$ -l 'h=!vista04'
+#$ -l h_vmem=8G,h_rt=24:00:00,gpu=1
+#$ -l 'h=!vista05'
 
 # Pipeline script for MT
 #
@@ -13,13 +13,15 @@
 
 OUT=
 CONF_PATH=
-BATCH_SIZE=56
+BATCH_SIZE=64
 STEPS=128000
 KEEP=10
 BEAM_SIZE=4
-CHECKPOINT=2000
-ENSEMBLE=1
+CHECKPOINT=1000
+ENSEMBLE=10
 FINE_TUNE=
+SRC_EXTN=".src.tok"
+REF_EXTN=".ref"
 
 usage() {
     echo "Usage: $0 -d <exp/dir>
@@ -29,11 +31,13 @@ usage() {
         [-k keep_models (default:$KEEP)]
         [-n ensemble_models (default:$ENSEMBLE)]
         [-f (flag to enable fine tuning corpus for training)]
+        [-t extention of test source files(default: $SRC_EXTN)]
+        [-r extention of test reference files(default: $REF_EXTN)]
         [-m beam_size (default:$BEAM_SIZE)]" 1>&2;
     exit 1;
 }
 
-while getopts ":fd:c:b:s:k:m:n:" o; do
+while getopts ":fd:c:b:s:k:m:n:t:r:" o; do
     case "${o}" in
         d)
             OUT=${OPTARG}
@@ -53,8 +57,17 @@ while getopts ":fd:c:b:s:k:m:n:" o; do
         n)
             ENSEMBLE=${OPTARG}
             ;;
+        m)
+            BEAM_SIZE=${OPTARG}
+            ;;
         f)
             FINE_TUNE="yes"
+            ;;
+        t)
+            SRC_EXTN=${OPTARG}
+            ;;
+        r)
+            REF_EXTN=${OPTARG}
             ;;
         *)
             usage
@@ -107,15 +120,19 @@ fi
 
 
 ####### TRAIN ########
+
+COMBO_WT=$OUT/combo-weights.yml
+# ignore the _TRAINED file
 ignore_flag=
-if [[ -f $OUT/models/scores.tsv ]]; then
+if [[ ! -f $COMBO_WT && -f $OUT/models/scores.tsv ]]; then
     last_step=$(tail -1 $OUT/models/scores.tsv | cut -f1)
     [[ -n $last_step && $last_step -lt $STEPS ]] && ignore_flag="yes"
 fi
 
+
 if [[ -n $ignore_flag || ! -f "$OUT/_TRAINED" ]]; then
     log "Step : Starting trainer"
-    cmd="python -m rtg.train $EXP_DIR -oa 'lr=0.1,warmup_steps=8000' --check-point $CHECKPOINT --steps $STEPS --keep-models $KEEP --batch-size $BATCH_SIZE"
+    cmd="python -m rtg.train $EXP_DIR --check-point $CHECKPOINT --steps $STEPS --keep-models $KEEP --batch-size $BATCH_SIZE"
     [[ $FINE_TUNE ]] && cmd="$cmd --fine-tune"
     log "$cmd"
     if eval "$cmd"; then
@@ -133,6 +150,9 @@ function decode {
     FROM=$1
     TO=$2
     cmd="python -m rtg.decode $EXP_DIR --beam-size $BEAM_SIZE --ensemble $ENSEMBLE --input $FROM --output $TO"
+    if [[ -f $COMBO_WT ]]; then
+       cmd="$cmd --sys-comb $COMBO_WT"
+    fi
     log "$cmd"
     eval "$cmd"
 }
@@ -152,15 +172,20 @@ function score {
 
 ######## Test data files #########
 DATA=/nas/material/users/tg/work/data/material/y2/merged/1S-buildldc
-SRC='src.tok'
-REF='ref'
+SRC="$SRC_EXTN"
+REF="$REF_EXTN"
 
 DEV=$DATA/1S-builddev
 TEST=$DATA/1S-buildtest
 LDCDEV=$DATA/elisa-som-dev
 LDCTEST=$DATA/elisa-som-test
 
-test_dir=$( printf "$OUT/test_step%03d_beam%03d_ens%03d" $STEPS $BEAM_SIZE $ENSEMBLE )
+if [[ -f $COMBO_WT ]]; then
+    test_dir=$( printf "$OUT/test_combo_beam%03d" $BEAM_SIZE )
+else
+    test_dir=$( printf "$OUT/test_step%03d_beam%03d_ens%03d" $STEPS $BEAM_SIZE $ENSEMBLE )
+fi
+
 mkdir -p $test_dir
 
 printf "$TEST test
@@ -169,8 +194,8 @@ $LDCDEV ldcdev
 $LDCTEST ldctest
 " | while read pref split; do
     echo "Decoding and scoring $split Source:$pref.$SRC Ref: $pref.$REF"
-    ln -s $pref.$SRC $test_dir/$split.src
-    ln -s $pref.$REF $test_dir/$split.ref
+    ln -s $pref${SRC} $test_dir/$split.src
+    ln -s $pref${REF} $test_dir/$split.ref
 
     decode $test_dir/$split.src $test_dir/$split.out
     score $test_dir/$split.out $test_dir/$split.ref
