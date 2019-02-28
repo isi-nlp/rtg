@@ -14,14 +14,16 @@ from typing import Optional, Callable
 from dataclasses import dataclass
 import time
 from tensorboardX import SummaryWriter
+from torch.optim import Optimizer
 
 
-class NoamOpt:
+class NoamOpt(Optimizer):
     """
     Optimizer wrapper that implements learning rate as a function of step.
     """
 
-    def __init__(self, model_size, factor, warmup, optimizer, step=0):
+    def __init__(self, model_size, factor, warmup, optimizer: Optimizer, step=0):
+        super().__init__(params=optimizer.param_groups, defaults=dict(warmup=warmup, step=step))
         self.optimizer = optimizer
         self._step = step
         self.warmup = warmup
@@ -30,14 +32,14 @@ class NoamOpt:
         self._rate = 0
         log.info(f"model_size={model_size}, factor={factor}, warmup={warmup}, step={step}")
 
-    def step(self):
+    def step(self, closure=None):
         "Update parameters and rate"
         self._step += 1
         rate = self.rate()
         for p in self.optimizer.param_groups:
             p['lr'] = rate
         self._rate = rate
-        self.optimizer.step()
+        self.optimizer.step(closure=closure)
 
     @property
     def curr_step(self):
