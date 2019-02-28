@@ -150,7 +150,7 @@ class MTransformerTrainer(TransformerTrainer):
 
     def __init__(self, *args, model_factory=MTransformerNMT.make_model, **kwargs):
         super().__init__(*args, model_factory=model_factory, **kwargs)
-        self.model: True = self.model  # type annotation
+        assert isinstance(self.model, MTransformerNMT)  # type check
 
 
 def __test_model__():
