@@ -25,7 +25,8 @@ class DecoderBlock(nn.Module):
 
     def __init__(self, d_model, dropout=0.1):
         super().__init__()
-        self.merge = nn.Linear(d_model + d_model, d_model)
+        self.w1 = nn.Linear(d_model, d_model)
+        self.w2 = nn.Linear(d_model, d_model)
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x, sent_repr):
@@ -34,8 +35,9 @@ class DecoderBlock(nn.Module):
         #  for efficiency we expand sent_repr at caller as
         #        sent_repr = sent_repr.unsqueeze(1).expand_as(x)
         #  and assume they are good to concat here
-        concatd = torch.cat([sent_repr, x], dim=-1)
-        return self.merge(concatd)
+        scores = self.w1(x) + self.w2(sent_repr)
+        weights = F.sigmoid(scores)
+        return sent_repr * weights  # element wise scale
 
 
 class MDecoderLayer(nn.Module):
