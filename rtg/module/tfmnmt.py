@@ -572,7 +572,7 @@ class TransformerTrainer(SteppedTrainer):
         if len(device_ids) > 1:  # Multi GPU mode
             log.warning("Multi GPU mode <<this feature is not well tested>>")
             self.model = nn.DataParallel(self.model, dim=0, device_ids=device_ids)
-            self.loss_func = MultiGPULossFunction(generator=generator, criterion=criterion,
+            self.loss_func = MultiGPULossFunction(self.model, criterion=criterion,
                                                   opt=self.opt,
                                                   chunk_size=chunk_size, devices=device_ids)
         else:
