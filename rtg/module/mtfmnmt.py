@@ -8,13 +8,12 @@ import inspect
 import copy
 import torch
 import torch.nn as nn
-from torch.nn import functional as F
 
 from rtg.module.tfmnmt import (Encoder, EncoderLayer, PositionwiseFeedForward, PositionalEncoding,
                                Generator, MultiHeadedAttention, Embeddings, TransformerNMT,
                                TransformerTrainer, SublayerConnection, LayerNorm, clones)
 from rtg import TranslationExperiment as Experiment, log
-from rtg.dataprep import PAD_TOK_IDX as pad_idx
+from rtg.dataprep import CLS_TOK_IDX as cls_idx
 
 
 class DecoderBlock(nn.Module):
@@ -128,12 +127,13 @@ class MTransformerNMT(TransformerNMT):
         return self.generator(feats, log_probs=log_probs) if gen_probs else feats
 
     def encode(self, src, src_mask):
-        # batch_size = src.shape[0]
+        batch_size = src.shape[0]
         # ADD CLS token
-        # cls_col = torch.full((batch_size, 1), fill_value=cls_idx, device=device, dtype=torch.long)
-        # src = torch.cat([cls_col, src], dim=1)
+        cls_col = torch.full((batch_size, 1), fill_value=cls_idx, device=src.device,
+                             dtype=torch.long)
+        src = torch.cat([cls_col, src], dim=1)
         # assuming first col of mask is proper
-        # src_mask = torch.cat([src_mask[:, :, :1], src_mask], dim=-1)
+        src_mask = torch.cat([src_mask[:, :, :1], src_mask], dim=-1)
 
         embs = self.src_embed(src)
         enc_feats = self.encoder(embs, src_mask)
