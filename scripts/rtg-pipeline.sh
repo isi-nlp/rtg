@@ -68,9 +68,9 @@ EXP_DIR=$OUT
 #################
 
 # These needs to be changed
-source ~tg/.bashrc
-source activate torch-3.7
-export PYTHONPATH=.:~tg/work/libs2/rtg-master
+#source ~tg/.bashrc
+#source activate torch-3.7
+#export PYTHONPATH=.:~tg/work/libs2/rtg-master
 
 export LD_LIBRARY_PATH=~jonmay/cuda-9.0/lib64:~jonmay/cuda/lib64:/usr/local/lib
 NUM_GPUS=$(echo $CUDA_VISIBLE_DEVICES | tr ',' '\n' | wc -l)
