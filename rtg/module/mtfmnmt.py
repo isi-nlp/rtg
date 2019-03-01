@@ -22,10 +22,17 @@ class DecoderBlock(nn.Module):
     TODO: block is a boring name; there gotta be a more creative name for this step
     """
 
-    def __init__(self, d_model, dropout=0.1):
+    def __init__(self, d_model, dropout=0.1, mode='add'):
         super().__init__()
-        self.w1 = nn.Linear(d_model, d_model)
-        self.w2 = nn.Linear(d_model, d_model)
+        assert mode in ('add', 'cat')
+        self.mode = mode
+        if mode == 'add':
+            self.w1 = nn.Linear(d_model, d_model)
+            self.w2 = nn.Linear(d_model, d_model)
+        elif mode == 'cat':
+            self.w = nn.Linear(d_model + d_model, d_model)
+        else:
+            raise Exception()
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x, sent_repr):
@@ -34,7 +41,13 @@ class DecoderBlock(nn.Module):
         #  for efficiency we expand sent_repr at caller as
         #        sent_repr = sent_repr.unsqueeze(1).expand_as(x)
         #  and assume they are good to concat here
-        scores = self.w1(x) + self.w2(sent_repr)
+
+        if self.mode == 'add':
+            scores = self.w1(x) + self.w2(sent_repr)
+        elif self.mode == 'cat':
+            scores = self.w(torch.cat([x, sent_repr], dim=-1))
+        else:
+            raise Exception()
         weights = scores.sigmoid()
         weights = self.dropout(weights)
         return sent_repr * weights  # element wise scale
@@ -81,7 +94,7 @@ class MTransformerNMT(TransformerNMT):
 
     @classmethod
     def make_model(cls, src_vocab, tgt_vocab, n_layers=6, hid_size=512, ff_size=2048, n_heads=8,
-                   dropout=0.1, tied_emb='three-way', exp: Experiment = None):
+                   dropout=0.1, tied_emb='three-way', src_attn_mode='cat', exp: Experiment = None):
         """
         Helper: Construct a model from hyper parameters."
         :return: model, args
@@ -102,7 +115,7 @@ class MTransformerNMT(TransformerNMT):
         enc_layer = EncoderLayer(hid_size, c(attn), c(ff), dropout)
         encoder = Encoder(enc_layer, n_layers)  # clones n times
 
-        dec_block = DecoderBlock(hid_size, dropout)
+        dec_block = DecoderBlock(hid_size, dropout, mode=src_attn_mode)
         dec_layer = MDecoderLayer(hid_size, c(attn), c(dec_block), c(ff), dropout)
         decoder = MDecoder(dec_layer, n_layers)
 
