@@ -44,10 +44,10 @@ class Seq2SeqGenerator(GeneratorFactory):
         # [S, B, d]
         self.dec_hids = enc_hids
 
-    def generate_next(self, past_ys):
+    def generate_next(self, past_ys, get_attn=False):
         last_ys = past_ys[:, -1]
-        log_probs, self.dec_hids, _ = self.model.dec(self.enc_outs, last_ys, self.dec_hids)
-        return log_probs
+        log_probs, self.dec_hids, attn = self.model.dec(self.enc_outs, last_ys, self.dec_hids)
+        return (log_probs, attn) if get_attn else log_probs
 
 
 class BiNMTGenerator(Seq2SeqGenerator):
