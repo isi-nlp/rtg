@@ -434,9 +434,7 @@ class RNNMT(NMTModel):
 
         model = RNNMT(enc, dec)
         # Initialize parameters with Glorot / fan_avg.
-        for p in model.parameters():
-            if p.dim() > 1:
-                nn.init.xavier_uniform_(p)
+        model.init_params()
         return model, args
 
 

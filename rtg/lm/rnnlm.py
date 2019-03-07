@@ -51,6 +51,7 @@ class RnnLm(SeqDecoder, LanguageModel):
         gen = Generator(name=lang, vec_size=model_dim, vocab_size=vocab_size)
         # Todo: tying stuff here
         model = cls(embedder=emb, generator=gen, n_layers=n_layers, dropout=dropout)
+        model.init_params()
         return model, kwargs
 
     def batch_forward(self, batch):

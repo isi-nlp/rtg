@@ -75,11 +75,7 @@ class TfmLm(LanguageModel):
             log.info("Tying the embedding weights, two ways: (TgtIn == TgtOut)")
             model.generator.proj.weight = model.embed[0].lut.weight
 
-        # This was important from their code.
-        # Initialize parameters with Glorot / fan_avg.
-        for p in model.parameters():
-            if p.dim() > 1:
-                nn.init.xavier_uniform_(p)
+        model.init_params()
         return model, args
 
 

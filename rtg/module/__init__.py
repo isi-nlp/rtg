@@ -4,6 +4,13 @@ import torch.nn as nn
 
 class Model(nn.Module):
 
+    def init_params(self, scheme='xavier'):
+        assert scheme == 'xavier'  # only supported scheme as of now
+        # Initialize parameters with xavier uniform
+        for p in self.parameters():
+            if p.dim() > 1:
+                nn.init.xavier_uniform_(p)
+
     @property
     @abstractmethod
     def model_dim(self):

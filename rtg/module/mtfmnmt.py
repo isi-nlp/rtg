@@ -7,49 +7,83 @@
 import inspect
 import copy
 import torch
-import math
 import torch.nn as nn
 
 from rtg.module.tfmnmt import (Encoder, EncoderLayer, PositionwiseFeedForward, PositionalEncoding,
                                Generator, MultiHeadedAttention, Embeddings, TransformerNMT,
-                               TransformerTrainer)
+                               TransformerTrainer, SublayerConnection, LayerNorm, clones)
 from rtg import TranslationExperiment as Experiment, log
-from rtg.dataprep import PAD_TOK_IDX as pad_idx
-
-""""In NMT, DecoderLayer also has source attention.
-But here, decoder layer is just like Encoder layer: self_attn and feed forward"""
-from rtg.module.tfmnmt import EncoderLayer as MDecoderLayer
-from rtg.module.tfmnmt import Encoder as MDecoder
+from rtg.dataprep import CLS_TOK_IDX as cls_idx
 
 
-class MEmbeddings(nn.Module):
+class DecoderBlock(nn.Module):
+    """
+    A block in decoder that makes use of sentence representation
+    TODO: block is a boring name; there gotta be a more creative name for this step
+    """
 
-    def __init__(self, d_model, vocab):
+    def __init__(self, d_model, dropout=0.1, mode='add'):
         super().__init__()
-        self.lut = nn.Embedding(vocab, d_model, padding_idx=pad_idx)
-        self.vocab = vocab
-        self.d_model = d_model
-        # merge [sent_repr; embedding] --> d_model
-        self.merge = nn.Linear(2 * d_model, d_model)
-        self.scaler = math.sqrt(self.d_model)
+        assert mode in ('add', 'cat')
+        self.mode = mode
+        if mode == 'add':
+            self.w1 = nn.Linear(d_model, d_model)
+            self.w2 = nn.Linear(d_model, d_model)
+        elif mode == 'cat':
+            self.w = nn.Linear(d_model + d_model, d_model)
+        else:
+            raise Exception()
+        self.dropout = nn.Dropout(dropout)
 
-    def forward(self, x):
-        # this gets wrapped in Sequential, which takes only one arg
-        word_ids, sent_repr = x
-        batch, max_len = word_ids.shape
-        embs = self.lut(word_ids) * self.scaler
+    def forward(self, x, sent_repr):
+        # Assumption x:[Batch x SeqLen x ModelDim]
+        # sent_repr: x:[Batch x ModelDim] --> [Batch x SeqLen x ModelDim]
+        #  for efficiency we expand sent_repr at caller as
+        #        sent_repr = sent_repr.unsqueeze(1).expand_as(x)
+        #  and assume they are good to concat here
 
-        # seq_lens = (word_ids != pad_idx).sum(dim=1, dtype=torch.float)
-        # sent_repr = sent_repr * seq_lens.unsqueeze(1)
-        # sent_repr = F.tanh(sent_repr)
-        sent_repr = sent_repr * self.scaler
+        if self.mode == 'add':
+            scores = self.w1(x) + self.w2(sent_repr)
+        elif self.mode == 'cat':
+            scores = self.w(torch.cat([x, sent_repr], dim=-1))
+        else:
+            raise Exception()
+        weights = scores.sigmoid()
+        weights = self.dropout(weights)
+        return sent_repr * weights  # element wise scale
 
-        embs = embs.view(batch, max_len, self.d_model)
-        assert sent_repr.shape == (batch, self.d_model)
-        sent_repr = sent_repr.view(batch, 1, self.d_model).expand_as(embs)
-        concatd = torch.cat([sent_repr, embs], dim=-1)
-        merged = self.merge(concatd)
-        return merged
+
+class MDecoderLayer(nn.Module):
+    "Decoder is made of self-attn, dec-block, and feed forward (defined below)"
+
+    def __init__(self, size, self_attn, dec_block, feed_fwd, dropout):
+        super().__init__()
+        self.size = size
+        self.self_attn = self_attn
+        self.dec_block = dec_block
+        self.feed_fwd = feed_fwd
+        self.sublayer = clones(SublayerConnection(size, dropout), 3)
+
+    def forward(self, x, tgt_mask, sent_repr):
+        """ decoder layer: self_attn, dec_block, feedforward"""
+        x = self.sublayer[0](x, lambda _x: self.self_attn(_x, _x, _x, tgt_mask))
+        x = self.sublayer[1](x, lambda _x: self.dec_block(_x, sent_repr))
+        x = self.sublayer[2](x, self.feed_fwd)
+        return x
+
+
+class MDecoder(nn.Module):
+    "Generic N layer decoder with masking."
+
+    def __init__(self, layer: MDecoderLayer, n_layers: int):
+        super().__init__()
+        self.layers = clones(layer, n_layers)
+        self.norm = LayerNorm(layer.size)
+
+    def forward(self, x, tgt_mask, sent_repr):
+        for layer in self.layers:
+            x = layer(x, tgt_mask, sent_repr)
+        return self.norm(x)
 
 
 class MTransformerNMT(TransformerNMT):
@@ -60,7 +94,7 @@ class MTransformerNMT(TransformerNMT):
 
     @classmethod
     def make_model(cls, src_vocab, tgt_vocab, n_layers=6, hid_size=512, ff_size=2048, n_heads=8,
-                   dropout=0.1, tied_emb='three-way', exp: Experiment = None):
+                   dropout=0.1, tied_emb='three-way', src_attn_mode='cat', exp: Experiment = None):
         """
         Helper: Construct a model from hyper parameters."
         :return: model, args
@@ -77,12 +111,17 @@ class MTransformerNMT(TransformerNMT):
         c = copy.deepcopy
         attn = MultiHeadedAttention(n_heads, hid_size)
         ff = PositionwiseFeedForward(hid_size, ff_size, dropout)
-        encoder = Encoder(EncoderLayer(hid_size, c(attn), c(ff), dropout), n_layers)
-        decoder = MDecoder(MDecoderLayer(hid_size, c(attn), c(ff), dropout), n_layers)
+
+        enc_layer = EncoderLayer(hid_size, c(attn), c(ff), dropout)
+        encoder = Encoder(enc_layer, n_layers)  # clones n times
+
+        dec_block = DecoderBlock(hid_size, dropout, mode=src_attn_mode)
+        dec_layer = MDecoderLayer(hid_size, c(attn), c(dec_block), c(ff), dropout)
+        decoder = MDecoder(dec_layer, n_layers)
 
         src_emb = nn.Sequential(Embeddings(hid_size, src_vocab),
                                 PositionalEncoding(hid_size, dropout))
-        tgt_emb = nn.Sequential(MEmbeddings(hid_size, tgt_vocab),
+        tgt_emb = nn.Sequential(Embeddings(hid_size, tgt_vocab),
                                 PositionalEncoding(hid_size, dropout))
         generator = Generator(hid_size, tgt_vocab)
 
@@ -90,11 +129,7 @@ class MTransformerNMT(TransformerNMT):
         if tied_emb:
             model.tie_embeddings(tied_emb)
 
-        # This was important from their code.
-        # Initialize parameters with Glorot / fan_avg.
-        for p in model.parameters():
-            if p.dim() > 1:
-                nn.init.xavier_uniform_(p)
+        model.init_params()
         return model, args
 
     def forward(self, src, tgt, src_mask, tgt_mask, gen_probs=False, log_probs=True):
@@ -107,26 +142,29 @@ class MTransformerNMT(TransformerNMT):
     def encode(self, src, src_mask):
         batch_size = src.shape[0]
         # ADD CLS token
-        #cls_col = torch.full((batch_size, 1), fill_value=cls_idx, device=device, dtype=torch.long)
-        #src = torch.cat([cls_col, src], dim=1)
+        cls_col = torch.full((batch_size, 1), fill_value=cls_idx, device=src.device,
+                             dtype=torch.long)
+        src = torch.cat([cls_col, src], dim=1)
         # assuming first col of mask is proper
-        #src_mask = torch.cat([src_mask[:, :, :1], src_mask], dim=-1)
+        src_mask = torch.cat([src_mask[:, :, :1], src_mask], dim=-1)
 
         embs = self.src_embed(src)
         enc_feats = self.encoder(embs, src_mask)
         sent_repr = enc_feats[:, 0, :]  # CLS token features
         return sent_repr
 
-    def decode(self, sent_repr, tgt, tgt_mask):
-        embs = self.tgt_embed((tgt, sent_repr))
-        return self.decoder(embs, tgt_mask)
+    def decode(self, sent_repr, tgt, tgt_mask, **extra):
+        assert not extra  # no extra stuff;  added to keep the lint happy
+        embs = self.tgt_embed(tgt)
+        sent_repr = sent_repr.unsqueeze(1).expand_as(embs)
+        return self.decoder(embs, tgt_mask, sent_repr)
 
 
 class MTransformerTrainer(TransformerTrainer):
 
     def __init__(self, *args, model_factory=MTransformerNMT.make_model, **kwargs):
         super().__init__(*args, model_factory=model_factory, **kwargs)
-        self.model: True = self.model  # type annotation
+        assert isinstance(self.model, MTransformerNMT)  # type check
 
 
 def __test_model__():
