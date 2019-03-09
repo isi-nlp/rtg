@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Dict, List
 from rtg.module.decoder import Decoder
 from rtg import RTG_PATH
+from rtg.utils import IO
 import subprocess
 
 
@@ -46,7 +47,7 @@ def run_tests(exp, args=None):
             continue
         out_file = test_dir / f'{name}.out.tsv'
         if out_file.exists() and out_file.stat().st_size > 0:
-            log.warn(f"{out_file} exists and not empty. Skipped...")
+            log.warning(f"{out_file} exists and not empty. Skipped...")
             continue
         src_link = test_dir / f'{name}.src'
         ref_link = test_dir / f'{name}.ref'
@@ -54,7 +55,8 @@ def run_tests(exp, args=None):
         ref_link.symlink_to(orig_ref)
 
         log.info(f"decoding {name}: {orig_src}")
-        decoder.decode_file(src_link, out_file, **dec_args)
+        with IO.reader(src_link) as inp, IO.writer(out_file) as out:
+            decoder.decode_file(inp, out, **dec_args)
         evaluate_file(out_file, ref_link)
 
 
