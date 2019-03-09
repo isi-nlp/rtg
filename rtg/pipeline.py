@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Dict, List
 from rtg.module.decoder import Decoder
 from rtg import RTG_PATH
-from rtg.utils import IO
+from rtg.utils import IO, line_count
 import subprocess
 
 
@@ -47,12 +47,17 @@ def run_tests(exp, args=None):
             continue
         out_file = test_dir / f'{name}.out.tsv'
         if out_file.exists() and out_file.stat().st_size > 0:
-            log.warning(f"{out_file} exists and not empty. Skipped...")
-            continue
+            if line_count(out_file) == line_count(orig_src):
+                log.warning(f"{out_file} exists and has desired number of lines. Skipped...")
+                continue
+            else:
+                log.warning(f"{out_file} exists and not empty. goint to be overwritten...")
         src_link = test_dir / f'{name}.src'
         ref_link = test_dir / f'{name}.ref'
-        src_link.symlink_to(orig_src)
-        ref_link.symlink_to(orig_ref)
+        if not src_link.exists():
+            src_link.symlink_to(orig_src)
+        if not ref_link.exists():
+            ref_link.symlink_to(orig_ref)
 
         log.info(f"decoding {name}: {orig_src}")
         with IO.reader(src_link) as inp, IO.writer(out_file) as out:
