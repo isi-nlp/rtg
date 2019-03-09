@@ -8,8 +8,7 @@ from typing import Mapping
 from time import time
 from rtg import cpu_device, device, log
 import math
-from rtg.module.trainer import NoamOpt
-from rtg.utils import Optims
+from rtg.module.trainer import NoamOpt, Optims
 import itertools
 
 # NOTE: this is out of sync

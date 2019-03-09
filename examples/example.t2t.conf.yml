@@ -17,6 +17,23 @@ optim:
     warmup_steps: 8000
     label_smoothing: 0.1
   name: ADAM
+trainer:
+  steps: 128000
+  check_point: 1000
+  keep_models: 10
+
+tester:
+  decoder:
+    beam: 4
+    max_len: 200
+  suit:
+    valid:
+      - data/valid.src
+      - data/valid.tgt
+    test:
+      - data/test.src
+      - data/test.tgt
+
 prep:
   mono_src: []
   mono_tgt: []
@@ -36,7 +53,5 @@ prep:
   finetune_src: data/finetune.src
   finetune_tgt: data/finetune.tgt
 
-src_lang: FRA
-tgt_lang: ENG
 updated_at: '2018-07-25T15:53:18.379150'
 

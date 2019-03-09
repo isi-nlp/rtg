@@ -2,15 +2,7 @@
 
 import argparse
 from argparse import ArgumentDefaultsHelpFormatter as ArgFormatter
-
 from rtg import TranslationExperiment as Experiment, log
-from rtg.module.tfmnmt import TransformerTrainer
-from rtg.module.mtfmnmt import MTransformerTrainer
-from rtg.module.rnnmt import SteppedRNNMTTrainer
-from rtg.binmt.bicycle import BiNmtTrainer
-from rtg.lm.rnnlm import RnnLmTrainer
-from rtg.lm.tfmlm import TfmLmTrainer
-from rtg.utils import log_tensor_sizes, Optims
 
 
 def parse_args():
@@ -26,12 +18,6 @@ def parse_args():
                         help="Number of checkpoints to keep.")
     parser.add_argument("-bs", "--batch-size", help="Mini batch size of training and validation",
                         type=int, default=256)
-    parser.add_argument("-op", "--optim", type=str, default='ADAM', choices=Optims.names(),
-                        help="Name of optimizer")
-    parser.add_argument("-oa", "--optim-args", type=str, default='lr=0.001',
-                        help="Comma separated key1=val1,key2=val2 args to optimizer."
-                             " Example: lr=0.01,warmup_steps=1000 "
-                             "The arguments depends on the choice of --optim")
 
     parser.add_argument("-ft", "--fine-tune", action='store_true',
                         help="Use fine tune corpus instead of train corpus.")
@@ -51,31 +37,7 @@ def main():
     exp = Experiment(args.pop('work_dir'))
     assert exp.has_prepared(), f'Experiment dir {exp.work_dir} is not ready to train. ' \
                                f'Please run "prep" sub task'
-    _, optim_args = exp.optim_args
-    if optim_args is None:
-        optim_args = {}
-    if args.get('optim_args'):
-        # convert key1=val1,key2=val2 format to dictionary
-        pairs = [x.strip() for x in args.pop('optim_args').split(',')]
-        pairs = [pair.split('=') for pair in pairs if pair]
-        optim_args.update({k.strip(): float(v) for k, v in pairs})
-
-    trainer = {
-        't2t': TransformerTrainer,
-        'binmt': BiNmtTrainer,
-        'seq2seq': SteppedRNNMTTrainer,
-        'tfmnmt': TransformerTrainer,
-        'rnnmt': SteppedRNNMTTrainer,
-        'rnnlm': RnnLmTrainer,
-        'tfmlm': TfmLmTrainer,
-        'mtfmnmt': MTransformerTrainer
-    }[exp.model_type](exp, optim=args.pop('optim'), **optim_args)
-    try:
-        trainer.train(**args)
-    except RuntimeError as e:
-        if 'out of memory' in str(e).lower():
-            log_tensor_sizes()
-        raise e
+    exp.train(args)
 
 
 if __name__ == '__main__':

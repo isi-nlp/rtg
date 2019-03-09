@@ -7,14 +7,18 @@ import torch.nn as nn
 import rtg
 from rtg import log, TranslationExperiment as Experiment, device, BatchIterable
 from rtg.module import NMTModel
-from rtg.utils import Optims, IO
+from rtg.utils import IO
 
 from abc import abstractmethod
 from typing import Optional, Callable
 from dataclasses import dataclass
 import time
 from tensorboardX import SummaryWriter
+
+from torch import optim
 from torch.optim import Optimizer
+from enum import Enum
+import inspect
 
 
 class NoamOpt(Optimizer):
@@ -63,6 +67,20 @@ class NoamOpt(Optimizer):
     def get_std_opt(model):
         return NoamOpt(model.src_embed[0].d_model, 2, 4000,
                        torch.optim.Adam(model.parameters(), lr=0, betas=(0.9, 0.98), eps=1e-9))
+
+
+class Optims(Enum):
+    ADAM = optim.Adam
+    SGD = optim.SGD
+
+    def new(self, parameters, lr=0.001, **args):
+        log.info(f"Creating {self.value} optimizer with lr={lr} and extra args:{args}")
+        log.info(f"   {self.value}, default arguments {inspect.signature(self.value)}")
+        return self.value(parameters, lr=lr, **args)
+
+    @staticmethod
+    def names():
+        return list(Optims.__members__.keys())
 
 
 @dataclass
@@ -142,6 +160,7 @@ class SteppedTrainer:
                  optim: str = 'ADAM',
                  **optim_args):
         self.start_step = 0
+        self.last_step = -1
         self.exp = exp
         optim_state = None
         if model:
@@ -153,9 +172,9 @@ class SteppedTrainer:
             log.info(f"Creating model with args: {args}")
             self.model, args = model_factory(exp=exp, **args)
             exp.model_args = args
-            last_model, last_step = self.exp.get_last_saved_model()
+            last_model, self.last_step = self.exp.get_last_saved_model()
             if last_model:
-                self.start_step = last_step + 1
+                self.start_step = self.last_step + 1
                 log.info(f"Resuming training from step:{self.start_step}, model={last_model}")
                 state = torch.load(last_model)
                 model_state = state['model_state'] if 'model_state' in state else state
@@ -251,7 +270,11 @@ class SteppedTrainer:
         :param keep_models: how many checkpoints to keep on file system
         :return:
         """
+
         step_num = self.opt.curr_step
+        if step_num == self.last_step:
+            log.warning("Ignoring checkpt request")
+            return  # calling multiple times doesnt save
         val_loss = self.run_valid_epoch(val_data)
         log.info(f"Checkpoint at step {step_num}. Training Loss {train_loss:g},"
                  f" Validation Loss:{val_loss:g}")
@@ -275,6 +298,7 @@ class SteppedTrainer:
 
         self.exp.store_model(step_num, state, train_score=train_loss,
                              val_score=val_loss, keep=keep_models)
+        self.last_step = step_num
 
     @abstractmethod
     def run_valid_epoch(self, data_iter: BatchIterable) -> float:
@@ -298,3 +322,4 @@ class SteppedTrainer:
         :return:
         """
         raise NotImplementedError()
+
