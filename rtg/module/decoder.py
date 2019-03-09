@@ -458,7 +458,7 @@ class Decoder:
                 traceback.print_exc()
                 print_state = True
 
-    def decode_file(self, inp, out, **args):
+    def decode_file(self, inp, out, num_hyp=1, **args):
         for i, line in enumerate(inp):
             line = line.strip()
             if not line:
@@ -470,8 +470,7 @@ class Decoder:
             log.debug(f"INP: {i}: {cols[0]}")
             if len(cols) > 1:  # assumption: second column is reference
                 log.debug(f"REF: {i}: {cols[1]}")
-            result = self.decode_sentence(input, **args)
-            num_hyp = args['num_hyp']
+            result = self.decode_sentence(input, num_hyp=1, **args)
             out_line = '\n'.join(f'{hyp}\t{score:.4f}' for score, hyp in result)
             out.write(f'{out_line}\n')
             log.debug(f"OUT: {i}: {out_line}\n")
