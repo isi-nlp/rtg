@@ -14,7 +14,7 @@ import subprocess
 
 
 def evaluate_file(hyp: Path, ref: Path):
-    script: Path = RTG_PATH / 'detok-n-bleu.sh'
+    script: Path = RTG_PATH / 'scripts' / 'detok-n-bleu.sh'
     for x in [hyp, ref, script]:
         assert x.exists(), f'{x}'
     cmd = f'{script} -h {hyp} -r {ref}'
