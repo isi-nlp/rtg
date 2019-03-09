@@ -171,3 +171,7 @@ class TfmLmTrainer(TransformerTrainer):
                                           step=self.opt.curr_step,
                                           train_loss=train_loss)
                     train_state.train_mode(True)
+        # End of training
+        train_loss = train_state.reset()
+        train_state.train_mode(False)
+        self.make_check_point(val_data, train_loss, keep_models=keep_models)
