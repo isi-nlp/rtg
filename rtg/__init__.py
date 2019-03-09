@@ -1,11 +1,10 @@
 import os
-import logging as log
+import logging
+from rtg.tool.log import Logger
+debug_mode = os.environ.get('NMT_DEBUG', False)
+log = Logger(console_level=logging.DEBUG if debug_mode else logging.INFO)
 
 __version__ = '0.2.2'
-
-debug_mode = os.environ.get('NMT_DEBUG', False)
-log.basicConfig(level=log.DEBUG if debug_mode else log.INFO)
-log.debug(f"NMT_DEBUG={debug_mode}")
 
 import torch
 device_name = 'cuda:0' if torch.cuda.is_available() else 'cpu'
@@ -30,7 +29,6 @@ def profile(func, *args):
     :param args: any addtional args for profiler
     :return:
     """
-
     if not profiler:
         return func
     return profiler(func, *args)

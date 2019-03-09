@@ -11,6 +11,7 @@ from rtg.dataprep import (RawRecord, ParallelSeqRecord, MonoSeqRecord,
 from rtg.utils import IO, line_count
 from itertools import zip_longest
 
+
 def load_conf(inp: Union[str, Path]):
     with IO.reader(inp) as fh:
         return yaml.load(fh)
@@ -26,6 +27,7 @@ class TranslationExperiment:
         log.info(f"Initializing an experiment. Directory = {work_dir}")
         self.read_only = read_only
         self.work_dir = work_dir
+        self.log_file = work_dir / 'rtg.log'
         self.data_dir = work_dir / 'data'
         self.model_dir = work_dir / 'models'
         self._config_file = work_dir / 'conf.yml'

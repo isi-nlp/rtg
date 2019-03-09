@@ -66,6 +66,7 @@ def run_tests(exp, args=None):
 
 
 def run(exp: Experiment):
+    log.update_file_handler(str(exp.log_file))
     exp.pre_process()
     exp.train()
     exp = Experiment(exp.work_dir, read_only=True)
