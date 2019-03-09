@@ -1,11 +1,8 @@
 import gc
 from rtg import log
 import torch
-from torch import optim
 from functools import reduce
 import operator as op
-from enum import Enum
-import inspect
 import gzip
 from pathlib import Path
 
@@ -56,20 +53,6 @@ def log_tensor_sizes(writer=log.info, min_size=1024):
 
     total = sum(rec[0] for rec in sorted_stats)
     log.info(f'Total Bytes by tensors  bigger than {min_size} is (approx):{total:,}')
-
-
-class Optims(Enum):
-    ADAM = optim.Adam
-    SGD = optim.SGD
-
-    def new(self, parameters, lr=0.001, **args):
-        log.info(f"Creating {self.value} optimizer with lr={lr} and extra args:{args}")
-        log.info(f"   {self.value}, default arguments {inspect.signature(self.value)}")
-        return self.value(parameters, lr=lr, **args)
-
-    @staticmethod
-    def names():
-        return list(Optims.__members__.keys())
 
 
 def line_count(path, ignore_blanks=False):

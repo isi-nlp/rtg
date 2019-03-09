@@ -1,7 +1,7 @@
 import os
 import logging as log
 
-__version__ = '0.2.1'
+__version__ = '0.2.2'
 
 debug_mode = os.environ.get('NMT_DEBUG', False)
 log.basicConfig(level=log.DEBUG if debug_mode else log.INFO)
@@ -39,5 +39,5 @@ def profile(func, *args):
 from rtg.dataprep import BatchIterable, Batch
 from rtg.exp import TranslationExperiment
 from rtg.module import tfmnmt, decoder
-
-
+from pathlib import Path
+RTG_PATH = Path(__file__).resolve().parent.parent

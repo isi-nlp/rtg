@@ -7,14 +7,18 @@ import torch.nn as nn
 import rtg
 from rtg import log, TranslationExperiment as Experiment, device, BatchIterable
 from rtg.module import NMTModel
-from rtg.utils import Optims, IO
+from rtg.utils import IO
 
 from abc import abstractmethod
 from typing import Optional, Callable
 from dataclasses import dataclass
 import time
 from tensorboardX import SummaryWriter
+
+from torch import optim
 from torch.optim import Optimizer
+from enum import Enum
+import inspect
 
 
 class NoamOpt(Optimizer):
@@ -63,6 +67,20 @@ class NoamOpt(Optimizer):
     def get_std_opt(model):
         return NoamOpt(model.src_embed[0].d_model, 2, 4000,
                        torch.optim.Adam(model.parameters(), lr=0, betas=(0.9, 0.98), eps=1e-9))
+
+
+class Optims(Enum):
+    ADAM = optim.Adam
+    SGD = optim.SGD
+
+    def new(self, parameters, lr=0.001, **args):
+        log.info(f"Creating {self.value} optimizer with lr={lr} and extra args:{args}")
+        log.info(f"   {self.value}, default arguments {inspect.signature(self.value)}")
+        return self.value(parameters, lr=lr, **args)
+
+    @staticmethod
+    def names():
+        return list(Optims.__members__.keys())
 
 
 @dataclass

@@ -11,7 +11,6 @@ from rtg.dataprep import (RawRecord, ParallelSeqRecord, MonoSeqRecord,
 from rtg.utils import IO, line_count
 from itertools import zip_longest
 
-
 def load_conf(inp: Union[str, Path]):
     with IO.reader(inp) as fh:
         return yaml.load(fh)
@@ -365,7 +364,10 @@ class TranslationExperiment:
                 _write_dict(report, Path(str(outp) + '.report.txt'))
                 _write_emb_matrix(emb_matrix, str(outp))
 
-    def pre_process(self, args=None):
+    def pre_process(self, args=None, force=False):
+        if self.has_prepared() and not force:
+            log.warning("Already prepared")
+            return
         args = args if args else self.config['prep']
         if self._unsupervised:
             self.pre_process_mono(args)
@@ -424,6 +426,26 @@ class TranslationExperiment:
             cols = [str(epoch), datetime.now().isoformat(), name, f'{train_score:g}',
                     f'{val_score:g}']
             f.write('\t'.join(cols) + '\n')
+
+    def train(self, args=None):
+        run_args = self.config.get('trainer_args', {})
+        if args:
+            run_args.update(args)
+        steps = run_args['steps']
+        _, last_step = self.get_last_saved_model()
+        if last_step >= steps:
+            log.warning(f"Already trained upto {last_step}; Requested: {steps}")
+            return
+        try:
+            from rtg.registry import trainers
+            trainer = trainers[self.model_type](self)
+            trainer.train(**run_args)
+            self._trained_flag.touch()
+        except RuntimeError as e:
+            from rtg.utils import log_tensor_sizes
+            if 'out of memory' in str(e).lower():
+                log_tensor_sizes()
+            raise e
 
     @staticmethod
     def _path_to_validn_score(path):
