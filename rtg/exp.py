@@ -428,7 +428,7 @@ class TranslationExperiment:
             f.write('\t'.join(cols) + '\n')
 
     def train(self, args=None):
-        run_args = self.config.get('trainer_args', {})
+        run_args = self.config.get('trainer', {})
         if args:
             run_args.update(args)
         steps = run_args['steps']
