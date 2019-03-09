@@ -36,7 +36,7 @@ def run_tests(exp, args=None):
     assert step > 0
     test_dir = exp.work_dir / f'test_step{step}_beam{beam}_ens{ensemble}'
     log.info(f"Test Dir = {test_dir}")
-    test_dir.mkdir(parents=True)
+    test_dir.mkdir(parents=True, exist_ok=True)
 
     decoder = Decoder.new(exp, ensemble=ensemble)
 
