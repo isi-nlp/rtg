@@ -375,6 +375,9 @@ class TranslationExperiment:
         if vocabs:
             parent = TranslationExperiment(vocabs, read_only=True)
             parent.copy_vocabs(self)
+            self.shared_field, self.src_field, self.tgt_field = [
+                Field(str(f)) if f.exists() else None
+                for f in (self._shared_field_file, self._src_field_file, self._tgt_field_file)]
         if self._unsupervised:
             self.pre_process_mono(args)
         else:
