@@ -371,6 +371,10 @@ class TranslationExperiment:
             log.warning("Already prepared")
             return
         args = args if args else self.config['prep']
+        vocabs = args.get('vocabs')
+        if vocabs:
+            parent = TranslationExperiment(vocabs, read_only=True)
+            parent.copy_vocabs(self)
         if self._unsupervised:
             self.pre_process_mono(args)
         else:
