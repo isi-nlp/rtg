@@ -407,7 +407,7 @@ class TranslationExperiment:
         self.store_config()
 
     def store_model(self, epoch: int, model, train_score: float, val_score: float, keep: int,
-                    prefix='model'):
+                    prefix='model', keeper_sort='step'):
         """
         saves model to a given path
         :param epoch: epoch number of model
@@ -416,6 +416,8 @@ class TranslationExperiment:
         :param val_score: score of model on validation split
         :param keep: number of good models to keep, bad models will be deleted
         :param prefix: prefix to store model. default is "model"
+        :param keeper_sort: criteria for choosing the old or bad models for deletion.
+            Choices: {'total_score', 'step'}
         :return:
         """
         # TODO: improve this by skipping the model save if the model is not good enough to be saved
@@ -427,9 +429,16 @@ class TranslationExperiment:
         log.info(f"Saving epoch {epoch} to {path}")
         torch.save(model, str(path))
 
-        for bad_model in self.list_models(sort='total_score', desc=False)[keep:]:
-            log.info(f"Deleting bad model {bad_model} . Keep={keep}")
-            os.remove(str(bad_model))
+        del_models = []
+        if keeper_sort == 'total_score':
+            del_models = self.list_models(sort='total_score', desc=False)[keep:]
+        elif keeper_sort == 'step':
+            del_models = self.list_models(sort='step', desc=True)[keep:]
+        else:
+            Exception(f'Sort criteria{keeper_sort} not understood')
+        for d_model in del_models:
+            log.info(f"Deleting model {d_model} . Keep={keep}, sort={keeper_sort}")
+            os.remove(str(d_model))
 
         with IO.writer(os.path.join(self.model_dir, 'scores.tsv'), append=True) as f:
             cols = [str(epoch), datetime.now().isoformat(), name, f'{train_score:g}',
