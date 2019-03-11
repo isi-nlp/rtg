@@ -46,12 +46,12 @@ export LD_LIBRARY_PATH=~jonmay/cuda-9.0/lib64:~jonmay/cuda/lib64:/usr/local/lib
 echo "Output dir = $OUT"
 [[ -d $OUT ]] || mkdir -p $OUT
 
-if [[ ! -f $OUT/rtg.zip ]]; then
+if [[ ! -f $OUT/rtg.zip || ! -e $OUT/scripts ]]; then
     echo "Zipping source code to $OUT/rtg.zip"
     OLD_DIR=$PWD
     cd ~tg/work/libs2/rtg-master
     zip -r $OUT/rtg.zip rtg -x "*__pycache__*"
-    ln -s scripts $OUT/scripts  # scripts are needed
+    ln -s ${PWD}/scripts $OUT/scripts  # scripts are needed
     git rev-parse HEAD > $OUT/githead   # git commit message
     cd $OLD_DIR
 fi
