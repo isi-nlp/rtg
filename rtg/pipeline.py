@@ -12,7 +12,7 @@ from rtg import RTG_PATH
 from rtg.utils import IO, line_count
 import subprocess
 from dataclasses import dataclass
-
+import torch
 
 @dataclass
 class Pipeline:
@@ -96,8 +96,9 @@ class Pipeline:
         self.pre_checks()   # fail early, so TG can fix and restart
         self.exp.pre_process()
         self.exp.train()
-        exp = Experiment(self.exp.work_dir, read_only=True)
-        self.run_tests(exp)
+        with torch.no_grad():
+            exp = Experiment(self.exp.work_dir, read_only=True)
+            self.run_tests(exp)
 
 
 def parse_args():
