@@ -51,6 +51,8 @@ if [[ ! -f $OUT/rtg.zip ]]; then
     OLD_DIR=$PWD
     cd ~tg/work/libs2/rtg-master
     zip -r $OUT/rtg.zip rtg -x "*__pycache__*"
+    ln -s scripts $OUT/scripts  # scripts are needed
+    git rev-parse HEAD > $OUT/githead   # git commit message
     cd $OLD_DIR
 fi
 
