@@ -291,7 +291,7 @@ class BatchIterable(Iterable[Batch]):
         :param batch_size: number of examples per batch
         :param sort_dec: should the records within batch be sorted descending order of sequence length?
         """
-        self.data = TSVData(data_path, shuffle=shuffle)
+        self.data = TSVData(data_path, shuffle=shuffle, longest_first=False)
         self.batch_size = batch_size
         self.sort_dec = sort_dec
         self.batch_first = batch_first
