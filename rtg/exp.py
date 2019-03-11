@@ -441,15 +441,23 @@ class TranslationExperiment:
         if args:
             run_args.update(args)
         steps = run_args['steps']
+
         _, last_step = self.get_last_saved_model()
+        if self._trained_flag.exists():
+            # noinspection PyBroadException
+            try:
+                last_step = max(last_step, yaml.load(self._trained_flag.read_text())['steps'])
+            except Exception as _:
+                pass
+
         if last_step >= steps:
-            log.warning(f"Already trained upto {last_step}; Requested: {steps}")
+            log.warning(f"Already trained upto {last_step}; Requested: {steps}. Skipped")
             return
         try:
             from rtg.registry import trainers
             trainer = trainers[self.model_type](self)
             trainer.train(**run_args)
-            self._trained_flag.touch()
+            self._trained_flag.write_text(yaml.dump({'steps': steps}, default_flow_style=False))
         except RuntimeError as e:
             from rtg.utils import log_tensor_sizes
             if 'out of memory' in str(e).lower():
