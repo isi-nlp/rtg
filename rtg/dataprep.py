@@ -1,14 +1,17 @@
 import os
-from typing import List, Iterator, Tuple, Union, Optional, Iterable
+from typing import List, Iterator, Tuple, Union, Optional, Iterable, Dict, Any
 import torch
 from rtg import log
 from . import my_tensor as tensor, device
-from rtg.utils import IO
+from rtg.utils import IO, line_count
 import math
 import random
 from collections import namedtuple
 from sentencepiece import SentencePieceProcessor, SentencePieceTrainer
 from pathlib import Path
+import sqlite3
+import json
+
 
 PAD_TOK = '<pad>', 0
 UNK_TOK = '<unk>', 1
@@ -24,7 +27,6 @@ CLS_TOK_IDX = CLS_TOK[1]
 
 
 RESERVED_TOKS = [PAD_TOK, UNK_TOK, BOS_TOK, EOS_TOK, CLS_TOK]
-
 
 RawRecord = Tuple[str, str]
 TokRawRecord = Tuple[List[str], List[str]]
@@ -116,19 +118,8 @@ class TSVData:
         self.longest_first = longest_first
         self.shuffle = shuffle
         self.mem = list(self.read_all()) if self.in_mem else None
-        self._len = len(self.mem) if self.in_mem else self._line_count(path)
+        self._len = len(self.mem) if self.in_mem else line_count(path)
         self.read_counter = 0
-
-    @staticmethod
-    def _line_count(path):
-        log.debug(f"Counting lines in {path}")
-        with open(path) as f:
-            count = 0
-            for _ in f:
-                if f:
-                    count += 1
-            log.debug(f"{path} has {count} non empty lines")
-            return count
 
     @staticmethod
     def _parse(line: str):
@@ -157,6 +148,73 @@ class TSVData:
 
         yield from self.mem if self.mem else self.read_all()
         self.read_counter += 1
+
+
+class SqliteFile:
+
+    TABLE_STATEMENT = """CREATE TABLE IF NOT EXISTS data (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        x BLOB NOT NULL,
+        y BLOB,
+        x_len INTEGER,
+        y_len INTEGER)"""
+
+    INSERT_STMT = "INSERT INTO data (x, y, x_len, y_len) VALUES (?, ?, ?, ?)"
+    RANDOM_READ = "SELECT * from data ORDER BY RANDOM()"
+    COUNT_ROWS = "SELECT COUNT(*) as COUNT from data"
+
+    def __init__(self, path: Path, shuffle=True, longest_first=False):
+        self.path = path
+        assert path.exists()
+        self.db = sqlite3.connect(str(path))
+
+        def dict_factory(cursor, row):  # map tuples to dictionary with column names
+            d = {}
+            for idx, col in enumerate(cursor.description):
+                key = col[0]
+                val = row[idx]
+                if key in ('x', 'y') and val is not None:
+                    val = json.loads(val)  # unmarshall
+                d[key] = val
+            return d
+
+        self.db.row_factory = dict_factory
+        self.shuffle = shuffle
+        self.longest_first = longest_first
+
+    def __len__(self):
+        return self.db.execute(self.COUNT_ROWS).fetchone()['COUNT']
+
+    def read_all(self, shuffle=True, longest_first=False) -> Iterator[Dict[str, Any]]:
+        assert shuffle, 'only shuffled read is supported as of now'   # come back and fix it ;)
+        assert not longest_first,  'Not supported yet'
+        return self.db.execute(self.RANDOM_READ)
+
+    def __iter__(self) -> Iterator[Example]:
+        for d in self.read_all(shuffle=self.shuffle, longest_first=self.longest_first):
+            yield Example(d['x'], d.get('y'))
+
+    @classmethod
+    def write(cls, path, records: Iterator[ParallelSeqRecord]):
+        if path.exists():
+            log.warning(f"Overwriting {path} with new records")
+            os.remove(str(path))
+        log.info(f'Creating {path}')
+
+        conn = sqlite3.connect(str(path))
+        cur = conn.cursor()
+        cur.execute(cls.TABLE_STATEMENT)
+        count = 0
+        for x_seq, y_seq in records:
+            # marshall variable length sequences to a json array
+            x_seq = json.dumps(x_seq)
+            y_seq = None if y_seq is None else json.dumps(y_seq)
+            values = (x_seq, y_seq, len(x_seq), len(y_seq) if y_seq is not None else -1)
+            cur.execute(cls.INSERT_STMT, values)
+            count += 1
+        cur.close()
+        conn.commit()
+        log.info(f"stored {count} rows in {path}")
 
 
 def read_tsv(path: str):
@@ -291,7 +349,12 @@ class BatchIterable(Iterable[Batch]):
         :param batch_size: number of examples per batch
         :param sort_dec: should the records within batch be sorted descending order of sequence length?
         """
-        self.data = TSVData(data_path, shuffle=shuffle, longest_first=False)
+        if not isinstance(data_path, Path):
+            data_path = Path(data_path)
+        if data_path.name.endswith(".db"):
+            self.data = SqliteFile(data_path, shuffle=shuffle)
+        else:
+            self.data = TSVData(data_path, shuffle=shuffle, longest_first=False)
         self.batch_size = batch_size
         self.sort_dec = sort_dec
         self.batch_first = batch_first

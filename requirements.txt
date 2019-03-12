@@ -5,3 +5,4 @@ numpy
 pyyaml
 sentencepiece
 tensorboardX
+sqlite3
