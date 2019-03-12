@@ -1,10 +1,12 @@
 import gc
-from rtg import log
-import torch
-from functools import reduce
-import operator as op
 import gzip
+import operator as op
+from functools import reduce
 from pathlib import Path
+
+import torch
+
+from rtg import log
 
 # Size of each element in tensor
 tensor_size = {

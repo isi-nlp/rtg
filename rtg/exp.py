@@ -7,7 +7,7 @@ import torch
 import random
 from rtg import log
 from rtg.dataprep import (RawRecord, ParallelSeqRecord, MonoSeqRecord,
-                          Field, BatchIterable, LoopingIterable)
+                          Field, BatchIterable, LoopingIterable, SqliteFile)
 from rtg.utils import IO, line_count
 from itertools import zip_longest
 
@@ -38,6 +38,7 @@ class TranslationExperiment:
         self._trained_flag = self.work_dir / '_TRAINED'
 
         self.train_file = self.data_dir / 'train.tsv.gz'
+        self.train_db = self.data_dir / 'train.db'
         self.finetune_file = self.data_dir / 'finetune.tsv.gz'
         self.valid_file = self.data_dir / 'valid.tsv.gz'
         self.combo_file = self.data_dir / 'combo.tsv.gz'
@@ -142,7 +143,8 @@ class TranslationExperiment:
         assert args['shared_vocab']  # TODO support individual vocab types
 
         # check if files are parallel
-        assert line_count(args['train_src']) == line_count(args['train_tgt'])
+        n_train_exs = line_count(args['train_src'])
+        assert n_train_exs == line_count(args['train_tgt'])
         assert line_count(args['valid_src']) == line_count(args['valid_tgt'])
 
         if self._shared_field_file.exists():
@@ -156,7 +158,8 @@ class TranslationExperiment:
                                             str(self._shared_field_file), files,
                                             no_split_toks=no_split_toks)
 
-        self._pre_process_parallel('train_src', 'train_tgt', out_file=self.train_file, args=args,
+        train_file = self.train_db if n_train_exs >= 64000 else self.train_file
+        self._pre_process_parallel('train_src', 'train_tgt', out_file=train_file, args=args,
                                    line_check=False)
         self._pre_process_parallel('valid_src', 'valid_tgt', out_file=self.valid_file, args=args,
                                    line_check=False)
@@ -176,6 +179,7 @@ class TranslationExperiment:
 
     def pre_process_mono(self, args):
 
+        # TODO: use SQLite storage
         mono_files = [args[key] for key in ['mono_train_src', 'mono_train_tgt'] if key in args]
         assert mono_files, "At least one of 'mono_train_src', 'mono_train_tgt' should be set"
         log.info(f"Found mono files: {mono_files}")
@@ -259,7 +263,10 @@ class TranslationExperiment:
         parallel_recs = self.read_raw_data(args[src_key], args[tgt_key],
                                            args['truncate'], args['src_len'], args['tgt_len'],
                                            tokenizer=self.src_vocab.encode_as_ids)
-        self.write_tsv(parallel_recs, out_file)
+        if out_file.name.endswith('.db'):
+            SqliteFile.write(out_file, records=parallel_recs)
+        else:
+            self.write_tsv(parallel_recs, out_file)
 
         if args.get('text_files'):
             # Redo again as plain text files
@@ -601,7 +608,7 @@ class TranslationExperiment:
 
     def get_train_data(self, batch_size: int, steps: int = 0, sort_dec=True, batch_first=True,
                        shuffle=False, fine_tune=False):
-        inp_file = self.train_file
+        inp_file = self.train_db if self.train_db.exists() else self.train_file
         if fine_tune:
             if not self.finetune_file.exists():
                 # user may have added fine tune file later
