@@ -36,7 +36,6 @@ class Pipeline:
         if not script.exists():
             log.warning(f"Not found: {script}")
             script = RTG_PATH.parent / 'scripts' / 'detok-n-bleu.sh'
-            log.warning(f"Not found: {script}")
         assert script.exists(), 'Unable to locate detok-n-bleu.sh script'
         self.script = script
 
