@@ -10,7 +10,7 @@ from collections import namedtuple
 from sentencepiece import SentencePieceProcessor, SentencePieceTrainer
 from pathlib import Path
 import sqlite3
-import json
+import pickle
 
 
 PAD_TOK = '<pad>', 0
@@ -174,7 +174,7 @@ class SqliteFile:
                 key = col[0]
                 val = row[idx]
                 if key in ('x', 'y') and val is not None:
-                    val = json.loads(val)  # unmarshall
+                    val = pickle.loads(val)  # unmarshall
                 d[key] = val
             return d
 
@@ -207,9 +207,9 @@ class SqliteFile:
         count = 0
         for x_seq, y_seq in records:
             # marshall variable length sequences to a json array
-            x_seq = json.dumps(x_seq)
-            y_seq = None if y_seq is None else json.dumps(y_seq)
-            values = (x_seq, y_seq, len(x_seq), len(y_seq) if y_seq is not None else -1)
+            values = (pickle.dumps(x_seq),
+                      None if y_seq is None else pickle.dumps(y_seq),
+                      len(x_seq), len(y_seq) if y_seq is not None else -1)
             cur.execute(cls.INSERT_STMT, values)
             count += 1
         cur.close()
