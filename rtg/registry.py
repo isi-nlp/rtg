@@ -9,11 +9,6 @@ from rtg.module.rnnmt import SteppedRNNMTTrainer
 from rtg.binmt.bicycle import BiNmtTrainer
 from rtg.lm.rnnlm import RnnLmTrainer
 from rtg.lm.tfmlm import TfmLmTrainer
-from rtg.binmt.bicycle import BiNMT
-from rtg.module.rnnmt import RNNMT
-from rtg.lm.rnnlm import RnnLm
-from rtg.lm.tfmlm import TfmLm
-from rtg.module.tfmnmt import TransformerNMT
 from rtg.module.mtfmnmt import MTransformerNMT
 from rtg.module.generator import *
 

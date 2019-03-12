@@ -471,7 +471,8 @@ class TranslationExperiment:
             return
         try:
             from rtg.registry import trainers
-            trainer = trainers[self.model_type](self)
+            name, args = self.optim_args
+            trainer = trainers[self.model_type](self, optim=name, **args)
             trainer.train(**run_args)
             self._trained_flag.write_text(yaml.dump({'steps': steps}, default_flow_style=False))
         except RuntimeError as e:

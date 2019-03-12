@@ -189,7 +189,7 @@ class SteppedTrainer:
         optim_args['betas'] = optim_args.get('betas', [0.9, 0.98])
         optim_args['eps'] = optim_args.get('eps', 1e-9)
 
-        warm_up_steps = optim_args.pop('warmup_steps', 4000)
+        warm_up_steps = optim_args.pop('warmup_steps', 8000)
         self._smoothing = optim_args.pop('label_smoothing', 0.1)
         noam_factor = 2
 
