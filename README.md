@@ -36,7 +36,7 @@ export PYTHONPATH=$PWD  # Add directory to PYTHONPATH
 
 # Usage
 This repo is actively under development so whatever I write in README is getting outdated soon.
-Refer to `scripts/rtg-pipeline.sh` bash script and `examples/example.*.conf.yml` files
+Refer to `scripts/rtg-pipeline.sh` bash script and `examples/pipeline.conf.yml` file
 
 TODO: Write tutorial
 
