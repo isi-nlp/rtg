@@ -565,7 +565,7 @@ class TransformerTrainer(SteppedTrainer):
         chunk_size = self.exp.config.get('trainer_args', {}).get('chunk_size', 10)
         log.info(f"Going to use {self.n_gpus} GPUs; "
                  f" Chunk_size={chunk_size} CUDA_VISIBLE_DEVICES="
-                 f"{os.environ['CUDA_VISIBLE_DEVICES']}")
+                 f"{os.environ.get('CUDA_VISIBLE_DEVICES')}")
 
         if self.n_gpus > 1:  # Multi GPU mode
             device_ids = list(range(self.n_gpus))
