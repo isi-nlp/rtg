@@ -639,7 +639,7 @@ class TransformerTrainer(SteppedTrainer):
         if self.n_gpus > 1:
             batch_size *= self.n_gpus
             log.info(f"# GPUs = {self.n_gpus}, batch_size is set to {batch_size}")
-        keep_models = args.get('keep_models', 4)  # keep last _ models and delete the old
+        keep_models = args.get('keep_models', 10)  # keep last _ models and delete the old
 
         if steps <= self.start_step:
             raise Exception(f'The model was already trained to {self.start_step} steps. '
