@@ -1,5 +1,6 @@
 # Tensor 2 Tensor aka Attention is all you need
 # Thanks to http://nlp.seas.harvard.edu/2018/04/03/attention.html
+import os
 import copy
 import math
 import time
@@ -560,14 +561,17 @@ class TransformerTrainer(SteppedTrainer):
                                    padding_idx=Batch.pad_value,
                                    smoothing=self._smoothing)
 
-        device_ids = list(range(torch.cuda.device_count()))
+        self.n_gpus = torch.cuda.device_count()
         chunk_size = self.exp.config.get('trainer_args', {}).get('chunk_size', 10)
-        log.info(f"Going to use {torch.cuda.device_count()} GPUs ; ids:{device_ids};"
-                 f" Chunk_size={chunk_size}")
+        log.info(f"Going to use {self.n_gpus} GPUs; "
+                 f" Chunk_size={chunk_size} CUDA_VISIBLE_DEVICES="
+                 f"{os.environ['CUDA_VISIBLE_DEVICES']}")
 
-        if len(device_ids) > 1:  # Multi GPU mode
+        if self.n_gpus > 1:  # Multi GPU mode
+            device_ids = list(range(self.n_gpus))
             log.warning("Multi GPU mode <<this feature is not well tested>>")
             self.model = nn.DataParallel(self.model, dim=0, device_ids=device_ids)
+
             self.loss_func = MultiGPULossFunction(self.model, criterion=criterion,
                                                   opt=self.opt,
                                                   chunk_size=chunk_size, devices=device_ids)
@@ -632,6 +636,9 @@ class TransformerTrainer(SteppedTrainer):
               check_pt_callback: Optional[Callable] = None, fine_tune=False, **args):
         log.info(f'Going to train for {steps} epochs; batch_size={batch_size}; '
                  f'check point size:{check_point}; fine_tune={fine_tune}')
+        if self.n_gpus > 1:
+            batch_size *= self.n_gpus
+            log.info(f"# GPUs = {self.n_gpus}, batch_size is set to {batch_size}")
         keep_models = args.get('keep_models', 4)  # keep last _ models and delete the old
 
         if steps <= self.start_step:
