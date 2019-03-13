@@ -41,7 +41,7 @@ Refer to `scripts/rtg-pipeline.sh` and bash script and `examples/pipeline.conf.y
 TODO: Write tutorial
 ```bash
 $ mkdir 001-tfm
-$ cp examples/pipeline.conf.yml 001-tfm
+$ cp examples/pipeline.conf.yml 001-tfm/conf.yml
 $ scripts/rtg-pipeline.sh -d 001-tfm
 ```
 
