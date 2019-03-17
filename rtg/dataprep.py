@@ -81,6 +81,8 @@ class Field(SentencePieceProcessor):
         :param no_split_toks: Don't split these tokens
         :return:
         """
+
+        log.warning("CLS token not mapped by sentence piece")   # FIXME
         model_prefix = model_path.replace('.model', '')
         files = set(files)  # remove duplicates
         arg = f"--input={','.join(files)} --vocab_size={vocab_size} --model_prefix={model_prefix}" \
@@ -161,6 +163,7 @@ class TSVData:
     def write_parallel_recs(records: Iterator[ParallelSeqRecord], path: Union[str, Path]):
         seqs = ((' '.join(map(str, x)), ' '.join(map(str, y))) for x, y in records)
         lines = (f'{x}\t{y}' for x, y in seqs)
+        TSVData.write_lines(lines, path)
 
     @staticmethod
     def write_mono_recs(records: Iterator[MonoSeqRecord], path: Union[str, Path]):
