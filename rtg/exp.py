@@ -514,7 +514,7 @@ class TranslationExperiment(BaseExperiment):
         if 'model_args' not in self.config:
             self.config['model_args'] = {}
         args = self.config['model_args']
-        if self.model_type in {'rnnlm', 'tfmlm'}:
+        if self.model_type in {'rnnlm', 'tfmlm', 'wv_cbow'}:
             # Language models
             # TODO: improve the design of this thing
             args['vocab_size'] = max(len(self.src_vocab) if self.src_vocab else 0,

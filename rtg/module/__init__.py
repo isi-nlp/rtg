@@ -31,6 +31,11 @@ class Model(nn.Module):
     def make_model(cls, *args, **kwargs):
         raise NotImplementedError
 
+    @classmethod
+    @abstractmethod
+    def make_trainer(cls, *args, **kwargs):
+        raise NotImplementedError
+
 
 class NMTModel(Model, metaclass=ABCMeta):
     """"
@@ -38,3 +43,8 @@ class NMTModel(Model, metaclass=ABCMeta):
     """
     # TODO: move stuff here that is common to all
     pass
+
+    @classmethod
+    @abstractmethod
+    def make_generator(cls, *args, **kwargs):
+        raise NotImplementedError

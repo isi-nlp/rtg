@@ -438,7 +438,7 @@ class LoopingIterable(Iterable[Batch]):
     An iterable that keeps looping until a specified number of step count is reached
     """
 
-    def __init__(self, iterable: BatchIterable, batches: int):
+    def __init__(self, iterable: Iterable, batches: int):
         self.itr = iterable
         self.total = batches
         self.count = 0
