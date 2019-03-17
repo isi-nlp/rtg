@@ -4,7 +4,7 @@ from rtg.tool.log import Logger
 debug_mode = os.environ.get('NMT_DEBUG', False)
 log = Logger(console_level=logging.DEBUG if debug_mode else logging.INFO)
 
-__version__ = '0.2.2'
+__version__ = '0.3.0'
 
 import torch
 device_name = 'cuda:0' if torch.cuda.is_available() else 'cpu'
