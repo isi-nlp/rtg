@@ -13,7 +13,7 @@ This toolkit is meant for MT/NLG/NLU research.
 + Language Modeling:
   + RNN
   + Transformer
-
++ Multi GPU Parallelism (for transformer model)
 
 ### Goals:
 + Easy and interpretable code (for those who read code as much as papers)
@@ -21,12 +21,12 @@ This toolkit is meant for MT/NLG/NLU research.
 + Reproducible experiments, based on config files and experiment directory
   + YAML is a friendly format
 
-
-### TODO :
- + Multi GPU Parallelism (Work in progress)
+## TODO :
++ Unsupervised MT
 
 
 ### Setup
+Just need to add the code to PYTHONPATH
 
 ```bash
 git clone git@github.com:thammegowda/rtg.git
