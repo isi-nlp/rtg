@@ -40,9 +40,8 @@ Refer to `scripts/rtg-pipeline.sh` and bash script and `examples/pipeline.conf.y
 
 TODO: Write tutorial
 ```bash
-$ mkdir 001-tfm
-$ cp examples/pipeline.conf.yml 001-tfm/conf.yml
-$ scripts/rtg-pipeline.sh -d 001-tfm
+# use examples/pipeline.conf.yml config to setup an experiment at 001-tfm dir
+$ scripts/rtg-pipeline.sh -d 001-tfm -c examples/pipeline.conf.yml
 ```
 
 ---------

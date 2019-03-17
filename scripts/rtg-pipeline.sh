@@ -16,14 +16,18 @@ CONF_PATH=
 BATCH_SIZE=56
 
 usage() {
-    echo "Usage: $0 -d <exp/dir>" 1>&2;
+    echo "Usage: $0 -d <exp/dir>
+    [-c conf.yml] " 1>&2;
     exit 1;
 }
 
-while getopts ":fd:" o; do
+while getopts ":fd:c:" o; do
     case "${o}" in
         d)
             OUT=${OPTARG}
+            ;;
+        c)
+            CONF_PATH=${OPTARG}
             ;;
         *)
             usage
@@ -61,6 +65,19 @@ export PYTHONPATH=$OUT/rtg.zip
 cp "${BASH_SOURCE[0]}"  $OUT/job.sh.bak
 echo  "Starting pipeline... $OUT"
 
-python -m rtg.pipeline $OUT
+[[ -n $CONF_PATH ]] && C="$CONF_PATH"
 
-echo "Done"
+if [[ -f $OUT/conf.yml && -n $CONF_PATH ]]; then
+    echo "ignoring $CONF_PATH, because $OUT/conf.yml exists"
+    CONF_ARG=""
+else
+    CONF_ARG="$CONF_PATH"
+fi
+
+cmd="python -m rtg.pipeline $OUT $CONF_ARG"
+echo "command::: $cmd"
+if eval ${cmd}; then
+    echo "Done"
+else
+    echo "Error: exit status=$?"
+fi
