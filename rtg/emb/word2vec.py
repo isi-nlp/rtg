@@ -51,6 +51,7 @@ class CBOW(Model):
     def forward(self, ctx_ids):
         # [B x C x D] <- [B x C]
         ctx_embs = self.emb(ctx_ids)
+        ctx_embs = self.dropout(ctx_embs)
         # [ B x D] <- [B x C x D]
         ctx_sum = ctx_embs.sum(dim=1)
         # [B x V] <- [B x D] <- B x D]
@@ -155,12 +156,11 @@ class CBOWTrainer(SteppedTrainer):
 
         vocab = self.exp.shared_vocab
         words = [vocab.id_to_piece(i) for i in range(len(vocab))]
-        self.tbd.add_embedding(matrix, metadata=words)
-        ext = 'txt' if txt else 'pkl'
+        self.tbd.add_embedding(matrix, metadata=words, global_step=step)
+        ext = 'txt.gz' if txt else 'pkl'
         path = self.exp.model_dir / f'embeddings_{step}.{ext}'
         log.info(f"writing  embedding after step {step} to {path}")
         if txt:
-
             with IO.writer(path) as w:
                 w.write(f'{matrix.shape[0]} {matrix.shape[1]}\n')
                 for i in range(matrix.shape[0]):
@@ -184,7 +184,7 @@ class CBOWTrainer(SteppedTrainer):
                                               ctx_size=ctx_size)
         # val_data = reader.get_val_data(batch_size=batch_size, ctx_size=ctx_size)
         with tqdm(train_data, initial=self.start_step, total=rem_steps, unit='batch') as data_bar:
-            for i, (xs, ys) in enumerate(data_bar):
+            for i, (xs, ys) in enumerate(data_bar, start=self.start_step):
                 xs, ys = xs.to(device), ys.to(device)
                 log_probs = self.model(xs)
                 loss = self.loss_func(log_probs, ys)
@@ -196,7 +196,7 @@ class CBOWTrainer(SteppedTrainer):
                 loss.backward()
                 self.opt.step()
                 if i % check_point == 0:
-                    self.save_embeddings(steps, txt=True)
+                    self.save_embeddings(i, txt=True)
         self.save_embeddings(steps, txt=True)
 
 
