@@ -6,7 +6,7 @@ from typing import Optional, Dict, Iterator, List, Tuple, Union, Any
 import torch
 import random
 from rtg import log
-from rtg.dataprep import (RawRecord, ParallelSeqRecord, MonoSeqRecord,
+from rtg.dataprep import (RawRecord, ParallelSeqRecord, MonoSeqRecord, TSVData,
                           Field, BatchIterable, LoopingIterable, SqliteFile)
 from rtg.utils import IO, line_count
 from itertools import zip_longest
@@ -17,7 +17,7 @@ def load_conf(inp: Union[str, Path]):
         return yaml.load(fh)
 
 
-class TranslationExperiment:
+class BaseExperiment:
 
     def __init__(self, work_dir: Union[str, Path], read_only=False,
                  config: Union[str, Path, Optional[Dict[str, Any]]] = None):
@@ -32,8 +32,6 @@ class TranslationExperiment:
         self.model_dir = work_dir / 'models'
         self._config_file = work_dir / 'conf.yml'
         self._shared_field_file = self.data_dir / 'sentpiece.shared.model'
-        self._src_field_file = self.data_dir / 'sentpiece.src.model'
-        self._tgt_field_file = self.data_dir / 'sentpiece.tgt.model'
         self._prepared_flag = self.work_dir / '_PREPARED'
         self._trained_flag = self.work_dir / '_TRAINED'
 
@@ -45,10 +43,6 @@ class TranslationExperiment:
         # a set of samples to watch the progress qualitatively
         self.samples_file = self.data_dir / 'samples.tsv.gz'
 
-        self.emb_src_file = self.data_dir / 'emb_src.pt'
-        self.emb_tgt_file = self.data_dir / 'emb_tgt.pt'
-        self.aln_emb_src_file = self.data_dir / 'aln_emb_src.pt'  # src embs aligned to tgt
-
         if not read_only:
             for _dir in [self.model_dir, self.data_dir]:
                 if not _dir.exists():
@@ -57,22 +51,8 @@ class TranslationExperiment:
             config = load_conf(config)
         self.config = config if config else load_conf(self._config_file)
 
-        self.shared_field, self.src_field, self.tgt_field = [
-            Field(str(f)) if f.exists() else None
-            for f in (self._shared_field_file, self._src_field_file, self._tgt_field_file)]
-
-        # Either shared field  OR  individual  src and tgt fields
-        assert not (self.shared_field and self.src_field)
-        assert not (self.shared_field and self.tgt_field)
-        # both are set or both are unset
-        assert (self.src_field is None) == (self.tgt_field is None)
-
-        self._unsupervised = self.model_type in {'binmt', 'rnnlm', 'tfmlm'}
-        if self._unsupervised:
-            self.mono_train_src = self.data_dir / 'mono.train.src.gz'
-            self.mono_train_tgt = self.data_dir / 'mono.train.tgt.gz'
-            self.mono_valid_src = self.data_dir / 'mono.valid.src.gz'
-            self.mono_valid_tgt = self.data_dir / 'mono.valid.tgt.gz'
+        self.shared_field = Field(str(self._shared_field_file)) \
+            if self._shared_field_file.exists() else None
 
     def store_config(self):
         with IO.writer(self._config_file) as fp:
@@ -92,52 +72,184 @@ class TranslationExperiment:
     def has_trained(self):
         return self._trained_flag.exists()
 
-    @staticmethod
-    def write_tsv(records: Iterator[ParallelSeqRecord], path: Union[str, Path]):
-        seqs = ((' '.join(map(str, x)), ' '.join(map(str, y))) for x, y in records)
-        lines = (f'{x}\t{y}\n' for x, y in seqs)
-        log.info(f"Storing data at {path}")
-        with IO.writer(path) as f:
-            for line in lines:
-                f.write(line)
+    def store_model(self, epoch: int, model, train_score: float, val_score: float, keep: int,
+                    prefix='model', keeper_sort='step'):
+        """
+        saves model to a given path
+        :param epoch: epoch number of model
+        :param model: model object itself
+        :param train_score: score of model on training split
+        :param val_score: score of model on validation split
+        :param keep: number of good models to keep, bad models will be deleted
+        :param prefix: prefix to store model. default is "model"
+        :param keeper_sort: criteria for choosing the old or bad models for deletion.
+            Choices: {'total_score', 'step'}
+        :return:
+        """
+        # TODO: improve this by skipping the model save if the model is not good enough to be saved
+        if self.read_only:
+            log.warning("Ignoring the store request; experiment is readonly")
+            return
+        name = f'{prefix}_{epoch:03d}_{train_score:.6f}_{val_score:.6f}.pkl'
+        path = self.model_dir / name
+        log.info(f"Saving epoch {epoch} to {path}")
+        torch.save(model, str(path))
+
+        del_models = []
+        if keeper_sort == 'total_score':
+            del_models = self.list_models(sort='total_score', desc=False)[keep:]
+        elif keeper_sort == 'step':
+            del_models = self.list_models(sort='step', desc=True)[keep:]
+        else:
+            Exception(f'Sort criteria{keeper_sort} not understood')
+        for d_model in del_models:
+            log.info(f"Deleting model {d_model} . Keep={keep}, sort={keeper_sort}")
+            os.remove(str(d_model))
+
+        with IO.writer(os.path.join(self.model_dir, 'scores.tsv'), append=True) as f:
+            cols = [str(epoch), datetime.now().isoformat(), name, f'{train_score:g}',
+                    f'{val_score:g}']
+            f.write('\t'.join(cols) + '\n')
 
     @staticmethod
-    def write_mono_lines(records: Iterator[MonoSeqRecord], path: Union[str, Path]):
-        lines = (' '.join(map(str, rec)) + '\n' for rec in records)
-        log.info(f"Storing data at {path}")
-        with IO.writer(path) as f:
-            for line in lines:
-                f.write(line)
+    def _path_to_validn_score(path):
+        parts = str(path.name).replace('.pkl', '').split('_')
+        valid_score = float(parts[-1])
+        return valid_score
 
     @staticmethod
-    def read_raw_lines(src_path: Union[str, Path], tgt_path: Union[str, Path]) \
-            -> Iterator[RawRecord]:
-        with IO.reader(src_path) as src_lines, IO.reader(tgt_path) as tgt_lines:
-            # if you get an exception here --> files have un equal number of lines
-            recs = ((src.strip(), tgt.strip()) for src, tgt in zip_longest(src_lines, tgt_lines))
-            recs = ((src, tgt) for src, tgt in recs if src and tgt)
-            yield from recs
-
-    def read_raw_data(self, src_path: Union[str, Path], tgt_path: Union[str, Path],
-                      truncate: bool, src_len: int, tgt_len: int, tokenizer) \
-            -> Iterator[ParallelSeqRecord]:
-        recs = self.read_raw_lines(src_path, tgt_path)
-        recs = ((tokenizer(x), tokenizer(y)) for x, y in recs)
-        if truncate:
-            recs = ((src[:src_len], tgt[:tgt_len]) for src, tgt in recs)
-        else:  # Filter out longer sentences
-            recs = ((src, tgt) for src, tgt in recs if len(src) <= src_len and len(tgt) <= tgt_len)
-        return recs
+    def _path_to_total_score(path):
+        parts = str(path.name).replace('.pkl', '').split('_')
+        tot_score = float(parts[-2]) + float(parts[-1])
+        return tot_score
 
     @staticmethod
-    def read_mono_raw_data(path: Union[str, Path], truncate: bool, max_len: int, tokenizer):
-        with IO.reader(path) as lines:
-            recs = (tokenizer(line.strip()) for line in lines if line.strip())
-            if truncate:
-                recs = (rec[:max_len] for rec in recs)
-            else:  # Filter out longer sentences
-                recs = (rec for rec in recs if 0 < len(rec) <= max_len)
-            yield from recs
+    def _path_to_step_no(path):
+        parts = str(path.name).replace('.pkl', '').split('_')
+        step_no = int(parts[-3])
+        return step_no
+
+    def list_models(self, sort: str = 'step', desc: bool = True) -> List[Path]:
+        """
+        Lists models in descending order of modification time
+        :param sort: how to sort models ?
+          - valid_score: sort based on score on validation set
+          - total_score: sort based on validation_score + training_score
+          - mtime: sort by modification time
+          - step (default): sort by step number
+        :param desc: True to sort in reverse (default); False to sort in ascending
+        :return: list of model paths
+        """
+        paths = self.model_dir.glob('model_*.pkl')
+        sorters = {
+            'valid_score': self._path_to_validn_score,
+            'total_score': self._path_to_total_score,
+            'mtime': lambda p: p.stat().st_mtime,
+            'step': self._path_to_step_no
+        }
+        if sort not in sorters:
+            raise Exception(f'Sort {sort} not supported. valid options: {sorters.keys()}')
+        return sorted(paths, key=sorters[sort], reverse=desc)
+
+    def _get_first_model(self, sort: str, desc: bool) -> Tuple[Optional[Path], int]:
+        """
+        Gets the first model that matches the given sort criteria
+        :param sort: sort mechanism
+        :param desc: True for descending, False for ascending
+        :return: Tuple[Optional[Path], step_num:int]
+        """
+        models = self.list_models(sort=sort, desc=desc)
+        if models:
+            step, train_score, valid_score = models[0].name.replace('.pkl', '').split('_')[-3:]
+            return models[0], int(step)
+        else:
+            return None, -1
+
+    def get_best_known_model(self) -> Tuple[Optional[Path], int]:
+        """Gets best Known model (best on lowest scores on training and validation sets)
+        """
+        return self._get_first_model(sort='total_score', desc=False)
+
+    def get_last_saved_model(self) -> Tuple[Optional[Path], int]:
+        return self._get_first_model(sort='step', desc=True)
+
+    @property
+    def model_args(self) -> Optional[Dict]:
+        """
+        Gets args from file
+        :return: args if exists or None otherwise
+        """
+        return self.config.get('model_args')
+
+    @model_args.setter
+    def model_args(self, model_args):
+        """
+        set model args
+        """
+        self.config['model_args'] = model_args
+
+    @property
+    def optim_args(self) -> Tuple[Optional[str], Dict]:
+        """
+        Gets optimizer args from file
+        :return: optimizer args if exists or None otherwise
+        """
+        opt_conf = self.config.get('optim')
+        if opt_conf:
+            return opt_conf.get('name'), opt_conf.get('args')
+        else:
+            return None, {}
+
+    @optim_args.setter
+    def optim_args(self, optim_args: Tuple[str, Dict]):
+        """
+        set optimizer args
+        """
+        name, args = optim_args
+        self.config['optim'] = {'name': name, 'args': args}
+
+    @property
+    def shared_vocab(self) -> Field:
+        return self.shared_field
+
+    @staticmethod
+    def get_first_found_file(paths: List[Path]):
+        """returns the first file that is not None, and actually exists on disc;
+        If no file is valid, it returns None"""
+        for p in paths:
+            if p and p.exists():
+                return p
+        return None
+
+
+class TranslationExperiment(BaseExperiment):
+
+    def __init__(self, work_dir: Union[str, Path], read_only=False,
+                 config: Union[str, Path, Optional[Dict[str, Any]]] = None):
+        super().__init__(work_dir, read_only=read_only, config=config)
+        self._src_field_file = self.data_dir / 'sentpiece.src.model'
+        self._tgt_field_file = self.data_dir / 'sentpiece.tgt.model'
+
+        self.emb_src_file = self.data_dir / 'emb_src.pt'
+        self.emb_tgt_file = self.data_dir / 'emb_tgt.pt'
+        self.aln_emb_src_file = self.data_dir / 'aln_emb_src.pt'  # src embs aligned to tgt
+
+        self.src_field, self.tgt_field = [
+            Field(str(f)) if f.exists() else None
+            for f in (self._src_field_file, self._tgt_field_file)]
+
+        # Either shared field  OR  individual  src and tgt fields
+        assert not (self.shared_field and self.src_field)
+        assert not (self.shared_field and self.tgt_field)
+        # both are set or both are unset
+        assert (self.src_field is None) == (self.tgt_field is None)
+
+        self._unsupervised = self.model_type in {'binmt', 'rnnlm', 'tfmlm'}
+        if self._unsupervised:
+            self.mono_train_src = self.data_dir / 'mono.train.src.gz'
+            self.mono_train_tgt = self.data_dir / 'mono.train.tgt.gz'
+            self.mono_valid_src = self.data_dir / 'mono.valid.src.gz'
+            self.mono_valid_tgt = self.data_dir / 'mono.valid.tgt.gz'
 
     def pre_process_parallel(self, args: Dict[str, Any]):
         assert args['shared_vocab']  # TODO support individual vocab types
@@ -169,13 +281,13 @@ class TranslationExperiment:
 
         # get samples from validation set
         n_samples = args.get('num_samples', 5)
-        val_raw_recs = self.read_raw_data(args['valid_src'], args['valid_tgt'], args['truncate'],
-                                          args['src_len'], args['tgt_len'],
-                                          tokenizer=lambda line: line.strip().split())
+        val_raw_recs = TSVData.read_raw_parallel_recs(
+            args['valid_src'], args['valid_tgt'], args['truncate'], args['src_len'],
+            args['tgt_len'], tokenizer=lambda line: line.strip().split())
         val_raw_recs = list(val_raw_recs)
         random.shuffle(val_raw_recs)
         samples = val_raw_recs[:n_samples]
-        self.write_tsv(samples, self.samples_file)
+        TSVData.write_parallel_recs(samples, self.samples_file)
 
     def pre_process_mono(self, args):
 
@@ -226,11 +338,12 @@ class TranslationExperiment:
                 return
 
             raw_file = args[file_key]
-            recs = self.read_mono_raw_data(raw_file, do_truncate, max_len, field.encode_as_ids)
-            self.write_mono_lines(recs, out_file)
+
+            recs = TSVData.read_raw_mono_recs(raw_file, do_truncate, max_len, field.encode_as_ids)
+            TSVData.write_mono_recs(recs, out_file)
             if args.get('text_files'):
-                recs = self.read_mono_raw_data(raw_file, do_truncate, max_len, field.tokenize)
-                self.write_mono_lines(recs, str(out_file).replace('.tsv', '.pieces.tsv'))
+                recs = TSVData.read_raw_mono_recs(raw_file, do_truncate, max_len, field.tokenize)
+                TSVData.write_mono_recs(recs, str(out_file).replace('.tsv', '.pieces.tsv'))
 
         _prep_file('mono_train_src', self.mono_train_src, args['truncate'], args['src_len'],
                    self.src_vocab)
@@ -260,20 +373,21 @@ class TranslationExperiment:
             assert line_count(args[src_key]) == line_count(args[tgt_key]), \
                 f'{args[src_key]} and {args[tgt_key]} must have same number of lines'
         # create Piece IDs
-        parallel_recs = self.read_raw_data(args[src_key], args[tgt_key],
-                                           args['truncate'], args['src_len'], args['tgt_len'],
-                                           tokenizer=self.src_vocab.encode_as_ids)
+        parallel_recs = TSVData.read_raw_parallel_recs(args[src_key], args[tgt_key],
+                                                       args['truncate'], args['src_len'],
+                                                       args['tgt_len'],
+                                                       tokenizer=self.src_vocab.encode_as_ids)
         if out_file.name.endswith('.db'):
             SqliteFile.write(out_file, records=parallel_recs)
         else:
-            self.write_tsv(parallel_recs, out_file)
+            TSVData.write_parallel_recs(parallel_recs, out_file)
 
         if args.get('text_files'):
             # Redo again as plain text files
-            parallel_recs = self.read_raw_data(args[src_key], args[tgt_key],
+            parallel_recs = TSVData.read_raw_parallel_recs(args[src_key], args[tgt_key],
                                                args['truncate'], args['src_len'], args['tgt_len'],
                                                tokenizer=self.src_vocab.tokenize)
-            self.write_tsv(parallel_recs, str(out_file).replace('.tsv', '.pieces.tsv'))
+            TSVData.write_parallel_recs(parallel_recs, str(out_file).replace('.tsv', '.pieces.tsv'))
 
     def maybe_pre_process_embeds(self, do_clean=False):
 
@@ -400,7 +514,7 @@ class TranslationExperiment:
         if 'model_args' not in self.config:
             self.config['model_args'] = {}
         args = self.config['model_args']
-        if self.model_type in {'rnnlm', 'tfmlm'}:
+        if self.model_type in {'rnnlm', 'tfmlm', 'wv_cbow'}:
             # Language models
             # TODO: improve the design of this thing
             args['vocab_size'] = max(len(self.src_vocab) if self.src_vocab else 0,
@@ -412,45 +526,6 @@ class TranslationExperiment:
 
         self.config['updated_at'] = datetime.now().isoformat()
         self.store_config()
-
-    def store_model(self, epoch: int, model, train_score: float, val_score: float, keep: int,
-                    prefix='model', keeper_sort='step'):
-        """
-        saves model to a given path
-        :param epoch: epoch number of model
-        :param model: model object itself
-        :param train_score: score of model on training split
-        :param val_score: score of model on validation split
-        :param keep: number of good models to keep, bad models will be deleted
-        :param prefix: prefix to store model. default is "model"
-        :param keeper_sort: criteria for choosing the old or bad models for deletion.
-            Choices: {'total_score', 'step'}
-        :return:
-        """
-        # TODO: improve this by skipping the model save if the model is not good enough to be saved
-        if self.read_only:
-            log.warning("Ignoring the store request; experiment is readonly")
-            return
-        name = f'{prefix}_{epoch:03d}_{train_score:.6f}_{val_score:.6f}.pkl'
-        path = self.model_dir / name
-        log.info(f"Saving epoch {epoch} to {path}")
-        torch.save(model, str(path))
-
-        del_models = []
-        if keeper_sort == 'total_score':
-            del_models = self.list_models(sort='total_score', desc=False)[keep:]
-        elif keeper_sort == 'step':
-            del_models = self.list_models(sort='step', desc=True)[keep:]
-        else:
-            Exception(f'Sort criteria{keeper_sort} not understood')
-        for d_model in del_models:
-            log.info(f"Deleting model {d_model} . Keep={keep}, sort={keeper_sort}")
-            os.remove(str(d_model))
-
-        with IO.writer(os.path.join(self.model_dir, 'scores.tsv'), append=True) as f:
-            cols = [str(epoch), datetime.now().isoformat(), name, f'{train_score:g}',
-                    f'{val_score:g}']
-            f.write('\t'.join(cols) + '\n')
 
     def train(self, args=None):
         run_args = self.config.get('trainer', {})
@@ -481,103 +556,6 @@ class TranslationExperiment:
                 log_tensor_sizes()
             raise e
 
-    @staticmethod
-    def _path_to_validn_score(path):
-        parts = str(path.name).replace('.pkl', '').split('_')
-        valid_score = float(parts[-1])
-        return valid_score
-
-    @staticmethod
-    def _path_to_total_score(path):
-        parts = str(path.name).replace('.pkl', '').split('_')
-        tot_score = float(parts[-2]) + float(parts[-1])
-        return tot_score
-
-    @staticmethod
-    def _path_to_step_no(path):
-        parts = str(path.name).replace('.pkl', '').split('_')
-        step_no = int(parts[-3])
-        return step_no
-
-    def list_models(self, sort: str = 'step', desc: bool = True) -> List[Path]:
-        """
-        Lists models in descending order of modification time
-        :param sort: how to sort models ?
-          - valid_score: sort based on score on validation set
-          - total_score: sort based on validation_score + training_score
-          - mtime: sort by modification time
-          - step (default): sort by step number
-        :param desc: True to sort in reverse (default); False to sort in ascending
-        :return: list of model paths
-        """
-        paths = self.model_dir.glob('model_*.pkl')
-        sorters = {
-            'valid_score': self._path_to_validn_score,
-            'total_score': self._path_to_total_score,
-            'mtime': lambda p: p.stat().st_mtime,
-            'step': self._path_to_step_no
-        }
-        if sort not in sorters:
-            raise Exception(f'Sort {sort} not supported. valid options: {sorters.keys()}')
-        return sorted(paths, key=sorters[sort], reverse=desc)
-
-    def _get_first_model(self, sort: str, desc: bool) -> Tuple[Optional[Path], int]:
-        """
-        Gets the first model that matches the given sort criteria
-        :param sort: sort mechanism
-        :param desc: True for descending, False for ascending
-        :return: Tuple[Optional[Path], step_num:int]
-        """
-        models = self.list_models(sort=sort, desc=desc)
-        if models:
-            step, train_score, valid_score = models[0].name.replace('.pkl', '').split('_')[-3:]
-            return models[0], int(step)
-        else:
-            return None, -1
-
-    def get_best_known_model(self) -> Tuple[Optional[Path], int]:
-        """Gets best Known model (best on lowest scores on training and validation sets)
-        """
-        return self._get_first_model(sort='total_score', desc=False)
-
-    def get_last_saved_model(self) -> Tuple[Optional[Path], int]:
-        return self._get_first_model(sort='step', desc=True)
-
-    @property
-    def model_args(self) -> Optional[Dict]:
-        """
-        Gets args from file
-        :return: args if exists or None otherwise
-        """
-        return self.config.get('model_args')
-
-    @model_args.setter
-    def model_args(self, model_args):
-        """
-        set model args
-        """
-        self.config['model_args'] = model_args
-
-    @property
-    def optim_args(self) -> Tuple[Optional[str], Dict]:
-        """
-        Gets optimizer args from file
-        :return: optimizer args if exists or None otherwise
-        """
-        opt_conf = self.config.get('optim')
-        if opt_conf:
-            return opt_conf.get('name'), opt_conf.get('args')
-        else:
-            return None, {}
-
-    @optim_args.setter
-    def optim_args(self, optim_args: Tuple[str, Dict]):
-        """
-        set optimizer args
-        """
-        name, args = optim_args
-        self.config['optim'] = {'name': name, 'args': args}
-
     @property
     def src_vocab(self) -> Field:
         return self.shared_field if self.shared_field is not None else self.src_field
@@ -585,19 +563,6 @@ class TranslationExperiment:
     @property
     def tgt_vocab(self) -> Field:
         return self.shared_field if self.shared_field is not None else self.tgt_field
-
-    @property
-    def shared_vocab(self) -> Field:
-        return self.shared_field
-
-    @staticmethod
-    def get_first_found_file(paths: List[Path]):
-        """returns the first file that is not None, and actually exists on disc;
-        If no file is valid, it returns None"""
-        for p in paths:
-            if p and p.exists():
-                return p
-        return None
 
     @property
     def pre_trained_src_emb(self):

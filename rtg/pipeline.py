@@ -27,7 +27,7 @@ class Pipeline:
         assert self.exp.config.get('tester') is not None
         assert self.exp.config['tester']['suit'] is not None
         for name, (src, ref) in self.exp.config['tester']['suit'].items():
-            src, ref = Path(src), Path(ref)
+            src, ref = Path(src).resolve(), Path(ref).resolve()
             assert src.exists()
             assert ref.exists()
             assert line_count(src) == line_count(ref)
@@ -59,7 +59,7 @@ class Pipeline:
         beam = dec_args.get('beam', 4)
         ensemble = dec_args.get('ensemble', 5)
         dec_args.update(dict(beam=beam, ensemble=ensemble))
-        assert step > 0
+        assert step > 0, 'looks like no model saved '
         test_dir = exp.work_dir / f'test_step{step}_beam{beam}_ens{ensemble}'
         log.info(f"Test Dir = {test_dir}")
         test_dir.mkdir(parents=True, exist_ok=True)
@@ -69,7 +69,7 @@ class Pipeline:
         for name, (orig_src, orig_ref) in suit.items():
             # noinspection PyBroadException
             try:
-                orig_src, orig_ref = Path(orig_src), Path(orig_ref)
+                orig_src, orig_ref = Path(orig_src).resolve(), Path(orig_ref).resolve()
                 src_link = test_dir / f'{name}.src'
                 ref_link = test_dir / f'{name}.ref'
                 for link, orig in [(src_link, orig_src), (ref_link, orig_ref)]:

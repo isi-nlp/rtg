@@ -112,14 +112,14 @@ class TransformerNMT(NMTModel):
 
     def __init__(self, encoder: Encoder, decoder: Decoder,
                  src_embed, tgt_embed,
-                 generator: Generator):
+                 generator: Optional[Generator], tgt_vocab=None):
         super().__init__()
         self.encoder: Encoder = encoder
         self.decoder: Decoder = decoder
         self.src_embed = src_embed
         self.tgt_embed = tgt_embed
         self.generator = generator
-        self.tgt_vocab = generator.vocab
+        self.tgt_vocab = tgt_vocab if tgt_vocab else generator.vocab
 
     def init_src_embedding(self, weights):
         log.info("Initializing source embeddings")

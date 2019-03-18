@@ -11,7 +11,7 @@ from sentencepiece import SentencePieceProcessor, SentencePieceTrainer
 from pathlib import Path
 import sqlite3
 import pickle
-
+from itertools import zip_longest
 
 PAD_TOK = '<pad>', 0
 UNK_TOK = '<unk>', 1
@@ -24,7 +24,6 @@ UNK_TOK_IDX = UNK_TOK[1]
 BOS_TOK_IDX = BOS_TOK[1]
 EOS_TOK_IDX = EOS_TOK[1]
 CLS_TOK_IDX = CLS_TOK[1]
-
 
 RESERVED_TOKS = [PAD_TOK, UNK_TOK, BOS_TOK, EOS_TOK, CLS_TOK]
 
@@ -72,7 +71,7 @@ class Field(SentencePieceProcessor):
 
     @staticmethod
     def train(model_type: str, vocab_size: int, model_path: str, files: Iterator[str],
-              no_split_toks: Optional[List[str]]=None):
+              no_split_toks: Optional[List[str]] = None):
         """
         Train Sentence Piece Model
         :param model_type: sentence piece model type: {unigram, BPE, word, char}
@@ -82,8 +81,10 @@ class Field(SentencePieceProcessor):
         :param no_split_toks: Don't split these tokens
         :return:
         """
+
+        log.warning("CLS token not mapped by sentence piece")   # FIXME
         model_prefix = model_path.replace('.model', '')
-        files = set(files)    # remove duplicates
+        files = set(files)  # remove duplicates
         arg = f"--input={','.join(files)} --vocab_size={vocab_size} --model_prefix={model_prefix}" \
               f" --model_type={model_type} --pad_id={PAD_TOK[1]} --bos_id={BOS_TOK[1]}" \
               f" --eos_id={EOS_TOK[1]} --unk_id={UNK_TOK[1]} --hard_vocab_limit=false"
@@ -130,7 +131,8 @@ class TSVData:
             recs = (line.split('\t') for line in lines)
             for rec in recs:
                 if rec[0] and rec[0].strip():
-                    yield Example(self._parse(rec[0]), self._parse(rec[1]) if len(rec) > 1 else None)
+                    yield Example(self._parse(rec[0]),
+                                  self._parse(rec[1]) if len(rec) > 1 else None)
 
     def __len__(self):
         return self._len
@@ -149,9 +151,58 @@ class TSVData:
         yield from self.mem if self.mem else self.read_all()
         self.read_counter += 1
 
+    @staticmethod
+    def write_lines(lines, path):
+        log.info(f"Storing data at {path}")
+        with IO.writer(path) as f:
+            for line in lines:
+                f.write(line)
+                f.write('\n')
+
+    @staticmethod
+    def write_parallel_recs(records: Iterator[ParallelSeqRecord], path: Union[str, Path]):
+        seqs = ((' '.join(map(str, x)), ' '.join(map(str, y))) for x, y in records)
+        lines = (f'{x}\t{y}' for x, y in seqs)
+        TSVData.write_lines(lines, path)
+
+    @staticmethod
+    def write_mono_recs(records: Iterator[MonoSeqRecord], path: Union[str, Path]):
+        lines = (' '.join(map(str, rec)) for rec in records)
+        TSVData.write_lines(lines, path)
+
+    @staticmethod
+    def read_raw_parallel_lines(src_path: Union[str, Path], tgt_path: Union[str, Path]) \
+            -> Iterator[RawRecord]:
+        with IO.reader(src_path) as src_lines, IO.reader(tgt_path) as tgt_lines:
+            # if you get an exception here --> files have un equal number of lines
+            recs = ((src.strip(), tgt.strip()) for src, tgt in zip_longest(src_lines, tgt_lines))
+            recs = ((src, tgt) for src, tgt in recs if src and tgt)
+            yield from recs
+
+    @staticmethod
+    def read_raw_parallel_recs(src_path: Union[str, Path], tgt_path: Union[str, Path],
+                               truncate: bool, src_len: int, tgt_len: int, tokenizer) \
+            -> Iterator[ParallelSeqRecord]:
+        recs = TSVData.read_raw_parallel_lines(src_path, tgt_path)
+        recs = ((tokenizer(x), tokenizer(y)) for x, y in recs)
+        if truncate:
+            recs = ((src[:src_len], tgt[:tgt_len]) for src, tgt in recs)
+        else:  # Filter out longer sentences
+            recs = ((src, tgt) for src, tgt in recs if len(src) <= src_len and len(tgt) <= tgt_len)
+        return recs
+
+    @staticmethod
+    def read_raw_mono_recs(path: Union[str, Path], truncate: bool, max_len: int, tokenizer):
+        with IO.reader(path) as lines:
+            recs = (tokenizer(line.strip()) for line in lines if line.strip())
+            if truncate:
+                recs = (rec[:max_len] for rec in recs)
+            else:  # Filter out longer sentences
+                recs = (rec for rec in recs if 0 < len(rec) <= max_len)
+            yield from recs
+
 
 class SqliteFile:
-
     TABLE_STATEMENT = """CREATE TABLE IF NOT EXISTS data (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         x BLOB NOT NULL,
@@ -186,8 +237,8 @@ class SqliteFile:
         return self.db.execute(self.COUNT_ROWS).fetchone()['COUNT']
 
     def read_all(self, shuffle=True, longest_first=False) -> Iterator[Dict[str, Any]]:
-        assert shuffle, 'only shuffled read is supported as of now'   # come back and fix it ;)
-        assert not longest_first,  'Not supported yet'
+        assert shuffle, 'only shuffled read is supported as of now'  # come back and fix it ;)
+        assert not longest_first, 'Not supported yet'
         return self.db.execute(self.RANDOM_READ)
 
     def __iter__(self) -> Iterator[Example]:
@@ -298,18 +349,18 @@ class Batch:
         for i, ex in enumerate(batch):
             self.x_seqs[i, :len(ex.x)] = torch.tensor(ex.x, dtype=torch.long)
         self.x_seqs = self.x_seqs.to(device)
-        if not batch_first:      # transpose
+        if not batch_first:  # transpose
             self.x_seqs = self.x_seqs.t()
 
         first_y = batch[0].y
         self.has_y = first_y is not None
         if self.has_y:
             if add_eos_y:
-                for ex in batch:    # check and insert EOS to output seqs
+                for ex in batch:  # check and insert EOS to output seqs
                     if ex.y[-1] != self.eos_val:
                         ex.y.append(self.eos_val)
             else:
-                for ex in batch:    # Making sure no EOS is there
+                for ex in batch:  # Making sure no EOS is there
                     assert ex.y[-1] != self.eos_val
             self.y_len = tensor([len(e.y) for e in batch])
             self.y_toks = self.y_len.sum().float().item()
@@ -319,7 +370,7 @@ class Batch:
             for i, ex in enumerate(batch):
                 y_seqs[i, :len(ex.y)] = torch.tensor(ex.y, dtype=torch.long)
             self.y_seqs = y_seqs.to(device)
-            if not batch_first:    # transpose
+            if not batch_first:  # transpose
                 self.y_seqs = self.y_seqs.t()
 
     def __len__(self):
@@ -387,7 +438,7 @@ class LoopingIterable(Iterable[Batch]):
     An iterable that keeps looping until a specified number of step count is reached
     """
 
-    def __init__(self, iterable: BatchIterable, batches: int):
+    def __init__(self, iterable: Iterable, batches: int):
         self.itr = iterable
         self.total = batches
         self.count = 0

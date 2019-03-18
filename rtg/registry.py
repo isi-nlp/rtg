@@ -10,6 +10,8 @@ from rtg.binmt.bicycle import BiNmtTrainer
 from rtg.lm.rnnlm import RnnLmTrainer
 from rtg.lm.tfmlm import TfmLmTrainer
 from rtg.module.mtfmnmt import MTransformerNMT
+from rtg.module.tfmnmt_nomax import TfmNmtNoMaxTrainer, TfmNmtNoMax
+from rtg.emb.word2vec import CBOW
 from rtg.module.generator import *
 
 trainers = {
@@ -20,7 +22,9 @@ trainers = {
         'rnnmt': SteppedRNNMTTrainer,
         'rnnlm': RnnLmTrainer,
         'tfmlm': TfmLmTrainer,
-        'mtfmnmt': MTransformerTrainer
+        'mtfmnmt': MTransformerTrainer,
+        'tfmnmt_nomax': TfmNmtNoMaxTrainer,
+        'wv_cbow': CBOW.make_trainer
     }
 
 
@@ -33,7 +37,9 @@ factories = {
     'rnnmt': RNNMT.make_model,
     'rnnlm': RnnLm.make_model,
     'tfmlm': TfmLm.make_model,
-    'mtfmnmt': MTransformerNMT.make_model
+    'mtfmnmt': MTransformerNMT.make_model,
+    'tfmnmt_nomax': TfmNmtNoMax.make_model,
+    'wv_cbow': CBOW.make_model
 }
 
 
@@ -46,5 +52,7 @@ generators = {'t2t': T2TGenerator,
               'rnnmt': Seq2SeqGenerator,
               'rnnlm': RnnLmGenerator,
               'tfmlm': TfmLmGenerator,
-              'mtfmnmt': MTfmGenerator
+              'mtfmnmt': MTfmGenerator,
+              'tfmnmt_nomax': T2TGenerator,
+              'wv_cbow': CBOW.make_model  # FIXME: this is a place holder
               }

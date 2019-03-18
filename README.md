@@ -13,7 +13,7 @@ This toolkit is meant for MT/NLG/NLU research.
 + Language Modeling:
   + RNN
   + Transformer
-
++ Multi GPU Parallelism (for transformer model)
 
 ### Goals:
 + Easy and interpretable code (for those who read code as much as papers)
@@ -21,12 +21,12 @@ This toolkit is meant for MT/NLG/NLU research.
 + Reproducible experiments, based on config files and experiment directory
   + YAML is a friendly format
 
-
-### TODO :
- + Multi GPU Parallelism (Work in progress)
+## TODO :
++ Unsupervised MT
 
 
 ### Setup
+Just need to add the code to PYTHONPATH
 
 ```bash
 git clone git@github.com:thammegowda/rtg.git
@@ -40,9 +40,8 @@ Refer to `scripts/rtg-pipeline.sh` and bash script and `examples/pipeline.conf.y
 
 TODO: Write tutorial
 ```bash
-$ mkdir 001-tfm
-$ cp examples/pipeline.conf.yml 001-tfm/conf.yml
-$ scripts/rtg-pipeline.sh -d 001-tfm
+# use examples/pipeline.conf.yml config to setup an experiment at 001-tfm dir
+$ scripts/rtg-pipeline.sh -d 001-tfm -c examples/pipeline.conf.yml
 ```
 
 ---------
