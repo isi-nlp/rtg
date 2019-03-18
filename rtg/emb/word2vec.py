@@ -201,10 +201,5 @@ class CBOWTrainer(SteppedTrainer):
 
 
 if __name__ == '__main__':
-    p = '/Users/tg/work/me/rtg/saral/bridge-runs/001-mtfm-wmt18-de-en'
-    e = Experiment(p, read_only=True)
-
-    r = DataReader(e, 'src')
-    d = r.get_training_data(10, 2, 100)
-    for x in d:
-        print(x)
+    # refer to examples/cbow.conf.yml for the spec
+    pass
