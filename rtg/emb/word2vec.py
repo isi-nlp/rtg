@@ -148,17 +148,24 @@ class CBOWTrainer(SteppedTrainer):
         self.loss_func = nn.NLLLoss()
 
     def run_valid_epoch(self, data_iter: Iterable) -> float:
-        log.warning("No validation done for CBOW")
-        return 0.0
+        log.info("Running validation")
+        total_loss, n = 0.0, 0
+        with tqdm(data_iter, unit='batch') as data_bar:
+            for i, (xs, ys) in enumerate(data_bar):
+                xs, ys = xs.to(device), ys.to(device)
+                log_probs = self.model(xs)
+                loss = self.loss_func(log_probs, ys)
+                total_loss += loss.item()
+                n += len(ys)
+        return total_loss / n
 
-    def save_embeddings(self, step, txt=True):
+    def save_embeddings(self, step, train_loss, val_loss, txt=True):
         matrix = self.model.emb.weight
-
         vocab = self.exp.shared_vocab
         words = [vocab.id_to_piece(i) for i in range(len(vocab))]
         self.tbd.add_embedding(matrix, metadata=words, global_step=step)
         ext = 'txt.gz' if txt else 'pkl'
-        path = self.exp.model_dir / f'embeddings_{step}.{ext}'
+        path = self.exp.model_dir / f'embeddings_{step}_{train_loss:.6f}_{val_loss:.6f}.{ext}'
         log.info(f"writing  embedding after step {step} to {path}")
         if txt:
             with IO.writer(path) as w:
@@ -182,9 +189,20 @@ class CBOWTrainer(SteppedTrainer):
             return
         train_data = reader.get_training_data(batch_size=batch_size, n_batches=rem_steps,
                                               ctx_size=ctx_size)
-        # val_data = reader.get_val_data(batch_size=batch_size, ctx_size=ctx_size)
-        with tqdm(train_data, initial=self.start_step, total=rem_steps, unit='batch') as data_bar:
+        val_data = reader.get_val_data(batch_size=batch_size, ctx_size=ctx_size)
+        train_loss, n = 0.0, 0
+
+        def _make_checkpt(step, train_loss):
+            with torch.no_grad():
+                val_loss = self.run_valid_epoch(val_data)
+            log.info(f"Checkpoint at {step}")
+            self.save_embeddings(step, train_loss, val_loss, txt=True)
+            self.tbd.add_scalars('losses', {'training': train_loss,
+                                            'valid_loss': val_loss}, global_step=step)
+
+        with tqdm(train_data, initial=self.start_step, total=rem_steps+1, unit='batch') as data_bar:
             for i, (xs, ys) in enumerate(data_bar, start=self.start_step):
+                self.model.zero_grad()
                 xs, ys = xs.to(device), ys.to(device)
                 log_probs = self.model(xs)
                 loss = self.loss_func(log_probs, ys)
@@ -193,11 +211,18 @@ class CBOWTrainer(SteppedTrainer):
                                      self.opt.curr_step)
                 progress_msg = f', loss={loss:g} LR={self.opt.curr_lr:g}'
                 data_bar.set_postfix_str(progress_msg, refresh=False)
+                train_loss += loss.item()
+                n += len(ys)
+
                 loss.backward()
                 self.opt.step()
-                if i % check_point == 0:
-                    self.save_embeddings(i, txt=True)
-        self.save_embeddings(steps, txt=True)
+                self.opt.zero_grad()
+
+                if i > 0 and i % check_point == 0:
+                    _make_checkpt(i, train_loss / n)
+                    train_loss, n = 0.0, 0
+        if n > 0:
+            _make_checkpt(steps, train_loss / n)
 
 
 if __name__ == '__main__':
