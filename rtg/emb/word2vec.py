@@ -16,7 +16,9 @@ from rtg.module.trainer import SteppedTrainer
 from rtg import log
 from dataclasses import dataclass
 from rtg import TranslationExperiment as Experiment
+from rtg.utils import IO
 from tqdm import tqdm
+import pickle
 
 
 class CBOW(Model):
@@ -77,6 +79,9 @@ class CBOWBatchReader:
     add_bos: bool = True
     add_eos: bool = True
 
+    def __post_init__(self):
+        assert self.side in {'src', 'tgt', 'src+tgt'}
+
     def _read_all_seqs(self):
         for ex in self.data:
             if 'src' in self.side:
@@ -123,9 +128,6 @@ class DataReader:
     exp: Experiment
     side: str
 
-    def __post_init__(self):
-        assert self.side in {'src', 'tgt', 'src+tgt'}
-
     def get_training_data(self, batch_size, ctx_size, n_batches):
         train_db = SqliteFile(self.exp.train_db, shuffle=True)
         reader = CBOWBatchReader(train_db, batch_size=batch_size, ctx_size=ctx_size, side=self.side)
@@ -141,11 +143,34 @@ class CBOWTrainer(SteppedTrainer):
     def __init__(self, *args, model_factory=CBOW.make_model, **kwargs):
         super().__init__(*args, model_factory=model_factory, **kwargs)
         assert isinstance(self.model, CBOW)  # type check
+        self.model: CBOW = self.model   # type ann
         self.loss_func = nn.NLLLoss()
 
     def run_valid_epoch(self, data_iter: Iterable) -> float:
         log.warning("No validation done for CBOW")
         return 0.0
+
+    def save_embeddings(self, step, txt=True):
+        matrix = self.model.emb.weight
+
+        vocab = self.exp.shared_vocab
+        words = [vocab.id_to_piece(i) for i in range(len(vocab))]
+        self.tbd.add_embedding(matrix, metadata=words)
+        ext = 'txt' if txt else 'pkl'
+        path = self.exp.model_dir / f'embeddings_{step}.{ext}'
+        log.info(f"writing  embedding after step {step} to {path}")
+        if txt:
+
+            with IO.writer(path) as w:
+                w.write(f'{matrix.shape[0]} {matrix.shape[1]}\n')
+                for i in range(matrix.shape[0]):
+                    word = words[i]
+                    vect = ' '.join(f'{x:g}' for x in matrix[i])
+                    w.write(f'{word} {vect}\n')
+        else:
+            with path.open('wb') as f:
+                data = {'words': words, 'vectors': matrix.numpy}
+                pickle.dump(data, f)
 
     def train(self, steps: int, check_point: int, batch_size: int,
               check_pt_callback: Optional[Callable] = None, side='tgt', ctx_size=2, **args):
@@ -157,9 +182,9 @@ class CBOWTrainer(SteppedTrainer):
             return
         train_data = reader.get_training_data(batch_size=batch_size, n_batches=rem_steps,
                                               ctx_size=ctx_size)
-        val_data = reader.get_val_data(batch_size=batch_size, ctx_size=ctx_size)
+        # val_data = reader.get_val_data(batch_size=batch_size, ctx_size=ctx_size)
         with tqdm(train_data, initial=self.start_step, total=rem_steps, unit='batch') as data_bar:
-            for xs, ys in data_bar:
+            for i, (xs, ys) in enumerate(data_bar):
                 xs, ys = xs.to(device), ys.to(device)
                 log_probs = self.model(xs)
                 loss = self.loss_func(log_probs, ys)
@@ -170,6 +195,9 @@ class CBOWTrainer(SteppedTrainer):
                 data_bar.set_postfix_str(progress_msg, refresh=False)
                 loss.backward()
                 self.opt.step()
+                if i % check_point == 0:
+                    self.save_embeddings(steps, txt=True)
+        self.save_embeddings(steps, txt=True)
 
 
 if __name__ == '__main__':
