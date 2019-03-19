@@ -2,7 +2,7 @@
 
 #$ -P material
 #$ -cwd
-#$ -pe mt 6
+#$ -pe mt 4
 #$ -l h_vmem=8G,h_rt=24:00:00,gpu=1
 #$ -l 'h=!vista05'
 
@@ -11,17 +11,29 @@
 # Author = Thamme Gowda (tg@isi.edu)
 # Date = October 17, 2018
 
+SCRIPTS_DIR=$(dirname "${BASH_SOURCE[0]}")  # get the directory name
+RTG_PATH=$(realpath "${SCRIPTS_DIR}/..")
+
+# If using compute grid, and dont rely on this relative path resolution, set the RTG_PATH here
+#RTG_PATH=/full/path/to/rtg-master
+
 OUT=
 CONF_PATH=
-BATCH_SIZE=56
+
+#defaults
+CONDA_ENV=     # empty means don't activate environment
+
+# TODO: change this -- point to cuda libs
+export LD_LIBRARY_PATH=~jonmay/cuda-9.0/lib64:~jonmay/cuda/lib64:/usr/local/lib
 
 usage() {
     echo "Usage: $0 -d <exp/dir>
-    [-c conf.yml] " 1>&2;
+    [-c conf.yml (default: <exp/dir>/conf.yml) ]
+    [-e conda_env  default:$CONDA_ENV (empty string disables activation)] " 1>&2;
     exit 1;
 }
 
-while getopts ":fd:c:" o; do
+while getopts ":fd:c:e:p:" o; do
     case "${o}" in
         d)
             OUT=${OPTARG}
@@ -29,23 +41,26 @@ while getopts ":fd:c:" o; do
         c)
             CONF_PATH=${OPTARG}
             ;;
+        e)
+            CONDA_ENV=${OPTARG}
+            ;;
         *)
             usage
             ;;
     esac
 done
 
-[[ -n $OUT ]] || usage
+
+[[ -n $OUT ]] || usage   # show usage and exit
+[[ -f $RTG_PATH/rtg/__init__.py ]] || { echo "Error: RTG_PATH=$RTG_PATH is not valid"; exit 2; }
 
 #################
+#NUM_GPUS=$(echo ${CUDA_VISIBLE_DEVICES} | tr ',' '\n' | wc -l)
 
-# These needs to be changed
-source ~tg/.bashrc
-source activate torch-3.7
-#export PYTHONPATH=.:~tg/work/libs2/rtg-master
-export LD_LIBRARY_PATH=~jonmay/cuda-9.0/lib64:~jonmay/cuda/lib64:/usr/local/lib
-#NUM_GPUS=$(echo $CUDA_VISIBLE_DEVICES | tr ',' '\n' | wc -l)
-####
+if [[ -n ${CONDA_ENV} ]]; then
+    echo "Activating environment $CONDA_ENV"
+    source activate ${CONDA_ENV}
+fi
 
 echo "Output dir = $OUT"
 [[ -d $OUT ]] || mkdir -p $OUT
@@ -53,7 +68,7 @@ echo "Output dir = $OUT"
 if [[ ! -f $OUT/rtg.zip || ! -e $OUT/scripts ]]; then
     echo "Zipping source code to $OUT/rtg.zip"
     OLD_DIR=$PWD
-    cd ~tg/work/libs2/rtg-master
+    cd ${RTG_PATH}
     zip -r $OUT/rtg.zip rtg -x "*__pycache__*"
     ln -s ${PWD}/scripts $OUT/scripts  # scripts are needed
     git rev-parse HEAD > $OUT/githead   # git commit message
@@ -65,13 +80,10 @@ export PYTHONPATH=$OUT/rtg.zip
 cp "${BASH_SOURCE[0]}"  $OUT/job.sh.bak
 echo  "Starting pipeline... $OUT"
 
-[[ -n $CONF_PATH ]] && C="$CONF_PATH"
-
+CONF_ARG="$CONF_PATH"
 if [[ -f $OUT/conf.yml && -n $CONF_PATH ]]; then
     echo "ignoring $CONF_PATH, because $OUT/conf.yml exists"
     CONF_ARG=""
-else
-    CONF_ARG="$CONF_PATH"
 fi
 
 cmd="python -m rtg.pipeline $OUT $CONF_ARG"
