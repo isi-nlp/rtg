@@ -32,7 +32,7 @@ class Model(nn.Module):
         raise NotImplementedError
 
     @classmethod
-    @abstractmethod
+    # FIXME: @abstractmethod
     def make_trainer(cls, *args, **kwargs):
         raise NotImplementedError
 
@@ -45,6 +45,6 @@ class NMTModel(Model, metaclass=ABCMeta):
     pass
 
     @classmethod
-    @abstractmethod
+    # FIXME: @abstractmethod
     def make_generator(cls, *args, **kwargs):
         raise NotImplementedError
