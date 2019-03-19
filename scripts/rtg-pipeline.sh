@@ -52,20 +52,15 @@ done
 
 
 [[ -n $OUT ]] || usage   # show usage and exit
-[[ -f $RTG_PATH/rtg/__init__.py ]] || { echo "Error: RTG_PATH=$RTG_PATH is not valid"; exit 2; }
 
 #################
 #NUM_GPUS=$(echo ${CUDA_VISIBLE_DEVICES} | tr ',' '\n' | wc -l)
-
-if [[ -n ${CONDA_ENV} ]]; then
-    echo "Activating environment $CONDA_ENV"
-    source activate ${CONDA_ENV}
-fi
 
 echo "Output dir = $OUT"
 [[ -d $OUT ]] || mkdir -p $OUT
 
 if [[ ! -f $OUT/rtg.zip || ! -e $OUT/scripts ]]; then
+    [[ -f $RTG_PATH/rtg/__init__.py ]] || { echo "Error: RTG_PATH=$RTG_PATH is not valid"; exit 2; }
     echo "Zipping source code to $OUT/rtg.zip"
     OLD_DIR=$PWD
     cd ${RTG_PATH}
@@ -75,10 +70,16 @@ if [[ ! -f $OUT/rtg.zip || ! -e $OUT/scripts ]]; then
     cd $OLD_DIR
 fi
 
+if [[ -n ${CONDA_ENV} ]]; then
+    echo "Activating environment $CONDA_ENV"
+    source activate ${CONDA_ENV} || { echp "Unable to activate $CONDA_ENV" ; exit 3 }
+fi
+
+
 export PYTHONPATH=$OUT/rtg.zip
 # copy this script for reproducibility
 cp "${BASH_SOURCE[0]}"  $OUT/job.sh.bak
-echo  "Starting pipeline... $OUT"
+echo  "`date`: Starting pipeline... $OUT"
 
 CONF_ARG="$CONF_PATH"
 if [[ -f $OUT/conf.yml && -n $CONF_PATH ]]; then
@@ -89,7 +90,7 @@ fi
 cmd="python -m rtg.pipeline $OUT $CONF_ARG"
 echo "command::: $cmd"
 if eval ${cmd}; then
-    echo "Done"
+    echo "`date` :: Done"
 else
     echo "Error: exit status=$?"
 fi
