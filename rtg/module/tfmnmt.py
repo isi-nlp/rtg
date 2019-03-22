@@ -700,8 +700,8 @@ def __test_model__():
         'src_vocab': vocab_size,
         'tgt_vocab': vocab_size,
         'n_layers': 4,
-        'hid_size': 128,
-        'ff_size': 256,
+        'hid_size': 64,
+        'ff_size': 64,
         'n_heads': 4
     }
     if False:
@@ -717,8 +717,8 @@ def __test_model__():
     decr = Decoder.new(exp, trainer.model)
 
     assert 2 == Batch.bos_val
-    src = tensor([[4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
-                  [13, 12, 11, 10, 9, 8, 7, 6, 5, 4]])
+    src = tensor([[4, 5, 6, 7, 8, 9, 10, 11, 12, 13, Batch.eos_val],
+                  [13, 12, 11, 10, 9, 8, 7, 6, 5, 4, Batch.eos_val]])
     src_lens = tensor([src.size(1)] * src.size(0))
 
     def check_pt_callback(**args):
@@ -727,8 +727,8 @@ def __test_model__():
             log.info(f'{score:.4f} :: {seq}')
 
     batch_size = 50
-    steps = 500
-    check_point = 10
+    steps = 1000
+    check_point = 50
     trainer.train(steps=steps, check_point=check_point, batch_size=batch_size,
                   check_pt_callback=check_pt_callback)
 
