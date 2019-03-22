@@ -72,7 +72,7 @@ fi
 
 if [[ -n ${CONDA_ENV} ]]; then
     echo "Activating environment $CONDA_ENV"
-    source activate ${CONDA_ENV} || { echp "Unable to activate $CONDA_ENV" ; exit 3 }
+    source activate ${CONDA_ENV} || { echp "Unable to activate $CONDA_ENV" ; exit 3; }
 fi
 
 
