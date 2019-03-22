@@ -319,8 +319,32 @@ class Batch:
     _x_attrs = ['x_len', 'x_seqs']
     _y_attrs = ['y_len', 'y_seqs']
 
+    @classmethod
+    def bos_eos_check(cls, batch: List[Example], side: str, bos: bool, eos: bool):
+        """
+        ensures and inserts (if needed) EOS and BOS tokens
+        :param batch:
+        :param side: which side? choices: {'x', 'y'}
+        :param bos: True if should have BOS, False if should not have BOS
+        :param eos: True if should have EOS, False if should not have EOS
+        :return: None, all modifications are inplace of batch
+        """
+        assert side in ('x', 'y')
+        for ex in batch:
+            seq: List = ex.x if side == 'x' else ex.y
+            if bos:
+                if not seq[0] == cls.bos_val:
+                    seq.insert(0, cls.bos_val)
+            else:  # should not have BOS
+                assert seq[0] != cls.bos_val
+            if eos:
+                if not seq[-1] == cls.eos_val:
+                    seq.append(cls.eos_val)
+            else:   # Should not have EOS
+                assert seq[-1] != cls.eos_val
+
     def __init__(self, batch: List[Example], sort_dec=False, batch_first=True,
-                 add_eos_x=True, add_eos_y=True):
+                 add_eos_x=True, add_eos_y=True, add_bos_x=False, add_bos_y=False):
         """
         :param batch: List fo Examples
         :param sort_dec: True if the examples be sorted as descending order of their source sequence lengths
@@ -328,14 +352,11 @@ class Batch:
         """
         self.eos_x = add_eos_x
         self.eos_y = add_eos_y
-        if add_eos_x:
-            for ex in batch:  # check and insert EOS
-                if ex.x[-1] != self.eos_val:
-                    ex.x.append(self.eos_val)
-        else:
-            for ex in batch:  # making sure no EOS is in there
-                assert ex.x[-1] != self.eos_val
+        self.bos_x = add_bos_x
+        self.bos_y = add_bos_y
         self.batch_first = batch_first
+
+        self.bos_eos_check(batch, 'x', add_bos_x, add_eos_x)
         if sort_dec:
             batch = sorted(batch, key=lambda _: len(_.x), reverse=True)
         self._len = len(batch)
@@ -355,13 +376,7 @@ class Batch:
         first_y = batch[0].y
         self.has_y = first_y is not None
         if self.has_y:
-            if add_eos_y:
-                for ex in batch:  # check and insert EOS to output seqs
-                    if ex.y[-1] != self.eos_val:
-                        ex.y.append(self.eos_val)
-            else:
-                for ex in batch:  # Making sure no EOS is there
-                    assert ex.y[-1] != self.eos_val
+            self.bos_eos_check(batch, 'y', add_bos_y, add_eos_y)
             self.y_len = tensor([len(e.y) for e in batch])
             self.y_toks = self.y_len.sum().float().item()
             self.max_y_len = self.y_len.max().item()

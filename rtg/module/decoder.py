@@ -343,7 +343,7 @@ class Decoder:
             if in_seq[-1] != self.eos_val:
                 in_seq.append(self.eos_val)
         else:
-            in_seq = self.inp_vocab.encode_as_ids(line, add_eos=True, add_bos=True)
+            in_seq = self.inp_vocab.encode_as_ids(line, add_eos=True, add_bos=False)
         in_seqs = tensor(in_seq, dtype=torch.long).view(1, -1)
         in_lens = tensor([len(in_seq)], dtype=torch.long)
         if self.debug:
