@@ -82,20 +82,27 @@ class Field(SentencePieceProcessor):
         :return:
         """
 
-        log.warning("CLS token not mapped by sentence piece")   # FIXME
         model_prefix = model_path.replace('.model', '')
         files = set(files)  # remove duplicates
         arg = f"--input={','.join(files)} --vocab_size={vocab_size} --model_prefix={model_prefix}" \
               f" --model_type={model_type} --pad_id={PAD_TOK[1]} --bos_id={BOS_TOK[1]}" \
               f" --eos_id={EOS_TOK[1]} --unk_id={UNK_TOK[1]} --hard_vocab_limit=false"
+        # CLS token goes in the beginning because we need it get index 4
+        cls_tok_str = CLS_TOK[0]
         if no_split_toks:
-            arg += f" --user_defined_symbols={','.join(no_split_toks)}"
+            no_split_toks_str = ','.join([cls_tok_str] + no_split_toks)
+        else:
+            no_split_toks_str = cls_tok_str
+        arg += f" --user_defined_symbols={no_split_toks_str}"
         log.info(f"SPM: {arg}")
         SentencePieceTrainer.Train(arg)
         log.info("Training complete")
         if not model_path.endswith('.model'):
             model_path += '.model'
-        return Field(model_path)
+        model = Field(model_path)
+        for piece, idx in RESERVED_TOKS:
+            assert model.piece_to_id(piece) == idx
+        return model
 
 
 Example = namedtuple('Example', ['x', 'y'])
