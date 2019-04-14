@@ -680,7 +680,8 @@ class TransformerTrainer(SteppedTrainer):
                 if is_check_pt:
                     train_loss = train_state.reset()
                     train_state.train_mode(False)
-                    self.make_check_point(val_data, train_loss, keep_models=keep_models)
+                    val_loss = self.run_valid_epoch(val_data, dec_bos_cut=dec_bos_cut)
+                    self.make_check_point(train_loss, val_loss=val_loss, keep_models=keep_models)
                     if check_pt_callback:
                         check_pt_callback(model=self.model,
                                           step=self.opt.curr_step,

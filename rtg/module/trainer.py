@@ -262,11 +262,11 @@ class SteppedTrainer:
             outs = '\n'.join(outs)
             log.info(f"==={i}===\nSRC:{line}\nREF:{ref}\n{outs}")
 
-    def make_check_point(self, val_data: BatchIterable, train_loss: float, keep_models: int):
+    def make_check_point(self, train_loss: float, val_loss: float, keep_models: int):
         """
         Check point the model
-        :param val_data: validation data to obtain validation score
         :param train_loss: training loss value
+        :param val_loss: loss on validation set
         :param keep_models: how many checkpoints to keep on file system
         :return:
         """
@@ -275,7 +275,6 @@ class SteppedTrainer:
         if step_num == self.last_step:
             log.warning("Ignoring checkpt request")
             return  # calling multiple times doesnt save
-        val_loss = self.run_valid_epoch(val_data)
         log.info(f"Checkpoint at step {step_num}. Training Loss {train_loss:g},"
                  f" Validation Loss:{val_loss:g}")
         self.show_samples()
