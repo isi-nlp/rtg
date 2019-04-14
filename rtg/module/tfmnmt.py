@@ -655,7 +655,7 @@ class TransformerTrainer(SteppedTrainer):
         """
         assert not args  # no extra args. let user know if an extra arg is passed
         log.info(f'Going to train for {steps} epochs; batch_size={batch_size}; '
-                 f'check point size:{check_point}; fine_tune={fine_tune}')
+                 f'check point size:{check_point}; fine_tune={fine_tune}, dec_bos_cut={dec_bos_cut}')
         if self.n_gpus > 1:
             batch_size *= self.n_gpus
             log.info(f"# GPUs = {self.n_gpus}, batch_size is set to {batch_size}")
