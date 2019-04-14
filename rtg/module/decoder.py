@@ -60,13 +60,15 @@ class Decoder:
     eos_val = EOS_TOK[1]
     default_beam_size = 5
 
-    def __init__(self, model, gen_factory: Type[GeneratorFactory], exp, gen_args=None,
+    def __init__(self, model, gen_factory: Type[GeneratorFactory], exp: Experiment, gen_args=None,
                  debug=debug_mode):
         self.model = model
         self.exp = exp
         self.gen_factory = gen_factory
         self.debug = debug
         self.gen_args = gen_args if gen_args is not None else {}
+        self.dec_bos_cut = self.exp.config.get('trainer', {}).get('dec_bos_cut', False)
+        (log.info if self.dec_bos_cut else log.debug)(f"dec_bos_cut={self.dec_bos_cut}")
 
     def generator(self, x_seqs, x_lens):
         return self.gen_factory(self.model, x_seqs=x_seqs, x_lens=x_lens, **self.gen_args)
@@ -155,13 +157,17 @@ class Decoder:
         :param max_len:
         :return:
         """
-
-        gen = self.generator(x_seqs, x_lens)
+        device = x_seqs.device
         batch_size = x_seqs.size(0)
-        ys = torch.full(size=(batch_size, 1), fill_value=self.bos_val, dtype=torch.long,
-                        device=device)
+        if self.dec_bos_cut:
+            ys = x_seqs[:, :1]
+            x_seqs = x_seqs[:, 1:]
+            x_lens -= 1
+        else:
+            ys = torch.full(size=(batch_size, 1), fill_value=self.bos_val, dtype=torch.long,
+                            device=device)
+        gen = self.generator(x_seqs, x_lens)
         scores = torch.zeros(batch_size, device=device)
-
         actives = ys[:, -1] != self.eos_val
         for i in range(1, max_len + 1):
             if actives.sum() == 0:  # all sequences Ended
@@ -205,13 +211,18 @@ class Decoder:
 
         # Everything beamed_*  below is the batch repeated beam_size times
         beamed_batch_size = batch_size * beam_size
-
+        # TODO: this is expensive . dont repeat encoding.
         beamed_x_seqs = x_seqs.repeat(1, beam_size).view(beamed_batch_size, -1)
         beamed_x_lens = x_lens.view(-1, 1).repeat(1, beam_size).view(beamed_batch_size)
-        generator = self.generator(beamed_x_seqs, beamed_x_lens)
 
-        beamed_ys = torch.full(size=(beamed_batch_size, 1), fill_value=self.bos_val,
-                               dtype=torch.long, device=device)
+        if self.dec_bos_cut:   # cut first time step of input as decoder's first step input
+            beamed_ys = beamed_x_seqs[:, :1]
+            beamed_x_seqs = beamed_x_seqs[:, 1:]
+            beamed_x_lens -= 1
+        else:
+            beamed_ys = torch.full(size=(beamed_batch_size, 1), fill_value=self.bos_val,
+                                   dtype=torch.long, device=device)
+        generator = self.generator(beamed_x_seqs, beamed_x_lens)
         beamed_scores = torch.zeros((beamed_batch_size, 1), device=device)
 
         beam_active = torch.ones((beamed_batch_size, 1), dtype=torch.uint8, device=device)
@@ -447,7 +458,7 @@ class Decoder:
                 else:
                     start = time.time()
                     res = self.decode_sentence(line, **args)
-                    print(f'\t|took={1000 * (time.time()-start):.3f}ms')
+                    print(f'\t|took={1000 * (time.time() - start):.3f}ms')
                     for score, hyp in res:
                         print(f'  {score:.4f}\t{hyp}')
             except ReloadEvent as re:
@@ -462,7 +473,7 @@ class Decoder:
         for i, line in enumerate(inp):
             line = line.strip()
             if not line:
-                log.warning(f"line {i+1} was empty. skipping it for now. "
+                log.warning(f"line {i + 1} was empty. skipping it for now. "
                             f"Empty lines are problematic when you want line-by-line alignment...")
                 continue
             cols = line.split('\t')
