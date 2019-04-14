@@ -40,6 +40,6 @@ tester:
 trainer:
   batch_size: 4   # change to 96
   check_point: 400  # change to 1000 or 2000
-  keepmodels: 10
+  keep_models: 10
   steps: 2000   # change to 128000 or up
 updated_at: '2019-03-09T21:15:33.707183'

@@ -641,7 +641,7 @@ class TransformerTrainer(SteppedTrainer):
 
     def train(self, steps: int, check_point: int, batch_size: int,
               check_pt_callback: Optional[Callable] = None, fine_tune=False, dec_bos_cut=False,
-              **args):
+              keep_models=10, **args):
         """
 
         :param steps: how many optimizer steps to train (also, means how many batches)
@@ -650,16 +650,18 @@ class TransformerTrainer(SteppedTrainer):
         :param check_pt_callback: function to call back after checkpt
         :param fine_tune: should the fine tune corpus be used instead of training corpus
         :param dec_bos_cut: copy the first time step of input as decoder's BOS
+        :param keep_models: how many to checkpts to keep
         :param args: any extra args
         :return:
         """
-        assert not args  # no extra args. let user know if an extra arg is passed
+        if args:
+            # no extra args. let user know if an extra arg is passed
+            raise Exception(f" Found extra args: {args}")
         log.info(f'Going to train for {steps} epochs; batch_size={batch_size}; '
                  f'check point size:{check_point}; fine_tune={fine_tune}, dec_bos_cut={dec_bos_cut}')
         if self.n_gpus > 1:
             batch_size *= self.n_gpus
             log.info(f"# GPUs = {self.n_gpus}, batch_size is set to {batch_size}")
-        keep_models = args.get('keep_models', 10)  # keep last _ models and delete the old
 
         if steps <= self.start_step:
             raise Exception(f'The model was already trained to {self.start_step} steps. '
