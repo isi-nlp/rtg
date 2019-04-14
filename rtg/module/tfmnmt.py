@@ -579,9 +579,10 @@ class TransformerTrainer(SteppedTrainer):
             self.loss_func = ChunkedLossCompute(generator=generator, criterion=criterion,
                                                 opt=self.opt, chunk_size=chunk_size)
 
-    def run_valid_epoch(self, data_iter: BatchIterable):
+    def run_valid_epoch(self, data_iter: BatchIterable, dec_bos_cut=False):
         """
         :param data_iter: data iterator
+        :param dec_bos_cut: cut first step of input as first step of decoder
         :return: loss value
         """
         start = time.time()
@@ -591,12 +592,18 @@ class TransformerTrainer(SteppedTrainer):
             for i, batch in enumerate(data_bar):
                 batch = batch.to(device)
                 num_toks = batch.y_toks
-                x_mask = (batch.x_seqs != batch.pad_value).unsqueeze(1)
-                bos_step = torch.full((len(batch), 1), fill_value=Batch.bos_val, dtype=torch.long,
-                                      device=device)
+                x_seqs = batch.x_seqs
+                if dec_bos_cut:
+                    bos_step = x_seqs[:, :1]
+                    x_seqs = x_seqs[:, 1:]
+                else:
+                    bos_step = torch.full((len(batch), 1), fill_value=Batch.bos_val,
+                                          dtype=torch.long, device=device)
+
+                x_mask = (x_seqs != batch.pad_value).unsqueeze(1)
                 y_seqs_with_bos = torch.cat([bos_step, batch.y_seqs], dim=1)
                 y_mask = Batch.make_target_mask(y_seqs_with_bos)
-                out = self.model(batch.x_seqs, y_seqs_with_bos, x_mask, y_mask)
+                out = self.model(x_seqs, y_seqs_with_bos, x_mask, y_mask)
                 # [Batch x Time x D]
                 # skip the last time step (the one with EOS as input)
                 out = out[:, :-1, :]
@@ -633,7 +640,20 @@ class TransformerTrainer(SteppedTrainer):
         return max_iters - 1, loss
 
     def train(self, steps: int, check_point: int, batch_size: int,
-              check_pt_callback: Optional[Callable] = None, fine_tune=False, **args):
+              check_pt_callback: Optional[Callable] = None, fine_tune=False, dec_bos_cut=False,
+              **args):
+        """
+
+        :param steps: how many optimizer steps to train (also, means how many batches)
+        :param check_point: after how many checkpoints to
+        :param batch_size: how many sentences in batch
+        :param check_pt_callback: function to call back after checkpt
+        :param fine_tune: should the fine tune corpus be used instead of training corpus
+        :param dec_bos_cut: copy the first time step of input as decoder's BOS
+        :param args: any extra args
+        :return:
+        """
+        assert not args  # no extra args. let user know if an extra arg is passed
         log.info(f'Going to train for {steps} epochs; batch_size={batch_size}; '
                  f'check point size:{check_point}; fine_tune={fine_tune}')
         if self.n_gpus > 1:
@@ -653,15 +673,20 @@ class TransformerTrainer(SteppedTrainer):
         train_state.train_mode(True)
         with tqdm(train_data, initial=self.start_step, total=steps, unit='batch') as data_bar:
             for batch in data_bar:
+                self.model.zero_grad()
                 batch = batch.to(device)
                 num_toks = batch.y_toks
-                self.model.zero_grad()
-                x_mask = (batch.x_seqs != batch.pad_value).unsqueeze(1)
-                bos_step = torch.full((len(batch), 1), fill_value=Batch.bos_val, dtype=torch.long,
-                                      device=device)
+                x_seqs = batch.x_seqs
+                if dec_bos_cut:
+                    bos_step = x_seqs[:, :1]
+                    x_seqs = x_seqs[:, 1:]
+                else:
+                    bos_step = torch.full((len(batch), 1), fill_value=Batch.bos_val,
+                                          dtype=torch.long, device=device)
+                x_mask = (x_seqs != batch.pad_value).unsqueeze(1)
                 y_seqs_with_bos = torch.cat([bos_step, batch.y_seqs], dim=1)
                 y_mask = Batch.make_target_mask(y_seqs_with_bos)
-                out = self.model(batch.x_seqs, y_seqs_with_bos, x_mask, y_mask)
+                out = self.model(x_seqs, y_seqs_with_bos, x_mask, y_mask)
                 # [Batch x Time x D]
                 # skip the last time step (the one with EOS as input)
                 out = out[:, :-1, :]
@@ -680,7 +705,8 @@ class TransformerTrainer(SteppedTrainer):
                 if is_check_pt:
                     train_loss = train_state.reset()
                     train_state.train_mode(False)
-                    self.make_check_point(val_data, train_loss, keep_models=keep_models)
+                    val_loss = self.run_valid_epoch(val_data, dec_bos_cut=dec_bos_cut)
+                    self.make_check_point(train_loss, val_loss=val_loss, keep_models=keep_models)
                     if check_pt_callback:
                         check_pt_callback(model=self.model,
                                           step=self.opt.curr_step,
