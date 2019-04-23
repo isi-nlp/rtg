@@ -31,6 +31,10 @@ def parse_args():
                         help='Beam size. beam_size=1 is greedy, '
                              'In theory: higher beam is better approximation but expensive. '
                              'But in practice, higher beam doesnt always increase.')
+    parser.add_argument("-lp", '--lp-alpha', type=float, default=0.6,
+                        help='Length penalty alpha. to disable set <= 0.0 '
+                             'Ideally in the range [0.0, 1.0] but you are allowed to '
+                             'experiment beyond > 1.0 but not less than 0.0')
     parser.add_argument("-ml", '--max-len', type=int, default=100,
                         help='Maximum output sequence length')
     parser.add_argument("-nh", '--num-hyp', type=int, default=1,

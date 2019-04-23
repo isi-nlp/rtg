@@ -4,6 +4,7 @@ import traceback
 from collections import OrderedDict
 from typing import List, Tuple, Type, Dict, Any, Optional
 from pathlib import Path
+import math
 
 import torch
 from torch import nn as nn
@@ -190,136 +191,133 @@ class Decoder:
         selected = x.masked_select(mask)
         return selected.view(-1, x.size(1))
 
-    def beam_decode(self, x_seqs, x_lens, max_len, beam_size=default_beam_size, num_hyp=None,
-                    **args) -> List[List[Hypothesis]]:
+    @staticmethod
+    def repeat_adjacent(x, n, dim=0):
         """
-        :param x_seqs: input batch of sequences
-        :param max_len:  maximum length to consider if decoder doesnt produce EOS token
-        :param beam_size: beam size
-        :param num_hyp: number of hypothesis in each beam to return
-        :param args:
-        :return: List of num_hyp Hypothesis for each sequence in the batch.
-         Each hypothesis consists of score and a list of word indexes.
+        repeat along a dimension values are adjacent.
+        unlike torch.Tensor.repeat() which repeats at the end instead of adjacent.
+        :param x: input tensor
+        :param n: how many times to repeat
+        :param dim: which dimension
+        :return: repeated tensor
         """
-        # TODO: rewrite this, this function is a mess!
-        # repeat beam size
+        shape = list(x.shape)
+        # add a new dimension and expand it beam size
+        expand_shape = [-1] * (len(x.shape) + 1)
+        expand_shape[dim + 1] = n
+        x = x.unsqueeze(dim + 1).expand(*expand_shape)
+        shape[dim] *= n  # reduce to original num of dims but given dim has n times more
+        return x.view(*shape)
+
+    def beam_decode(self, x_seqs, x_lens, max_len, beam_size=default_beam_size, num_hyp=1,
+                    lp_alpha: float = 0., **args) -> List[List[Hypothesis]]:
+        """
+        Beam decoder
+        :param x_seqs: input x_seqs as a padded tensor
+        :param x_lens: lengths of x_lengths
+        :param max_len: maximum time steps to run
+        :param beam_size: how many beams
+        :param num_hyp: how many hypothesis to return ( must be <= beam_size)
+        :param lp_alpha: length penalty (0.0 means disables)
+        :return:
+        """
+        args = dict((k, v) for k, v in args.items() if v is not None)
+        if args:
+            log.warn(f"Ignored args: {args} . dont pass them to remove this message")
+        assert beam_size >= num_hyp
+        device = x_seqs.device
         batch_size = x_seqs.size(0)
-        assert batch_size == 1  # TODO: test large batches
-        if not num_hyp:
-            num_hyp = beam_size
-        beam_size = max(beam_size, num_hyp)
-
-        # Everything beamed_*  below is the batch repeated beam_size times
-        beamed_batch_size = batch_size * beam_size
-        # TODO: this is expensive . dont repeat encoding.
-        beamed_x_seqs = x_seqs.repeat(1, beam_size).view(beamed_batch_size, -1)
-        beamed_x_lens = x_lens.view(-1, 1).repeat(1, beam_size).view(beamed_batch_size)
-
-        if self.dec_bos_cut:   # cut first time step of input as decoder's first step input
-            beamed_ys = beamed_x_seqs[:, :1]
-            beamed_x_seqs = beamed_x_seqs[:, 1:]
-            beamed_x_lens -= 1
+        # ys = torch.zeros(batch_size, beam_size, max_len + 1, dtype=torch.long, device=device)
+        if self.dec_bos_cut:
+            # cut first time step from xs and repeat beam_size times, add time dim
+            # [Batch] -> [Batch x 1=Beam] -> [Batch x Beam]  -> [Batch x Beam x 1=Time]
+            ys = x_seqs[:, 0].unsqueeze(-1).expand(-1, beam_size).unsqueeze(-1)
+            x_seqs = x_seqs[:, 1:]  # cut
+            x_lens -= 1
         else:
-            beamed_ys = torch.full(size=(beamed_batch_size, 1), fill_value=self.bos_val,
-                                   dtype=torch.long, device=device)
-        generator = self.generator(beamed_x_seqs, beamed_x_lens)
-        beamed_scores = torch.zeros((beamed_batch_size, 1), device=device)
+            ys = torch.full((batch_size, beam_size, 1), fill_value=self.bos_val,
+                            device=device, dtype=torch.long)
 
-        beam_active = torch.ones((beamed_batch_size, 1), dtype=torch.uint8, device=device)
-        # zeros means ended, one means active
+        # repeat x_seqs and x_lens beam times
+        beamed_x_seqs = self.repeat_adjacent(x_seqs, n=beam_size, dim=0)
+        beamed_x_lens = self.repeat_adjacent(x_lens, n=beam_size, dim=0)
+        gen = self.generator(beamed_x_seqs, beamed_x_lens)
+        scores = torch.zeros(batch_size, beam_size, device=device)
+        actives = ys[:, :, 0] != self.eos_val
+        lengths = torch.full((batch_size, beam_size), fill_value=max_len, device=device,
+                             dtype=torch.long)
+
         for t in range(1, max_len + 1):
-            if beam_active.sum() == 0:
+            if actives.sum() == 0:  # all sequences Ended
                 break
-            # [batch*beam, Vocab]
-            log_prob = generator.generate_next(beamed_ys)
+            # [Batch x Beams x Vocab] <-- [Batch x Beams x Time]
+            flat_ys = ys.view(batch_size * beam_size, -1)
+            log_prob = gen.generate_next(flat_ys)  # ys upto current time step
+            log_prob = log_prob.view(batch_size, beam_size, -1)
 
-            # broad cast scores along row (broadcast) and sum  log probabilities
-            next_scores = beamed_scores + beam_active.float() * log_prob  # Zero out inactive beams
+            if t == 1:
+                # Note: since sequences are duplicated, to start with
+                # we need to pick the top k beams from a single beam
+                # How? mask out all beams, except the first beam
+                beam_mask = torch.full((batch_size, beam_size, 1), fill_value=1, device=device,
+                                       dtype=torch.uint8)
+                beam_mask[:, 0, :] = 0
+                log_prob.masked_fill_(mask=beam_mask, value=float('-inf'))
 
-            top_scores, nxt_idx = next_scores.topk(k=beam_size,
-                                                   dim=-1)  # [batch*beam, beam],[batch*beam, beam]
-            # Now we got beam_size*beam_size heads, task: shrink it to beam_size
-            # Since the ys will change, after re-scoring, we will make a new tensor for new ys
-            new_ys = torch.full(size=(beamed_batch_size, beamed_ys.size(1) + 1),
-                                fill_value=self.pad_val,
-                                device=device, dtype=torch.long)
+            inactives = ~actives
+            if inactives.sum() > 0:
+                # Goal: do not let the inactive beams grow. How? this is tricky
+                # we set -inf to all next words of inactive beams (so none of them make to topk)
+                log_prob.masked_fill_(mask=inactives.unsqueeze(-1), value=float('-inf'))
+                # But we need to preserve the inactive beam (just one copy) if it is still in topk. how?
+                # just set zero to just one word of inactive beam
+                # shouldn't matter which word since an EOS has already appeared --> pick index 0 word
+                log_prob[:, :, 0].masked_fill_(mask=inactives, value=0.0)
 
-            for i in range(batch_size):
-                # going to picking top k out of k*k beams for each sequence in batch
-                # beams of i'th sequence in batch have this start and end
-                start, end = i * beam_size, (i + 1) * beam_size
-                if beam_active[start:end].sum() == 0:
-                    # current sequence ended
-                    new_ys[:start:end, :-1] = beamed_ys[start:end]
-                    continue
+            # add current beam_scores all possible next_words
+            # broadcast scores to each word in vocab [Batch x Beams x Vocab=1]
+            next_scores = scores.unsqueeze(-1) + log_prob
 
-                if t == 1:
-                    # initialization ; since sequences are duplicated in the start, we just pick the first row
-                    # it is must, otherwise, beam will select the top 1 of each beam which is same but duplicated
-                    seqi_top_scores, seqi_nxt_ys = top_scores[start, :], nxt_idx[start, :]
-                    # ys seen so far remains same; no reordering
-                    new_ys[start:end, :-1] = beamed_ys[start:end]
-                    seqi_top_scores = seqi_top_scores.view(-1, 1)
-                else:
-                    seqi_nxt_ys = torch.full((beam_size, 1), fill_value=self.pad_val, device=device)
-                    seqi_top_scores = torch.zeros((beam_size, 1), device=device)
+            # max_probs and next_words: [Batch x Beams x Beams] --> [Batch x Beams*Beams]
+            next_scores, next_words = next_scores.topk(k=beam_size, dim=-1, largest=True)
+            next_scores = next_scores.view(batch_size, beam_size * beam_size)
+            next_words = next_words.view(batch_size, beam_size * beam_size)
 
-                    # ignore the inactive beams, don't grow them any further
-                    # INACTIVE BEAMS: Preserve the inactive beams, just copy them
-                    seqi_inactive_mask = (beam_active[start:end, -1] == 0).view(-1, 1)
-                    seqi_inactive_count = seqi_inactive_mask.sum()
-                    active_start = start + seqi_inactive_count  # [start, ... active_start-1, active_start, ... end]
-                    if seqi_inactive_count > 0:  # if there are some inactive beams
-                        seqi_inactive_ys = self.masked_select(beamed_ys[start:end, :],
-                                                              seqi_inactive_mask)
-                        new_ys[start: active_start, :-1] = seqi_inactive_ys  # Copy inactive beams
-                        seqi_top_scores[start:active_start, :] = \
-                            self.masked_select(beamed_scores[start:end, :], seqi_inactive_mask)
+            # Trim beams: [Batch, Beams] <-- [Batch, Beams*Beams]
+            scores, next_words_idxs = next_scores.topk(k=beam_size, dim=-1, largest=True)
+            next_words = next_words.gather(dim=1, index=next_words_idxs)
 
-                    # ACTIVE BEAMS: the remaining beams should be let to grow
-                    seqi_active_mask = (beam_active[start:end, -1] == 1).view(-1, 1)
-                    seqi_active_count = seqi_active_mask.sum()  # task is to select these many top scoring beams
+            # task: rearrange ys based on the newer ranking of beams
+            # ys_idx: [Beams] --> [Beams x 1] --> [Beams x Beams]
+            #          --> [1 x Beams x Beams] --> [Batch x Beams * Beams]
+            ys_idx = torch.arange(beam_size, device=device) \
+                .unsqueeze(-1).expand(-1, beam_size) \
+                .unsqueeze(0).expand(batch_size, -1, -1).contiguous() \
+                .view(batch_size, beam_size * beam_size)
+            # [Batch x Beams] <- [Batch x Beams*Beams] as per the topk next_scores of beams
+            ys_idx = ys_idx.gather(dim=1, index=next_words_idxs)
+            ys_idx = ys_idx.unsqueeze(-1).expand_as(ys)  # expand along time dim
+            ys = ys.gather(1, ys_idx)  # re arrange beams
+            ys = torch.cat([ys, next_words.unsqueeze(-1)], dim=-1)  # cat along the time dim
 
-                    seqi_scores = self.masked_select(top_scores[start:end, :], seqi_active_mask)
-                    seqi_nxt_idx = self.masked_select(nxt_idx[start:end, :], seqi_active_mask)
+            # Task: update lengths and active flag of beam
+            ended_beams = actives & (next_words == self.eos_val)  # it was active but saw EOS now @t
+            lengths.masked_fill_(mask=ended_beams, value=t)
+            actives &= next_words != self.eos_val  # was active and not EOS yet
 
-                    seqi_active_top_scores, seqi_nxt_idx_idx = seqi_scores.view(-1).topk(
-                        k=seqi_active_count)
-                    seqi_top_scores[active_start:end, 0] = seqi_active_top_scores
-                    seqi_nxt_ys[active_start: end, 0] = seqi_nxt_idx.view(-1)[seqi_nxt_idx_idx]
-
-                    # Select active ys
-                    active_beam_idx = seqi_nxt_idx_idx / beam_size
-                    seqi_active_ys = self.masked_select(beamed_ys[start:end, :], seqi_active_mask)
-                    seqi_active_old_ys = seqi_active_ys.index_select(0, active_beam_idx)
-                    new_ys[active_start:end, :-1] = seqi_active_old_ys
-
-                    # Update status of beam_active flags
-                    beam_active[active_start:end, :] = self.masked_select(beam_active[start:end, :],
-                                                                          seqi_active_mask) \
-                        .index_select(0, active_beam_idx)
-                    if active_start > start:
-                        beam_active[start:active_start, -1] = 0  # inactive beams are set to zero
-
-                beamed_scores[start:end, :] = seqi_top_scores
-                # copy the new word indices to last step
-                new_ys[start:end, -1] = seqi_nxt_ys.view(-1)
-            beamed_ys = new_ys
-            # AND to update active flag
-            beam_active = beam_active & (beamed_ys[:, -1] != self.eos_val).view(beamed_batch_size,
-                                                                                1)
-
+        ys = ys[:, :, 1:]  # remove BOS
+        if lp_alpha > 0:
+            # Page 12 of Wu et al (2016) Google NMT : https://arxiv.org/pdf/1609.08144.pdf
+            # score(y, X) = \frac{ logP(Y | X) }{ lp(Y)}
+            # lp(Y) = \frac{ (5 + |Y|)^α }{ (5 + 1)^α }
+            penalty = (5 + lengths.float()).pow(lp_alpha) / math.pow(6, lp_alpha)
+            scores = scores / penalty
+        n_hyp_scores, n_hyp_idxs = scores.topk(k=num_hyp, dim=-1)  # pick num_hyp beams
         result = []
-        # reverse sort based on the score
-        for i in range(batch_size):
+        for seq_idx in range(batch_size):
             result.append([])
-            start, end = i * beam_size, (i + 1) * beam_size
-            scores, indices = beamed_scores[start:end, :].view(-1).sort(descending=True)
-            for j in range(beam_size):
-                if len(result[-1]) == num_hyp:
-                    continue
-                result[-1].append(
-                    (scores[j].item(), beamed_ys[start + indices[j], 1:].squeeze().tolist()))
+            for hyp_score, beam_idx in zip(n_hyp_scores[seq_idx], n_hyp_idxs[seq_idx]):
+                result[-1].append((hyp_score, ys[seq_idx, beam_idx, :].tolist()))
         return result
 
     @property
@@ -389,9 +387,9 @@ class Decoder:
         helps = [(':quit', 'Exit'),
                  (':help', 'Print this help message'),
                  (':beam_size <n>', 'Set beam size to n'),
+                 (':lp_alpha <n>', 'Set length penalty alpha'),
                  (':num_hyp <k>', 'Print top k hypotheses'),
-                 (':debug', 'Enable debug mode'),
-                 (':-debug', 'Disable debug mode'),
+                 (':debug', 'Flip debug flag'),
                  (':models', 'show all available models of this experiment'),
                  (':model <number>', 'reload shell with the model chosen by <number>')
                  ]
@@ -402,6 +400,7 @@ class Decoder:
             for cmd, msg in helps:
                 print(f"\t{cmd:15}\t-\t{msg}")
 
+        global debug_mode
         print("Launching Interactive shell...")
         import rtg.module.generator as gen
         gen.INTERACTIVE = True
@@ -424,27 +423,28 @@ class Decoder:
                     break
                 elif line == ':help':
                     print_cmds()
-                elif line.startswith(":beam_size "):
-                    args['beam_size'] = int(line.replace(':beam_size', '').strip())
+                elif line.startswith(":beam_size"):
+                    args['beam_size'] = int(line.replace(':beam_size', '').replace('=', '').strip())
                     print_state = True
                 elif line.startswith(":num_hyp"):
-                    args['num_hyp'] = int(line.replace(':num_hyp', '').strip())
+                    args['num_hyp'] = int(line.replace(':num_hyp', '').replace('=', '').strip())
                     print_state = True
-                elif line.startswith(":debug"):
-                    self.debug = True
-                    args['debug'] = True
+                elif line.startswith(":lp_alpha"):
+                    args['lp_alpha'] = float(line.replace(':lp_alpha', '').replace('=', '').strip())
                     print_state = True
-                elif line.startswith(":-debug"):
-                    self.debug = False
+                elif line == ":debug":
+                    debug_mode = self.debug = not debug_mode
+
                     print_state = True
                 elif line.startswith(":path"):
-                    self.gen_args['path'] = line.replace(':path', '').strip()
+                    self.gen_args['path'] = line.replace(':path', '').replace('=').strip()
                     print_state = True
                 elif line.startswith(":models"):
                     for i, mod_path in enumerate(self.exp.list_models()):
                         print(f"\t{i}\t{mod_path}")
                 elif line.startswith(":model"):
-                    mod_idxs = [int(x) for x in line.replace(":model", "").strip().split()]
+                    mod_idxs = [int(x) for x in
+                                line.replace(":model", "").replace("=", "").strip().split()]
                     models = self.exp.list_models()
                     mod_paths = []
                     for mod_idx in mod_idxs:
@@ -470,6 +470,8 @@ class Decoder:
                 print_state = True
 
     def decode_file(self, inp, out, num_hyp=1, **args):
+        args = {k: v for k, v in args.items() if v is not None}  # remove None args
+        log.info(f"Args to decoder : {args} and num_hyp={num_hyp}")
         for i, line in enumerate(inp):
             line = line.strip()
             if not line:
