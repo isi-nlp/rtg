@@ -56,13 +56,13 @@ class Pipeline:
 
         _, step = exp.get_last_saved_model()
         dec_args: Dict = args.get('decoder', {})
-        beam = dec_args.get('beam', 4)
-        ensemble = dec_args.get('ensemble', 5)
+        beam_size = dec_args.get('beam_size', 4)
+        ensemble = dec_args.pop('ensemble', 5)
         lp_alpha = dec_args.get('lp_alpha', 0.0)
 
-        dec_args.update(dict(beam=beam, ensemble=ensemble, lp_alpha=lp_alpha))
+        dec_args.update(dict(beam_size=beam_size, lp_alpha=lp_alpha))
         assert step > 0, 'looks like no model saved '
-        test_dir = exp.work_dir / f'test_step{step}_beam{beam}_ens{ensemble}_lp{lp_alpha}'
+        test_dir = exp.work_dir / f'test_step{step}_beam{beam_size}_ens{ensemble}_lp{lp_alpha}'
         log.info(f"Test Dir = {test_dir}")
         test_dir.mkdir(parents=True, exist_ok=True)
 
