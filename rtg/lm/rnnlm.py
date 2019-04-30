@@ -139,6 +139,7 @@ class RnnLmTrainer(SteppedTrainer):
                                           batch_first=True, sort_dec=True)
 
         keep_models = 8
+        unsaved_state = False
         with tqdm(train_data, initial=self.start_step, total=steps, unit='batch') as data_bar:
             for batch in data_bar:
                 batch.to(device)
@@ -146,6 +147,7 @@ class RnnLmTrainer(SteppedTrainer):
                 loss = self.simple_loss_func(outp_log_probs, seq_lens=batch.x_len,
                                              tot_toks=batch.x_toks, max_seq_len=batch.max_x_len,
                                              train_mode=True)
+                unsaved_state = True
                 bar_msg, is_check_pt = train_state.step(batch.x_toks, loss)
                 data_bar.set_postfix_str(bar_msg, refresh=True)
                 del batch       # TODO: force free memory
@@ -159,11 +161,15 @@ class RnnLmTrainer(SteppedTrainer):
                                           step=self.opt.curr_step,
                                           train_loss=train_loss)
                     train_state.train_mode(True)
+                    unsaved_state = False
+
         log.info("End of training session")
-        # End of training
-        train_loss = train_state.reset()
-        train_state.train_mode(False)
-        self.make_check_point(val_data, train_loss, keep_models=keep_models)
+        if unsaved_state:
+            # End of training
+            train_loss = train_state.reset()
+            train_state.train_mode(False)
+            val_loss = self.run_valid_epoch(val_data)
+            self.make_check_point(train_loss, val_loss=val_loss, keep_models=keep_models)
 
 
 def test_lm():
