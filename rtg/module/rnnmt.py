@@ -503,6 +503,7 @@ class SteppedRNNMTTrainer(SteppedTrainer):
 
         train_state = TrainerState(self.model, check_point=check_point)
         train_state.train_mode(True)
+        unsaved_state = False
         with tqdm(train_data, initial=self.start_step, total=steps, unit='batch') as data_bar:
             for batch in data_bar:
                 batch = batch.to(device)
@@ -512,6 +513,7 @@ class SteppedRNNMTTrainer(SteppedTrainer):
                 outp_log_probs = self.model(batch)
 
                 loss = self.loss_func(outp_log_probs, batch, True)
+                unsaved_state = True
                 self.tbd.add_scalars('training', {'step_loss': loss,
                                                   'learn_rate': self.opt.curr_lr},
                                      self.opt.curr_step)
@@ -530,10 +532,14 @@ class SteppedRNNMTTrainer(SteppedTrainer):
                                           step=self.opt.curr_step,
                                           train_loss=train_loss)
                     train_state.train_mode(True)
-        # End of training
-        train_loss = train_state.reset()
-        train_state.train_mode(False)
-        self.make_check_point(val_data, train_loss, keep_models=keep_models)
+                    unsaved_state = False
+
+        if unsaved_state:
+            # End of training
+            train_loss = train_state.reset()
+            train_state.train_mode(False)
+            val_loss = self.run_valid_epoch(val_data)
+            self.make_check_point(train_loss, val_loss=val_loss, keep_models=keep_models)
 
 
 def __test_seq2seq_model__():

@@ -673,6 +673,7 @@ class TransformerTrainer(SteppedTrainer):
 
         train_state = TrainerState(self.model, check_point=check_point)
         train_state.train_mode(True)
+        unsaved_state = False
         with tqdm(train_data, initial=self.start_step, total=steps, unit='batch') as data_bar:
             for batch in data_bar:
                 self.model.zero_grad()
@@ -694,6 +695,7 @@ class TransformerTrainer(SteppedTrainer):
                 out = out[:, :-1, :]
                 # assumption:  y_seqs has EOS, and not BOS
                 loss = self.loss_func(out, batch.y_seqs, num_toks, True)
+                unsaved_state = True
                 self.tbd.add_scalars('training', {'step_loss': loss,
                                                   'learn_rate': self.opt.curr_lr},
                                      self.opt.curr_step)
@@ -714,11 +716,14 @@ class TransformerTrainer(SteppedTrainer):
                                           step=self.opt.curr_step,
                                           train_loss=train_loss)
                     train_state.train_mode(True)
+                    unsaved_state = False
 
         # End of training
-        train_loss = train_state.reset()
-        train_state.train_mode(False)
-        self.make_check_point(val_data, train_loss, keep_models=keep_models)
+        if unsaved_state:
+            train_loss = train_state.reset()
+            train_state.train_mode(False)
+            val_loss = self.run_valid_epoch(val_data, dec_bos_cut=dec_bos_cut)
+            self.make_check_point(train_loss, val_loss=val_loss, keep_models=keep_models)
 
 
 def __test_model__():
