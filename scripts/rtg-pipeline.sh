@@ -58,6 +58,7 @@ done
 
 echo "Output dir = $OUT"
 [[ -d $OUT ]] || mkdir -p $OUT
+OUT=`realpath $OUT`
 
 if [[ ! -f $OUT/rtg.zip || ! -e $OUT/scripts ]]; then
     [[ -f $RTG_PATH/rtg/__init__.py ]] || { echo "Error: RTG_PATH=$RTG_PATH is not valid"; exit 2; }
