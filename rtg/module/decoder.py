@@ -2,9 +2,10 @@ import abc
 import time
 import traceback
 from collections import OrderedDict
-from typing import List, Tuple, Type, Dict, Any, Optional
+from typing import List, Tuple, Type, Dict, Any, Optional, Iterator
 from pathlib import Path
 import math
+from dataclasses import dataclass, field
 
 import torch
 from torch import nn as nn
@@ -53,6 +54,65 @@ class ReloadEvent(Exception):
         super().__init__()
         self.model_paths = model_paths
         self.state = state
+
+
+@dataclass
+class DecoderBatch:
+    srcs: List[str] = field(default_factory=list)
+    seqs: List[str] = field(default_factory=list)  # processed srcs
+    refs: List[str] = field(default_factory=list)  # references for logging if they exist
+    line_count = 0
+    tok_count = 0
+    max_len = 0
+
+    def add(self, src, ref, seq):
+        self.srcs.append(src)
+        self.refs.append(ref)
+        self.seqs.append(seq)
+        self.line_count += 1
+        self.tok_count += len(seq)
+        self.max_len = max(self.max_len, len(seq))
+
+    @property
+    def padded_tok_count(self):
+        return self.max_len * self.line_count
+
+    def as_tensors(self, device):
+        seqs = torch.zeros(self.line_count, self.max_len, device=device,
+                           dtype=torch.long)
+        lens = torch.zeros(self.line_count, device=device, dtype=torch.long)
+        for i, seq in enumerate(self.seqs):
+            seqs[i, :len(seq)] = torch.tensor(seq, dtype=torch.long)
+            lens[i] = len(seq)
+        return seqs, lens
+
+    @classmethod
+    def from_lines(cls, lines: Iterator[str], batch_size: int, vocab: Field):
+        """
+
+        :param lines: stream of input lines
+        :param batch_size: number of tokens in batch
+        :param vocab: Field to use for mapping word pieces to ids
+        :return: stream of DecoderBatches
+        """
+        batch = cls()
+        for i, line in enumerate(lines):
+            line = line.strip()
+            if not line:
+                log.warning(f"line {i + 1} was empty. skipping it for now. "
+                            f"Empty lines are problematic when you want line-by-line alignment...")
+                continue
+            cols = line.split('\t')
+            seq = vocab.encode_as_ids(line, add_eos=True, add_bos=False)
+            batch.add(src=cols[0], ref=cols[1] if len(cols) > 1 else None, seq=seq)
+            if batch.padded_tok_count >= batch_size:
+                yield batch
+                batch = cls()
+                if True:
+                    pass
+
+        if batch.line_count > 0:
+            yield batch
 
 
 class Decoder:
@@ -207,7 +267,7 @@ class Decoder:
         expand_shape[dim + 1] = n
         x = x.unsqueeze(dim + 1).expand(*expand_shape)
         shape[dim] *= n  # reduce to original num of dims but given dim has n times more
-        return x.view(*shape)
+        return x.contiguous().view(*shape)
 
     def beam_decode(self, x_seqs, x_lens, max_len, beam_size=default_beam_size, num_hyp=1,
                     lp_alpha: float = 0., **args) -> List[List[Hypothesis]]:
@@ -223,7 +283,7 @@ class Decoder:
         """
         args = dict((k, v) for k, v in args.items() if v is not None)
         if args:
-            log.warn(f"Ignored args: {args} . dont pass them to remove this message")
+            log.warn(f"Ignored args: {args} . To remove this message simply remove the args")
         assert beam_size >= num_hyp
         device = x_seqs.device
         batch_size = x_seqs.size(0)
@@ -469,23 +529,38 @@ class Decoder:
                 traceback.print_exc()
                 print_state = True
 
-    def decode_file(self, inp, out, num_hyp=1, **args):
-        args = {k: v for k, v in args.items() if v is not None}  # remove None args
-        log.info(f"Args to decoder : {args} and num_hyp={num_hyp}")
-        for i, line in enumerate(inp):
-            line = line.strip()
-            if not line:
-                log.warning(f"line {i + 1} was empty. skipping it for now. "
-                            f"Empty lines are problematic when you want line-by-line alignment...")
-                continue
-            cols = line.split('\t')
-            input = cols[0]
-            log.debug(f"INP: {i}: {cols[0]}")
-            if len(cols) > 1:  # assumption: second column is reference
-                log.debug(f"REF: {i}: {cols[1]}")
-            result = self.decode_sentence(input, num_hyp=1, **args)
-            out_line = '\n'.join(f'{hyp}\t{score:.4f}' for score, hyp in result)
+    @staticmethod
+    def _remove_null_vals(args: Dict):
+        return {k: v for k, v in args.items() if v is not None}  # remove None args
+
+    def decode_file(self, inp: Iterator[str], out, num_hyp=1, batch_size=1, **args):
+        args = self._remove_null_vals(args)
+        log.info(f"Args to decoder : {args} and num_hyp={num_hyp} batch_size={batch_size}")
+        batches: Iterator[DecoderBatch] = DecoderBatch.from_lines(inp, batch_size=batch_size,
+                                                                  vocab=self.inp_vocab)
+        def _decode_all():
+            for batch in batches:
+                in_seqs, in_lens = batch.as_tensors(device=device)
+                batched_hyps: List[List[Hypothesis]] = self.beam_decode(in_seqs, in_lens,
+                                                                        num_hyp=num_hyp, **args)
+                assert len(batched_hyps) == batch.line_count
+                for i, hyps in enumerate(batched_hyps):
+                    src = batch.srcs[i]
+                    log.info(f"SRC: {batch.srcs[i]}")
+                    ref = batch.refs[i]  # just for the sake of logging, if it exists
+                    if ref:
+                        log.info(f"REF: {batch.refs[i]}")
+
+                    result = []
+                    for j, (score, hyp) in enumerate(hyps):
+                        hyp_line = self.out_vocab.decode_ids(hyp, trunc_eos=True)  # tok ids to string
+                        log.info(f"HYP{j}: {score:g} : {hyp_line}")
+                        result.append((score, hyp_line))
+                    yield (src, result)
+
+        streamed_results: Iterator[Tuple[str, List[StrHypothesis]]] = _decode_all()
+        for src, hyps in streamed_results:
+            out_line = '\n'.join(f'{hyp}\t{score:.4f}' for score, hyp in hyps)
             out.write(f'{out_line}\n')
-            log.debug(f"OUT: {i}: {out_line}\n")
             if num_hyp > 1:
                 out.write('\n')

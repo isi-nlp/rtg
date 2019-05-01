@@ -31,6 +31,11 @@ def parse_args():
                         help='Beam size. beam_size=1 is greedy, '
                              'In theory: higher beam is better approximation but expensive. '
                              'But in practice, higher beam doesnt always increase.')
+    parser.add_argument("-bc", '--batch-size', type=int, default=1,
+                        help='Number of source tokens in a batch, approximately. '
+                             'tries to fit in atleast one sentence => so even if you set 0 or 1, '
+                             'there will be atleast one sentence in batch. '
+                             '1 sentence seems better in CPU but larger number is better on GPUs')
     parser.add_argument("-lp", '--lp-alpha', type=float, default=0.6,
                         help='Length penalty alpha. to disable set <= 0.0 '
                              'Ideally in the range [0.0, 1.0] but you are allowed to '
@@ -39,7 +44,7 @@ def parse_args():
                         help='Maximum output sequence length')
     parser.add_argument("-nh", '--num-hyp', type=int, default=1,
                         help='Number of hypothesis to output. This should be smaller than beam_size')
-    parser.add_argument("--prepared", dest="prepared", action='store_true',
+    parser.add_argument("--prepared", dest="prepared", action='store_true', default=None,
                         help='Each token is a valid integer which is an index to embedding,'
                              ' so skip indexifying again')
     parser.add_argument("-bp", '--binmt-path', type=str, default=None,
