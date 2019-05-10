@@ -230,7 +230,8 @@ class Decoder:
         gen = self.generator(x_seqs, x_lens)
         scores = torch.zeros(batch_size, device=device)
         actives = ys[:, -1] != self.eos_val
-        for i in range(1, max_len + 1):
+        max_x_len = x_lens.max().item()
+        for i in range(1, max_x_len + max_len + 1):
             if actives.sum() == 0:  # all sequences Ended
                 break
             log_prob = gen.generate_next(ys)
@@ -306,8 +307,8 @@ class Decoder:
         actives = ys[:, :, 0] != self.eos_val
         lengths = torch.full((batch_size, beam_size), fill_value=max_len, device=device,
                              dtype=torch.long)
-
-        for t in range(1, max_len + 1):
+        max_x_len = x_lens.max().item()
+        for t in range(1, max_x_len + max_len + 1):
             if actives.sum() == 0:  # all sequences Ended
                 break
             # [Batch x Beams x Vocab] <-- [Batch x Beams x Time]
