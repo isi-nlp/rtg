@@ -22,23 +22,25 @@ prep:
   max_types: 500  # change to 8000
   pieces: bpe
   shared_vocab: true
-  src_len: 100
-  tgt_len: 100
+  src_len: 500
+  tgt_len: 500
   train_src: data/train.src
   train_tgt: data/train.tgt
-  truncate: true
+  truncate: false
   valid_src: data/valid.src
   valid_tgt: data/valid.tgt
 tester:
   decoder:
-    beam: 4
-    max_len: 150
+    beam_size: 4
+    max_len: 60
   suit:
     valid:
     - data/valid.src
     - data/valid.tgt
 trainer:
-  batch_size: 4   # change to 96
+  init_args:
+    chunk_size: 10   # generation in chunks of time steps to reduce memory consumption
+  batch_size: 1024   # tokens
   check_point: 400  # change to 1000 or 2000
   keep_models: 10
   steps: 2000   # change to 128000 or up

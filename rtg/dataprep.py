@@ -145,15 +145,16 @@ class TSVData:
         return self._len
 
     def __iter__(self) -> Iterator[Example]:
-        if self.read_counter == 0 and self.longest_first:
-            log.info("Sorting the dataset by length of source sequence")
-            # reverse sort for the first read,
-            # Why ? => try to cause OOM at the beginning if there is a chance of OOM down the line
-            self.mem = sorted(self.mem, key=lambda ex: len(ex.x), reverse=True)
-            log.info(f"Longest source seq length: {len(self.mem[0].x)}")
-        elif self.shuffle:
-            log.info("shuffling the data...")
+        if self.shuffle:
+            if self.read_counter == 0:
+                log.info("shuffling the data...")
             random.shuffle(self.mem)
+        if self.longest_first:
+            if self.read_counter == 0:
+                log.info("Sorting the dataset by length of source sequence")
+            self.mem = sorted(self.mem, key=lambda ex: len(ex.x), reverse=True)
+            if self.read_counter == 0:
+                log.info(f"Longest source seq length: {len(self.mem[0].x)}")
 
         yield from self.mem if self.mem else self.read_all()
         self.read_counter += 1
@@ -218,7 +219,8 @@ class SqliteFile:
         y_len INTEGER)"""
 
     INSERT_STMT = "INSERT INTO data (x, y, x_len, y_len) VALUES (?, ?, ?, ?)"
-    RANDOM_READ = "SELECT * from data ORDER BY RANDOM()"
+    READ_RANDOM = "SELECT * from data ORDER BY RANDOM()"
+    READ_Y_LEN_DESC_RANDOM = "SELECT * from data ORDER BY y_len DESC, RANDOM()"
     COUNT_ROWS = "SELECT COUNT(*) as COUNT from data"
 
     def __init__(self, path: Path, shuffle=True, longest_first=False):
@@ -245,8 +247,8 @@ class SqliteFile:
 
     def read_all(self, shuffle=True, longest_first=False) -> Iterator[Dict[str, Any]]:
         assert shuffle, 'only shuffled read is supported as of now'  # come back and fix it ;)
-        assert not longest_first, 'Not supported yet'
-        return self.db.execute(self.RANDOM_READ)
+        select_qry = self.READ_Y_LEN_DESC_RANDOM if longest_first else self.READ_RANDOM
+        return self.db.execute(select_qry)
 
     def __iter__(self) -> Iterator[Example]:
         for d in self.read_all(shuffle=self.shuffle, longest_first=self.longest_first):
@@ -419,26 +421,29 @@ class BatchIterable(Iterable[Batch]):
         """
         Iterator for reading training data in batches
         :param data_path: path to TSV file
-        :param batch_size: number of examples per batch
+        :param batch_size: number of tokens on the target size per batch
         :param sort_dec: should the records within batch be sorted descending order of sequence length?
         """
         if not isinstance(data_path, Path):
             data_path = Path(data_path)
         if data_path.name.endswith(".db"):
-            self.data = SqliteFile(data_path, shuffle=shuffle)
+            self.data = SqliteFile(data_path, shuffle=shuffle, longest_first=sort_dec)
         else:
-            self.data = TSVData(data_path, shuffle=shuffle, longest_first=False)
+            self.data = TSVData(data_path, shuffle=shuffle, longest_first=sort_dec)
         self.batch_size = batch_size
         self.sort_dec = sort_dec
         self.batch_first = batch_first
 
     def read_all(self):
         batch = []
+        max_x_len, max_y_len = 0, 0
         for ex in self.data:
             batch.append(ex)
-            if len(batch) >= self.batch_size:
+            max_x_len, max_y_len = max(max_x_len, len(ex.x)),  max(max_y_len, len(ex.y))
+            if len(batch) * max_x_len >= self.batch_size or len(batch) * max_y_len >= len(batch):
                 yield Batch(batch, sort_dec=self.sort_dec, batch_first=self.batch_first)
                 batch = []
+                max_x_len, max_y_len = 0, 0
         if batch:
             log.debug(f"\nLast batch, size={len(batch)}")
             yield Batch(batch, sort_dec=self.sort_dec, batch_first=self.batch_first)

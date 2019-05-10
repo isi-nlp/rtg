@@ -32,7 +32,7 @@ trainer:
   batch_size: 1024
   check_point: 100
   ctx_size: 2
-  keepmodels: 10
+  keep_models: 10
   side: src+tgt
   steps: 200
 updated_at: '2019-03-18T07:31:59.887272'

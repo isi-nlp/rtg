@@ -562,7 +562,7 @@ class TransformerTrainer(SteppedTrainer):
                                    smoothing=self._smoothing)
 
         self.n_gpus = torch.cuda.device_count()
-        chunk_size = self.exp.config.get('trainer_args', {}).get('chunk_size', 10)
+        chunk_size = self.exp.config.get('trainer', {}).get('init_args', {}).get('chunk_size', 10)
         log.info(f"Going to use {self.n_gpus} GPUs; "
                  f" Chunk_size={chunk_size} CUDA_VISIBLE_DEVICES="
                  f"{os.environ.get('CUDA_VISIBLE_DEVICES')}")
@@ -646,7 +646,7 @@ class TransformerTrainer(SteppedTrainer):
 
         :param steps: how many optimizer steps to train (also, means how many batches)
         :param check_point: after how many checkpoints to
-        :param batch_size: how many sentences in batch
+        :param batch_size: how many target tokens in batch max ( = max_len * num_sentences)
         :param check_pt_callback: function to call back after checkpt
         :param fine_tune: should the fine tune corpus be used instead of training corpus
         :param dec_bos_cut: copy the first time step of input as decoder's BOS

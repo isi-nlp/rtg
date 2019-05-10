@@ -9,6 +9,7 @@ from rtg import log
 from rtg.dataprep import (RawRecord, ParallelSeqRecord, MonoSeqRecord, TSVData,
                           Field, BatchIterable, LoopingIterable, SqliteFile)
 from rtg.utils import IO, line_count
+import copy
 from itertools import zip_longest
 
 
@@ -528,9 +529,11 @@ class TranslationExperiment(BaseExperiment):
         self.store_config()
 
     def train(self, args=None):
-        run_args = self.config.get('trainer', {})
+        run_args = copy.deepcopy(self.config.get('trainer', {}))
         if args:
             run_args.update(args)
+        if 'init_args' in run_args:
+            del run_args['init_args']
         steps = run_args['steps']
 
         _, last_step = self.get_last_saved_model()
@@ -546,8 +549,8 @@ class TranslationExperiment(BaseExperiment):
             return
         try:
             from rtg.registry import trainers
-            name, args = self.optim_args
-            trainer = trainers[self.model_type](self, optim=name, **args)
+            name, optim_args = self.optim_args
+            trainer = trainers[self.model_type](self, optim=name, **optim_args)
             trainer.train(**run_args)
             self._trained_flag.write_text(yaml.dump({'steps': steps}, default_flow_style=False))
         except RuntimeError as e:
