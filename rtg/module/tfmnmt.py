@@ -657,7 +657,7 @@ class TransformerTrainer(SteppedTrainer):
         if args:
             # no extra args. let user know if an extra arg is passed
             raise Exception(f" Found extra args: {args}")
-        log.info(f'Going to train for {steps} epochs; batch_size={batch_size}; '
+        log.info(f'Going to train for {steps} epochs; batch_size={batch_size} toks; '
                  f'check point size:{check_point}; fine_tune={fine_tune}, dec_bos_cut={dec_bos_cut}')
         if self.n_gpus > 1:
             batch_size *= self.n_gpus
@@ -666,10 +666,11 @@ class TransformerTrainer(SteppedTrainer):
         if steps <= self.start_step:
             raise Exception(f'The model was already trained to {self.start_step} steps. '
                             f'Please increase the steps or clear the existing models')
-        train_data = self.exp.get_train_data(batch_size=batch_size,
-                                             steps=steps - self.start_step,
-                                             shuffle=True, batch_first=True, fine_tune=fine_tune)
-        val_data = self.exp.get_val_data(batch_size, shuffle=False, batch_first=True)
+        train_data = self.exp.get_train_data(batch_size=batch_size, steps=steps - self.start_step,
+                                             shuffle=True, batch_first=True, fine_tune=fine_tune,
+                                             sort_desc=False)
+        val_data = self.exp.get_val_data(batch_size, shuffle=False, batch_first=True,
+                                         sort_desc=False)
 
         train_state = TrainerState(self.model, check_point=check_point)
         train_state.train_mode(True)

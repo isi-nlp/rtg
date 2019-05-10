@@ -496,10 +496,11 @@ class SteppedRNNMTTrainer(SteppedTrainer):
         if steps <= self.start_step:
             raise Exception(f'The model was already trained to {self.start_step} steps. '
                             f'Please increase the steps or clear the existing models')
-        train_data = self.exp.get_train_data(batch_size=batch_size,
-                                             steps=steps - self.start_step,
-                                             shuffle=True, batch_first=True, fine_tune=fine_tune)
-        val_data = self.exp.get_val_data(batch_size, shuffle=False, batch_first=True)
+        train_data = self.exp.get_train_data(batch_size=batch_size, steps=steps - self.start_step,
+                                             sort_desc=True, shuffle=True, batch_first=True,
+                                             fine_tune=fine_tune)
+        val_data = self.exp.get_val_data(batch_size, shuffle=False, batch_first=True,
+                                         sort_desc=True)
 
         train_state = TrainerState(self.model, check_point=check_point)
         train_state.train_mode(True)

@@ -575,7 +575,7 @@ class TranslationExperiment(BaseExperiment):
     def pre_trained_tgt_emb(self):
         return torch.load(self.emb_tgt_file) if self.emb_tgt_file.exists() else None
 
-    def get_train_data(self, batch_size: int, steps: int = 0, sort_dec=True, batch_first=True,
+    def get_train_data(self, batch_size: int, steps: int = 0, sort_desc=False, batch_first=True,
                        shuffle=False, fine_tune=False):
         inp_file = self.train_db if self.train_db.exists() else self.train_file
         if fine_tune:
@@ -585,23 +585,23 @@ class TranslationExperiment(BaseExperiment):
             log.info("Using Fine tuning corpus instead of training corpus")
             inp_file = self.finetune_file
 
-        train_data = BatchIterable(inp_file, batch_size=batch_size, sort_dec=sort_dec,
+        train_data = BatchIterable(inp_file, batch_size=batch_size, sort_desc=sort_desc,
                                    batch_first=batch_first, shuffle=shuffle)
         if steps > 0:
             train_data = LoopingIterable(train_data, steps)
         return train_data
 
-    def get_val_data(self, batch_size: int, sort_dec=True, batch_first=True,
+    def get_val_data(self, batch_size: int, sort_desc=False, batch_first=True,
                      shuffle=False):
-        return BatchIterable(self.valid_file, batch_size=batch_size, sort_dec=sort_dec,
+        return BatchIterable(self.valid_file, batch_size=batch_size, sort_desc=sort_desc,
                              batch_first=batch_first, shuffle=shuffle)
 
-    def get_combo_data(self, batch_size: int, steps: int = 0, sort_dec=True, batch_first=True,
+    def get_combo_data(self, batch_size: int, steps: int = 0, sort_desc=False, batch_first=True,
                        shuffle=False):
         if not self.combo_file.exists():
             # user may have added fine tune file later
             self._pre_process_parallel('combo_src', 'combo_tgt', self.combo_file)
-        data = BatchIterable(self.combo_file, batch_size=batch_size, sort_dec=sort_dec,
+        data = BatchIterable(self.combo_file, batch_size=batch_size, sort_desc=sort_desc,
                              batch_first=batch_first, shuffle=shuffle)
         if steps > 0:
             data = LoopingIterable(data, steps)

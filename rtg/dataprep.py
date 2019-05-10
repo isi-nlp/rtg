@@ -85,8 +85,8 @@ class Field(SentencePieceProcessor):
         model_prefix = model_path.replace('.model', '')
         files = set(files)  # remove duplicates
         arg = f"--input={','.join(files)} --vocab_size={vocab_size} --model_prefix={model_prefix}" \
-              f" --model_type={model_type} --pad_id={PAD_TOK[1]} --bos_id={BOS_TOK[1]}" \
-              f" --eos_id={EOS_TOK[1]} --unk_id={UNK_TOK[1]} --hard_vocab_limit=false"
+            f" --model_type={model_type} --pad_id={PAD_TOK[1]} --bos_id={BOS_TOK[1]}" \
+            f" --eos_id={EOS_TOK[1]} --unk_id={UNK_TOK[1]} --hard_vocab_limit=false"
         # CLS token goes in the beginning because we need it get index 4
         cls_tok_str = CLS_TOK[0]
         if no_split_toks:
@@ -151,8 +151,9 @@ class TSVData:
             random.shuffle(self.mem)
         if self.longest_first:
             if self.read_counter == 0:
-                log.info("Sorting the dataset by length of source sequence")
-            self.mem = sorted(self.mem, key=lambda ex: len(ex.x), reverse=True)
+                log.info("Sorting the dataset by length of target sequence")
+            sort_key = lambda ex: len(ex.y) if ex.y is not None else len(ex.x)
+            self.mem = sorted(self.mem, key=sort_key, reverse=True)
             if self.read_counter == 0:
                 log.info(f"Longest source seq length: {len(self.mem[0].x)}")
 
@@ -220,12 +221,17 @@ class SqliteFile:
 
     INSERT_STMT = "INSERT INTO data (x, y, x_len, y_len) VALUES (?, ?, ?, ?)"
     READ_RANDOM = "SELECT * from data ORDER BY RANDOM()"
+    READ_X_LEN_DESC_RANDOM = "SELECT * from data ORDER BY x_len DESC, RANDOM()"
     READ_Y_LEN_DESC_RANDOM = "SELECT * from data ORDER BY y_len DESC, RANDOM()"
     COUNT_ROWS = "SELECT COUNT(*) as COUNT from data"
 
-    def __init__(self, path: Path, shuffle=True, longest_first=False):
+    def __init__(self, path: Path, shuffle=True, longest_first=False, sort_side='tgt'):
         self.path = path
         assert path.exists()
+        assert sort_side in {'src', 'tgt'}
+        self.sort_side = sort_side
+        self.shuffle = shuffle
+        self.longest_first = longest_first
         self.db = sqlite3.connect(str(path))
 
         def dict_factory(cursor, row):  # map tuples to dictionary with column names
@@ -239,19 +245,23 @@ class SqliteFile:
             return d
 
         self.db.row_factory = dict_factory
-        self.shuffle = shuffle
-        self.longest_first = longest_first
 
     def __len__(self):
         return self.db.execute(self.COUNT_ROWS).fetchone()['COUNT']
 
-    def read_all(self, shuffle=True, longest_first=False) -> Iterator[Dict[str, Any]]:
-        assert shuffle, 'only shuffled read is supported as of now'  # come back and fix it ;)
-        select_qry = self.READ_Y_LEN_DESC_RANDOM if longest_first else self.READ_RANDOM
+    def read_all(self) -> Iterator[Dict[str, Any]]:
+        assert self.shuffle, 'only shuffled read is supported as of now'
+        # because thats the only usecase for now
+
+        if self.longest_first:
+            select_qry = self.READ_X_LEN_DESC_RANDOM if self.sort_side == 'src' \
+                else self.READ_X_LEN_DESC_RANDOM
+        else:
+            select_qry = self.READ_RANDOM
         return self.db.execute(select_qry)
 
     def __iter__(self) -> Iterator[Example]:
-        for d in self.read_all(shuffle=self.shuffle, longest_first=self.longest_first):
+        for d in self.read_all():
             yield Example(d['x'], d.get('y'))
 
     @classmethod
@@ -349,7 +359,7 @@ class Batch:
             if eos:
                 if not seq[-1] == cls.eos_val:
                     seq.append(cls.eos_val)
-            else:   # Should not have EOS
+            else:  # Should not have EOS
                 assert seq[-1] != cls.eos_val
 
     def __init__(self, batch: List[Example], sort_dec=False, batch_first=True,
@@ -417,21 +427,22 @@ class Batch:
 class BatchIterable(Iterable[Batch]):
 
     def __init__(self, data_path: Union[str, Path], batch_size: int,
-                 sort_dec=True, batch_first=True, shuffle=False):
+                 sort_desc: bool =False, batch_first: bool = True, shuffle: bool = False):
         """
         Iterator for reading training data in batches
         :param data_path: path to TSV file
         :param batch_size: number of tokens on the target size per batch
-        :param sort_dec: should the records within batch be sorted descending order of sequence length?
+
+        :param sort_desc: should the batch be sorted by src sequence len (useful for RNN api)
         """
+        self.sort_desc = sort_desc
         if not isinstance(data_path, Path):
             data_path = Path(data_path)
         if data_path.name.endswith(".db"):
-            self.data = SqliteFile(data_path, shuffle=shuffle, longest_first=sort_dec)
+            self.data = SqliteFile(data_path, shuffle=shuffle, longest_first=True)
         else:
-            self.data = TSVData(data_path, shuffle=shuffle, longest_first=sort_dec)
+            self.data = TSVData(data_path, shuffle=shuffle, longest_first=True)
         self.batch_size = batch_size
-        self.sort_dec = sort_dec
         self.batch_first = batch_first
 
     def read_all(self):
@@ -439,14 +450,14 @@ class BatchIterable(Iterable[Batch]):
         max_x_len, max_y_len = 0, 0
         for ex in self.data:
             batch.append(ex)
-            max_x_len, max_y_len = max(max_x_len, len(ex.x)),  max(max_y_len, len(ex.y))
+            max_x_len, max_y_len = max(max_x_len, len(ex.x)), max(max_y_len, len(ex.y))
             if len(batch) * max_x_len >= self.batch_size or len(batch) * max_y_len >= len(batch):
-                yield Batch(batch, sort_dec=self.sort_dec, batch_first=self.batch_first)
+                yield Batch(batch, sort_dec=self.sort_desc, batch_first=self.batch_first)
                 batch = []
                 max_x_len, max_y_len = 0, 0
         if batch:
             log.debug(f"\nLast batch, size={len(batch)}")
-            yield Batch(batch, sort_dec=self.sort_dec, batch_first=self.batch_first)
+            yield Batch(batch, sort_dec=self.sort_desc, batch_first=self.batch_first)
 
     def __iter__(self) -> Iterator[Batch]:
         yield from self.read_all()
