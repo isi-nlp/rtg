@@ -21,11 +21,12 @@ trainer:
   steps: 128000
   check_point: 1000
   keep_models: 10
+  batch_size: 2048
 
 tester:
   decoder:
-    beam: 4
-    max_len: 200
+    beam_size: 4
+    max_len: 60
   suit:
     valid:
       - data/valid.src
@@ -37,8 +38,8 @@ tester:
 prep:
   mono_src: []
   mono_tgt: []
-  src_len: 100
-  tgt_len: 100
+  src_len: 500
+  tgt_len: 500
   train_src: data/train.src
   train_tgt: data/train.tgt
   truncate: true

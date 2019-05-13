@@ -387,7 +387,8 @@ class LabelSmoothing(nn.Module):
         self._size = vocab_size
         assert 0.0 <= smoothing <= 1.0
         self.padding_idx = padding_idx
-        self.criterion = nn.KLDivLoss(size_average=False)
+        #self.criterion = nn.KLDivLoss(reduction='elementwise_mean')
+        self.criterion = nn.KLDivLoss(reduction='sum')
         fill_val = smoothing / (vocab_size - 2)
         one_hot = torch.full(size=(1, vocab_size), fill_value=fill_val, device=device)
         one_hot[0][self.padding_idx] = 0
@@ -562,7 +563,7 @@ class TransformerTrainer(SteppedTrainer):
                                    smoothing=self._smoothing)
 
         self.n_gpus = torch.cuda.device_count()
-        chunk_size = self.exp.config.get('trainer_args', {}).get('chunk_size', 10)
+        chunk_size = self.exp.config.get('trainer', {}).get('init_args', {}).get('chunk_size', 10)
         log.info(f"Going to use {self.n_gpus} GPUs; "
                  f" Chunk_size={chunk_size} CUDA_VISIBLE_DEVICES="
                  f"{os.environ.get('CUDA_VISIBLE_DEVICES')}")
@@ -646,7 +647,7 @@ class TransformerTrainer(SteppedTrainer):
 
         :param steps: how many optimizer steps to train (also, means how many batches)
         :param check_point: after how many checkpoints to
-        :param batch_size: how many sentences in batch
+        :param batch_size: how many target tokens in batch max ( = max_len * num_sentences)
         :param check_pt_callback: function to call back after checkpt
         :param fine_tune: should the fine tune corpus be used instead of training corpus
         :param dec_bos_cut: copy the first time step of input as decoder's BOS
@@ -657,7 +658,7 @@ class TransformerTrainer(SteppedTrainer):
         if args:
             # no extra args. let user know if an extra arg is passed
             raise Exception(f" Found extra args: {args}")
-        log.info(f'Going to train for {steps} epochs; batch_size={batch_size}; '
+        log.info(f'Going to train for {steps} epochs; batch_size={batch_size} toks; '
                  f'check point size:{check_point}; fine_tune={fine_tune}, dec_bos_cut={dec_bos_cut}')
         if self.n_gpus > 1:
             batch_size *= self.n_gpus
@@ -666,10 +667,11 @@ class TransformerTrainer(SteppedTrainer):
         if steps <= self.start_step:
             raise Exception(f'The model was already trained to {self.start_step} steps. '
                             f'Please increase the steps or clear the existing models')
-        train_data = self.exp.get_train_data(batch_size=batch_size,
-                                             steps=steps - self.start_step,
-                                             shuffle=True, batch_first=True, fine_tune=fine_tune)
-        val_data = self.exp.get_val_data(batch_size, shuffle=False, batch_first=True)
+        train_data = self.exp.get_train_data(batch_size=batch_size, steps=steps - self.start_step,
+                                             shuffle=True, batch_first=True, fine_tune=fine_tune,
+                                             sort_desc=False)
+        val_data = self.exp.get_val_data(batch_size, shuffle=False, batch_first=True,
+                                         sort_desc=False)
 
         train_state = TrainerState(self.model, check_point=check_point)
         train_state.train_mode(True)

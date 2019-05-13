@@ -17,8 +17,9 @@ optim:
     warmup_steps: 8000
     label_smoothing: 0.1
   name: ADAM
-trainer_args:
-  init_emb: true
+trainer:
+  init_args:
+    init_emb: true
 
 prep:
   mono_src: []

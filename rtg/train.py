@@ -16,8 +16,10 @@ def parse_args():
                         type=int, default=1000)
     parser.add_argument("-km", "--keep-models", type=int, default=10,
                         help="Number of checkpoints to keep.")
-    parser.add_argument("-bs", "--batch-size", help="Mini batch size of training and validation",
-                        type=int, default=256)
+    parser.add_argument("-bs", "--batch-size",
+                        help="Mini batch size (# tokens on target side) of training and validation."
+                             " A token can be subword piece.",
+                        type=int, default=2048)
 
     parser.add_argument("-ft", "--fine-tune", action='store_true',
                         help="Use fine tune corpus instead of train corpus.")

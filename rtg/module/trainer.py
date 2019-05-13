@@ -120,7 +120,7 @@ class TrainerState:
     def progress_bar_msg(self):
         elapsed = time.time() - self.start
         return f'Loss:{self.total_loss / self.total_toks:.4f},' \
-               f' {int(self.total_toks / elapsed)}toks/s'
+            f' {int(self.total_toks / elapsed)}toks/s'
 
     def is_check_point(self):
         return self.steps == self.check_point
@@ -224,8 +224,8 @@ class SteppedTrainer:
             from rtg.module.decoder import Decoder
             self.decoder = Decoder.new(self.exp, self.model)
 
-        do_init_embedding = (self.start_step == 0
-                             and self.exp.config.get('trainer_args', {}).get('init_emb'))
+        do_init_embedding = (self.start_step == 0 and self.exp.config.get('trainer', {})
+                             .get('init_args', {}).get('init_emb'))
         if do_init_embedding:
             self.init_embeddings()
 
@@ -321,4 +321,3 @@ class SteppedTrainer:
         :return:
         """
         raise NotImplementedError()
-
