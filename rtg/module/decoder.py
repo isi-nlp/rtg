@@ -58,6 +58,7 @@ class ReloadEvent(Exception):
 
 @dataclass
 class DecoderBatch:
+    idxs: List[int] = field(default_factory=list)  # index in the file, for restoring the order
     srcs: List[str] = field(default_factory=list)
     seqs: List[str] = field(default_factory=list)  # processed srcs
     refs: List[str] = field(default_factory=list)  # references for logging if they exist
@@ -65,7 +66,8 @@ class DecoderBatch:
     tok_count = 0
     max_len = 0
 
-    def add(self, src, ref, seq):
+    def add(self, idx, src, ref, seq):
+        self.idxs.append(idx)
         self.srcs.append(src)
         self.refs.append(ref)
         self.seqs.append(seq)
@@ -87,15 +89,17 @@ class DecoderBatch:
         return seqs, lens
 
     @classmethod
-    def from_lines(cls, lines: Iterator[str], batch_size: int, vocab: Field):
+    def from_lines(cls, lines: Iterator[str], batch_size: int, vocab: Field, sort=True):
         """
-
+        Note: this changes the order based on sequence length if sort=True
         :param lines: stream of input lines
         :param batch_size: number of tokens in batch
         :param vocab: Field to use for mapping word pieces to ids
+        :param sort: sort based on descending order of length
         :return: stream of DecoderBatches
         """
-        batch = cls()
+        log.info("Tokenizing sequences")
+        buffer = []
         for i, line in enumerate(lines):
             line = line.strip()
             if not line:
@@ -104,12 +108,19 @@ class DecoderBatch:
                 continue
             cols = line.split('\t')
             seq = vocab.encode_as_ids(line, add_eos=True, add_bos=False)
-            batch.add(src=cols[0], ref=cols[1] if len(cols) > 1 else None, seq=seq)
+            ref = cols[1] if len(cols) > 1 else None
+            buffer.append((i, cols[0], ref, seq)) #idx, src, ref, seq
+
+        if sort:
+            log.info(f"Sorting based on the length. total = {len(buffer)}")
+            buffer = sorted(buffer, reverse=True, key=lambda x: len(x[-1]))  # sort by length of seq
+
+        batch = cls()
+        for idx, src, ref, seq in buffer:
+            batch.add(idx=idx, src=src, ref=ref, seq=seq)
             if batch.padded_tok_count >= batch_size:
                 yield batch
                 batch = cls()
-                if True:
-                    pass
 
         if batch.line_count > 0:
             yield batch
@@ -540,24 +551,30 @@ class Decoder:
         batches: Iterator[DecoderBatch] = DecoderBatch.from_lines(inp, batch_size=batch_size,
                                                                   vocab=self.inp_vocab)
         def _decode_all():
+            buffer = []
             for batch in batches:
                 in_seqs, in_lens = batch.as_tensors(device=device)
                 batched_hyps: List[List[Hypothesis]] = self.beam_decode(in_seqs, in_lens,
                                                                         num_hyp=num_hyp, **args)
                 assert len(batched_hyps) == batch.line_count
                 for i, hyps in enumerate(batched_hyps):
+                    idx = batch.idxs[i]
                     src = batch.srcs[i]
-                    log.info(f"SRC: {batch.srcs[i]}")
+                    log.info(f"{idx}: SRC: {batch.srcs[i]}")
                     ref = batch.refs[i]  # just for the sake of logging, if it exists
                     if ref:
-                        log.info(f"REF: {batch.refs[i]}")
+                        log.info(f"{idx}: REF: {batch.refs[i]}")
 
                     result = []
                     for j, (score, hyp) in enumerate(hyps):
                         hyp_line = self.out_vocab.decode_ids(hyp, trunc_eos=True)  # tok ids to string
-                        log.info(f"HYP{j}: {score:g} : {hyp_line}")
+                        log.info(f"{idx}: HYP{j}: {score:g} : {hyp_line}")
                         result.append((score, hyp_line))
-                    yield (src, result)
+                    buffer.append((idx, src, result))
+
+            buffer = sorted(buffer, key=lambda x:x[0]) # restore order
+            for _, src, result in buffer:
+                yield src, result
 
         streamed_results: Iterator[Tuple[str, List[StrHypothesis]]] = _decode_all()
         for src, hyps in streamed_results:
