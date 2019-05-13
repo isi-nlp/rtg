@@ -387,7 +387,8 @@ class LabelSmoothing(nn.Module):
         self._size = vocab_size
         assert 0.0 <= smoothing <= 1.0
         self.padding_idx = padding_idx
-        self.criterion = nn.KLDivLoss(reduction='elementwise_mean')
+        #self.criterion = nn.KLDivLoss(reduction='elementwise_mean')
+        self.criterion = nn.KLDivLoss(reduction='sum')
         fill_val = smoothing / (vocab_size - 2)
         one_hot = torch.full(size=(1, vocab_size), fill_value=fill_val, device=device)
         one_hot[0][self.padding_idx] = 0

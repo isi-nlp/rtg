@@ -444,6 +444,7 @@ class BatchIterable(Iterable[Batch]):
             self.data = TSVData(data_path, shuffle=shuffle, longest_first=True)
         self.batch_size = batch_size
         self.batch_first = batch_first
+        log.info(f'Batch Size = {batch_size} toks')
 
     def read_all(self):
         batch = []
@@ -451,7 +452,7 @@ class BatchIterable(Iterable[Batch]):
         for ex in self.data:
             batch.append(ex)
             max_x_len, max_y_len = max(max_x_len, len(ex.x)), max(max_y_len, len(ex.y))
-            if len(batch) * max_x_len >= self.batch_size or len(batch) * max_y_len >= len(batch):
+            if len(batch) * max_x_len >= self.batch_size or len(batch) * max_y_len >= self.batch_size:
                 yield Batch(batch, sort_dec=self.sort_desc, batch_first=self.batch_first)
                 batch = []
                 max_x_len, max_y_len = 0, 0
