@@ -14,17 +14,16 @@ from rtg.emb.word2vec import CBOW
 from rtg.module.generator import *
 
 trainers = {
-        't2t': TransformerTrainer,
-        'binmt': BiNmtTrainer,
-        'seq2seq': SteppedRNNMTTrainer,
-        'tfmnmt': TransformerTrainer,
-        'rnnmt': SteppedRNNMTTrainer,
-        'rnnlm': RnnLmTrainer,
-        'tfmlm': TfmLmTrainer,
-        'mtfmnmt': MTransformerTrainer,
-        'wv_cbow': CBOW.make_trainer
-    }
-
+    't2t': TransformerTrainer,
+    'binmt': BiNmtTrainer,
+    'seq2seq': SteppedRNNMTTrainer,
+    'tfmnmt': TransformerTrainer,
+    'rnnmt': SteppedRNNMTTrainer,
+    'rnnlm': RnnLmTrainer,
+    'tfmlm': TfmLmTrainer,
+    'mtfmnmt': MTransformerTrainer,
+    'wv_cbow': CBOW.make_trainer
+}
 
 # model factories
 factories = {
@@ -39,7 +38,6 @@ factories = {
     'wv_cbow': CBOW.make_model
 }
 
-
 # Generator factories
 generators = {'t2t': T2TGenerator,
               'seq2seq': Seq2SeqGenerator,
@@ -50,6 +48,7 @@ generators = {'t2t': T2TGenerator,
               'rnnlm': RnnLmGenerator,
               'tfmlm': TfmLmGenerator,
               'mtfmnmt': MTfmGenerator,
+              'hybridmt': MTfmGenerator,
               'tfmnmt_nomax': T2TGenerator,
               'wv_cbow': CBOW.make_model  # FIXME: this is a place holder
               }

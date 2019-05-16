@@ -61,7 +61,7 @@ class DummyExperiment(Experiment):
         self.train_batches = train_batches
         self.val_batches = val_batches
 
-    def get_train_data(self, batch_size: int, steps: int = 0, sort_dec=True, batch_first=True,
+    def get_train_data(self, batch_size: int, steps: int = 0, sort_desc=True, batch_first=True,
                        shuffle=False, copy_xy=False, fine_tune=False):
         train_data = BatchIterable(self.vocab_size, batch_size, self.train_batches,
                                    reverse=False, batch_first=batch_first)
@@ -69,7 +69,7 @@ class DummyExperiment(Experiment):
             train_data = LoopingIterable(train_data, steps)
         return train_data
 
-    def get_val_data(self, batch_size: int, sort_dec=True, batch_first=True,
+    def get_val_data(self, batch_size: int, sort_desc=True, batch_first=True,
                      shuffle=False, copy_xy=False):
         assert not shuffle, 'Not supported'
         assert not copy_xy, 'Not supported'
