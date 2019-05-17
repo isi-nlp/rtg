@@ -387,7 +387,7 @@ class LabelSmoothing(nn.Module):
         self._size = vocab_size
         assert 0.0 <= smoothing <= 1.0
         self.padding_idx = padding_idx
-        #self.criterion = nn.KLDivLoss(reduction='elementwise_mean')
+        # self.criterion = nn.KLDivLoss(reduction='elementwise_mean')
         self.criterion = nn.KLDivLoss(reduction='sum')
         fill_val = smoothing / (vocab_size - 2)
         one_hot = torch.full(size=(1, vocab_size), fill_value=fill_val, device=device)
@@ -676,6 +676,7 @@ class TransformerTrainer(SteppedTrainer):
         train_state = TrainerState(self.model, check_point=check_point)
         train_state.train_mode(True)
         unsaved_state = False
+        cuda_available = torch.cuda.is_available()
         with tqdm(train_data, initial=self.start_step, total=steps, unit='batch') as data_bar:
             for batch in data_bar:
                 self.model.zero_grad()
@@ -701,6 +702,13 @@ class TransformerTrainer(SteppedTrainer):
                 self.tbd.add_scalars('training', {'step_loss': loss,
                                                   'learn_rate': self.opt.curr_lr},
                                      self.opt.curr_step)
+                if cuda_available and self.opt.curr_step % 10 == 0 :
+                    self.tbd.add_scalars('resources_mem',
+                                         {'mem_allocd': torch.cuda.memory_allocated(device),
+                                          'mem_cached': torch.cuda.memory_cached(device),
+                                          'max_mem_allocd': torch.cuda.max_memory_allocated(device),
+                                          'max_mem_cached': torch.cuda.max_memory_cached(device),
+                                          }, self.opt.curr_step)
 
                 progress_msg, is_check_pt = train_state.step(num_toks, loss)
                 progress_msg += f', LR={self.opt.curr_lr:g}'
