@@ -448,14 +448,20 @@ class BatchIterable(Iterable[Batch]):
 
     def read_all(self):
         batch = []
-        max_x_len, max_y_len = 0, 0
+        max_len = 0
         for ex in self.data:
-            batch.append(ex)
-            max_x_len, max_y_len = max(max_x_len, len(ex.x)), max(max_y_len, len(ex.y))
-            if len(batch) * max_x_len >= self.batch_size or len(batch) * max_y_len >= self.batch_size:
+            this_len = max(len(ex.x), len(ex.y))
+            if (len(batch) + 1) * max(max_len, this_len) <= self.batch_size:
+                batch.append(ex) # this one can go in
+                max_len = max(max_len, this_len)
+            else:
+                if this_len > self.batch_size:
+                    raise Exception(f'Unable to make a batch of {self.batch_size} toks'
+                                    f' with a seq of x_len:{len(ex.x)} y_len:{len(ex.y)}')
+                # yield the current batch
                 yield Batch(batch, sort_dec=self.sort_desc, batch_first=self.batch_first)
-                batch = []
-                max_x_len, max_y_len = 0, 0
+                batch = [ex] #  new batch
+                max_len = this_len
         if batch:
             log.debug(f"\nLast batch, size={len(batch)}")
             yield Batch(batch, sort_dec=self.sort_desc, batch_first=self.batch_first)
