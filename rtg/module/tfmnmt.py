@@ -708,6 +708,7 @@ class TransformerTrainer(SteppedTrainer):
                                           'mem_cached': torch.cuda.memory_cached(device),
                                           'max_mem_allocd': torch.cuda.max_memory_allocated(device),
                                           'max_mem_cached': torch.cuda.max_memory_cached(device),
+                                          'num_toks': num_toks
                                           }, self.opt.curr_step)
 
                 progress_msg, is_check_pt = train_state.step(num_toks, loss)
