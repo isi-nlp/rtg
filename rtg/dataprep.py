@@ -450,6 +450,10 @@ class BatchIterable(Iterable[Batch]):
         batch = []
         max_len = 0
         for ex in self.data:
+            if min(len(ex.x), len(ex.y)) == 0:
+                log.warn("Skipping a record,  either source or target is empty")
+                continue
+
             this_len = max(len(ex.x), len(ex.y))
             if (len(batch) + 1) * max(max_len, this_len) <= self.batch_size:
                 batch.append(ex) # this one can go in
