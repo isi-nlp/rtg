@@ -248,7 +248,9 @@ class TranslationExperiment(BaseExperiment):
 
         self.emb_src_file = self.data_dir / 'emb_src.pt'
         self.emb_tgt_file = self.data_dir / 'emb_tgt.pt'
-        self.aln_emb_src_file = self.data_dir / 'aln_emb_src.pt'  # src embs aligned to tgt
+        self.ext_emb_src_file = self.data_dir / 'ext_emb_src.pt'  # external Embeddings
+        self.ext_emb_tgt_file = self.data_dir / 'ext_emb_tgt.pt'  # external Embeddings
+
 
         self.src_field, self.tgt_field = [
             Field(str(f)) if f.exists() else None
@@ -483,7 +485,8 @@ class TranslationExperiment(BaseExperiment):
         mapping = {
             'pre_emb_src': self.emb_src_file,
             'pre_emb_tgt': self.emb_tgt_file,
-            'aln_emb_src': self.aln_emb_src_file,
+            'ext_emb_src': self.ext_emb_src_file,
+            'ext_emb_tgt': self.ext_emb_tgt_file,
         }
         if not any(x in args for x in mapping):
             log.info("No pre trained embeddings are found in config; skipping it")
@@ -582,14 +585,6 @@ class TranslationExperiment(BaseExperiment):
     @property
     def tgt_vocab(self) -> Field:
         return self.shared_field if self.shared_field is not None else self.tgt_field
-
-    @property
-    def pre_trained_src_emb(self):
-        return torch.load(self.emb_src_file) if self.emb_src_file.exists() else None
-
-    @property
-    def pre_trained_tgt_emb(self):
-        return torch.load(self.emb_tgt_file) if self.emb_tgt_file.exists() else None
 
     def _get_batch_args(self):
         prep_args = self.config.get('prep', {})

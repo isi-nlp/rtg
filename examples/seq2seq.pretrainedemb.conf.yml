@@ -32,7 +32,7 @@ prep:
   pieces: word
   pre_emb_src: data/cc.fr.300.vec
   pre_emb_tgt: data/cc.en.300.vec
-  aln_emb_src: data/align.src-to-tgt.vec
+  ext_emb_src: data/align.src-to-tgt.vec
 src_lang: FRA
 tgt_lang: ENG
 updated_at: '2018-07-25T15:50:52.578881'

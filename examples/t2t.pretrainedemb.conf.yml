@@ -37,6 +37,7 @@ prep:
     - <tok2>
   max_types: 50000
   pieces: word
+  pre_emb_src: data/cc.fr.300.vec
   pre_emb_tgt: data/cc.en.300.vec
 
 src_lang: FRA
