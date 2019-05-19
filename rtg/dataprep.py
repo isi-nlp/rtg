@@ -128,11 +128,11 @@ class TSVData:
         self.in_mem = in_mem or shuffle or longest_first
         self.longest_first = longest_first
         self.shuffle = shuffle
+        self.truncate = truncate
         self.mem = list(self.read_all()) if self.in_mem else None
         self._len = len(self.mem) if self.in_mem else line_count(path)
         self.read_counter = 0
         self.max_src_len, self.max_tgt_len = max_src_len, max_tgt_len
-        self.truncate = truncate
 
     @staticmethod
     def _parse(line: str):
