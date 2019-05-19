@@ -45,3 +45,4 @@ trainer:
   keep_models: 10
   steps: 2000   # change to 128000 or up
 updated_at: '2019-03-09T21:15:33.707183'
+seed: 12345

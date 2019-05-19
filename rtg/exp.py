@@ -10,7 +10,9 @@ from rtg.dataprep import (RawRecord, ParallelSeqRecord, MonoSeqRecord, TSVData,
                           Field, BatchIterable, LoopingIterable, SqliteFile)
 from rtg.utils import IO, line_count
 import copy
+import numpy as np
 from itertools import zip_longest
+
 
 
 def load_conf(inp: Union[str, Path]):
@@ -51,9 +53,22 @@ class BaseExperiment:
         if isinstance(config, str) or isinstance(config, Path):
             config = load_conf(config)
         self.config = config if config else load_conf(self._config_file)
+        self.maybe_seed()
 
         self.shared_field = Field(str(self._shared_field_file)) \
             if self._shared_field_file.exists() else None
+
+    def maybe_seed(self):
+        if 'seed' in self.config:
+            seed = self.config['seed']
+            log.info(f"Manual seeding the RNG with {seed}")
+            torch.manual_seed(seed)
+            np.random.seed(seed)
+            if torch.cuda.is_available():
+                torch.backends.cudnn.deterministic = True
+                torch.backends.cudnn.benchmark = False
+        else:
+            log.info("No manual seed! Letting the RNGs do their stuff")
 
     def store_config(self):
         with IO.writer(self._config_file) as fp:
