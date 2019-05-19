@@ -386,8 +386,9 @@ class TranslationExperiment(BaseExperiment):
         if args.get('text_files'):
             # Redo again as plain text files
             parallel_recs = TSVData.read_raw_parallel_recs(args[src_key], args[tgt_key],
-                                               args['truncate'], args['src_len'], args['tgt_len'],
-                                               tokenizer=self.src_vocab.tokenize)
+                                                           args['truncate'], args['src_len'],
+                                                           args['tgt_len'],
+                                                           tokenizer=self.src_vocab.tokenize)
             TSVData.write_parallel_recs(parallel_recs, str(out_file).replace('.tsv', '.pieces.tsv'))
 
     def maybe_pre_process_embeds(self, do_clean=False):
@@ -575,6 +576,12 @@ class TranslationExperiment(BaseExperiment):
     def pre_trained_tgt_emb(self):
         return torch.load(self.emb_tgt_file) if self.emb_tgt_file.exists() else None
 
+    def _get_batch_args(self):
+        prep_args = self.config.get('prep', {})
+        return {ok: prep_args[ik] for ik, ok in
+                [('src_len', 'max_src_len'), ('tgt_len', 'max_tgt_len'), ('truncate', 'truncate')]
+                if ik in prep_args}
+
     def get_train_data(self, batch_size: int, steps: int = 0, sort_desc=False, batch_first=True,
                        shuffle=False, fine_tune=False):
         inp_file = self.train_db if self.train_db.exists() else self.train_file
@@ -586,7 +593,8 @@ class TranslationExperiment(BaseExperiment):
             inp_file = self.finetune_file
 
         train_data = BatchIterable(inp_file, batch_size=batch_size, sort_desc=sort_desc,
-                                   batch_first=batch_first, shuffle=shuffle)
+                                   batch_first=batch_first, shuffle=shuffle,
+                                   **self._get_batch_args())
         if steps > 0:
             train_data = LoopingIterable(train_data, steps)
         return train_data
@@ -594,7 +602,8 @@ class TranslationExperiment(BaseExperiment):
     def get_val_data(self, batch_size: int, sort_desc=False, batch_first=True,
                      shuffle=False):
         return BatchIterable(self.valid_file, batch_size=batch_size, sort_desc=sort_desc,
-                             batch_first=batch_first, shuffle=shuffle)
+                             batch_first=batch_first, shuffle=shuffle,
+                             **self._get_batch_args())
 
     def get_combo_data(self, batch_size: int, steps: int = 0, sort_desc=False, batch_first=True,
                        shuffle=False):
@@ -602,7 +611,8 @@ class TranslationExperiment(BaseExperiment):
             # user may have added fine tune file later
             self._pre_process_parallel('combo_src', 'combo_tgt', self.combo_file)
         data = BatchIterable(self.combo_file, batch_size=batch_size, sort_desc=sort_desc,
-                             batch_first=batch_first, shuffle=shuffle)
+                             batch_first=batch_first, shuffle=shuffle,
+                             **self._get_batch_args())
         if steps > 0:
             data = LoopingIterable(data, steps)
         return data
@@ -651,7 +661,8 @@ class TranslationExperiment(BaseExperiment):
         assert inp_file.exists()
         # read this file
         data = BatchIterable(inp_file, batch_size=batch_size, sort_dec=sort_dec,
-                             batch_first=batch_first, shuffle=shuffle)
+                             batch_first=batch_first, shuffle=shuffle,
+                             **self._get_batch_args())
         if num_batches > 0:
             data = LoopingIterable(data, num_batches)
         return data
