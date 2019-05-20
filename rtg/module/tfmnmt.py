@@ -177,16 +177,20 @@ class TransformerNMT(NMTModel):
         return self.decoder(self.tgt_embed(tgt), memory, src_mask, tgt_mask)
 
     def tie_embeddings(self, tie: str):
-        assert self.src_embed[0].vocab == self.tgt_embed[0].vocab
-        if tie == 'three-way':
-            log.info("Tying the embedding weights, three ways: (SrcIn == TgtIn == TgtOut)")
-            self.src_embed[0].lut.weight = self.tgt_embed[0].lut.weight
+        assert tie in ('one-way', 'two-way', 'three-way')
+        log.info(f"Tying embeddings: {tie}")
+        if tie in ('two-way', 'three-way'):
+            # src get tied to tgt, so vocab must match
+            assert self.src_embed[0].vocab == self.tgt_embed[0].vocab
+            # TODO: count doesnt guarantee that the shared BPE was enabled, so check that from conf
+
+        if tie in ('one-way', 'three-way'):
+            log.info(f"Tying embeddings: TgtOut == TgtInp")
             self.generator.proj.weight = self.tgt_embed[0].lut.weight
-        elif tie == 'two-way':
-            log.info("Tying the embedding weights, two ways: (SrcIn == TgtIn)")
+        if tie in ('two-way', 'three-way'):
+            log.info(f"Tying embeddings: SrcInp == TgtInp")
             self.src_embed[0].lut.weight = self.tgt_embed[0].lut.weight
-        else:
-            raise Exception('Invalid argument to tied_emb; Known: {three-way, two-way}')
+
 
     @classmethod
     def make_model(cls, src_vocab, tgt_vocab, n_layers=6, hid_size=512, ff_size=2048, n_heads=8,
