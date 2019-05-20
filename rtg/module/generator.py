@@ -77,6 +77,19 @@ class MTfmGenerator(GeneratorFactory):
         log_probs = self.model.generator(out[:, -1])
         return log_probs
 
+class TfmExtEembGenerator(T2TGenerator):
+
+    def __init__(self, model: TransformerNMT, x_seqs, x_lens=None):
+        super().__init__(model, x_seqs, x_seqs)
+        self.src_ext_emb = self.model.src_ext_emb(x_seqs)
+
+    def generate_next(self, past_ys):
+        tgt_ext_emb = self.model.tgt_ext_emb(past_ys)
+        y_mask = subsequent_mask(past_ys.size(1))
+        out = self.model.decode(self.memory, self.x_mask, past_ys, y_mask,
+                                self.src_ext_emb, tgt_ext_emb)
+        log_probs = self.model.generator(out[:, -1])
+        return log_probs
 
 class ComboGenerator(GeneratorFactory):
     from rtg.syscomb import Combo

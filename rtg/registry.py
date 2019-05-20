@@ -53,7 +53,7 @@ generators = {'t2t': T2TGenerator,
               'rnnlm': RnnLmGenerator,
               'tfmlm': TfmLmGenerator,
               'mtfmnmt': MTfmGenerator,
-              'tfmextembmt': T2TGenerator,
+              'tfmextembmt': TfmExtEembGenerator,
               'tfmnmt_nomax': T2TGenerator,
               'wv_cbow': CBOW.make_model  # FIXME: this is a place holder
               }
