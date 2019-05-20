@@ -658,6 +658,7 @@ class TransformerTrainer(SteppedTrainer):
         :param args: any extra args
         :return:
         """
+        log_resources = args.pop('log_resources', False)
         if args:
             # no extra args. let user know if an extra arg is passed
             raise Exception(f" Found extra args: {args}")
@@ -705,7 +706,7 @@ class TransformerTrainer(SteppedTrainer):
                 self.tbd.add_scalars('training', {'step_loss': loss,
                                                   'learn_rate': self.opt.curr_lr},
                                      self.opt.curr_step)
-                if cuda_available:
+                if log_resources and cuda_available:
                     self.tbd.add_scalars('resources_mem',
                                          {'mem_allocd': torch.cuda.memory_allocated(device),
                                           'mem_cached': torch.cuda.memory_cached(device),
