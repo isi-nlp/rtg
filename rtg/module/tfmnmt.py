@@ -148,6 +148,10 @@ class TransformerNMT(NMTModel):
             assert weights.shape == self.generator.proj.weight.shape
             self.generator.proj.weight.data.copy_(weights.data)
 
+    def init_ext_embedding(self, src_ext_emb_wt, tgt_ext_emb_wt):
+        log.warning("this model doesnt support ext embs. use model_type: tfmextembmt ")
+        raise NotImplementedError()
+
     @property
     def model_dim(self):
         return self.generator.d_model
@@ -198,7 +202,7 @@ class TransformerNMT(NMTModel):
         #   validation and default value assignment is implicitly done by function call for us :)
 
         c = copy.deepcopy
-        attn = MultiHeadedAttention(n_heads, hid_size)
+        attn = MultiHeadedAttention(n_heads, hid_size, dropout=dropout)
         ff = PositionwiseFeedForward(hid_size, ff_size, dropout)
 
         encoder = Encoder(EncoderLayer(hid_size, c(attn), c(ff), dropout), n_layers)
@@ -214,10 +218,6 @@ class TransformerNMT(NMTModel):
 
         if tied_emb:
             model.tie_embeddings(tied_emb)
-
-        if exp and exp.aln_emb_src_file.exists():
-            log.warning("Aligned embeddings are provided but this model doesnt support it.")
-            log.warning("If you really cared for this feature, come back and implement it.")
 
         model.init_params()
         return model, args

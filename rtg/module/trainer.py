@@ -19,6 +19,7 @@ from torch import optim
 from torch.optim import Optimizer
 from enum import Enum
 import inspect
+from pathlib import Path
 
 
 class NoamOpt(Optimizer):
@@ -224,23 +225,32 @@ class SteppedTrainer:
             from rtg.module.decoder import Decoder
             self.decoder = Decoder.new(self.exp, self.model)
 
-        do_init_embedding = (self.start_step == 0 and self.exp.config.get('trainer', {})
-                             .get('init_args', {}).get('init_emb'))
-        if do_init_embedding:
+        if self.start_step == 0:
             self.init_embeddings()
+        self.model = self.model.to(device)
+
 
     def init_embeddings(self):
-        src_emb_mat = self.exp.pre_trained_src_emb
+        def load_matrix(path: Path):
+            return torch.load(path) if path.exists() else None
+
+        src_emb_mat = load_matrix(self.exp.emb_src_file)
         if src_emb_mat is None:
             log.info("NOT initializing pre-trained source embedding")
         else:
             self.model.init_src_embedding(src_emb_mat)
 
-        tgt_emb_mat = self.exp.pre_trained_tgt_emb
+        tgt_emb_mat = load_matrix(self.exp.emb_tgt_file)
         if tgt_emb_mat is None:
             log.info("NOT Initializing pre-trained target embeddings")
         else:
             self.model.init_tgt_embedding(tgt_emb_mat)
+
+        src_ext_emb = load_matrix(self.exp.ext_emb_src_file)
+        tgt_ext_emb = load_matrix(self.exp.ext_emb_tgt_file)
+        assert (src_ext_emb is None) == (tgt_ext_emb is None) #Both given or None given
+        if src_ext_emb is not None:
+            self.model.init_ext_embedding(src_ext_emb, tgt_ext_emb)
 
     def show_samples(self, beam_size=3, num_hyp=3, max_len=30):
         """
