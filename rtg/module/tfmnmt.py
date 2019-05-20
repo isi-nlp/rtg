@@ -703,7 +703,7 @@ class TransformerTrainer(SteppedTrainer):
                 # assumption:  y_seqs has EOS, and not BOS
                 loss = self.loss_func(out, batch.y_seqs, num_toks, True)
                 unsaved_state = True
-                self.tbd.add_scalars('training', {'step_loss': loss,
+                self.tbd.add_scalars('training', {'step_loss': loss / num_toks,
                                                   'learn_rate': self.opt.curr_lr},
                                      self.opt.curr_step)
                 if log_resources and cuda_available:
