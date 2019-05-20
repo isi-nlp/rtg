@@ -129,10 +129,10 @@ class TSVData:
         self.longest_first = longest_first
         self.shuffle = shuffle
         self.truncate = truncate
+        self.max_src_len, self.max_tgt_len = max_src_len, max_tgt_len
         self.mem = list(self.read_all()) if self.in_mem else None
         self._len = len(self.mem) if self.in_mem else line_count(path)
         self.read_counter = 0
-        self.max_src_len, self.max_tgt_len = max_src_len, max_tgt_len
 
     @staticmethod
     def _parse(line: str):
@@ -246,9 +246,9 @@ class SqliteFile:
         self.sort_side = sort_side
         self.shuffle = shuffle
         self.longest_first = longest_first
-        self.db = sqlite3.connect(str(path))
         self.max_src_len, self.max_tgt_len = max_src_len, max_tgt_len
         self.truncate = truncate
+        self.db = sqlite3.connect(str(path))
 
         def dict_factory(cursor, row):  # map tuples to dictionary with column names
             d = {}
