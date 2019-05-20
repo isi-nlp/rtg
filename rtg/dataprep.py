@@ -235,8 +235,8 @@ class SqliteFile:
 
     INSERT_STMT = "INSERT INTO data (x, y, x_len, y_len) VALUES (?, ?, ?, ?)"
     READ_RANDOM = "SELECT * from data ORDER BY RANDOM()"
-    READ_X_LEN_DESC_RANDOM = "SELECT * from data ORDER BY x_len DESC, RANDOM()"
-    READ_Y_LEN_DESC_RANDOM = "SELECT * from data ORDER BY y_len DESC, RANDOM()"
+    READ_X_LEN_DESC_RANDOM = "SELECT * from data ORDER BY x_len + (RANDOM() % 20) DESC"
+    READ_Y_LEN_DESC_RANDOM = "SELECT * from data ORDER BY y_len + (RANDOM() % 20) DESC"
     COUNT_ROWS = "SELECT COUNT(*) as COUNT from data"
 
     def __init__(self, path: Path, shuffle=True, longest_first=False, sort_side='tgt',
