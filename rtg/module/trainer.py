@@ -248,7 +248,7 @@ class SteppedTrainer:
 
         src_ext_emb = load_matrix(self.exp.ext_emb_src_file)
         tgt_ext_emb = load_matrix(self.exp.ext_emb_tgt_file)
-        assert src_ext_emb is None == tgt_ext_emb is None #Both given or None given
+        assert (src_ext_emb is None) == (tgt_ext_emb is None) #Both given or None given
         if src_ext_emb is not None:
             self.model.init_ext_embedding(src_ext_emb, tgt_ext_emb)
 

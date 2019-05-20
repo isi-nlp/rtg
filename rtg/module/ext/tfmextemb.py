@@ -7,7 +7,7 @@ from rtg.module.tfmnmt import (
     TransformerTrainer, TransformerNMT, attention, MultiHeadedAttention, PositionalEncoding,
     Encoder, EncoderLayer, PositionwiseFeedForward, Decoder, DecoderLayer, Embeddings, Generator)
 from torch import nn
-from rtg import TranslationExperiment as Experiment
+from rtg import TranslationExperiment as Experiment, log
 from rtg.dataprep import PAD_TOK_IDX as padding_idx
 import inspect
 import torch
@@ -26,10 +26,12 @@ class TfmExtEmbNMT(TransformerNMT):
         assert src_dim == self.ext_emb_dim
         assert tgt_dim == self.ext_emb_dim
 
+        log.info(f"Initializing SRC ext embs, freeze={freeze}")
         self.src_ext_emb = nn.Embedding(src_vocab, src_dim, padding_idx=padding_idx,
                                         _weight=src_ext_emb_wt)
         self.src_ext_emb.weight.requires_grad = not freeze  # Freeze
 
+        log.info(f"Initializing TGT ext embs, freeze={freeze}")
         self.tgt_ext_emb = nn.Embedding(tgt_vocab, tgt_dim, padding_idx=padding_idx,
                                         _weight=tgt_ext_emb_wt)
         self.tgt_ext_emb.weight.requires_grad = not freeze  # Freeze
@@ -79,6 +81,7 @@ class TfmExtEmbNMT(TransformerNMT):
         model.init_params()
         return model, args
 
+    @classmethod
     def make_trainer(cls, *args, **kwargs):
         return TfmExtEmbTrainer(*args, **kwargs)
 

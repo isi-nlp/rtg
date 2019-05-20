@@ -150,7 +150,7 @@ class TransformerNMT(NMTModel):
 
     def init_ext_embedding(self, src_ext_emb_wt, tgt_ext_emb_wt):
         log.warning("this model doesnt support ext embs. use model_type: tfmextembmt ")
-        raise NotImplemented()
+        raise NotImplementedError()
 
     @property
     def model_dim(self):
