@@ -5,6 +5,7 @@ import copy
 import math
 import time
 import inspect
+import gc
 from typing import Callable, Optional, List
 
 import torch
@@ -387,7 +388,7 @@ class LabelSmoothing(nn.Module):
         self._size = vocab_size
         assert 0.0 <= smoothing <= 1.0
         self.padding_idx = padding_idx
-        #self.criterion = nn.KLDivLoss(reduction='elementwise_mean')
+        # self.criterion = nn.KLDivLoss(reduction='elementwise_mean')
         self.criterion = nn.KLDivLoss(reduction='sum')
         fill_val = smoothing / (vocab_size - 2)
         one_hot = torch.full(size=(1, vocab_size), fill_value=fill_val, device=device)
@@ -463,7 +464,7 @@ class ChunkedLossCompute(SimpleLossFunction):
             chunked_ys = y_seqs[:, i:i + chunk_size].contiguous().view(-1)  # B x C -> B.C
             loss = self.criterion(chunked_dist, chunked_ys)
             loss = loss.sum() / norm
-            total += loss.item()
+            total += loss.detach().item()
             if train_mode:
                 loss.backward()
                 out_grads.append(chunked_feats.grad.data.clone())  # grads are collected
@@ -616,8 +617,6 @@ class TransformerTrainer(SteppedTrainer):
                 data_bar.set_postfix_str(
                     f'Loss:{loss / num_toks:.4f}, {int(num_toks / elapsed)}toks/s', refresh=False)
                 start = time.time()
-                # force free memory
-                del batch
 
         score = total_loss / total_tokens
         return score
@@ -676,6 +675,7 @@ class TransformerTrainer(SteppedTrainer):
         train_state = TrainerState(self.model, check_point=check_point)
         train_state.train_mode(True)
         unsaved_state = False
+        cuda_available = torch.cuda.is_available()
         with tqdm(train_data, initial=self.start_step, total=steps, unit='batch') as data_bar:
             for batch in data_bar:
                 self.model.zero_grad()
@@ -701,12 +701,24 @@ class TransformerTrainer(SteppedTrainer):
                 self.tbd.add_scalars('training', {'step_loss': loss,
                                                   'learn_rate': self.opt.curr_lr},
                                      self.opt.curr_step)
+                if cuda_available:
+                    self.tbd.add_scalars('resources_mem',
+                                         {'mem_allocd': torch.cuda.memory_allocated(device),
+                                          'mem_cached': torch.cuda.memory_cached(device),
+                                          'max_mem_allocd': torch.cuda.max_memory_allocated(device),
+                                          'max_mem_cached': torch.cuda.max_memory_cached(device),
+                                          'num_y_toks': batch.y_toks,
+                                          'num_x_toks': batch.x_toks,
+                                          'num_sentences': len(batch),
+                                          'max_x_len': batch.x_seqs.shape[1],
+                                          'max_y_len': batch.y_seqs.shape[1]
+                                          }, self.opt.curr_step)
 
                 progress_msg, is_check_pt = train_state.step(num_toks, loss)
                 progress_msg += f', LR={self.opt.curr_lr:g}'
 
                 data_bar.set_postfix_str(progress_msg, refresh=False)
-                del batch  # TODO: force free memory
+                del batch
 
                 if is_check_pt:
                     train_loss = train_state.reset()
@@ -719,6 +731,7 @@ class TransformerTrainer(SteppedTrainer):
                                           train_loss=train_loss)
                     train_state.train_mode(True)
                     unsaved_state = False
+                    gc.collect()
 
         # End of training
         if unsaved_state:

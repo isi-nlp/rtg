@@ -94,6 +94,8 @@ class Field(SentencePieceProcessor):
         else:
             no_split_toks_str = cls_tok_str
         arg += f" --user_defined_symbols={no_split_toks_str}"
+        if model_type == 'bpe':  # BPE can have longer sentences, default is 2048
+            arg += " --max_sentence_length=8192"
         log.info(f"SPM: {arg}")
         SentencePieceTrainer.Train(arg)
         log.info("Training complete")
@@ -113,7 +115,8 @@ An object of this class holds an example in sequence to sequence dataset
 
 class TSVData:
 
-    def __init__(self, path: Union[str, Path], in_mem=False, shuffle=False, longest_first=True):
+    def __init__(self, path: Union[str, Path], in_mem=False, shuffle=False, longest_first=True,
+                 max_src_len: int = 512, max_tgt_len: int = 512, truncate: bool = False):
         """
         :param path: path to TSV file have parallel sequences
         :param in_mem: hold data in memory instead of reading from file for subsequent pass.
@@ -125,6 +128,8 @@ class TSVData:
         self.in_mem = in_mem or shuffle or longest_first
         self.longest_first = longest_first
         self.shuffle = shuffle
+        self.truncate = truncate
+        self.max_src_len, self.max_tgt_len = max_src_len, max_tgt_len
         self.mem = list(self.read_all()) if self.in_mem else None
         self._len = len(self.mem) if self.in_mem else line_count(path)
         self.read_counter = 0
@@ -137,9 +142,17 @@ class TSVData:
         with IO.reader(self.path) as lines:
             recs = (line.split('\t') for line in lines)
             for rec in recs:
-                if rec[0] and rec[0].strip():
-                    yield Example(self._parse(rec[0]),
-                                  self._parse(rec[1]) if len(rec) > 1 else None)
+                x = self._parse(rec[0].strip())
+                y = self._parse(rec[1].strip()) if len(rec) > 1 else None
+                if self.truncate: # truncate long recs
+                    x = x[:self.max_src_len]
+                    y = y if y is None else y[:self.max_tgt_len]
+                elif len(x) > self.max_src_len or (0 if y is None else len(y)) > self.max_tgt_len:
+                    continue  # skip long recs
+                if not x or (y is not None and len(y) == 0):  # empty on one side
+                    log.warning(f"Ignoring an empty record  x:{len(x)}    y:{len(y)}")
+                    continue
+                yield Example(x, y)
 
     def __len__(self):
         return self._len
@@ -225,13 +238,16 @@ class SqliteFile:
     READ_Y_LEN_DESC_RANDOM = "SELECT * from data ORDER BY y_len DESC, RANDOM()"
     COUNT_ROWS = "SELECT COUNT(*) as COUNT from data"
 
-    def __init__(self, path: Path, shuffle=True, longest_first=False, sort_side='tgt'):
+    def __init__(self, path: Path, shuffle=True, longest_first=False, sort_side='tgt',
+                 max_src_len: int = 512, max_tgt_len: int = 512, truncate: bool = False):
         self.path = path
         assert path.exists()
         assert sort_side in {'src', 'tgt'}
         self.sort_side = sort_side
         self.shuffle = shuffle
         self.longest_first = longest_first
+        self.max_src_len, self.max_tgt_len = max_src_len, max_tgt_len
+        self.truncate = truncate
         self.db = sqlite3.connect(str(path))
 
         def dict_factory(cursor, row):  # map tuples to dictionary with column names
@@ -252,17 +268,25 @@ class SqliteFile:
     def read_all(self) -> Iterator[Dict[str, Any]]:
         assert self.shuffle, 'only shuffled read is supported as of now'
         # because thats the only usecase for now
-
         if self.longest_first:
             select_qry = self.READ_X_LEN_DESC_RANDOM if self.sort_side == 'src' \
-                else self.READ_X_LEN_DESC_RANDOM
+                else self.READ_Y_LEN_DESC_RANDOM
         else:
             select_qry = self.READ_RANDOM
         return self.db.execute(select_qry)
 
     def __iter__(self) -> Iterator[Example]:
         for d in self.read_all():
-            yield Example(d['x'], d.get('y'))
+            x, y  = d['x'], d.get('y')
+            if not x or not y:
+                log.warning(f"Ignoring an empty record   x:{len(x)}    y:{len(y)}")
+                continue
+            if len(x) > self.max_src_len or len(y) > self.max_tgt_len:
+                if self.truncate:
+                    x, y = x[:self.max_src_len], y[:self.max_tgt_len]
+                else: # skip this record
+                    continue
+            yield Example(x, y)
 
     @classmethod
     def write(cls, path, records: Iterator[ParallelSeqRecord]):
@@ -427,7 +451,8 @@ class Batch:
 class BatchIterable(Iterable[Batch]):
 
     def __init__(self, data_path: Union[str, Path], batch_size: int,
-                 sort_desc: bool =False, batch_first: bool = True, shuffle: bool = False):
+                 sort_desc: bool = False, batch_first: bool = True, shuffle: bool = False,
+                 **kwargs):
         """
         Iterator for reading training data in batches
         :param data_path: path to TSV file
@@ -439,23 +464,34 @@ class BatchIterable(Iterable[Batch]):
         if not isinstance(data_path, Path):
             data_path = Path(data_path)
         if data_path.name.endswith(".db"):
-            self.data = SqliteFile(data_path, shuffle=shuffle, longest_first=True)
+            self.data = SqliteFile(data_path, shuffle=shuffle, longest_first=True, **kwargs)
         else:
-            self.data = TSVData(data_path, shuffle=shuffle, longest_first=True)
+            self.data = TSVData(data_path, shuffle=shuffle, longest_first=True, **kwargs)
         self.batch_size = batch_size
         self.batch_first = batch_first
         log.info(f'Batch Size = {batch_size} toks')
 
+
     def read_all(self):
         batch = []
-        max_x_len, max_y_len = 0, 0
+        max_len = 0
         for ex in self.data:
-            batch.append(ex)
-            max_x_len, max_y_len = max(max_x_len, len(ex.x)), max(max_y_len, len(ex.y))
-            if len(batch) * max_x_len >= self.batch_size or len(batch) * max_y_len >= self.batch_size:
+            if min(len(ex.x), len(ex.y)) == 0:
+                log.warn("Skipping a record,  either source or target is empty")
+                continue
+
+            this_len = max(len(ex.x), len(ex.y))
+            if (len(batch) + 1) * max(max_len, this_len) <= self.batch_size:
+                batch.append(ex)  # this one can go in
+                max_len = max(max_len, this_len)
+            else:
+                if this_len > self.batch_size:
+                    raise Exception(f'Unable to make a batch of {self.batch_size} toks'
+                                    f' with a seq of x_len:{len(ex.x)} y_len:{len(ex.y)}')
+                # yield the current batch
                 yield Batch(batch, sort_dec=self.sort_desc, batch_first=self.batch_first)
-                batch = []
-                max_x_len, max_y_len = 0, 0
+                batch = [ex]  # new batch
+                max_len = this_len
         if batch:
             log.debug(f"\nLast batch, size={len(batch)}")
             yield Batch(batch, sort_dec=self.sort_desc, batch_first=self.batch_first)

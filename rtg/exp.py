@@ -10,7 +10,9 @@ from rtg.dataprep import (RawRecord, ParallelSeqRecord, MonoSeqRecord, TSVData,
                           Field, BatchIterable, LoopingIterable, SqliteFile)
 from rtg.utils import IO, line_count
 import copy
+import numpy as np
 from itertools import zip_longest
+
 
 
 def load_conf(inp: Union[str, Path]):
@@ -51,9 +53,22 @@ class BaseExperiment:
         if isinstance(config, str) or isinstance(config, Path):
             config = load_conf(config)
         self.config = config if config else load_conf(self._config_file)
+        self.maybe_seed()
 
         self.shared_field = Field(str(self._shared_field_file)) \
             if self._shared_field_file.exists() else None
+
+    def maybe_seed(self):
+        if 'seed' in self.config:
+            seed = self.config['seed']
+            log.info(f"Manual seeding the RNG with {seed}")
+            torch.manual_seed(seed)
+            np.random.seed(seed)
+            if torch.cuda.is_available():
+                torch.backends.cudnn.deterministic = True
+                torch.backends.cudnn.benchmark = False
+        else:
+            log.info("No manual seed! Letting the RNGs do their stuff")
 
     def store_config(self):
         with IO.writer(self._config_file) as fp:
@@ -386,8 +401,9 @@ class TranslationExperiment(BaseExperiment):
         if args.get('text_files'):
             # Redo again as plain text files
             parallel_recs = TSVData.read_raw_parallel_recs(args[src_key], args[tgt_key],
-                                               args['truncate'], args['src_len'], args['tgt_len'],
-                                               tokenizer=self.src_vocab.tokenize)
+                                                           args['truncate'], args['src_len'],
+                                                           args['tgt_len'],
+                                                           tokenizer=self.src_vocab.tokenize)
             TSVData.write_parallel_recs(parallel_recs, str(out_file).replace('.tsv', '.pieces.tsv'))
 
     def maybe_pre_process_embeds(self, do_clean=False):
@@ -575,6 +591,12 @@ class TranslationExperiment(BaseExperiment):
     def pre_trained_tgt_emb(self):
         return torch.load(self.emb_tgt_file) if self.emb_tgt_file.exists() else None
 
+    def _get_batch_args(self):
+        prep_args = self.config.get('prep', {})
+        return {ok: prep_args[ik] for ik, ok in
+                [('src_len', 'max_src_len'), ('tgt_len', 'max_tgt_len'), ('truncate', 'truncate')]
+                if ik in prep_args}
+
     def get_train_data(self, batch_size: int, steps: int = 0, sort_desc=False, batch_first=True,
                        shuffle=False, fine_tune=False):
         inp_file = self.train_db if self.train_db.exists() else self.train_file
@@ -586,7 +608,8 @@ class TranslationExperiment(BaseExperiment):
             inp_file = self.finetune_file
 
         train_data = BatchIterable(inp_file, batch_size=batch_size, sort_desc=sort_desc,
-                                   batch_first=batch_first, shuffle=shuffle)
+                                   batch_first=batch_first, shuffle=shuffle,
+                                   **self._get_batch_args())
         if steps > 0:
             train_data = LoopingIterable(train_data, steps)
         return train_data
@@ -594,7 +617,8 @@ class TranslationExperiment(BaseExperiment):
     def get_val_data(self, batch_size: int, sort_desc=False, batch_first=True,
                      shuffle=False):
         return BatchIterable(self.valid_file, batch_size=batch_size, sort_desc=sort_desc,
-                             batch_first=batch_first, shuffle=shuffle)
+                             batch_first=batch_first, shuffle=shuffle,
+                             **self._get_batch_args())
 
     def get_combo_data(self, batch_size: int, steps: int = 0, sort_desc=False, batch_first=True,
                        shuffle=False):
@@ -602,7 +626,8 @@ class TranslationExperiment(BaseExperiment):
             # user may have added fine tune file later
             self._pre_process_parallel('combo_src', 'combo_tgt', self.combo_file)
         data = BatchIterable(self.combo_file, batch_size=batch_size, sort_desc=sort_desc,
-                             batch_first=batch_first, shuffle=shuffle)
+                             batch_first=batch_first, shuffle=shuffle,
+                             **self._get_batch_args())
         if steps > 0:
             data = LoopingIterable(data, steps)
         return data
@@ -650,8 +675,11 @@ class TranslationExperiment(BaseExperiment):
         }[(split, side)]
         assert inp_file.exists()
         # read this file
+
         data = BatchIterable(inp_file, batch_size=batch_size, sort_desc=sort_desc,
                              batch_first=batch_first, shuffle=shuffle)
+                             **self._get_batch_args())
+
         if num_batches > 0:
             data = LoopingIterable(data, num_batches)
         return data
