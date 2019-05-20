@@ -4,7 +4,7 @@
 # Created: 2019-05-17
 
 from rtg.module.tfmnmt import (
-    TransformerNMT, attention, MultiHeadedAttention, PositionalEncoding,
+    TransformerTrainer, TransformerNMT, attention, MultiHeadedAttention, PositionalEncoding,
     Encoder, EncoderLayer, PositionwiseFeedForward, Decoder, DecoderLayer, Embeddings, Generator)
 from torch import nn
 from rtg import TranslationExperiment as Experiment
@@ -79,6 +79,16 @@ class TfmExtEmbNMT(TransformerNMT):
         model.init_params()
         return model, args
 
+    def make_trainer(cls, *args, **kwargs):
+        return TfmExtEmbTrainer(*args, **kwargs)
+
+
+class TfmExtEmbTrainer(TransformerTrainer):
+
+    def __init__(self, *args, model_factory=TfmExtEmbNMT.make_model, **kwargs):
+        super().__init__(*args, model_factory=model_factory, **kwargs)
+        assert isinstance(self.model, TfmExtEmbNMT)  # type check
+
 
 class MultiHeadedAttentionExt(nn.Module):
     def __init__(self, h, d_model, query_dim, dropout=0.1):
@@ -145,3 +155,4 @@ class DecoderExt(Decoder):
         for layer in self.layers:
             x = layer(x, memory, src_mask, tgt_mask, src_ext_embs, tgt_ext_embs)
         return self.norm(x)
+
