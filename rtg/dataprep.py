@@ -465,9 +465,9 @@ class BatchIterable(Iterable[Batch]):
         if not isinstance(data_path, Path):
             data_path = Path(data_path)
         if data_path.name.endswith(".db"):
-            self.data = SqliteFile(data_path, shuffle=shuffle, longest_first=True, **kwargs)
+            self.data = SqliteFile(data_path, shuffle=shuffle, longest_first=False, **kwargs)
         else:
-            self.data = TSVData(data_path, shuffle=shuffle, longest_first=True, **kwargs)
+            self.data = TSVData(data_path, shuffle=shuffle, longest_first=False, **kwargs)
         self.batch_size = batch_size
         self.batch_first = batch_first
         log.info(f'Batch Size = {batch_size} toks')
