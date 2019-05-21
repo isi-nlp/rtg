@@ -199,7 +199,10 @@ class SteppedTrainer:
         inner_opt = Optims[optim].new(self.model.parameters(), **optim_args)
         if optim_state:
             log.info("restoring optimizer state from checkpoint")
-            inner_opt.load_state_dict(optim_state)
+            try:
+                inner_opt.load_state_dict(optim_state)
+            except Exception:
+                log.exception("Unable to restore optimizer, skipping it.")
         self.opt = NoamOpt(self.model.model_dim, noam_factor, warm_up_steps, inner_opt,
                            step=self.start_step)
 
