@@ -128,6 +128,8 @@ class HybridMT(TransformerNMT):
         hidden_state = (sent_repr, sent_repr) if rnn_type.upper() == 'LSTM' else sent_repr
         return self.decoder(hidden_state, embs)
 
+    def make_trainer(cls, *args, **kwargs):
+        return HybridMTTrainer(*args, **kwargs)
 
 class HybridMTTrainer(TransformerTrainer):
 

@@ -86,7 +86,8 @@ class Field(SentencePieceProcessor):
         files = set(files)  # remove duplicates
         arg = f"--input={','.join(files)} --vocab_size={vocab_size} --model_prefix={model_prefix}" \
             f" --model_type={model_type} --pad_id={PAD_TOK[1]} --bos_id={BOS_TOK[1]}" \
-            f" --eos_id={EOS_TOK[1]} --unk_id={UNK_TOK[1]} --hard_vocab_limit=false"
+            f" --eos_id={EOS_TOK[1]} --unk_id={UNK_TOK[1]} --hard_vocab_limit=false" \
+            f" --character_coverage=1.0"
         # CLS token goes in the beginning because we need it get index 4
         cls_tok_str = CLS_TOK[0]
         if no_split_toks:
@@ -234,8 +235,8 @@ class SqliteFile:
 
     INSERT_STMT = "INSERT INTO data (x, y, x_len, y_len) VALUES (?, ?, ?, ?)"
     READ_RANDOM = "SELECT * from data ORDER BY RANDOM()"
-    READ_X_LEN_DESC_RANDOM = "SELECT * from data ORDER BY x_len DESC, RANDOM()"
-    READ_Y_LEN_DESC_RANDOM = "SELECT * from data ORDER BY y_len DESC, RANDOM()"
+    READ_X_LEN_DESC_RANDOM = "SELECT * from data ORDER BY x_len + (RANDOM() % 20) DESC"
+    READ_Y_LEN_DESC_RANDOM = "SELECT * from data ORDER BY y_len + (RANDOM() % 20) DESC"
     COUNT_ROWS = "SELECT COUNT(*) as COUNT from data"
 
     def __init__(self, path: Path, shuffle=True, longest_first=False, sort_side='tgt',
@@ -464,9 +465,9 @@ class BatchIterable(Iterable[Batch]):
         if not isinstance(data_path, Path):
             data_path = Path(data_path)
         if data_path.name.endswith(".db"):
-            self.data = SqliteFile(data_path, shuffle=shuffle, longest_first=True, **kwargs)
+            self.data = SqliteFile(data_path, shuffle=shuffle, longest_first=False, **kwargs)
         else:
-            self.data = TSVData(data_path, shuffle=shuffle, longest_first=True, **kwargs)
+            self.data = TSVData(data_path, shuffle=shuffle, longest_first=False, **kwargs)
         self.batch_size = batch_size
         self.batch_first = batch_first
         log.info(f'Batch Size = {batch_size} toks')

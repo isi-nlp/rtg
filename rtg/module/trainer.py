@@ -19,6 +19,7 @@ from torch import optim
 from torch.optim import Optimizer
 from enum import Enum
 import inspect
+from pathlib import Path
 
 
 class NoamOpt(Optimizer):
@@ -198,7 +199,10 @@ class SteppedTrainer:
         inner_opt = Optims[optim].new(self.model.parameters(), **optim_args)
         if optim_state:
             log.info("restoring optimizer state from checkpoint")
-            inner_opt.load_state_dict(optim_state)
+            try:
+                inner_opt.load_state_dict(optim_state)
+            except Exception:
+                log.exception("Unable to restore optimizer, skipping it.")
         self.opt = NoamOpt(self.model.model_dim, noam_factor, warm_up_steps, inner_opt,
                            step=self.start_step)
 
@@ -224,19 +228,22 @@ class SteppedTrainer:
             from rtg.module.decoder import Decoder
             self.decoder = Decoder.new(self.exp, self.model)
 
-        do_init_embedding = (self.start_step == 0 and self.exp.config.get('trainer', {})
-                             .get('init_args', {}).get('init_emb'))
-        if do_init_embedding:
+        if self.start_step == 0:
             self.init_embeddings()
+        self.model = self.model.to(device)
+
 
     def init_embeddings(self):
-        src_emb_mat = self.exp.pre_trained_src_emb
+        def load_matrix(path: Path):
+            return torch.load(path) if path.exists() else None
+
+        src_emb_mat = load_matrix(self.exp.emb_src_file)
         if src_emb_mat is None:
             log.info("NOT initializing pre-trained source embedding")
         else:
             self.model.init_src_embedding(src_emb_mat)
 
-        tgt_emb_mat = self.exp.pre_trained_tgt_emb
+        tgt_emb_mat = load_matrix(self.exp.emb_tgt_file)
         if tgt_emb_mat is None:
             log.info("NOT Initializing pre-trained target embeddings")
         else:

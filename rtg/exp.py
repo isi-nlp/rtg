@@ -11,8 +11,11 @@ from rtg.dataprep import (RawRecord, ParallelSeqRecord, MonoSeqRecord, TSVData,
 from rtg.utils import IO, line_count
 import copy
 import numpy as np
+import random
+
 from itertools import zip_longest
 
+seeded = False
 
 
 def load_conf(inp: Union[str, Path]):
@@ -59,14 +62,17 @@ class BaseExperiment:
             if self._shared_field_file.exists() else None
 
     def maybe_seed(self):
-        if 'seed' in self.config:
+        global seeded
+        if not seeded and 'seed' in self.config:
             seed = self.config['seed']
             log.info(f"Manual seeding the RNG with {seed}")
+            random.seed(seed)
             torch.manual_seed(seed)
             np.random.seed(seed)
             if torch.cuda.is_available():
                 torch.backends.cudnn.deterministic = True
                 torch.backends.cudnn.benchmark = False
+            seeded = True
         else:
             log.info("No manual seed! Letting the RNGs do their stuff")
 
@@ -248,11 +254,10 @@ class TranslationExperiment(BaseExperiment):
 
         self.emb_src_file = self.data_dir / 'emb_src.pt'
         self.emb_tgt_file = self.data_dir / 'emb_tgt.pt'
-        self.aln_emb_src_file = self.data_dir / 'aln_emb_src.pt'  # src embs aligned to tgt
+        self.ext_emb_src_file = self.data_dir / 'ext_emb_src.pt'  # external Embeddings
+        self.ext_emb_tgt_file = self.data_dir / 'ext_emb_tgt.pt'  # external Embeddings
 
-        self.src_field, self.tgt_field = [
-            Field(str(f)) if f.exists() else None
-            for f in (self._src_field_file, self._tgt_field_file)]
+        self.reload_vocabs()
 
         # Either shared field  OR  individual  src and tgt fields
         assert not (self.shared_field and self.src_field)
@@ -267,24 +272,36 @@ class TranslationExperiment(BaseExperiment):
             self.mono_valid_src = self.data_dir / 'mono.valid.src.gz'
             self.mono_valid_tgt = self.data_dir / 'mono.valid.tgt.gz'
 
-    def pre_process_parallel(self, args: Dict[str, Any]):
-        assert args['shared_vocab']  # TODO support individual vocab types
+    def reload_vocabs(self):
+        self.src_field, self.tgt_field, self.shared_field = [
+            Field(str(f)) if f.exists() else None for f in (
+                self._src_field_file, self._tgt_field_file, self._shared_field_file)]
 
+    def pre_process_parallel(self, args: Dict[str, Any]):
         # check if files are parallel
         n_train_exs = line_count(args['train_src'])
+        log.info(f"Found {n_train_exs} parallel sentences for training")
         assert n_train_exs == line_count(args['train_tgt'])
         assert line_count(args['valid_src']) == line_count(args['valid_tgt'])
+        no_split_toks = args.get('no_split_toks')
 
-        if self._shared_field_file.exists():
-            log.info(f"{self._shared_field_file} exists. Skipping shared vocab creation")
-        else:
-            files = [args['train_src'], args['train_tgt']]
-            # monolingual files for vocab creation
-            files += [args[key] for key in ['mono_src', 'mono_tgt'] if key in args]
-            no_split_toks = args.get('no_split_toks')
-            self.shared_field = Field.train(args['pieces'], args['max_types'],
-                                            str(self._shared_field_file), files,
-                                            no_split_toks=no_split_toks)
+        if args.get('shared_vocab'):  # shared vocab
+            corpus = [args[key] for key in ['train_src', 'train_tgt', 'mono_src', 'mono_tgt']
+                      if key in args]
+            self.shared_field = self._make_vocab("shared", self._shared_field_file, args['pieces'],
+                                                 args['max_types'], corpus=corpus,
+                                                 no_split_toks=no_split_toks)
+        else:  # separate vocabularies
+            src_corpus = [args[key] for key in ['train_src', 'mono_src'] if key in args]
+            self.src_field = self._make_vocab("src", self._src_field_file, args['pieces'],
+                                              args['max_src_types'], corpus=src_corpus,
+                                              no_split_toks=no_split_toks)
+
+            # target vocabulary
+            tgt_corpus = [args[key] for key in ['train_tgt', 'mono_tgt'] if key in args]
+            self.tgt_field = self._make_vocab("src", self._tgt_field_file, args['pieces'],
+                                              args['max_tgt_types'], corpus=tgt_corpus,
+                                              no_split_toks=no_split_toks)
 
         train_file = self.train_db if n_train_exs >= 64000 else self.train_file
         self._pre_process_parallel('train_src', 'train_tgt', out_file=train_file, args=args,
@@ -305,48 +322,51 @@ class TranslationExperiment(BaseExperiment):
         samples = val_raw_recs[:n_samples]
         TSVData.write_parallel_recs(samples, self.samples_file)
 
-    def pre_process_mono(self, args):
+    def _make_vocab(self, name: str, vocab_file: Path, model_type: str, vocab_size: int,
+                    corpus: List, no_split_toks: List[str] = None) -> Field:
+        """
+        Construct vocabulary file
+        :param name: name : src, tgt or shared -- for the sake of logging
+        :param vocab_file: where to save the vocab file
+        :param model_type: sentence piece model type
+        :param vocab_size: max types in vocab
+        :param corpus: as the name says, list of files from which the vocab should be learned
+        :param no_split_toks: tokens that needs to be preserved from splitting, or added
+        :return:
+        """
+        if vocab_file.exists():
+            log.info(f"{vocab_file} exists. Skipping the {name} vocab creation")
+            return Field(str(vocab_file))
+        log.info(f"Going to build {name} vocab from mono files")
+        return Field.train(model_type, vocab_size, str(vocab_file), corpus,
+                           no_split_toks=no_split_toks)
 
-        # TODO: use SQLite storage
+    def pre_process_mono(self, args):
+        no_split_toks = args.get('no_split_toks')
         mono_files = [args[key] for key in ['mono_train_src', 'mono_train_tgt'] if key in args]
         assert mono_files, "At least one of 'mono_train_src', 'mono_train_tgt' should be set"
         log.info(f"Found mono files: {mono_files}")
-        no_split_toks = args.get('no_split_toks')
         if args.get('shared_vocab'):
-            if self._shared_field_file.exists():
-                log.info(f"{self._shared_field_file} exists. Skipping shared vocab creation")
-            else:
-                log.info("Going to build shared vocab from mono files")
-                self.shared_field = Field.train(args['pieces'],
-                                                args['max_types'],
-                                                str(self._shared_field_file), mono_files,
-                                                no_split_toks=no_split_toks)
-        else:  # separate vocabularies
-            # Source vocabulary
-            if self._src_field_file.exists():
-                log.info(f"{self._src_field_file} exists. Skipping source vocab creation... ")
-            else:
-                if 'mono_train_src' in args:
-                    log.info("Going to build source vocab from mono_train_src")
-                    self.src_field = Field.train(args['pieces'], args['max_src_types'],
-                                                 str(self._src_field_file),
-                                                 [args['mono_train_src']],
+            self.shared_field = self._make_vocab("shared", self._shared_field_file, args['pieces'],
+                                                 args['max_types'], corpus=mono_files,
                                                  no_split_toks=no_split_toks)
-                else:
-                    log.warning("Skipping source vocab creation since mono_train_src is not given")
+        else:  # separate vocabularies
+            if 'mono_train_src' in args:
+                self.src_field = self._make_vocab("src", self._src_field_file,
+                                                  args['pieces'], args['max_src_types'],
+                                                  corpus=[args['mono_train_src']],
+                                                  no_split_toks=no_split_toks)
+            else:
+                log.warning("Skipping source vocab creation since mono_train_src is not given")
 
             # target vocabulary
-            if self._tgt_field_file.exists():
-                log.info(f"{self._tgt_field_file} exists. Skipping target vocab creation")
+            if 'mono_train_tgt' in args:
+                self.tgt_field = self._make_vocab("src", self._tgt_field_file,
+                                                  args['pieces'], args['max_tgt_types'],
+                                                  corpus=[args['mono_train_tgt']],
+                                                  no_split_toks=no_split_toks)
             else:
-                if 'mono_train_tgt' in args:
-                    log.info("Going to build target vocab from mono_train_tgt")
-                    self.tgt_field = Field.train(args['pieces'], args['max_tgt_types'],
-                                                 str(self._tgt_field_file),
-                                                 [args['mono_train_tgt']],
-                                                 no_split_toks=no_split_toks)
-                else:
-                    log.warning("Skipping target vocab creation since mono_train_src is not given")
+                log.warning("Skipping target vocab creation since mono_train_tgt is not given")
 
         def _prep_file(file_key, out_file, do_truncate, max_len, field: Field):
             if file_key not in args:
@@ -356,6 +376,7 @@ class TranslationExperiment(BaseExperiment):
             raw_file = args[file_key]
 
             recs = TSVData.read_raw_mono_recs(raw_file, do_truncate, max_len, field.encode_as_ids)
+            # TODO: use SQLite storage
             TSVData.write_mono_recs(recs, out_file)
             if args.get('text_files'):
                 recs = TSVData.read_raw_mono_recs(raw_file, do_truncate, max_len, field.tokenize)
@@ -483,7 +504,8 @@ class TranslationExperiment(BaseExperiment):
         mapping = {
             'pre_emb_src': self.emb_src_file,
             'pre_emb_tgt': self.emb_tgt_file,
-            'aln_emb_src': self.aln_emb_src_file,
+            'ext_emb_src': self.ext_emb_src_file,
+            'ext_emb_tgt': self.ext_emb_tgt_file,
         }
         if not any(x in args for x in mapping):
             log.info("No pre trained embeddings are found in config; skipping it")
@@ -509,17 +531,31 @@ class TranslationExperiment(BaseExperiment):
             log.warning("Already prepared")
             return
         args = args if args else self.config['prep']
-        vocabs = args.get('vocabs')
-        if vocabs:
-            parent = TranslationExperiment(vocabs, read_only=True)
-            parent.copy_vocabs(self)
-            self.shared_field, self.src_field, self.tgt_field = [
-                Field(str(f)) if f.exists() else None
-                for f in (self._shared_field_file, self._src_field_file, self._tgt_field_file)]
-        if self._unsupervised:
-            self.pre_process_mono(args)
+
+        if 'same_data' in args:
+            data = Path(args['same_data']) / 'data'
+            assert data.exists()
+            log.info(f"Reusing prepared data dir from {data}")
+            if self.data_dir.exists():
+                if self.data_dir.is_symlink():
+                    self.data_dir.unlink()
+                else:
+                    self.data_dir.rename('data.bak')
+            self.data_dir.symlink_to(data.resolve(), target_is_directory=True)
+            self.reload_vocabs()
         else:
-            self.pre_process_parallel(args)
+            vocabs = args.get('vocabs')
+            if vocabs:
+                parent = TranslationExperiment(vocabs, read_only=True)
+                parent.copy_vocabs(self)
+                self.shared_field, self.src_field, self.tgt_field = [
+                    Field(str(f)) if f.exists() else None
+                    for f in (self._shared_field_file, self._src_field_file, self._tgt_field_file)]
+            if self._unsupervised:
+                self.pre_process_mono(args)
+            else:
+                self.pre_process_parallel(args)
+
         self.maybe_pre_process_embeds()
         # update state on disk
         self.persist_state()
@@ -582,14 +618,6 @@ class TranslationExperiment(BaseExperiment):
     @property
     def tgt_vocab(self) -> Field:
         return self.shared_field if self.shared_field is not None else self.tgt_field
-
-    @property
-    def pre_trained_src_emb(self):
-        return torch.load(self.emb_src_file) if self.emb_src_file.exists() else None
-
-    @property
-    def pre_trained_tgt_emb(self):
-        return torch.load(self.emb_tgt_file) if self.emb_tgt_file.exists() else None
 
     def _get_batch_args(self):
         prep_args = self.config.get('prep', {})
@@ -677,7 +705,7 @@ class TranslationExperiment(BaseExperiment):
         # read this file
 
         data = BatchIterable(inp_file, batch_size=batch_size, sort_desc=sort_desc,
-                             batch_first=batch_first, shuffle=shuffle)
+                             batch_first=batch_first, shuffle=shuffle,
                              **self._get_batch_args())
 
         if num_batches > 0:

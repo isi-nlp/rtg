@@ -399,9 +399,9 @@ class RNNMT(NMTModel):
 
         ext_embedder = None
         if exp:
-            if exp.aln_emb_src_file.exists():
+            if exp.ext_emb_src_file.exists():
                 log.info("Loading aligned embeddings.")
-                aln_emb_weights = torch.load(str(exp.aln_emb_src_file))
+                aln_emb_weights = torch.load(str(exp.ext_emb_src_file))
                 rows, cols = aln_emb_weights.shape
                 log.info(f"Loaded aligned embeddings: shape={aln_emb_weights.shape}")
                 assert rows == src_vocab, \

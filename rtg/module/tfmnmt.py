@@ -173,16 +173,20 @@ class TransformerNMT(NMTModel):
         return self.decoder(self.tgt_embed(tgt), memory, src_mask, tgt_mask)
 
     def tie_embeddings(self, tie: str):
-        assert self.src_embed[0].vocab == self.tgt_embed[0].vocab
-        if tie == 'three-way':
-            log.info("Tying the embedding weights, three ways: (SrcIn == TgtIn == TgtOut)")
-            self.src_embed[0].lut.weight = self.tgt_embed[0].lut.weight
+        assert tie in ('one-way', 'two-way', 'three-way')
+        log.info(f"Tying embeddings: {tie}")
+        if tie in ('two-way', 'three-way'):
+            # src get tied to tgt, so vocab must match
+            assert self.src_embed[0].vocab == self.tgt_embed[0].vocab
+            # TODO: count doesnt guarantee that the shared BPE was enabled, so check that from conf
+
+        if tie in ('one-way', 'three-way'):
+            log.info(f"Tying embeddings: TgtOut == TgtInp")
             self.generator.proj.weight = self.tgt_embed[0].lut.weight
-        elif tie == 'two-way':
-            log.info("Tying the embedding weights, two ways: (SrcIn == TgtIn)")
+        if tie in ('two-way', 'three-way'):
+            log.info(f"Tying embeddings: SrcInp == TgtInp")
             self.src_embed[0].lut.weight = self.tgt_embed[0].lut.weight
-        else:
-            raise Exception('Invalid argument to tied_emb; Known: {three-way, two-way}')
+
 
     @classmethod
     def make_model(cls, src_vocab, tgt_vocab, n_layers=6, hid_size=512, ff_size=2048, n_heads=8,
@@ -198,7 +202,7 @@ class TransformerNMT(NMTModel):
         #   validation and default value assignment is implicitly done by function call for us :)
 
         c = copy.deepcopy
-        attn = MultiHeadedAttention(n_heads, hid_size)
+        attn = MultiHeadedAttention(n_heads, hid_size, dropout=dropout)
         ff = PositionwiseFeedForward(hid_size, ff_size, dropout)
 
         encoder = Encoder(EncoderLayer(hid_size, c(attn), c(ff), dropout), n_layers)
@@ -214,10 +218,6 @@ class TransformerNMT(NMTModel):
 
         if tied_emb:
             model.tie_embeddings(tied_emb)
-
-        if exp and exp.aln_emb_src_file.exists():
-            log.warning("Aligned embeddings are provided but this model doesnt support it.")
-            log.warning("If you really cared for this feature, come back and implement it.")
 
         model.init_params()
         return model, args
@@ -654,6 +654,7 @@ class TransformerTrainer(SteppedTrainer):
         :param args: any extra args
         :return:
         """
+        log_resources = args.pop('log_resources', False)
         if args:
             # no extra args. let user know if an extra arg is passed
             raise Exception(f" Found extra args: {args}")
@@ -698,10 +699,10 @@ class TransformerTrainer(SteppedTrainer):
                 # assumption:  y_seqs has EOS, and not BOS
                 loss = self.loss_func(out, batch.y_seqs, num_toks, True)
                 unsaved_state = True
-                self.tbd.add_scalars('training', {'step_loss': loss,
+                self.tbd.add_scalars('training', {'step_loss': loss / num_toks,
                                                   'learn_rate': self.opt.curr_lr},
                                      self.opt.curr_step)
-                if cuda_available:
+                if log_resources and cuda_available:
                     self.tbd.add_scalars('resources_mem',
                                          {'mem_allocd': torch.cuda.memory_allocated(device),
                                           'mem_cached': torch.cuda.memory_cached(device),
