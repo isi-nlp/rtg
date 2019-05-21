@@ -16,26 +16,16 @@ import copy
 
 class TfmExtEmbNMT(TransformerNMT):
 
+    def __init__(self, *args, src_ext_emb: nn.Embedding, tgt_ext_emb: nn.Embedding, **kwargs):
+        super().__init__(*args, **kwargs)
+        assert src_ext_emb.embedding_dim == tgt_ext_emb.embedding_dim
+        self.ext_emb_dim = src_ext_emb.embedding_dim
+        self.src_ext_emb = src_ext_emb
+        self.tgt_ext_emb = tgt_ext_emb
+
     @property
     def model_type(self):
         return "tfmextembmt"
-
-    def init_ext_embedding(self, src_ext_emb_wt, tgt_ext_emb_wt, freeze=True):
-        src_vocab, src_dim = src_ext_emb_wt.shape
-        tgt_vocab, tgt_dim = tgt_ext_emb_wt.shape
-        assert src_dim == self.ext_emb_dim
-        assert tgt_dim == self.ext_emb_dim
-
-        log.info(f"Initializing SRC ext embs, freeze={freeze}")
-        self.src_ext_emb = nn.Embedding(src_vocab, src_dim, padding_idx=padding_idx,
-                                        _weight=src_ext_emb_wt)
-        self.src_ext_emb.weight.requires_grad = not freeze  # Freeze
-
-        log.info(f"Initializing TGT ext embs, freeze={freeze}")
-        self.tgt_ext_emb = nn.Embedding(tgt_vocab, tgt_dim, padding_idx=padding_idx,
-                                        _weight=tgt_ext_emb_wt)
-        self.tgt_ext_emb.weight.requires_grad = not freeze  # Freeze
-
 
     def forward(self, src, tgt, src_mask, tgt_mask, gen_probs=False, log_probs=True):
         "Take in and process masked src and target sequences."
@@ -46,16 +36,29 @@ class TfmExtEmbNMT(TransformerNMT):
         return self.generator(feats, log_probs=log_probs) if gen_probs else feats
 
     def decode(self, memory, src_mask, tgt, tgt_mask, src_ext_emb, tgt_ext_emb):
-        return self.decoder(self.tgt_embed(tgt), memory, src_mask, tgt_mask, src_ext_emb, tgt_ext_emb)
+        return self.decoder(self.tgt_embed(tgt), memory, src_mask, tgt_mask, src_ext_emb,
+                            tgt_ext_emb)
 
     @classmethod
     def make_model(cls, src_vocab, tgt_vocab, n_layers=6, hid_size=512, ff_size=2048, n_heads=8,
-                   dropout=0.1, tied_emb='three-way', ext_emb_dim: int = 0, exp: Experiment = None):
+                   dropout=0.1, tied_emb='three-way', exp: Experiment = None):
         # get all args for reconstruction at a later phase
         _, _, _, args = inspect.getargvalues(inspect.currentframe())
         for exclusion in ['cls', 'exp']:
             del args[exclusion]  # exclude some args
-        assert ext_emb_dim > 0
+
+        log.info("Getting external embedding from the experiment dir")
+        src_ext_emb_wt = torch.load(exp.ext_emb_src_file)
+
+        tgt_ext_emb_wt = torch.load(exp.ext_emb_tgt_file)
+        assert src_ext_emb_wt.shape[1] == tgt_ext_emb_wt.shape[1]
+        ext_emb_dim = src_ext_emb_wt.shape[1]
+        log.info(f"Found ext embs. Dim: {ext_emb_dim}; SRC vocab: {src_ext_emb_wt.shape[0]}, "
+                 f"TGT vocab: {tgt_ext_emb_wt.shape[0]}")
+        src_ext_emb = nn.Embedding(src_ext_emb_wt.shape[0], ext_emb_dim, padding_idx=padding_idx)
+        src_ext_emb.weight.requires_grad = False
+        tgt_ext_emb = nn.Embedding(tgt_ext_emb_wt.shape[0], ext_emb_dim, padding_idx=padding_idx)
+        tgt_ext_emb.weight.requires_grad = False
 
         c = copy.deepcopy
         attn = MultiHeadedAttention(n_heads, hid_size, dropout=dropout)
@@ -63,8 +66,9 @@ class TfmExtEmbNMT(TransformerNMT):
 
         encoder = Encoder(EncoderLayer(hid_size, c(attn), c(ff), dropout), n_layers)
         src_attn_ext = MultiHeadedAttentionExt(n_heads, hid_size, query_dim=hid_size + ext_emb_dim,
-                                           dropout=dropout)
-        decoder = DecoderExt(DecoderLayerExt(hid_size, c(attn), src_attn_ext, c(ff), dropout), n_layers)
+                                               dropout=dropout)
+        decoder = DecoderExt(DecoderLayerExt(hid_size, c(attn), src_attn_ext, c(ff), dropout),
+                             n_layers)
 
         src_emb = nn.Sequential(Embeddings(hid_size, src_vocab),
                                 PositionalEncoding(hid_size, dropout))
@@ -72,8 +76,8 @@ class TfmExtEmbNMT(TransformerNMT):
                                 PositionalEncoding(hid_size, dropout))
         generator = Generator(hid_size, tgt_vocab)
 
-        model = cls(encoder, decoder, src_emb, tgt_emb, generator)
-        model.ext_emb_dim = ext_emb_dim
+        model = cls(encoder, decoder, src_emb, tgt_emb, generator,
+                    src_ext_emb=src_ext_emb, tgt_ext_emb=tgt_ext_emb)
 
         if tied_emb:
             model.tie_embeddings(tied_emb)
@@ -158,4 +162,3 @@ class DecoderExt(Decoder):
         for layer in self.layers:
             x = layer(x, memory, src_mask, tgt_mask, src_ext_embs, tgt_ext_embs)
         return self.norm(x)
-

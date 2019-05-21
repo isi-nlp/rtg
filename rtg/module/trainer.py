@@ -246,12 +246,6 @@ class SteppedTrainer:
         else:
             self.model.init_tgt_embedding(tgt_emb_mat)
 
-        src_ext_emb = load_matrix(self.exp.ext_emb_src_file)
-        tgt_ext_emb = load_matrix(self.exp.ext_emb_tgt_file)
-        assert (src_ext_emb is None) == (tgt_ext_emb is None) #Both given or None given
-        if src_ext_emb is not None:
-            self.model.init_ext_embedding(src_ext_emb, tgt_ext_emb)
-
     def show_samples(self, beam_size=3, num_hyp=3, max_len=30):
         """
         Logs the output of model (at this stage in training) to a set of samples

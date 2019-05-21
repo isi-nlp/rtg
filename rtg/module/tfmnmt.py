@@ -148,10 +148,6 @@ class TransformerNMT(NMTModel):
             assert weights.shape == self.generator.proj.weight.shape
             self.generator.proj.weight.data.copy_(weights.data)
 
-    def init_ext_embedding(self, src_ext_emb_wt, tgt_ext_emb_wt):
-        log.warning("this model doesnt support ext embs. use model_type: tfmextembmt ")
-        raise NotImplementedError()
-
     @property
     def model_dim(self):
         return self.generator.d_model
