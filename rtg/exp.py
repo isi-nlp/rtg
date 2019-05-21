@@ -679,14 +679,14 @@ class TranslationExperiment(BaseExperiment):
                         destination.name.replace('.model', '.vocab'))
                     dst_txt_file.write_bytes(src_txt_file.read_bytes())
 
-    def get_mono_data(self, split: str, side: str, batch_size: int, sort_dec: bool = False,
+    def get_mono_data(self, split: str, side: str, batch_size: int, sort_desc: bool = False,
                       batch_first: bool = False, shuffle: bool = False, num_batches: int = 0):
         """
         reads monolingual data
         :param split: name of the split. choices = {train, valid}
         :param side: which side ? choices = {src, tgt}
         :param batch_size: what should be batch size. example =64
-        :param sort_dec: should the seqs in batch be sorted descending order of length ?
+        :param sort_desc: should the seqs in batch be sorted descending order of length ?
         :param batch_first: should the first dimension be batch instead of time step ?
         :param shuffle: should the seqs be shuffled before reading (and for each re-reading
             if num_batches is too large)
@@ -703,9 +703,11 @@ class TranslationExperiment(BaseExperiment):
         }[(split, side)]
         assert inp_file.exists()
         # read this file
-        data = BatchIterable(inp_file, batch_size=batch_size, sort_dec=sort_dec,
+
+        data = BatchIterable(inp_file, batch_size=batch_size, sort_desc=sort_desc,
                              batch_first=batch_first, shuffle=shuffle,
                              **self._get_batch_args())
+
         if num_batches > 0:
             data = LoopingIterable(data, num_batches)
         return data

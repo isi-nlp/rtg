@@ -11,6 +11,7 @@ from rtg.lm.rnnlm import RnnLmTrainer
 from rtg.lm.tfmlm import TfmLmTrainer
 from rtg.module.mtfmnmt import MTransformerNMT
 from rtg.module.ext.tfmextemb import TfmExtEmbNMT
+from rtg.module.hybridmt import HybridMT
 from rtg.emb.word2vec import CBOW
 from rtg.module.generator import *
 
@@ -24,9 +25,9 @@ trainers = {
         'tfmlm': TfmLmTrainer,
         'mtfmnmt': MTransformerTrainer,
         'wv_cbow': CBOW.make_trainer,
-        'tfmextembmt': TfmExtEmbNMT.make_trainer
+        'tfmextembmt': TfmExtEmbNMT.make_trainer,
+        'hybridmt': HybridMT.make_trainer
     }
-
 
 # model factories
 factories = {
@@ -39,9 +40,9 @@ factories = {
     'tfmlm': TfmLm.make_model,
     'mtfmnmt': MTransformerNMT.make_model,
     'tfmextembmt': TfmExtEmbNMT.make_model,
+    'hybridmt': HybridMT.make_model,
     'wv_cbow': CBOW.make_model
 }
-
 
 # Generator factories
 generators = {'t2t': T2TGenerator,
@@ -53,7 +54,7 @@ generators = {'t2t': T2TGenerator,
               'rnnlm': RnnLmGenerator,
               'tfmlm': TfmLmGenerator,
               'mtfmnmt': MTfmGenerator,
+              'hybridmt': MTfmGenerator,
               'tfmextembmt': TfmExtEembGenerator,
-              'tfmnmt_nomax': T2TGenerator,
               'wv_cbow': CBOW.make_model  # FIXME: this is a place holder
               }
