@@ -11,7 +11,11 @@ from rtg.dataprep import (RawRecord, ParallelSeqRecord, MonoSeqRecord, TSVData,
 from rtg.utils import IO, line_count
 import copy
 import numpy as np
+import random
+
 from itertools import zip_longest
+
+seeded = False
 
 
 def load_conf(inp: Union[str, Path]):
@@ -58,14 +62,17 @@ class BaseExperiment:
             if self._shared_field_file.exists() else None
 
     def maybe_seed(self):
-        if 'seed' in self.config:
+        global seeded
+        if not seeded and 'seed' in self.config:
             seed = self.config['seed']
             log.info(f"Manual seeding the RNG with {seed}")
+            random.seed(seed)
             torch.manual_seed(seed)
             np.random.seed(seed)
             if torch.cuda.is_available():
                 torch.backends.cudnn.deterministic = True
                 torch.backends.cudnn.benchmark = False
+            seeded = True
         else:
             log.info("No manual seed! Letting the RNGs do their stuff")
 
@@ -250,9 +257,7 @@ class TranslationExperiment(BaseExperiment):
         self.ext_emb_src_file = self.data_dir / 'ext_emb_src.pt'  # external Embeddings
         self.ext_emb_tgt_file = self.data_dir / 'ext_emb_tgt.pt'  # external Embeddings
 
-        self.src_field, self.tgt_field = [
-            Field(str(f)) if f.exists() else None
-            for f in (self._src_field_file, self._tgt_field_file)]
+        self.reload_vocabs()
 
         # Either shared field  OR  individual  src and tgt fields
         assert not (self.shared_field and self.src_field)
@@ -266,6 +271,11 @@ class TranslationExperiment(BaseExperiment):
             self.mono_train_tgt = self.data_dir / 'mono.train.tgt.gz'
             self.mono_valid_src = self.data_dir / 'mono.valid.src.gz'
             self.mono_valid_tgt = self.data_dir / 'mono.valid.tgt.gz'
+
+    def reload_vocabs(self):
+        self.src_field, self.tgt_field, self.shared_field = [
+            Field(str(f)) if f.exists() else None for f in (
+                self._src_field_file, self._tgt_field_file, self._shared_field_file)]
 
     def pre_process_parallel(self, args: Dict[str, Any]):
         # check if files are parallel
@@ -521,17 +531,31 @@ class TranslationExperiment(BaseExperiment):
             log.warning("Already prepared")
             return
         args = args if args else self.config['prep']
-        vocabs = args.get('vocabs')
-        if vocabs:
-            parent = TranslationExperiment(vocabs, read_only=True)
-            parent.copy_vocabs(self)
-            self.shared_field, self.src_field, self.tgt_field = [
-                Field(str(f)) if f.exists() else None
-                for f in (self._shared_field_file, self._src_field_file, self._tgt_field_file)]
-        if self._unsupervised:
-            self.pre_process_mono(args)
+
+        if 'same_data' in args:
+            data = Path(args['same_data']) / 'data'
+            assert data.exists()
+            log.info(f"Reusing prepared data dir from {data}")
+            if self.data_dir.exists():
+                if self.data_dir.is_symlink():
+                    self.data_dir.unlink()
+                else:
+                    self.data_dir.rename('data.bak')
+            self.data_dir.symlink_to(data.resolve(), target_is_directory=True)
+            self.reload_vocabs()
         else:
-            self.pre_process_parallel(args)
+            vocabs = args.get('vocabs')
+            if vocabs:
+                parent = TranslationExperiment(vocabs, read_only=True)
+                parent.copy_vocabs(self)
+                self.shared_field, self.src_field, self.tgt_field = [
+                    Field(str(f)) if f.exists() else None
+                    for f in (self._shared_field_file, self._src_field_file, self._tgt_field_file)]
+            if self._unsupervised:
+                self.pre_process_mono(args)
+            else:
+                self.pre_process_parallel(args)
+
         self.maybe_pre_process_embeds()
         # update state on disk
         self.persist_state()
