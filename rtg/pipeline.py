@@ -34,7 +34,6 @@ class Pipeline:
 
         script: Path = RTG_PATH / 'scripts' / 'detok-n-bleu.sh'
         if not script.exists():
-            log.warning(f"Not found: {script}")
             script = RTG_PATH.parent / 'scripts' / 'detok-n-bleu.sh'
         assert script.exists(), 'Unable to locate detok-n-bleu.sh script'
         self.script = script
@@ -82,7 +81,8 @@ class Pipeline:
                         and line_count(out_file) == line_count(orig_src):
                     log.warning(f"{out_file} exists and has desired number of lines. Skipped...")
                 else:
-                    log.warning(f"{out_file} exists and not empty. goint to be overwritten...")
+                    if out_file.exists():
+                        log.warning(f"{out_file} exists and not empty. going to be overwritten...")
                     log.info(f"decoding {name}: {orig_src}")
                     with IO.reader(src_link) as inp, IO.writer(out_file) as out:
                         decoder.decode_file(inp, out, **dec_args)
