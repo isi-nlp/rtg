@@ -39,3 +39,5 @@ from rtg.exp import TranslationExperiment
 from rtg.module import tfmnmt, decoder
 from pathlib import Path
 RTG_PATH = Path(__file__).resolve().parent.parent
+
+log.info(f"rtg v{__version__} from {RTG_PATH}")

@@ -22,8 +22,8 @@ prep:
   max_types: 500  # change to 8000
   pieces: bpe
   shared_vocab: true
-  src_len: 500
-  tgt_len: 500
+  src_len: 128
+  tgt_len: 128
   train_src: data/train.src
   train_tgt: data/train.tgt
   truncate: false
@@ -31,8 +31,14 @@ prep:
   valid_tgt: data/valid.tgt
 tester:
   decoder:
-    beam_size: 4
-    max_len: 60
+    tune:
+      trials: 10
+      strategy: random
+      tune_src: data/valid.src
+      tune_ref: data/valid.tgt
+      beam_size: [1, 30]
+      ensemble: [1, 10]
+      lp_alpha: [0.0, 1.5]
   suit:
     valid:
     - data/valid.src

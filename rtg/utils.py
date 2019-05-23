@@ -102,3 +102,21 @@ class IO:
     @classmethod
     def writer(cls, path, text=True, append=False):
         return cls(path, ('a' if append else 'w') + ('t' if text else 'b'))
+
+    @classmethod
+    def get_lines(cls, path, col=0, delim='\t', line_mapper=None):
+        with cls(path) as inp:
+            if col >= 0:
+                inp = (line.split(delim)[col].strip() for line in inp)
+            if line_mapper:
+                inp = (line_mapper(line) for line in inp)
+            yield from inp
+
+    @classmethod
+    def write_lines(cls, path: Path, text):
+        if isinstance(text, str):
+            text = [text]
+        with cls(path) as out:
+            for line in text:
+                out.write(line)
+                out.write('\n')

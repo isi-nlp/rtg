@@ -71,7 +71,7 @@ class Field(SentencePieceProcessor):
 
     @staticmethod
     def train(model_type: str, vocab_size: int, model_path: str, files: Iterator[str],
-              no_split_toks: Optional[List[str]] = None):
+              no_split_toks: Optional[List[str]] = None, cover_all_chars: bool=False):
         """
         Train Sentence Piece Model
         :param model_type: sentence piece model type: {unigram, BPE, word, char}
@@ -86,8 +86,9 @@ class Field(SentencePieceProcessor):
         files = set(files)  # remove duplicates
         arg = f"--input={','.join(files)} --vocab_size={vocab_size} --model_prefix={model_prefix}" \
             f" --model_type={model_type} --pad_id={PAD_TOK[1]} --bos_id={BOS_TOK[1]}" \
-            f" --eos_id={EOS_TOK[1]} --unk_id={UNK_TOK[1]} --hard_vocab_limit=false" \
-            f" --character_coverage=1.0"
+            f" --eos_id={EOS_TOK[1]} --unk_id={UNK_TOK[1]} --hard_vocab_limit=false"
+        if cover_all_chars:
+            arg += f" --character_coverage=1.0"
         # CLS token goes in the beginning because we need it get index 4
         cls_tok_str = CLS_TOK[0]
         if no_split_toks:

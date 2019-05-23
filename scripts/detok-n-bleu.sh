@@ -29,7 +29,7 @@ done
 
 
 # detokenize first column
-cut -f1 ${HYP} | ${DIR}/detokenizer.perl | sed 's/ @\([^@]\+\)@ /\1/g') > ${HYP}.detok
+cut -f1 ${HYP} | ${DIR}/detokenizer.perl | sed 's/ @\([^@]\+\)@ /\1/g' > ${HYP}.detok
 
 # multi bleu
 ${DIR}/multi-bleu-detok.perl ${REF} < ${HYP}.detok > ${HYP}.detok.tc.bleu
