@@ -19,6 +19,7 @@ from sacrebleu import corpus_bleu, BLEU
 import inspect
 import copy
 import json
+import subprocess
 
 
 @dataclass
@@ -55,7 +56,7 @@ class Pipeline:
             IO.write_lines(out, detok_lines)
 
     def evaluate_file(self, hyp: Path, ref: Union[Path, List[str]], lowercase=True) -> float:
-        detok_hyp = hyp.with_name(hyp.name + '.detok')
+        detok_hyp = hyp.with_name(hyp.name + '.mosesdetok')
         self.detokenize(hyp, detok_hyp)
         detok_lines = IO.get_lines(detok_hyp)
         # takes multiple refs, but here we have only one
@@ -65,15 +66,21 @@ class Pipeline:
         bleu_str = f'BLEU = {bleu.score:.2f} {"/".join(f"{p:.1f}" for p in bleu.precisions)}' \
             f' (BP = {bleu.bp:.3f} ratio = {(bleu.sys_len / bleu.ref_len):.3f}' \
             f' hyp_len = {bleu.sys_len:d} ref_len={bleu.ref_len:d})'
-        bleu_file = detok_hyp.with_suffix('.lc.bleu' if lowercase else '.oc.bleu')
+        bleu_file = detok_hyp.with_suffix(('.lc' if lowercase else '.oc') + '.sacrebleu')
         log.info(f'BLEU {hyp} : {bleu_str}')
         IO.write_lines(bleu_file, bleu_str)
         return bleu.score
 
+    def external_eval(self, hyp: Path, ref: Path):
+        for x in [hyp, ref]:
+            assert x.exists()
+        cmd = f'{self.script} -h {hyp} -r {ref}'
+        subprocess.run(cmd, shell=True, check=True)
+
     def decode_eval_file(self, decoder, src: Union[Path, List[str]], out_file: Path, ref: Union[Path, List[str]],
                          lowercase: bool=True, **dec_args) -> float:
         if out_file.exists() and out_file.stat().st_size > 0 \
-                and line_count(out_file) == line_count(src_file):
+                and line_count(out_file) == len(src):
             log.warning(f"{out_file} exists and has desired number of lines. Skipped...")
         else:
 
@@ -216,6 +223,7 @@ class Pipeline:
                 score = self.decode_eval_file(decoder, src_link, out_file, ref_link,
                                               batch_size=batch_size, beam_size=beam_size,
                                               lp_alpha=lp_alpha, max_len=max_len)
+                self.external_eval(hyp=out_file, ref=ref_link)  # external eval script
             except Exception as e:
                 log.exception(f"Something went wrong with '{name}' test")
                 err = test_dir / f'{name}.err'

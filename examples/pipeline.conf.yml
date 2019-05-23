@@ -36,7 +36,7 @@ tester:
       strategy: random
       tune_src: data/valid.src
       tune_ref: data/valid.tgt
-      beam_size: [1, 30]
+      beam_size: [1, 15]
       ensemble: [1, 10]
       lp_alpha: [0.0, 1.5]
       suggested:
