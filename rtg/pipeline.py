@@ -46,7 +46,7 @@ class Pipeline:
 
     def detokenize(self, inp: Path, out: Path, col=0, lang='en', post_op=None):
         log.info(f"detok : {inp} --> {out}")
-        tok_lines = IO.get_lines(inp, col=col,line_mapper=lambda x: x.split())
+        tok_lines = IO.get_lines(inp, col=col, line_mapper=lambda x: x.split())
         with MosesDetokenizer(lang=lang) as detok:
             detok_lines = (detok(tok_line) for tok_line in tok_lines)
             if post_op:
@@ -56,10 +56,10 @@ class Pipeline:
     def evaluate_file(self, hyp: Path, ref: Path, lowercase=True) -> float:
         detok_hyp = hyp.with_name(hyp.name + '.detok')
         self.detokenize(hyp, detok_hyp)
-        detok_lines = list(IO.get_lines(detok_hyp))
-        ref_lines = list(IO.get_lines(ref))
-        print(len(detok_lines), len(ref_lines))
-        bleu: BLEU = corpus_bleu(sys_stream=detok_lines, ref_streams=ref_lines, lowercase=lowercase)
+        detok_lines = IO.get_lines(detok_hyp)
+        ref_liness = [IO.get_lines(ref)]  # takes multiple refs, but here we have only one
+        bleu: BLEU = corpus_bleu(sys_stream=detok_lines, ref_streams=ref_liness,
+                                 lowercase=lowercase)
         bleu_str = f'BLEU = {bleu.score:.2f} {"/".join(f"{p:.1f}" for p in bleu.precisions)}' \
             f' (BP = {bleu.bp:.3f} ratio = {(bleu.sys_len / bleu.ref_len):.3f}' \
             f' hyp_len = {bleu.sys_len:d} ref_len={bleu.ref_len:d})'
@@ -114,7 +114,8 @@ class Pipeline:
                 name = f'tune_step{step}_beam{b_s}_ens{e}_lp{lp_a:.2f}'
                 log.info(name)
                 out_file = tune_dir / f'{name}.out.tsv'
-                score = self.decode_eval_file(decoder, tune_src, out_file, tune_ref, batch_size=batch_size,
+                score = self.decode_eval_file(decoder, tune_src, out_file, tune_ref,
+                                              batch_size=batch_size,
                                               beam_size=b_s, lp_alpha=lp_a, lowercase=lowercase,
                                               **fixed_args)
                 samples.append((score, dict(beam_size=b_s, lp_alpha=lp_a, ensemble=e)))
