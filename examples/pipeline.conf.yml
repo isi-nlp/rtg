@@ -39,6 +39,10 @@ tester:
       beam_size: [1, 30]
       ensemble: [1, 10]
       lp_alpha: [0.0, 1.5]
+      suggested:
+        - [4, 5, 0.6]
+        - [6, 1, 0.5]
+        - [5, 10, 0.3]
   suit:
     valid:
     - data/valid.src

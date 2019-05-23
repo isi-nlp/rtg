@@ -6,7 +6,7 @@
 import argparse
 from rtg import log, TranslationExperiment as Experiment
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 from rtg.module.decoder import Decoder
 from rtg import RTG_PATH
 from rtg.utils import IO, line_count
@@ -18,6 +18,7 @@ from mosestokenizer import MosesDetokenizer
 from sacrebleu import corpus_bleu, BLEU
 import inspect
 import copy
+import json
 
 
 @dataclass
@@ -81,7 +82,8 @@ class Pipeline:
 
     def tune_decoder_params(self, exp: Experiment, tune_src: str, tune_ref: str,
                             trials: int = 20, strategy: str = 'random', lowercase=True,
-                            beam_size=[1, 20], ensemble=[1, 10], lp_alpha=[0.0, 1.0],
+                            beam_size=[1, 15], ensemble=[1, 10], lp_alpha=[0.0, 1.0],
+                            suggested:List[Tuple[int, int, float]]=None,
                             **fixed_args):
         _, _, _, tune_args = inspect.getargvalues(inspect.currentframe())
         del tune_args['exp']  # exclude some args
@@ -97,29 +99,42 @@ class Pipeline:
         assert tune_src.exists()
         assert tune_ref.exists()
 
-        beam_sizes = [random.randint(beam_size[0], beam_size[1]) for _ in range(trials)]
-        ensembles = [random.randint(ensemble[0], ensemble[1]) for _ in range(trials)]
-        lp_alphas = [round(random.uniform(lp_alpha[0], lp_alpha[1]), 2) for _ in range(trials)]
+        tune_log = tune_dir / 'scores.json'   # resume the tuning
+        memory: Dict[Tuple, float] = json.load(tune_log.open()) if tune_log.exists() else {}
+
+        beam_sizes, ensembles, lp_alphas = [], [], []
+        if suggested:
+            suggested_new = [x for x in suggested if x not in memory]
+            beam_sizes += [x[0] for x in suggested_new]
+            ensembles += [x[1] for x in suggested_new]
+            lp_alphas += [round(x[2], 2) for x in suggested_new]
+
+        new_trials = trials - len(memory)
+        if new_trials > 0:
+            beam_sizes += [random.randint(beam_size[0], beam_size[1]) for _ in range(new_trials)]
+            ensembles += [random.randint(ensemble[0], ensemble[1]) for _ in range(new_trials)]
+            lp_alphas += [round(random.uniform(lp_alpha[0], lp_alpha[1]), 2) for _ in range(new_trials)]
 
         # ensembling is somewhat costlier, so try minimize the model ensembling, by grouping them together
         grouped_ens = defaultdict(list)
-        for b, e, l in zip(beam_sizes, ensembles, lp_alphas):
-            grouped_ens[e].append((b, l))
-
-        samples = []
-        for e, args in grouped_ens.items():
-            decoder = Decoder.new(exp, ensemble=e)
-            for b_s, lp_a in args:
-                batch_size = self.suggest_batch_size(b_s)
-                name = f'tune_step{step}_beam{b_s}_ens{e}_lp{lp_a:.2f}'
-                log.info(name)
-                out_file = tune_dir / f'{name}.out.tsv'
-                score = self.decode_eval_file(decoder, tune_src, out_file, tune_ref,
-                                              batch_size=batch_size,
-                                              beam_size=b_s, lp_alpha=lp_a, lowercase=lowercase,
-                                              **fixed_args)
-                samples.append((score, dict(beam_size=b_s, lp_alpha=lp_a, ensemble=e)))
-        return sorted(samples, key=lambda x: x[0], reverse=True)[0][1], tune_args
+        for b, ens, l in zip(beam_sizes, ensembles, lp_alphas):
+            grouped_ens[ens].append((b, l))
+        try:
+            for ens, args in grouped_ens.items():
+                decoder = Decoder.new(exp, ensemble=ens)
+                for b_s, lp_a in args:
+                    batch_size = self.suggest_batch_size(b_s)
+                    name = f'tune_step{step}_beam{b_s}_ens{ens}_lp{lp_a:.2f}'
+                    log.info(name)
+                    out_file = tune_dir / f'{name}.out.tsv'
+                    score = self.decode_eval_file(decoder, tune_src, out_file, tune_ref,
+                                                  batch_size=batch_size, beam_size=b_s,
+                                                  lp_alpha=lp_a, lowercase=lowercase, **fixed_args)
+                    memory[(b_s, ens, lp_a)] =  score
+            best_params = sorted(memory.items(), key=lambda x:x[0], reverse=True)[0]
+            return dict(zip(['beam_size', 'ensemble', 'lp_alpha'], best_params)), tune_args
+        finally:
+            IO.write_lines(tune_log, json.dumps(memory))
 
     def suggest_batch_size(self, beam_size):
         return 20000 // beam_size
@@ -149,7 +164,7 @@ class Pipeline:
                 tune_args['tune_ref'] = prep_args.get('valid_ref', prep_args['valid_tgt'])
             tune_args['max_len'] = max_len
             best_params, tuner_args_ext = self.tune_decoder_params(exp=exp, **tune_args)
-            dec_args['tune'].update(tune_args_ext)  # Update the config file with default args
+            dec_args['tune'].update(tuner_args_ext)  # Update the config file with default args
             dec_args.update(best_params)
             dec_args['tune']['tuned'] = True
 
