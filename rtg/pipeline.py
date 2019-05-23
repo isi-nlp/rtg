@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 #
-# Author: Thamme Gowda [tg (at) isi (dot) edu] 
+# Author: Thamme Gowda [tg (at) isi (dot) edu]
 # Created: 3/9/19
 
 import argparse
@@ -17,6 +17,7 @@ from collections import defaultdict
 from mosestokenizer import MosesDetokenizer
 from sacrebleu import corpus_bleu, BLEU
 import inspect
+import copy
 
 
 @dataclass
@@ -55,12 +56,13 @@ class Pipeline:
     def evaluate_file(self, hyp: Path, ref: Path, lowercase=True) -> float:
         detok_hyp = hyp.with_name(hyp.name + '.detok')
         self.detokenize(hyp, detok_hyp)
-        detok_lines = IO.get_lines(detok_hyp)
-        ref_lines = IO.get_lines(ref)
+        detok_lines = list(IO.get_lines(detok_hyp))
+        ref_lines = list(IO.get_lines(ref))
+        print(len(detok_lines), len(ref_lines))
         bleu: BLEU = corpus_bleu(sys_stream=detok_lines, ref_streams=ref_lines, lowercase=lowercase)
         bleu_str = f'BLEU = {bleu.score:.2f} {"/".join(f"{p:.1f}" for p in bleu.precisions)}' \
             f' (BP = {bleu.bp:.3f} ratio = {(bleu.sys_len / bleu.ref_len):.3f}' \
-            f' hyp_len = {bleu.sys_len:d} ref_len={bleu.ref_len})'
+            f' hyp_len = {bleu.sys_len:d} ref_len={bleu.ref_len:d})'
         bleu_file = detok_hyp.with_suffix('.lc.bleu' if lowercase else '.oc.bleu')
         log.info(f'BLEU {hyp} : {bleu_str}')
         IO.write_lines(bleu_file, bleu_str)
@@ -79,9 +81,12 @@ class Pipeline:
 
     def tune_decoder_params(self, exp: Experiment, tune_src: str, tune_ref: str,
                             trials: int = 20, strategy: str = 'random', lowercase=True,
-                            beam_size=[1, 20], ensemble=[1, 10], lp_alpha=[0.0, 1.0]):
+                            beam_size=[1, 20], ensemble=[1, 10], lp_alpha=[0.0, 1.0],
+                            **fixed_args):
         _, _, _, tune_args = inspect.getargvalues(inspect.currentframe())
-        del tune_args[exp]  # exclude some args
+        del tune_args['exp']  # exclude some args
+        del tune_args['fixed_args']
+        tune_args.update(fixed_args)
 
         _, step = exp.get_last_saved_model()
         tune_dir = exp.work_dir / f'tune_step{step}'
@@ -94,7 +99,7 @@ class Pipeline:
 
         beam_sizes = [random.randint(beam_size[0], beam_size[1]) for _ in range(trials)]
         ensembles = [random.randint(ensemble[0], ensemble[1]) for _ in range(trials)]
-        lp_alphas = [random.uniform(lp_alpha[0], lp_alpha[1]) for _ in range(trials)]
+        lp_alphas = [round(random.uniform(lp_alpha[0], lp_alpha[1]), 2) for _ in range(trials)]
 
         # ensembling is somewhat costlier, so try minimize the model ensembling, by grouping them together
         grouped_ens = defaultdict(list)
@@ -105,12 +110,18 @@ class Pipeline:
         for e, args in grouped_ens.items():
             decoder = Decoder.new(exp, ensemble=e)
             for b_s, lp_a in args:
-                name = f'tune_step{step}_beam{b_s}_ens{e}_lp{lp_a}'
+                batch_size = self.suggest_batch_size(b_s)
+                name = f'tune_step{step}_beam{b_s}_ens{e}_lp{lp_a:.2f}'
+                log.info(name)
                 out_file = tune_dir / f'{name}.out.tsv'
-                score = self.decode_eval_file(decoder, tune_src, out_file, tune_ref,
-                                              beam_size=b_s, lp_alpha=lp_a, lowercase=lowercase)
+                score = self.decode_eval_file(decoder, tune_src, out_file, tune_ref, batch_size=batch_size,
+                                              beam_size=b_s, lp_alpha=lp_a, lowercase=lowercase,
+                                              **fixed_args)
                 samples.append((score, dict(beam_size=b_s, lp_alpha=lp_a, ensemble=e)))
         return sorted(samples, key=lambda x: x[0], reverse=True)[0][1], tune_args
+
+    def suggest_batch_size(self, beam_size):
+        return 20000 // beam_size
 
     def run_tests(self, exp=None, args=None):
         if exp is None:
@@ -125,22 +136,32 @@ class Pipeline:
         if 'decoder' not in args:
             args['decoder'] = {}
         dec_args: Dict = args['decoder']
-        dec_params = dec_args
-        if 'tune' in dec_args and not dec_args.get('tuned'):
+        best_params = copy.deepcopy(dec_args)
+        max_len = best_params.get('max_len', 50)
+        # TODO: this has grown to become messy (trying to make backward compatible, improve the logic here
+        if 'tune' in dec_args and not dec_args['tune'].get('tuned'):
             tune_args: Dict = dec_args['tune']
             prep_args = exp.config['prep']
             if 'tune_src' not in tune_args:
                 tune_args['tune_src'] = prep_args['valid_src']
             if 'tune_ref' not in tune_args:
                 tune_args['tune_ref'] = prep_args.get('valid_ref', prep_args['valid_tgt'])
-            dec_params, tune_args_ext = self.tune_decoder_params(**tune_args)
-            tune_args.update(tune_args_ext)  # Update the config file with default args
-            dec_args['tuned'] = True
+            tune_args['max_len'] = max_len
+            best_params, tuner_args_ext = self.tune_decoder_params(exp=exp, **tune_args)
+            dec_args['tune'].update(tune_args_ext)  # Update the config file with default args
+            dec_args.update(best_params)
+            dec_args['tune']['tuned'] = True
 
-        beam_size = dec_params.get('beam_size', 4)
-        ensemble: int = dec_params.pop('ensemble', 5),
-        lp_alpha = dec_params.get('lp_alpha', 0.0)
-        dec_args.update(dict(beam_size=beam_size, lp_alpha=lp_alpha, ensemble=ensemble))
+        if 'tune' in best_params:
+            del best_params['tune']
+
+        beam_size = best_params.get('beam_size', 4)
+        ensemble: int = best_params.pop('ensemble', 5)
+        lp_alpha = best_params.get('lp_alpha', 0.0)
+        batch_size = best_params.get('batch_size', self.suggested_batch_size(beam_size))
+
+        dec_args.update(dict(beam_size=beam_size, lp_alpha=lp_alpha, ensemble=ensemble,
+                             max_len=max_len, batch_size=batch_size))
         exp.persist_state()  # update the config
 
         assert step > 0, 'looks like no model is saved or invalid experiment dir'
@@ -159,16 +180,9 @@ class Pipeline:
                     if not link.exists():
                         link.symlink_to(orig)
                 out_file = test_dir / f'{name}.out.tsv'
-                if out_file.exists() and out_file.stat().st_size > 0 \
-                        and line_count(out_file) == line_count(orig_src):
-                    log.warning(f"{out_file} exists and has desired number of lines. Skipped...")
-                else:
-                    if out_file.exists():
-                        log.warning(f"{out_file} exists and not empty. going to be overwritten...")
-                    log.info(f"decoding {name}: {orig_src}")
-                    with IO.reader(src_link) as inp, IO.writer(out_file) as out:
-                        decoder.decode_file(inp, out, **dec_args)
-                self.evaluate_file(out_file, ref_link)
+                score = self.decode_eval_file(decoder, src_link, out_file, ref_link,
+                                              batch_size=batch_size, beam_size=beam_size,
+                                              lp_alpha=lp_alpha)
             except Exception as e:
                 log.exception(f"Something went wrong with '{name}' test")
                 err = test_dir / f'{name}.err'

@@ -105,7 +105,7 @@ class IO:
 
     @classmethod
     def get_lines(cls, path, col=0, delim='\t', line_mapper=None):
-        with cls(path) as inp:
+        with cls.reader(path) as inp:
             if col >= 0:
                 inp = (line.split(delim)[col].strip() for line in inp)
             if line_mapper:
@@ -116,7 +116,7 @@ class IO:
     def write_lines(cls, path: Path, text):
         if isinstance(text, str):
             text = [text]
-        with cls(path) as out:
+        with cls.writer(path) as out:
             for line in text:
                 out.write(line)
                 out.write('\n')
