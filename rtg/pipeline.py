@@ -100,14 +100,19 @@ class Pipeline:
         assert tune_ref.exists()
 
         tune_log = tune_dir / 'scores.json'   # resume the tuning
-        memory: Dict[Tuple, float] = json.load(tune_log.open()) if tune_log.exists() else {}
+        memory: Dict[Tuple, float] = {}
+        if tune_log.exists():
+            data = json.load(tune_log.open())
+            # JSON keys cant be tuples, so they were stringified
+            memory = {eval(k) : v for k, v in data.item()}
 
         beam_sizes, ensembles, lp_alphas = [], [], []
         if suggested:
+            suggested = [(x[0], x[1], round(x[2], 2)) for x in suggested]
             suggested_new = [x for x in suggested if x not in memory]
             beam_sizes += [x[0] for x in suggested_new]
             ensembles += [x[1] for x in suggested_new]
-            lp_alphas += [round(x[2], 2) for x in suggested_new]
+            lp_alphas += [x[2] for x in suggested_new]
 
         new_trials = trials - len(memory)
         if new_trials > 0:
@@ -134,7 +139,9 @@ class Pipeline:
             best_params = sorted(memory.items(), key=lambda x:x[0], reverse=True)[0]
             return dict(zip(['beam_size', 'ensemble', 'lp_alpha'], best_params)), tune_args
         finally:
-            IO.write_lines(tune_log, json.dumps(memory))
+            # JSON keys cant be tuples, so we stringify them
+            data = {str(k): v for k, v in memory.items()}
+            IO.write_lines(tune_log, json.dumps(data))
 
     def suggest_batch_size(self, beam_size):
         return 20000 // beam_size
