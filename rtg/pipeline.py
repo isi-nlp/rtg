@@ -6,7 +6,7 @@
 import argparse
 from rtg import log, TranslationExperiment as Experiment
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Union
 from rtg.module.decoder import Decoder
 from rtg import RTG_PATH
 from rtg.utils import IO, line_count
@@ -54,11 +54,12 @@ class Pipeline:
                 detok_lines = (post_op(line) for line in detok_lines)
             IO.write_lines(out, detok_lines)
 
-    def evaluate_file(self, hyp: Path, ref: Path, lowercase=True) -> float:
+    def evaluate_file(self, hyp: Path, ref: Union[Path, List[str]], lowercase=True) -> float:
         detok_hyp = hyp.with_name(hyp.name + '.detok')
         self.detokenize(hyp, detok_hyp)
         detok_lines = IO.get_lines(detok_hyp)
-        ref_liness = [IO.get_lines(ref)]  # takes multiple refs, but here we have only one
+        # takes multiple refs, but here we have only one
+        ref_liness = [IO.get_lines(ref) if isinstance(ref, Path) else ref]
         bleu: BLEU = corpus_bleu(sys_stream=detok_lines, ref_streams=ref_liness,
                                  lowercase=lowercase)
         bleu_str = f'BLEU = {bleu.score:.2f} {"/".join(f"{p:.1f}" for p in bleu.precisions)}' \
@@ -69,16 +70,21 @@ class Pipeline:
         IO.write_lines(bleu_file, bleu_str)
         return bleu.score
 
-    def decode_eval_file(self, decoder, src_file: Path, out_file: Path, ref_file: Path,
-                         lowercase: bool, **dec_args) -> float:
+    def decode_eval_file(self, decoder, src: Union[Path, List[str]], out_file: Path, ref: Union[Path, List[str]],
+                         lowercase: bool=True, **dec_args) -> float:
         if out_file.exists() and out_file.stat().st_size > 0 \
                 and line_count(out_file) == line_count(src_file):
             log.warning(f"{out_file} exists and has desired number of lines. Skipped...")
         else:
-            log.info(f"decoding {src_file.name}")
-            with IO.reader(src_file) as inp, IO.writer(out_file) as out:
-                decoder.decode_file(inp, out, **dec_args)
-        return self.evaluate_file(out_file, ref_file, lowercase=lowercase)
+
+            if isinstance(src, Path):
+                log.info(f"decoding {src.name}")
+                src = list(IO.get_lines(src))
+            if isinstance(ref, Path):
+                ref = list(IO.get_lines(ref))
+            with IO.writer(out_file) as out:
+                decoder.decode_file(src, out, **dec_args)
+        return self.evaluate_file(out_file, ref, lowercase=lowercase)
 
     def tune_decoder_params(self, exp: Experiment, tune_src: str, tune_ref: str,
                             trials: int = 20, strategy: str = 'random', lowercase=True,
@@ -86,8 +92,8 @@ class Pipeline:
                             suggested:List[Tuple[int, int, float]]=None,
                             **fixed_args):
         _, _, _, tune_args = inspect.getargvalues(inspect.currentframe())
-        del tune_args['exp']  # exclude some args
-        del tune_args['fixed_args']
+        for x in ['exp', 'self', 'fixed_args']:
+            del tune_args[x]  # exclude some args
         tune_args.update(fixed_args)
 
         _, step = exp.get_last_saved_model()
@@ -98,13 +104,15 @@ class Pipeline:
         tune_src, tune_ref = Path(tune_src), Path(tune_ref)
         assert tune_src.exists()
         assert tune_ref.exists()
+        tune_src, tune_ref = list(IO.get_lines(tune_src)), list(IO.get_lines(tune_ref))
+        assert len(tune_src) == len(tune_ref)
 
         tune_log = tune_dir / 'scores.json'   # resume the tuning
         memory: Dict[Tuple, float] = {}
         if tune_log.exists():
             data = json.load(tune_log.open())
             # JSON keys cant be tuples, so they were stringified
-            memory = {eval(k) : v for k, v in data.item()}
+            memory = {eval(k) : v for k, v in data.items()}
 
         beam_sizes, ensembles, lp_alphas = [], [], []
         if suggested:
@@ -136,7 +144,7 @@ class Pipeline:
                                                   batch_size=batch_size, beam_size=b_s,
                                                   lp_alpha=lp_a, lowercase=lowercase, **fixed_args)
                     memory[(b_s, ens, lp_a)] =  score
-            best_params = sorted(memory.items(), key=lambda x:x[0], reverse=True)[0]
+            best_params = sorted(memory.items(), key=lambda x:x[1], reverse=True)[0][0]
             return dict(zip(['beam_size', 'ensemble', 'lp_alpha'], best_params)), tune_args
         finally:
             # JSON keys cant be tuples, so we stringify them
@@ -171,17 +179,19 @@ class Pipeline:
                 tune_args['tune_ref'] = prep_args.get('valid_ref', prep_args['valid_tgt'])
             tune_args['max_len'] = max_len
             best_params, tuner_args_ext = self.tune_decoder_params(exp=exp, **tune_args)
+            log.info(f"tuner args = {tuner_args_ext}")
+            log.info(f"Tuning complete: best_params: {best_params}")
             dec_args['tune'].update(tuner_args_ext)  # Update the config file with default args
-            dec_args.update(best_params)
             dec_args['tune']['tuned'] = True
 
         if 'tune' in best_params:
             del best_params['tune']
 
+        log.info(f"params: {best_params}")
         beam_size = best_params.get('beam_size', 4)
         ensemble: int = best_params.pop('ensemble', 5)
         lp_alpha = best_params.get('lp_alpha', 0.0)
-        batch_size = best_params.get('batch_size', self.suggested_batch_size(beam_size))
+        batch_size = best_params.get('batch_size', self.suggest_batch_size(beam_size))
 
         dec_args.update(dict(beam_size=beam_size, lp_alpha=lp_alpha, ensemble=ensemble,
                              max_len=max_len, batch_size=batch_size))
@@ -205,7 +215,7 @@ class Pipeline:
                 out_file = test_dir / f'{name}.out.tsv'
                 score = self.decode_eval_file(decoder, src_link, out_file, ref_link,
                                               batch_size=batch_size, beam_size=beam_size,
-                                              lp_alpha=lp_alpha)
+                                              lp_alpha=lp_alpha, max_len=max_len)
             except Exception as e:
                 log.exception(f"Something went wrong with '{name}' test")
                 err = test_dir / f'{name}.err'
@@ -217,8 +227,7 @@ class Pipeline:
         self.exp.pre_process()
         self.exp.train()
         with torch.no_grad():
-            exp = Experiment(self.exp.work_dir, read_only=True)
-            self.run_tests(exp)
+            self.run_tests()
 
 
 def parse_args():
