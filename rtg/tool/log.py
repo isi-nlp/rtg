@@ -30,7 +30,7 @@ class Logger(logging.Logger):
             self.fg = fh
 
     def update_file_handler(self, file, log_level=logging.DEBUG):
-        self.info(f"Switching file handler to {file}")
+        self.info(f"Logs are directed to {file}")
         if self.fh is not None:
             self.removeHandler(self.fh)
         fh = logging.FileHandler(file)
