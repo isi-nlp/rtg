@@ -32,17 +32,25 @@ prep:
 tester:
   decoder:
     tune:
-      trials: 10
-      strategy: random
+      trials: 6
       tune_src: data/valid.src
       tune_ref: data/valid.tgt
-      beam_size: [1, 15]
-      ensemble: [1, 10]
-      lp_alpha: [0.0, 1.5]
+      beam_size: [1, 4, 8]
+      ensemble: [1, 5, 10]
+      lp_alpha: [0.0, 0.6]
       suggested:
-        - [4, 5, 0.6]
-        - [6, 1, 0.5]
-        - [5, 10, 0.3]
+        - 1, 1, 0.0
+        - 1, 1, 0.6
+        - 4, 1, 0.0
+        - 4, 1, 0.6
+        - 1, 5, 0.0
+        - 1, 5, 0.6
+        - 4, 5, 0.0
+        - 4, 5, 0.6
+        - 1, 10, 0.0
+        - 1, 10, 0.6
+        - 4, 10, 0.0
+        - 4, 10, 0.6
   suit:
     valid:
     - data/valid.src
