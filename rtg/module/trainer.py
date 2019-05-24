@@ -190,9 +190,9 @@ class SteppedTrainer:
         optim_args['betas'] = optim_args.get('betas', [0.9, 0.98])
         optim_args['eps'] = optim_args.get('eps', 1e-9)
 
-        warm_up_steps = optim_args.pop('warmup_steps', 8000)
+        warmup_steps = optim_args.pop('warmup_steps', 8000)
         self._smoothing = optim_args.pop('label_smoothing', 0.1)
-        noam_factor = 2
+        constant = optim_args.pop('constant', 2)
 
         self.model = self.model.to(device)
 
@@ -203,11 +203,11 @@ class SteppedTrainer:
                 inner_opt.load_state_dict(optim_state)
             except Exception:
                 log.exception("Unable to restore optimizer, skipping it.")
-        self.opt = NoamOpt(self.model.model_dim, noam_factor, warm_up_steps, inner_opt,
+        self.opt = NoamOpt(self.model.model_dim, constant, warmup_steps, inner_opt,
                            step=self.start_step)
 
-        optim_args['warmup_steps'] = warm_up_steps
-        optim_args['label_smoothing'] = self._smoothing
+        optim_args.update(dict(warmup_steps=warmup_steps, label_smoothing=self._smoothing,
+                               constant=constant))
         if self.exp.read_only:
             self.tbd = NoOpSummaryWriter()
         else:
