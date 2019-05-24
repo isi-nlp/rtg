@@ -31,17 +31,25 @@ Just need to add the code to PYTHONPATH
 ```bash
 git clone git@github.com:thammegowda/rtg.git
 cd rtg                # go to the code
-export PYTHONPATH=$PWD  # Add directory to PYTHONPATH
+
+conda env create .   # adds a conda env named rtg
+conda activate rtg
+export PYTHONPATH=$PWD  # Add directory to PYTHONPATH 
+
 ```
 
 # Usage
 This repo is actively under development so whatever I write in README is getting outdated soon.
 Refer to `scripts/rtg-pipeline.sh` and bash script and `examples/pipeline.conf.yml` file
 
+
 TODO: Write tutorial
 ```bash
 # use examples/pipeline.conf.yml config to setup an experiment at 001-tfm dir
 $ scripts/rtg-pipeline.sh -d 001-tfm -c examples/pipeline.conf.yml
+# or simply this
+$ python -m rtg.pipeline 001-tfm examples/pipeline.conf.yml
+
 ```
 
 ---------
