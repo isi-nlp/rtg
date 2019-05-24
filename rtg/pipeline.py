@@ -80,10 +80,9 @@ class Pipeline:
     def decode_eval_file(self, decoder, src: Union[Path, List[str]], out_file: Path, ref: Union[Path, List[str]],
                          lowercase: bool=True, **dec_args) -> float:
         if out_file.exists() and out_file.stat().st_size > 0 \
-                and line_count(out_file) == len(src):
+                and line_count(out_file) == (len(src) if isinstance(src, list) else line_count(src)):
             log.warning(f"{out_file} exists and has desired number of lines. Skipped...")
         else:
-
             if isinstance(src, Path):
                 log.info(f"decoding {src.name}")
                 src = list(IO.get_lines(src))
@@ -94,8 +93,8 @@ class Pipeline:
         return self.evaluate_file(out_file, ref, lowercase=lowercase)
 
     def tune_decoder_params(self, exp: Experiment, tune_src: str, tune_ref: str,
-                            trials: int = 20, strategy: str = 'random', lowercase=True,
-                            beam_size=[1, 15], ensemble=[1, 10], lp_alpha=[0.0, 1.0],
+                            trials: int = 10, lowercase=True,
+                            beam_size=[1, 4, 8], ensemble=[1, 5, 10], lp_alpha=[0.0, 0.4, 0.6],
                             suggested:List[Tuple[int, int, float]]=None,
                             **fixed_args):
         _, _, _, tune_args = inspect.getargvalues(inspect.currentframe())
@@ -107,7 +106,6 @@ class Pipeline:
         tune_dir = exp.work_dir / f'tune_step{step}'
         log.info(f"Tune dir = {tune_dir}")
         tune_dir.mkdir(parents=True, exist_ok=True)
-        assert strategy == 'random'  # only supported strategy for now
         tune_src, tune_ref = Path(tune_src), Path(tune_ref)
         assert tune_src.exists()
         assert tune_ref.exists()
@@ -123,6 +121,8 @@ class Pipeline:
 
         beam_sizes, ensembles, lp_alphas = [], [], []
         if suggested:
+            if isinstance(suggested[0], str):
+                suggested = [eval(x) for x in suggested]
             suggested = [(x[0], x[1], round(x[2], 2)) for x in suggested]
             suggested_new = [x for x in suggested if x not in memory]
             beam_sizes += [x[0] for x in suggested_new]
@@ -131,9 +131,9 @@ class Pipeline:
 
         new_trials = trials - len(memory)
         if new_trials > 0:
-            beam_sizes += [random.randint(beam_size[0], beam_size[1]) for _ in range(new_trials)]
-            ensembles += [random.randint(ensemble[0], ensemble[1]) for _ in range(new_trials)]
-            lp_alphas += [round(random.uniform(lp_alpha[0], lp_alpha[1]), 2) for _ in range(new_trials)]
+            beam_sizes += [random.choice(beam_size) for _ in range(new_trials)]
+            ensembles += [random.choice(ensemble) for _ in range(new_trials)]
+            lp_alphas += [round(random.choice(lp_alpha), 2) for _ in range(new_trials)]
 
         # ensembling is somewhat costlier, so try minimize the model ensembling, by grouping them together
         grouped_ens = defaultdict(list)
