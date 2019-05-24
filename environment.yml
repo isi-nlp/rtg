@@ -16,5 +16,5 @@ dependencies:
     - torchvision>=0.2.2
     - tqdm==4.25.0
     - typing==3.6.6
-    - mosestokenizer
+    - mosestokenizer>=1.0.0
 

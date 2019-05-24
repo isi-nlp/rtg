@@ -56,6 +56,7 @@ class BaseExperiment:
         if isinstance(config, str) or isinstance(config, Path):
             config = load_conf(config)
         self.config = config if config else load_conf(self._config_file)
+        assert self.config, 'Looks like config is emtpy or invalid'
         self.maybe_seed()
 
         self.shared_field = Field(str(self._shared_field_file)) \
@@ -77,8 +78,9 @@ class BaseExperiment:
             log.info("No manual seed! Letting the RNGs do their stuff")
 
     def store_config(self):
-        with IO.writer(self._config_file) as fp:
-            return yaml.dump(self.config, fp, default_flow_style=False)
+        text = yaml.dump(self.config, default_flow_style=False)
+        assert text   # not empty
+        IO.write_lines(self._config_file, text)
 
     @property
     def model_type(self) -> Optional[str]:
