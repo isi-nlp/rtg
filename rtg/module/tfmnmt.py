@@ -472,7 +472,8 @@ class ChunkedLossCompute(SimpleLossFunction):
             x_feats.backward(gradient=out_grad)
             self.opt.step()
             self.opt.zero_grad()
-        return total
+        n_chunks = math.ceil(x_feats.shape[1] / chunk_size)
+        return total / n_chunks
 
 
 class MultiGPULossFunction(ChunkedLossCompute):
@@ -546,7 +547,8 @@ class MultiGPULossFunction(ChunkedLossCompute):
             x_feats.backward(gradient=out_grad)
             self.opt.step()
             self.opt.zero_grad()
-        return total_loss
+        n_chunks = math.ceil(x_feats.shape[1] / chunk_size)
+        return total_loss / n_chunks
 
 
 class TransformerTrainer(SteppedTrainer):
