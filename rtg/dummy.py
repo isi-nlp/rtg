@@ -15,7 +15,7 @@ class BatchIterable:
     # TODO: How to specify Type Hint for this as Iterable[Batch]
     """Dummy equivalent of dataprep.BatchIterable"""
 
-    def __init__(self, vocab_size, batch_size, n_batches, seq_len=10,
+    def __init__(self, vocab_size, batch_size, n_batches, min_seq_len=5, max_seq_len=20,
                  n_reserved_toks=Batch.eos_val + 1, reverse=True, batch_first=False):
         """
          "Generate random data for a src-tgt copy task."
@@ -31,13 +31,15 @@ class BatchIterable:
         self.vocab_size = vocab_size
         self.batch_size = batch_size
         self.num_batches = n_batches
-        self.seq_len = seq_len
+        self.min_seq_len = min_seq_len
+        self.max_seq_len = max_seq_len
         self.n_reserved_toks = n_reserved_toks
         self.reverse = reverse
         self.batch_first = batch_first
 
     def make_an_ex(self):
-        data = np.random.randint(self.n_reserved_toks, self.vocab_size, size=(self.seq_len,))
+        seq_len = np.random.randint(self.min_seq_len, self.max_seq_len)
+        data = np.random.randint(self.n_reserved_toks, self.vocab_size, size=(seq_len,))
         tgt = self.vocab_size + (self.n_reserved_toks - 1) - data if self.reverse else data
         return Example(data.tolist(), tgt.tolist())
 
