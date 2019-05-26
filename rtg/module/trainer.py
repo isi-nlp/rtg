@@ -16,7 +16,7 @@ import time
 from tensorboardX import SummaryWriter
 
 from torch import optim
-from torch.optim import Optimizer
+from torch.optim.optimizer import Optimizer
 from enum import Enum
 import inspect
 from pathlib import Path

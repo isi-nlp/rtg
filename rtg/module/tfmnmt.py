@@ -6,7 +6,7 @@ import math
 import time
 import inspect
 import gc
-from typing import Callable, Optional, List
+from typing import Callable, Optional, List, Union
 
 import torch
 import torch.nn as nn
@@ -17,8 +17,8 @@ from tqdm import tqdm
 from rtg import device, log, my_tensor as tensor, TranslationExperiment as Experiment
 from rtg.dataprep import Batch, BatchIterable
 from rtg.module import NMTModel
-from rtg.module.trainer import TrainerState, SteppedTrainer, NoamOpt
-from torch.optim import Optimizer
+from rtg.module.trainer import TrainerState, SteppedTrainer
+from torch.optim.optimizer import Optimizer
 from dataclasses import dataclass
 
 
@@ -385,39 +385,29 @@ class LabelSmoothing(nn.Module):
 
     def __init__(self, vocab_size: int, padding_idx: int, smoothing=0.1):
         super().__init__()
-        self._size = vocab_size
+        self.size = vocab_size
         assert 0.0 <= smoothing <= 1.0
         self.padding_idx = padding_idx
         # want elementwise_mean but due to padded tokens, we do the division ourselves
         self.criterion = nn.KLDivLoss(reduction='sum')
-        fill_val = smoothing / (vocab_size - 2) # exclude 2  = padding, and expected word
-        one_hot = torch.full(size=(1, vocab_size), fill_value=fill_val, device=device)
-        one_hot[0][self.padding_idx] = 0
-        self.register_buffer('one_hot', one_hot)
+        self.fill_val = smoothing / (vocab_size - 2) # exclude 2  = padding, and expected word
         self.confidence = 1.0 - smoothing
-        self.normalize = True
 
     def forward(self, x, target):
         # 'x' is log probabilities, originally [B, T, V], but here [B.T, V]
         # 'target' is expected word Ids, originally [B, T] but here [B.T]
-        assert x.size(1) == self._size
-        flat_target = target.view(-1).detach()
-        flat_target_2d = flat_target.unsqueeze(1)
+        assert x.shape[1] == self.size
+        assert x.shape[0] == target.shape[0]
+        target = target.unsqueeze(1)  # [B.T x 1]   # and it has class_idx of correct class
 
-        # log_likelihood = torch.gather(x.data, 1, flat_target_2d)
-        # [B.T x V] <-- [1 x V]    # all of them have value = smoothing / (V-2)
-        smoothed_truth = self.one_hot.repeat(flat_target.shape[0], 1)
+        smooth_truth = torch.full_like(x, fill_value=self.fill_val, requires_grad=False)
+        smooth_truth[:, self.padding_idx] = 0
+        smooth_truth.scatter_(1, target, self.confidence)
 
-        # Fill the token class indexes with high confidence values
-        smoothed_truth.scatter_(1, flat_target_2d, self.confidence)
-
-        mask = flat_target.eq(self.padding_idx)
-        # log_likelihood.masked_fill_(mask, 0)
-        smoothed_truth.masked_fill_(mask.unsqueeze(1), 0)
-        total_toks = flat_target.shape[0] - mask.sum()  # exclude padding from total
-        assert total_toks > 0
-        loss = self.criterion(x, smoothed_truth) / total_toks
-
+        mask = target.eq(self.padding_idx)
+        smooth_truth.masked_fill_(mask,  0)
+        # note: x is log probs, smooth_truth is just probs
+        loss = self.criterion(x, smooth_truth)
         # loss is a scalar value (0-dim )
         # but data parallel expects tensors (for gathering along a dim), so doing this
         return loss.unsqueeze(0)
@@ -432,13 +422,13 @@ class SimpleLossFunction:
     criterion: LabelSmoothing
     opt: Optimizer
 
-    def __call__(self, x_feats, y_seqs, train_mode=True):
+    def __call__(self, x_feats, y_seqs, normalizer, train_mode=True):
         x_probs = self.generator(x_feats)  # B x T x D --> B x T x V
 
         scores = x_probs.contiguous().view(-1, x_probs.size(-1))  # B x T x V --> B.T x V
         truth = y_seqs.contiguous().view(-1)  # B x T --> B.T
         # TODO: normalize by per sequence length, not just the total number of tokens
-        loss = self.criterion(scores, truth).sum()
+        loss = self.criterion(scores, truth).sum() / normalizer
         if train_mode:  # don't do this for validation set
             loss.backward()
             self.opt.step()
@@ -450,7 +440,7 @@ class SimpleLossFunction:
 class ChunkedLossCompute(SimpleLossFunction):
     chunk_size: int = 10
 
-    def __call__(self, x_feats, y_seqs, train_mode=True, chunk_size=None):
+    def __call__(self, x_feats, y_seqs, normalizer: Union[int, float], train_mode=True, chunk_size=None):
         chunk_size = chunk_size or self.chunk_size
         assert chunk_size > 0
         total = 0
@@ -462,7 +452,7 @@ class ChunkedLossCompute(SimpleLossFunction):
 
             chunked_dist = chunked_dist.view(-1, chunked_dist.shape[-1])  # B x C x V -> B.C x V
             chunked_ys = y_seqs[:, i:i + chunk_size].contiguous().view(-1)  # B x C -> B.C
-            loss = self.criterion(chunked_dist, chunked_ys)
+            loss = self.criterion(chunked_dist, chunked_ys).sum() / normalizer
             total = total + loss.detach().item()
             if train_mode:
                 loss.backward()
@@ -472,8 +462,8 @@ class ChunkedLossCompute(SimpleLossFunction):
             x_feats.backward(gradient=out_grad)
             self.opt.step()
             self.opt.zero_grad()
-        n_chunks = math.ceil(x_feats.shape[1] / chunk_size)
-        return total / n_chunks
+
+        return total
 
 
 class MultiGPULossFunction(ChunkedLossCompute):
@@ -489,7 +479,7 @@ class MultiGPULossFunction(ChunkedLossCompute):
         self.dp_module: nn.DataParallel = dp_module
         self.sct_criteria = nn.parallel.replicate(self.criterion, devices=self.devices)
 
-    def __call__(self, x_feats, y_seqs, train_mode=True, chunk_size=None):
+    def __call__(self, x_feats, y_seqs, normalizer, train_mode=True, chunk_size=None):
         """
         if not self.multi_gpu:
             # let the parent class deal with this
@@ -528,7 +518,7 @@ class MultiGPULossFunction(ChunkedLossCompute):
 
             # update total loss
             chk_losses = nn.parallel.gather(chk_sct_loss, target_device=self.out_device)
-            chk_loss = chk_losses.sum()
+            chk_loss = chk_losses.sum() / normalizer
             total_loss += chk_loss.item()
 
             if train_mode:
@@ -547,8 +537,8 @@ class MultiGPULossFunction(ChunkedLossCompute):
             x_feats.backward(gradient=out_grad)
             self.opt.step()
             self.opt.zero_grad()
-        n_chunks = math.ceil(x_feats.shape[1] / chunk_size)
-        return total_loss / n_chunks
+
+        return total_loss
 
 
 class TransformerTrainer(SteppedTrainer):
@@ -612,7 +602,7 @@ class TransformerTrainer(SteppedTrainer):
                 # skip the last time step (the one with EOS as input)
                 out = out[:, :-1, :]
                 # assumption:  y_seqs has EOS, and not BOS
-                loss = self.loss_func(out, batch.y_seqs, False)
+                loss = self.loss_func(out, batch.y_seqs, num_toks, False)
                 total_loss += loss
                 total_tokens += num_toks
                 num_batches += 1
@@ -700,7 +690,7 @@ class TransformerTrainer(SteppedTrainer):
                 # skip the last time step (the one with EOS as input)
                 out = out[:, :-1, :]
                 # assumption:  y_seqs has EOS, and not BOS
-                loss = self.loss_func(out, batch.y_seqs, True)
+                loss = self.loss_func(out, batch.y_seqs, num_toks, True)
                 unsaved_state = True
                 self.tbd.add_scalars('training', {'step_loss': loss,
                                                   'learn_rate': self.opt.curr_lr},
@@ -747,7 +737,7 @@ class TransformerTrainer(SteppedTrainer):
 
 def __test_model__():
     from rtg.dummy import DummyExperiment
-    vocab_size = 14
+    vocab_size = 30
     args = {
         'src_vocab': vocab_size,
         'tgt_vocab': vocab_size,
@@ -762,15 +752,16 @@ def __test_model__():
 
     from rtg.module.decoder import Decoder
 
-    exp = DummyExperiment("work.tmp.t2t", config={'model_type': 'tfmnmt'}, read_only=True,
+    config = {'model_type': 'tfmnmt', 'trainer': {'init_args': {'chunk_size':2}}}
+    exp = DummyExperiment("work.tmp.t2t", config=config, read_only=True,
                           vocab_size=vocab_size)
     exp.model_args = args
     trainer = TransformerTrainer(exp=exp, warmup_steps=200)
     decr = Decoder.new(exp, trainer.model)
 
     assert 2 == Batch.bos_val
-    src = tensor([[4, 5, 6, 7, 8, 9, 10, 11, 12, 13, Batch.eos_val],
-                  [13, 12, 11, 10, 9, 8, 7, 6, 5, 4, Batch.eos_val]])
+    src = tensor([[4, 5, 6, 7, 8, 9, 10, 11, 12, 13, Batch.eos_val, Batch.pad_value],
+                  [13, 12, 11, 10, 9, 8, 7, 6, Batch.eos_val, Batch.pad_value, Batch.pad_value, Batch.pad_value]])
     src_lens = tensor([src.size(1)] * src.size(0))
 
     def check_pt_callback(**args):

@@ -103,7 +103,7 @@ class TfmLmTrainer(TransformerTrainer):
                 # skip the last time step (the one with EOS as input)
                 out = out[:, :-1, :]
                 # assumption:  y_seqs has EOS, and not BOS
-                loss = self.loss_func(out, seqs, False)
+                loss = self.loss_func(out, seqs, num_toks, False)
                 total_loss += loss
                 total_tokens += num_toks
                 elapsed = time.time() - start
@@ -152,7 +152,7 @@ class TfmLmTrainer(TransformerTrainer):
                 # skip the last time step (the one with EOS as input)
                 out = out[:, :-1, :]
                 # assumption:  y_seqs has EOS, and not BOS
-                loss = self.loss_func(out, seqs, True)
+                loss = self.loss_func(out, seqs, num_toks, True)
                 unsaved_state = True
                 self.tbd.add_scalars('training', {'step_loss': loss,
                                                   'learn_rate': self.opt.curr_lr},
