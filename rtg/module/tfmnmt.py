@@ -187,7 +187,6 @@ class TransformerNMT(NMTModel):
             log.info(f"Tying embeddings: SrcInp == TgtInp")
             self.src_embed[0].lut.weight = self.tgt_embed[0].lut.weight
 
-
     @classmethod
     def make_model(cls, src_vocab, tgt_vocab, n_layers=6, hid_size=512, ff_size=2048, n_heads=8,
                    dropout=0.1, tied_emb='three-way', exp: Experiment = None):
@@ -390,7 +389,7 @@ class LabelSmoothing(nn.Module):
         self.padding_idx = padding_idx
         # want elementwise_mean but due to padded tokens, we do the division ourselves
         self.criterion = nn.KLDivLoss(reduction='sum')
-        self.fill_val = smoothing / (vocab_size - 2) # exclude 2  = padding, and expected word
+        self.fill_val = smoothing / (vocab_size - 2)  # exclude 2  = padding, and expected word
         self.confidence = 1.0 - smoothing
 
     def forward(self, x, target):
@@ -405,7 +404,7 @@ class LabelSmoothing(nn.Module):
         smooth_truth.scatter_(1, target, self.confidence)
 
         mask = target.eq(self.padding_idx)
-        smooth_truth.masked_fill_(mask,  0)
+        smooth_truth.masked_fill_(mask, 0)
         # note: x is log probs, smooth_truth is just probs
         loss = self.criterion(x, smooth_truth)
         # loss is a scalar value (0-dim )
@@ -440,7 +439,8 @@ class SimpleLossFunction:
 class ChunkedLossCompute(SimpleLossFunction):
     chunk_size: int = 10
 
-    def __call__(self, x_feats, y_seqs, normalizer: Union[int, float], train_mode=True, chunk_size=None):
+    def __call__(self, x_feats, y_seqs, normalizer: Union[int, float], train_mode=True,
+                 chunk_size=None):
         chunk_size = chunk_size or self.chunk_size
         assert chunk_size > 0
         total = 0
@@ -582,7 +582,8 @@ class TransformerTrainer(SteppedTrainer):
         total_tokens = 0
         total_loss = 0.0
         num_batches = 0
-        with tqdm(data_iter, total=data_iter.num_batches, unit='batch') as data_bar:
+        with tqdm(data_iter, total=data_iter.num_batches,
+                  unit='batch', dynamic_ncols=True) as data_bar:
             for i, batch in enumerate(data_bar):
                 batch = batch.to(device)
                 num_toks = batch.y_toks
@@ -621,7 +622,7 @@ class TransformerTrainer(SteppedTrainer):
         """
         tokens = 0
         loss = float('inf')
-        for i in tqdm(range(max_iters)):
+        for i in tqdm(range(max_iters), dynamic_ncols=True):
             num_toks = batch.y_toks
             out = self.model(batch.x_seqs, batch.y_seqs, batch.x_mask, batch.y_mask)
             # skip the BOS token in  batch.y_seqs
@@ -670,7 +671,8 @@ class TransformerTrainer(SteppedTrainer):
         train_state.train_mode(True)
         unsaved_state = False
         cuda_available = torch.cuda.is_available()
-        with tqdm(train_data, initial=self.start_step, total=steps, unit='batch') as data_bar:
+        with tqdm(train_data, initial=self.start_step, total=steps, unit='batch',
+                  dynamic_ncols=True) as data_bar:
             for batch in data_bar:
                 self.model.zero_grad()
                 batch = batch.to(device)
@@ -752,7 +754,7 @@ def __test_model__():
 
     from rtg.module.decoder import Decoder
 
-    config = {'model_type': 'tfmnmt', 'trainer': {'init_args': {'chunk_size':2}}}
+    config = {'model_type': 'tfmnmt', 'trainer': {'init_args': {'chunk_size': 2}}}
     exp = DummyExperiment("work.tmp.t2t", config=config, read_only=True,
                           vocab_size=vocab_size)
     exp.model_args = args
@@ -761,7 +763,8 @@ def __test_model__():
 
     assert 2 == Batch.bos_val
     src = tensor([[4, 5, 6, 7, 8, 9, 10, 11, 12, 13, Batch.eos_val, Batch.pad_value],
-                  [13, 12, 11, 10, 9, 8, 7, 6, Batch.eos_val, Batch.pad_value, Batch.pad_value, Batch.pad_value]])
+                  [13, 12, 11, 10, 9, 8, 7, 6, Batch.eos_val, Batch.pad_value, Batch.pad_value,
+                   Batch.pad_value]])
     src_lens = tensor([src.size(1)] * src.size(0))
 
     def check_pt_callback(**args):

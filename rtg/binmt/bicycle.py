@@ -254,7 +254,7 @@ class BiNmtTrainer(BaseTrainer):
             assert self.step_size % mono_tgt.batch_size == 0
             self.optimizer.zero_grad()
 
-        with tqdm(data, total=num_batches, unit='batch') as data_bar:
+        with tqdm(data, total=num_batches, unit='batch', dynamic_ncols=True) as data_bar:
             for i, (src_batch, tgt_batch) in enumerate(data_bar):
                 num_exs += max(len(src_batch) if src_batch else 0,
                                len(tgt_batch) if tgt_batch else 0)

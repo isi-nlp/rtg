@@ -107,7 +107,8 @@ class RnnLmTrainer(SteppedTrainer):
 
     def run_valid_epoch(self, data_iter):
         state = TrainerState(self.model, -1)
-        with tqdm(data_iter, total=data_iter.num_batches, unit='batch') as data_bar:
+        with tqdm(data_iter, total=data_iter.num_batches, unit='batch',
+                  dynamic_ncols=True) as data_bar:
             for i, batch in enumerate(data_bar):
                 batch = batch.to(device)
                 # Step clear gradients
@@ -140,7 +141,8 @@ class RnnLmTrainer(SteppedTrainer):
 
         keep_models = 8
         unsaved_state = False
-        with tqdm(train_data, initial=self.start_step, total=steps, unit='batch') as data_bar:
+        with tqdm(train_data, initial=self.start_step, total=steps, unit='batch',
+                  dynamic_ncols=True) as data_bar:
             for batch in data_bar:
                 batch.to(device)
                 outp_log_probs = self.model.batch_forward(batch)

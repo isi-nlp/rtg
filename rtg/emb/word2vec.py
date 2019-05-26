@@ -150,7 +150,7 @@ class CBOWTrainer(SteppedTrainer):
     def run_valid_epoch(self, data_iter: Iterable) -> float:
         log.info("Running validation")
         total_loss, n = 0.0, 0
-        with tqdm(data_iter, unit='batch') as data_bar:
+        with tqdm(data_iter, unit='batch', dynamic_ncols=True) as data_bar:
             for i, (xs, ys) in enumerate(data_bar):
                 xs, ys = xs.to(device), ys.to(device)
                 log_probs = self.model(xs)
@@ -200,7 +200,8 @@ class CBOWTrainer(SteppedTrainer):
             self.tbd.add_scalars('losses', {'training': train_loss,
                                             'valid_loss': val_loss}, global_step=step)
 
-        with tqdm(train_data, initial=self.start_step, total=rem_steps+1, unit='batch') as data_bar:
+        with tqdm(train_data, initial=self.start_step, total=rem_steps+1, unit='batch',
+                  dynamic_ncols=True) as data_bar:
             for i, (xs, ys) in enumerate(data_bar, start=self.start_step):
                 self.model.zero_grad()
                 xs, ys = xs.to(device), ys.to(device)

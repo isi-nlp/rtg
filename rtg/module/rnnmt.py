@@ -474,7 +474,8 @@ class SteppedRNNMTTrainer(SteppedTrainer):
 
     def run_valid_epoch(self, data_iter: BatchIterable) -> float:
         state = TrainerState(self.model, -1)
-        with tqdm(data_iter, total=data_iter.num_batches, unit='batch') as data_bar:
+        with tqdm(data_iter, total=data_iter.num_batches, unit='batch',
+                  dynamic_ncols=True) as data_bar:
             for i, batch in enumerate(data_bar):
                 batch = batch.to(device)
                 # Step clear gradients
@@ -505,7 +506,8 @@ class SteppedRNNMTTrainer(SteppedTrainer):
         train_state = TrainerState(self.model, check_point=check_point)
         train_state.train_mode(True)
         unsaved_state = False
-        with tqdm(train_data, initial=self.start_step, total=steps, unit='batch') as data_bar:
+        with tqdm(train_data, initial=self.start_step, total=steps, unit='batch',
+                  dynamic_ncols=True) as data_bar:
             for batch in data_bar:
                 batch = batch.to(device)
                 # Step clear gradients

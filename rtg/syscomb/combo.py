@@ -224,7 +224,7 @@ class SysCombTrainer:
     def train(self, steps: int, batch_size: int):
         log.info(f"Going to train for {steps}")
         batches = self.exp.get_combo_data(batch_size=batch_size, steps=steps)
-        with tqdm(batches, total=steps, unit='step') as data_bar:
+        with tqdm(batches, total=steps, unit='step', dynamic_ncols=True) as data_bar:
             for i, batch in enumerate(data_bar):
                 batch = batch.to(device)
                 y_probs = self.combo(batch)  # B x T x V
