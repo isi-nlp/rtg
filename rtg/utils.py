@@ -3,10 +3,12 @@ import gzip
 import operator as op
 from functools import reduce
 from pathlib import Path
-
 import torch
-
 from rtg import log
+import inspect
+import shutil
+from datetime import datetime
+
 
 # Size of each element in tensor
 tensor_size = {
@@ -71,6 +73,19 @@ def line_count(path, ignore_blanks=False):
         return count
 
 
+def get_my_args(exclusions=None):
+    """
+    get args of your call. you = a function
+    :type exclusions: List of arg names that should be excluded from return dictionary
+    :return: dictionary of {arg_name: argv_value} s
+    """
+    _, _, _, args = inspect.getargvalues(inspect.currentframe().f_back)
+    for excl in ['self', 'cls'] + (exclusions or []):
+        if excl in  args:
+            del args[excl]
+    return args
+
+
 class IO:
     """File opener and automatic closer"""
 
@@ -120,3 +135,18 @@ class IO:
             for line in text:
                 out.write(line)
                 out.write('\n')
+
+    @classmethod
+    def copy_file(cls, src: Path, dest: Path):
+        assert src.resolve() != dest.resolve()
+        log.info(f"Copy {src} → {dest}")
+        with IO.reader(src) as inp, IO.writer(dest) as out:
+            shutil.copyfileobj(inp, out)
+
+    @classmethod
+    def maybe_backup(cls, file: Path):
+        if file.exists():
+            time = datetime.now().strftime('%Y%m%d_%H%M%S_%f')
+            dest = file.with_suffix(f'.{time}')
+            log.info(f"Backup {file} → {dest}")
+            file.rename(dest)

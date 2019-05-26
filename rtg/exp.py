@@ -669,17 +669,18 @@ class TranslationExperiment(BaseExperiment):
         :return:
         """
         other: TranslationExperiment = other
+        if not other.data_dir.exists():
+            other.data_dir.mkdir(parents=True)
         for source, destination in [(self._src_field_file, other._src_field_file),
                                     (self._tgt_field_file, other._tgt_field_file),
                                     (self._shared_field_file, other._shared_field_file)]:
             if source.exists():
-                log.info(f"{source} --> {destination}")
-                destination.write_bytes(source.read_bytes())
+                IO.copy_file(source, destination)
                 src_txt_file = source.with_name(source.name.replace('.model', '.vocab'))
                 if src_txt_file.exists():
                     dst_txt_file = destination.with_name(
                         destination.name.replace('.model', '.vocab'))
-                    dst_txt_file.write_bytes(src_txt_file.read_bytes())
+                    IO.copy_file(src_txt_file, dst_txt_file)
 
     def get_mono_data(self, split: str, side: str, batch_size: int, sort_desc: bool = False,
                       batch_first: bool = False, shuffle: bool = False, num_batches: int = 0):
