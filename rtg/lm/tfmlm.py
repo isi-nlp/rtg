@@ -103,12 +103,12 @@ class TfmLmTrainer(TransformerTrainer):
                 # skip the last time step (the one with EOS as input)
                 out = out[:, :-1, :]
                 # assumption:  y_seqs has EOS, and not BOS
-                loss = self.loss_func(out, seqs, num_toks, False)
+                loss = self.loss_func(out, seqs, False)
                 total_loss += loss
                 total_tokens += num_toks
                 elapsed = time.time() - start
                 data_bar.set_postfix_str(
-                    f'Loss:{loss / num_toks:.4f}, {int(num_toks / elapsed)}toks/s', refresh=False)
+                    f'Loss:{loss:.4f}, {int(num_toks / elapsed)}toks/s', refresh=False)
                 start = time.time()
                 # force free memory
                 del batch
@@ -152,7 +152,7 @@ class TfmLmTrainer(TransformerTrainer):
                 # skip the last time step (the one with EOS as input)
                 out = out[:, :-1, :]
                 # assumption:  y_seqs has EOS, and not BOS
-                loss = self.loss_func(out, seqs, num_toks, True)
+                loss = self.loss_func(out, seqs, True)
                 unsaved_state = True
                 self.tbd.add_scalars('training', {'step_loss': loss,
                                                   'learn_rate': self.opt.curr_lr},
@@ -162,7 +162,7 @@ class TfmLmTrainer(TransformerTrainer):
                 progress_msg += f', LR={self.opt.curr_lr:g}'
 
                 data_bar.set_postfix_str(progress_msg, refresh=False)
-                del batch  # TODO: force free memory
+                del batch
 
                 if is_check_pt:
                     train_loss = train_state.reset()

@@ -388,33 +388,35 @@ class LabelSmoothing(nn.Module):
         self._size = vocab_size
         assert 0.0 <= smoothing <= 1.0
         self.padding_idx = padding_idx
-        # self.criterion = nn.KLDivLoss(reduction='elementwise_mean')
+        # want elementwise_mean but due to padded tokens, we do the division ourselves
         self.criterion = nn.KLDivLoss(reduction='sum')
-        fill_val = smoothing / (vocab_size - 2)
+        fill_val = smoothing / (vocab_size - 2) # exclude 2  = padding, and expected word
         one_hot = torch.full(size=(1, vocab_size), fill_value=fill_val, device=device)
         one_hot[0][self.padding_idx] = 0
         self.register_buffer('one_hot', one_hot)
         self.confidence = 1.0 - smoothing
+        self.normalize = True
 
     def forward(self, x, target):
         # 'x' is log probabilities, originally [B, T, V], but here [B.T, V]
         # 'target' is expected word Ids, originally [B, T] but here [B.T]
         assert x.size(1) == self._size
-        gtruth = target.view(-1)
-        tdata = gtruth.data
+        flat_target = target.view(-1).detach()
+        flat_target_2d = flat_target.unsqueeze(1)
 
-        mask = torch.nonzero(tdata.eq(self.padding_idx)).squeeze()
-        tdata_2d = tdata.unsqueeze(1)
+        # log_likelihood = torch.gather(x.data, 1, flat_target_2d)
+        # [B.T x V] <-- [1 x V]    # all of them have value = smoothing / (V-2)
+        smoothed_truth = self.one_hot.repeat(flat_target.shape[0], 1)
 
-        log_likelihood = torch.gather(x.data, 1, tdata_2d)
+        # Fill the token class indexes with high confidence values
+        smoothed_truth.scatter_(1, flat_target_2d, self.confidence)
 
-        smoothed_truth = self.one_hot.repeat(gtruth.size(0), 1)
-        smoothed_truth.scatter_(1, tdata_2d, self.confidence)
-
-        if mask.numel() > 0:
-            log_likelihood.index_fill_(0, mask, 0)
-            smoothed_truth.index_fill_(0, mask, 0)
-        loss = self.criterion(x, smoothed_truth)
+        mask = flat_target.eq(self.padding_idx)
+        # log_likelihood.masked_fill_(mask, 0)
+        smoothed_truth.masked_fill_(mask.unsqueeze(1), 0)
+        total_toks = flat_target.shape[0] - mask.sum()  # exclude padding from total
+        assert total_toks > 0
+        loss = self.criterion(x, smoothed_truth) / total_toks
 
         # loss is a scalar value (0-dim )
         # but data parallel expects tensors (for gathering along a dim), so doing this
@@ -430,29 +432,27 @@ class SimpleLossFunction:
     criterion: LabelSmoothing
     opt: Optimizer
 
-    def __call__(self, x_feats, y_seqs, norm, train_mode=True):
+    def __call__(self, x_feats, y_seqs, train_mode=True):
         x_probs = self.generator(x_feats)  # B x T x D --> B x T x V
 
         scores = x_probs.contiguous().view(-1, x_probs.size(-1))  # B x T x V --> B.T x V
         truth = y_seqs.contiguous().view(-1)  # B x T --> B.T
-        assert norm != 0
         # TODO: normalize by per sequence length, not just the total number of tokens
-        loss = self.criterion(scores, truth).sum() / norm
+        loss = self.criterion(scores, truth).sum()
         if train_mode:  # don't do this for validation set
             loss.backward()
             self.opt.step()
             self.opt.zero_grad()
-        return loss.item() * norm
+        return loss.item()
 
 
 @dataclass
 class ChunkedLossCompute(SimpleLossFunction):
     chunk_size: int = 10
 
-    def __call__(self, x_feats, y_seqs, norm, train_mode=True, chunk_size=None):
-        chunk_size = chunk_size if chunk_size else self.chunk_size
+    def __call__(self, x_feats, y_seqs, train_mode=True, chunk_size=None):
+        chunk_size = chunk_size or self.chunk_size
         assert chunk_size > 0
-        assert norm > 0
         total = 0
         out_grads = []
         for i in range(0, x_feats.shape[1], chunk_size):
@@ -463,8 +463,7 @@ class ChunkedLossCompute(SimpleLossFunction):
             chunked_dist = chunked_dist.view(-1, chunked_dist.shape[-1])  # B x C x V -> B.C x V
             chunked_ys = y_seqs[:, i:i + chunk_size].contiguous().view(-1)  # B x C -> B.C
             loss = self.criterion(chunked_dist, chunked_ys)
-            loss = loss.sum() / norm
-            total += loss.detach().item()
+            total = total + loss.detach().item()
             if train_mode:
                 loss.backward()
                 out_grads.append(chunked_feats.grad.data.clone())  # grads are collected
@@ -473,7 +472,7 @@ class ChunkedLossCompute(SimpleLossFunction):
             x_feats.backward(gradient=out_grad)
             self.opt.step()
             self.opt.zero_grad()
-        return total * norm
+        return total
 
 
 class MultiGPULossFunction(ChunkedLossCompute):
@@ -489,7 +488,7 @@ class MultiGPULossFunction(ChunkedLossCompute):
         self.dp_module: nn.DataParallel = dp_module
         self.sct_criteria = nn.parallel.replicate(self.criterion, devices=self.devices)
 
-    def __call__(self, x_feats, y_seqs, norm, train_mode=True, chunk_size=None):
+    def __call__(self, x_feats, y_seqs, train_mode=True, chunk_size=None):
         """
         if not self.multi_gpu:
             # let the parent class deal with this
@@ -528,7 +527,7 @@ class MultiGPULossFunction(ChunkedLossCompute):
 
             # update total loss
             chk_losses = nn.parallel.gather(chk_sct_loss, target_device=self.out_device)
-            chk_loss = chk_losses.sum() / norm
+            chk_loss = chk_losses.sum()
             total_loss += chk_loss.item()
 
             if train_mode:
@@ -547,7 +546,7 @@ class MultiGPULossFunction(ChunkedLossCompute):
             x_feats.backward(gradient=out_grad)
             self.opt.step()
             self.opt.zero_grad()
-        return total_loss * norm
+        return total_loss
 
 
 class TransformerTrainer(SteppedTrainer):
@@ -590,6 +589,7 @@ class TransformerTrainer(SteppedTrainer):
         start = time.time()
         total_tokens = 0
         total_loss = 0.0
+        num_batches = 0
         with tqdm(data_iter, total=data_iter.num_batches, unit='batch') as data_bar:
             for i, batch in enumerate(data_bar):
                 batch = batch.to(device)
@@ -610,15 +610,16 @@ class TransformerTrainer(SteppedTrainer):
                 # skip the last time step (the one with EOS as input)
                 out = out[:, :-1, :]
                 # assumption:  y_seqs has EOS, and not BOS
-                loss = self.loss_func(out, batch.y_seqs, num_toks, False)
+                loss = self.loss_func(out, batch.y_seqs, False)
                 total_loss += loss
                 total_tokens += num_toks
+                num_batches += 1
                 elapsed = time.time() - start
                 data_bar.set_postfix_str(
-                    f'Loss:{loss / num_toks:.4f}, {int(num_toks / elapsed)}toks/s', refresh=False)
+                    f'Loss:{loss:.4f}, {int(num_toks / elapsed)}toks/s', refresh=False)
                 start = time.time()
 
-        score = total_loss / total_tokens
+        score = total_loss / num_batches
         return score
 
     def overfit_batch(self, batch, max_iters=100, stop_loss=0.01):
@@ -697,9 +698,9 @@ class TransformerTrainer(SteppedTrainer):
                 # skip the last time step (the one with EOS as input)
                 out = out[:, :-1, :]
                 # assumption:  y_seqs has EOS, and not BOS
-                loss = self.loss_func(out, batch.y_seqs, num_toks, True)
+                loss = self.loss_func(out, batch.y_seqs, True)
                 unsaved_state = True
-                self.tbd.add_scalars('training', {'step_loss': loss / num_toks,
+                self.tbd.add_scalars('training', {'step_loss': loss,
                                                   'learn_rate': self.opt.curr_lr},
                                      self.opt.curr_step)
                 if log_resources and cuda_available:
