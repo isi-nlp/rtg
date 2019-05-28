@@ -1,19 +1,18 @@
-import yaml
+import copy
 import os
+import random
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Dict, Iterator, List, Tuple, Union, Any
+from typing import Optional, Dict, List, Tuple, Union, Any
+
+import numpy as np
 import torch
-import random
+import yaml
+
 from rtg import log
-from rtg.dataprep import (RawRecord, ParallelSeqRecord, MonoSeqRecord, TSVData,
+from rtg.dataprep import (TSVData,
                           Field, BatchIterable, LoopingIterable, SqliteFile)
 from rtg.utils import IO, line_count
-import copy
-import numpy as np
-import random
-
-from itertools import zip_longest
 
 seeded = False
 
@@ -43,7 +42,7 @@ class BaseExperiment:
 
         self.train_file = self.data_dir / 'train.tsv.gz'
         self.train_db = self.data_dir / 'train.db'
-        self.finetune_file = self.data_dir / 'finetune.tsv.gz'
+        self.finetune_file = self.data_dir / 'finetune.db'
         self.valid_file = self.data_dir / 'valid.tsv.gz'
         self.combo_file = self.data_dir / 'combo.tsv.gz'
         # a set of samples to watch the progress qualitatively
@@ -79,7 +78,7 @@ class BaseExperiment:
 
     def store_config(self):
         text = yaml.dump(self.config, default_flow_style=False)
-        assert text   # not empty
+        assert text  # not empty
         IO.write_lines(self._config_file, text)
 
     @property
@@ -305,7 +304,7 @@ class TranslationExperiment(BaseExperiment):
                                               args['max_tgt_types'], corpus=tgt_corpus,
                                               no_split_toks=no_split_toks)
 
-        train_file = self.train_db if n_train_exs >= 64000 else self.train_file
+        train_file = self.train_db
         self._pre_process_parallel('train_src', 'train_tgt', out_file=train_file, args=args,
                                    line_check=False)
         self._pre_process_parallel('valid_src', 'valid_tgt', out_file=self.valid_file, args=args,
@@ -316,9 +315,10 @@ class TranslationExperiment(BaseExperiment):
 
         # get samples from validation set
         n_samples = args.get('num_samples', 5)
+        space_tokr = lambda line: line.strip().split()
         val_raw_recs = TSVData.read_raw_parallel_recs(
             args['valid_src'], args['valid_tgt'], args['truncate'], args['src_len'],
-            args['tgt_len'], tokenizer=lambda line: line.strip().split())
+            args['tgt_len'], src_tokenizer=space_tokr, tgt_tokenizer=space_tokr)
         val_raw_recs = list(val_raw_recs)
         random.shuffle(val_raw_recs)
         samples = val_raw_recs[:n_samples]
@@ -412,10 +412,9 @@ class TranslationExperiment(BaseExperiment):
             assert line_count(args[src_key]) == line_count(args[tgt_key]), \
                 f'{args[src_key]} and {args[tgt_key]} must have same number of lines'
         # create Piece IDs
-        parallel_recs = TSVData.read_raw_parallel_recs(args[src_key], args[tgt_key],
-                                                       args['truncate'], args['src_len'],
-                                                       args['tgt_len'],
-                                                       tokenizer=self.src_vocab.encode_as_ids)
+        parallel_recs = TSVData.read_raw_parallel_recs(
+            args[src_key], args[tgt_key], args['truncate'], args['src_len'], args['tgt_len'],
+            src_tokenizer=self.src_vocab.encode_as_ids, tgt_tokenizer=self.tgt_vocab.encode_as_ids)
         if out_file.name.endswith('.db'):
             SqliteFile.write(out_file, records=parallel_recs)
         else:
@@ -423,11 +422,12 @@ class TranslationExperiment(BaseExperiment):
 
         if args.get('text_files'):
             # Redo again as plain text files
-            parallel_recs = TSVData.read_raw_parallel_recs(args[src_key], args[tgt_key],
-                                                           args['truncate'], args['src_len'],
-                                                           args['tgt_len'],
-                                                           tokenizer=self.src_vocab.tokenize)
-            TSVData.write_parallel_recs(parallel_recs, str(out_file).replace('.tsv', '.pieces.tsv'))
+            parallel_recs = TSVData.read_raw_parallel_recs(
+                args[src_key], args[tgt_key], args['truncate'], args['src_len'], args['tgt_len'],
+                src_tokenizer=self.src_vocab.tokenize, tgt_tokenizer=self.tgt_vocab.tokenize)
+
+            text_file_name = str(out_file).replace('.db', '.tsv.gz').replace('.tsv', '.pieces.tsv')
+            TSVData.write_parallel_recs(parallel_recs, text_file_name)
 
     def maybe_pre_process_embeds(self, do_clean=False):
 
@@ -627,7 +627,7 @@ class TranslationExperiment(BaseExperiment):
                 [('src_len', 'max_src_len'), ('tgt_len', 'max_tgt_len'), ('truncate', 'truncate')]
                 if ik in prep_args}
 
-    def get_train_data(self, batch_size: int, steps: int = 0, sort_desc=False, batch_first=True,
+    def get_train_data(self, batch_size: int, steps: int = 0, sort_by='random', batch_first=True,
                        shuffle=False, fine_tune=False):
         inp_file = self.train_db if self.train_db.exists() else self.train_file
         if fine_tune:
@@ -637,7 +637,7 @@ class TranslationExperiment(BaseExperiment):
             log.info("Using Fine tuning corpus instead of training corpus")
             inp_file = self.finetune_file
 
-        train_data = BatchIterable(inp_file, batch_size=batch_size, sort_desc=sort_desc,
+        train_data = BatchIterable(inp_file, batch_size=batch_size, sort_by=sort_by,
                                    batch_first=batch_first, shuffle=shuffle,
                                    **self._get_batch_args())
         if steps > 0:
