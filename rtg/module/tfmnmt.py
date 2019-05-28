@@ -664,8 +664,7 @@ class TransformerTrainer(SteppedTrainer):
             raise Exception(f'The model was already trained to {self.start_step} steps. '
                             f'Please increase the steps or clear the existing models')
         train_data = self.exp.get_train_data(batch_size=batch_size, steps=steps - self.start_step,
-                                             sort_by=sort_by, batch_first=True, fine_tune=fine_tune,
-                                             sort_desc=False)
+                                             sort_by=sort_by, batch_first=True, fine_tune=fine_tune)
         val_data = self.exp.get_val_data(batch_size, shuffle=False, batch_first=True,
                                          sort_desc=False)
 

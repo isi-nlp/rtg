@@ -241,7 +241,7 @@ class SqliteFile:
     @classmethod
     def make_query(cls, sort_by: str, len_rand: int):
         assert len_rand >= 1
-        template = "SELECT * from data ORDER BY %s + (RANDOM() % %d) %s"
+        template = "SELECT * from data ORDER BY %s + (RANDOM() %% %d) %s"
         known_queries = dict(y_len_asc=template % ('y_len', len_rand, 'ASC'),
              x_len_asc=template % ('x_len', len_rand, 'ASC'),
              y_len_desc=template % ('y_len', len_rand, 'DESC'),
