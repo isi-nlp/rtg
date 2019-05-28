@@ -3,7 +3,7 @@ from typing import List, Iterator, Tuple, Union, Optional, Iterable, Dict, Any
 import torch
 from rtg import log
 from . import my_tensor as tensor, device
-from rtg.utils import IO, line_count
+from rtg.utils import IO, line_count, get_my_args
 import math
 import random
 from collections import namedtuple
@@ -71,7 +71,7 @@ class Field(SentencePieceProcessor):
 
     @staticmethod
     def train(model_type: str, vocab_size: int, model_path: str, files: Iterator[str],
-              no_split_toks: Optional[List[str]] = None, cover_all_chars: bool=False):
+              no_split_toks: Optional[List[str]] = None, cover_all_chars: bool = False):
         """
         Train Sentence Piece Model
         :param model_type: sentence piece model type: {unigram, BPE, word, char}
@@ -146,7 +146,7 @@ class TSVData:
             for rec in recs:
                 x = self._parse(rec[0].strip())
                 y = self._parse(rec[1].strip()) if len(rec) > 1 else None
-                if self.truncate: # truncate long recs
+                if self.truncate:  # truncate long recs
                     x = x[:self.max_src_len]
                     y = y if y is None else y[:self.max_tgt_len]
                 elif len(x) > self.max_src_len or (0 if y is None else len(y)) > self.max_tgt_len:
@@ -205,10 +205,10 @@ class TSVData:
 
     @staticmethod
     def read_raw_parallel_recs(src_path: Union[str, Path], tgt_path: Union[str, Path],
-                               truncate: bool, src_len: int, tgt_len: int, tokenizer) \
+                               truncate: bool, src_len: int, tgt_len: int, src_tokenizer, tgt_tokenizer) \
             -> Iterator[ParallelSeqRecord]:
         recs = TSVData.read_raw_parallel_lines(src_path, tgt_path)
-        recs = ((tokenizer(x), tokenizer(y)) for x, y in recs)
+        recs = ((src_tokenizer(x), tgt_tokenizer(y)) for x, y in recs)
         if truncate:
             recs = ((src[:src_len], tgt[:tgt_len]) for src, tgt in recs)
         else:  # Filter out longer sentences
@@ -236,18 +236,27 @@ class SqliteFile:
 
     INSERT_STMT = "INSERT INTO data (x, y, x_len, y_len) VALUES (?, ?, ?, ?)"
     READ_RANDOM = "SELECT * from data ORDER BY RANDOM()"
-    READ_X_LEN_DESC_RANDOM = "SELECT * from data ORDER BY x_len + (RANDOM() % 20) DESC"
-    READ_Y_LEN_DESC_RANDOM = "SELECT * from data ORDER BY y_len + (RANDOM() % 20) DESC"
     COUNT_ROWS = "SELECT COUNT(*) as COUNT from data"
 
-    def __init__(self, path: Path, shuffle=True, longest_first=False, sort_side='tgt',
+    @classmethod
+    def make_query(cls, sort_by: str, len_rand: int):
+        assert len_rand >= 1
+        template = "SELECT * from data ORDER BY %s + (RANDOM() % %d) %s"
+        known_queries = dict(y_len_asc=template % ('y_len', len_rand, 'ASC'),
+             x_len_asc=template % ('x_len', len_rand, 'ASC'),
+             y_len_desc=template % ('y_len', len_rand, 'DESC'),
+             x_len_desc=template % ('x_len', len_rand, 'DESC'),
+             random=cls.READ_RANDOM)
+        assert sort_by in known_queries, ('sort_by must be one of ' + str(known_queries.keys()))
+        return known_queries[sort_by]
+
+    def __init__(self, path: Path, sort_by='random', len_rand=2,
                  max_src_len: int = 512, max_tgt_len: int = 512, truncate: bool = False):
+
+        log.info(f"{type(self)} Args: {get_my_args()}")
         self.path = path
         assert path.exists()
-        assert sort_side in {'src', 'tgt'}
-        self.sort_side = sort_side
-        self.shuffle = shuffle
-        self.longest_first = longest_first
+        self.select_qry = self.make_query(sort_by, len_rand=len_rand)
         self.max_src_len, self.max_tgt_len = max_src_len, max_tgt_len
         self.truncate = truncate
         self.db = sqlite3.connect(str(path))
@@ -268,25 +277,18 @@ class SqliteFile:
         return self.db.execute(self.COUNT_ROWS).fetchone()['COUNT']
 
     def read_all(self) -> Iterator[Dict[str, Any]]:
-        assert self.shuffle, 'only shuffled read is supported as of now'
-        # because thats the only usecase for now
-        if self.longest_first:
-            select_qry = self.READ_X_LEN_DESC_RANDOM if self.sort_side == 'src' \
-                else self.READ_Y_LEN_DESC_RANDOM
-        else:
-            select_qry = self.READ_RANDOM
-        return self.db.execute(select_qry)
+        return self.db.execute(self.select_qry)
 
     def __iter__(self) -> Iterator[Example]:
         for d in self.read_all():
-            x, y  = d['x'], d.get('y')
+            x, y = d['x'], d.get('y')
             if not x or not y:
                 log.warning(f"Ignoring an empty record   x:{len(x)}    y:{len(y)}")
                 continue
             if len(x) > self.max_src_len or len(y) > self.max_tgt_len:
                 if self.truncate:
                     x, y = x[:self.max_src_len], y[:self.max_tgt_len]
-                else: # skip this record
+                else:  # skip this record
                     continue
             yield Example(x, y)
 
@@ -466,13 +468,12 @@ class BatchIterable(Iterable[Batch]):
         if not isinstance(data_path, Path):
             data_path = Path(data_path)
         if data_path.name.endswith(".db"):
-            self.data = SqliteFile(data_path, shuffle=shuffle, longest_first=False, **kwargs)
+            self.data = SqliteFile(data_path, **kwargs)
         else:
             self.data = TSVData(data_path, shuffle=shuffle, longest_first=False, **kwargs)
         self.batch_size = batch_size
         self.batch_first = batch_first
         log.info(f'Batch Size = {batch_size} toks')
-
 
     def read_all(self):
         batch = []

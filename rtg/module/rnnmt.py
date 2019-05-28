@@ -493,12 +493,12 @@ class SteppedRNNMTTrainer(SteppedTrainer):
         log.info(f'Going to train for {steps} steps; batch_size={batch_size}; '
                  f'check point size:{check_point}; fine tune={fine_tune}')
         keep_models = args.get('keep_models', 4)  # keep last _ models and delete the old
-
+        sort_by = args.get('sort_by', 'random')
         if steps <= self.start_step:
             raise Exception(f'The model was already trained to {self.start_step} steps. '
                             f'Please increase the steps or clear the existing models')
         train_data = self.exp.get_train_data(batch_size=batch_size, steps=steps - self.start_step,
-                                             sort_desc=True, shuffle=True, batch_first=True,
+                                             sort_by=sort_by, shuffle=True, batch_first=True,
                                              fine_tune=fine_tune)
         val_data = self.exp.get_val_data(batch_size, shuffle=False, batch_first=True,
                                          sort_desc=True)

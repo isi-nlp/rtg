@@ -635,7 +635,7 @@ class TransformerTrainer(SteppedTrainer):
 
     def train(self, steps: int, check_point: int, batch_size: int,
               check_pt_callback: Optional[Callable] = None, fine_tune=False, dec_bos_cut=False,
-              keep_models=10, **args):
+              keep_models=10, sort_by='random', **args):
         """
 
         :param steps: how many optimizer steps to train (also, means how many batches)
@@ -652,8 +652,10 @@ class TransformerTrainer(SteppedTrainer):
         if args:
             # no extra args. let user know if an extra arg is passed
             raise Exception(f" Found extra args: {args}")
-        log.info(f'Going to train for {steps} epochs; batch_size={batch_size} toks; '
-                 f'check point size:{check_point}; fine_tune={fine_tune}, dec_bos_cut={dec_bos_cut}')
+        log.info(f'Going to train for {steps} steps (from {self.start_step} steps);'
+                 f' batch_size={batch_size} toks; sort_by={sort_by};'
+                 f' check point size:{check_point}; fine_tune={fine_tune};'
+                 f' dec_bos_cut={dec_bos_cut}')
         if self.n_gpus > 1:
             batch_size *= self.n_gpus
             log.info(f"# GPUs = {self.n_gpus}, batch_size is set to {batch_size}")
@@ -662,7 +664,7 @@ class TransformerTrainer(SteppedTrainer):
             raise Exception(f'The model was already trained to {self.start_step} steps. '
                             f'Please increase the steps or clear the existing models')
         train_data = self.exp.get_train_data(batch_size=batch_size, steps=steps - self.start_step,
-                                             shuffle=True, batch_first=True, fine_tune=fine_tune,
+                                             sort_by=sort_by, batch_first=True, fine_tune=fine_tune,
                                              sort_desc=False)
         val_data = self.exp.get_val_data(batch_size, shuffle=False, batch_first=True,
                                          sort_desc=False)
@@ -698,17 +700,7 @@ class TransformerTrainer(SteppedTrainer):
                                                   'learn_rate': self.opt.curr_lr},
                                      self.opt.curr_step)
                 if log_resources and cuda_available:
-                    self.tbd.add_scalars('resources_mem',
-                                         {'mem_allocd': torch.cuda.memory_allocated(device),
-                                          'mem_cached': torch.cuda.memory_cached(device),
-                                          'max_mem_allocd': torch.cuda.max_memory_allocated(device),
-                                          'max_mem_cached': torch.cuda.max_memory_cached(device),
-                                          'num_y_toks': batch.y_toks,
-                                          'num_x_toks': batch.x_toks,
-                                          'num_sentences': len(batch),
-                                          'max_x_len': batch.x_seqs.shape[1],
-                                          'max_y_len': batch.y_seqs.shape[1]
-                                          }, self.opt.curr_step)
+                    self._log_resources(batch)
 
                 progress_msg, is_check_pt = train_state.step(num_toks, loss)
                 progress_msg += f', LR={self.opt.curr_lr:g}'
@@ -735,6 +727,19 @@ class TransformerTrainer(SteppedTrainer):
             train_state.train_mode(False)
             val_loss = self.run_valid_epoch(val_data, dec_bos_cut=dec_bos_cut)
             self.make_check_point(train_loss, val_loss=val_loss, keep_models=keep_models)
+
+    def _log_resources(self, batch):
+        self.tbd.add_scalars('resources_mem',
+                             {'mem_allocd': torch.cuda.memory_allocated(device),
+                              'mem_cached': torch.cuda.memory_cached(device),
+                              'max_mem_allocd': torch.cuda.max_memory_allocated(device),
+                              'max_mem_cached': torch.cuda.max_memory_cached(device),
+                              'num_y_toks': batch.y_toks,
+                              'num_x_toks': batch.x_toks,
+                              'num_sentences': len(batch),
+                              'max_x_len': batch.x_seqs.shape[1],
+                              'max_y_len': batch.y_seqs.shape[1]
+                              }, self.opt.curr_step)
 
 
 def __test_model__():

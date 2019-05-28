@@ -63,8 +63,8 @@ class DummyExperiment(Experiment):
         self.train_batches = train_batches
         self.val_batches = val_batches
 
-    def get_train_data(self, batch_size: int, steps: int = 0, sort_desc=True, batch_first=True,
-                       shuffle=False, copy_xy=False, fine_tune=False):
+    def get_train_data(self, batch_size: int, steps: int = 0, sort_desc=True, sort_by='random',
+                       batch_first=True, shuffle=False, copy_xy=False, fine_tune=False):
         train_data = BatchIterable(self.vocab_size, batch_size, self.train_batches,
                                    reverse=False, batch_first=batch_first)
         if steps > 0:
