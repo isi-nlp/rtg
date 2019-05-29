@@ -636,9 +636,13 @@ class TranslationExperiment(BaseExperiment):
             log.info("Using Fine tuning corpus instead of training corpus")
             inp_file = self.finetune_file
 
-        train_data = BatchIterable(inp_file, batch_size=batch_size, sort_by=sort_by,
-                                   batch_first=batch_first, shuffle=shuffle,
-                                   **self._get_batch_args())
+        if sort_by == 'eq_len_rand_batch':
+            train_data = EqualLenRandBatchDataset(inp_file, batch_size=batch_size,
+                                                  batch_first=batch_first, shuffle=shuffle)
+        else:
+            train_data = BatchIterable(inp_file, batch_size=batch_size, sort_by=sort_by,
+                                       batch_first=batch_first, shuffle=shuffle,
+                                       **self._get_batch_args())
         if steps > 0:
             train_data = LoopingIterable(train_data, steps)
         return train_data
