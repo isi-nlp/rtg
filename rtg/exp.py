@@ -626,7 +626,7 @@ class TranslationExperiment(BaseExperiment):
                 [('src_len', 'max_src_len'), ('tgt_len', 'max_tgt_len'), ('truncate', 'truncate')]
                 if ik in prep_args}
 
-    def get_train_data(self, batch_size: int, steps: int = 0, sort_by='random', batch_first=True,
+    def get_train_data(self, batch_size: int, steps: int = 0, sort_by='eq_len_rand_batch', batch_first=True,
                        shuffle=False, fine_tune=False):
         inp_file = self.train_db if self.train_db.exists() else self.train_file
         if fine_tune:
@@ -636,13 +636,9 @@ class TranslationExperiment(BaseExperiment):
             log.info("Using Fine tuning corpus instead of training corpus")
             inp_file = self.finetune_file
 
-        if sort_by == 'eq_len_rand_batch':
-            train_data = EqualLenRandBatchDataset(inp_file, batch_size=batch_size,
-                                                  batch_first=batch_first, shuffle=shuffle)
-        else:
-            train_data = BatchIterable(inp_file, batch_size=batch_size, sort_by=sort_by,
-                                       batch_first=batch_first, shuffle=shuffle,
-                                       **self._get_batch_args())
+        train_data = BatchIterable(inp_file, batch_size=batch_size, sort_by=sort_by,
+                                   batch_first=batch_first, shuffle=shuffle,
+                                   **self._get_batch_args())
         if steps > 0:
             train_data = LoopingIterable(train_data, steps)
         return train_data
