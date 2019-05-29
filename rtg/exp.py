@@ -10,7 +10,7 @@ import torch
 import yaml
 
 from rtg import log
-from rtg.dataprep import (TSVData, Field, BatchIterable, LoopingIterable, SqliteFile, EqualLenRandBatchDataset)
+from rtg.dataprep import (TSVData, Field, BatchIterable, LoopingIterable, SqliteFile)
 from rtg.utils import IO, line_count
 
 seeded = False
