@@ -89,7 +89,8 @@ class TfmLmTrainer(TransformerTrainer):
         start = time.time()
         total_tokens = 0
         total_loss = 0.0
-        with tqdm(data_iter, total=data_iter.num_batches, unit='batch') as data_bar:
+        with tqdm(data_iter, total=data_iter.num_batches, unit='batch',
+                  dynamic_ncols=True) as data_bar:
             for i, batch in enumerate(data_bar):
                 batch = batch.to(device)
                 num_toks = batch.x_toks
@@ -108,7 +109,7 @@ class TfmLmTrainer(TransformerTrainer):
                 total_tokens += num_toks
                 elapsed = time.time() - start
                 data_bar.set_postfix_str(
-                    f'Loss:{loss / num_toks:.4f}, {int(num_toks / elapsed)}toks/s', refresh=False)
+                    f'Loss:{loss:.4f}, {int(num_toks / elapsed)}toks/s', refresh=False)
                 start = time.time()
                 # force free memory
                 del batch
@@ -136,7 +137,8 @@ class TfmLmTrainer(TransformerTrainer):
         train_state = TrainerState(self.model, check_point=check_point)
         train_state.train_mode(True)
         unsaved_state = False
-        with tqdm(train_data, initial=self.start_step, total=steps, unit='batch') as data_bar:
+        with tqdm(train_data, initial=self.start_step, total=steps, unit='batch',
+                  dynamic_ncols=True) as data_bar:
             for batch in data_bar:
                 self.model.zero_grad()
                 assert batch.eos_x   # must have EOS
@@ -162,7 +164,7 @@ class TfmLmTrainer(TransformerTrainer):
                 progress_msg += f', LR={self.opt.curr_lr:g}'
 
                 data_bar.set_postfix_str(progress_msg, refresh=False)
-                del batch  # TODO: force free memory
+                del batch
 
                 if is_check_pt:
                     train_loss = train_state.reset()

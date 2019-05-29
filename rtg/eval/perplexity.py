@@ -39,7 +39,7 @@ def log_perplexity(decoder: Decoder, test_data: TextIO):
                  for line in lines]
     count = 0
     total = 0.0
-    for seq in tqdm(test_seqs):
+    for seq in tqdm(test_seqs, dynamic_ncols=True):
         #  batch of 1
         # TODO: make this faster using bigger batching
         batch = torch.tensor(seq, dtype=torch.long, device=device).view(1, -1)

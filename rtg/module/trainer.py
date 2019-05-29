@@ -16,7 +16,7 @@ import time
 from tensorboardX import SummaryWriter
 
 from torch import optim
-from torch.optim import Optimizer
+from torch.optim.optimizer import Optimizer
 from enum import Enum
 import inspect
 from pathlib import Path
@@ -98,7 +98,7 @@ class TrainerState:
     start: float = time.time()
 
     def running_loss(self):
-        return self.total_loss / self.total_toks if self.total_toks != 0 else float('inf')
+        return self.total_loss / self.steps if self.steps > 0 else float('inf')
 
     def reset(self):
         loss = self.running_loss()
@@ -120,7 +120,7 @@ class TrainerState:
 
     def progress_bar_msg(self):
         elapsed = time.time() - self.start
-        return f'Loss:{self.total_loss / self.total_toks:.4f},' \
+        return f'Loss:{self.running_loss():.4f},' \
             f' {int(self.total_toks / elapsed)}toks/s'
 
     def is_check_point(self):
