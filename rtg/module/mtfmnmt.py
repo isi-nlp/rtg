@@ -127,7 +127,7 @@ class MTransformerNMT(TransformerNMT):
         Helper: Construct a model from hyper parameters."
         :return: model, args
         """
-        assert plug_mode in {'cat_attn', 'add_atn', 'cat_emb'}
+        assert plug_mode in {'cat_attn', 'add_attn', 'cat_emb'}
 
         # get all args for reconstruction at a later phase
         _, _, _, args = inspect.getargvalues(inspect.currentframe())
