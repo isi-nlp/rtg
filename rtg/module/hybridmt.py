@@ -29,8 +29,9 @@ class RnnDecoder(nn.Module):
         self.dropout = nn.Dropout(dropout)
         self.n_layers = n_layers
         self.hid_size = hid_size
+        rnn_type = rnn_type.upper()
         self.rnn_type = rnn_type
-        rnn_factory = {'LSTM': nn.LSTM, 'GRU': nn.GRU}[rnn_type.upper()]
+        rnn_factory = {'LSTM': nn.LSTM, 'GRU': nn.GRU}[rnn_type]
         self.rnn = rnn_factory(self.hid_size, self.hid_size, num_layers=self.n_layers,
                                bidirectional=False, batch_first=True,
                                dropout=dropout if n_layers > 1 else 0)
@@ -38,9 +39,14 @@ class RnnDecoder(nn.Module):
     def forward(self, hid_state, tgt):
         # tgt: [B x T x H],
         # hid_state: for lstm ([Layers*Directions, B x H ], --),  for GRU: [Layers*Directions, B x H ]
+        tgt = self.dropout(tgt)
+        if self.rnn_type == 'LSTM':
+            hid_state= self.dropout(hid_state[0]), self.dropout(hid_state[1])
+        else:
+            hid_state = self.dropout(hid_state)
         output, _ = self.rnn(tgt, hid_state)
         # output: [B x T x H]
-        return output
+        return self.dropout(output)
 
 
 class HybridMT(TransformerNMT):
@@ -125,7 +131,7 @@ class HybridMT(TransformerNMT):
 
         dec_layers, rnn_type = self.decoder.n_layers, self.decoder.rnn_type
         sent_repr = sent_repr.unsqueeze(0).repeat(dec_layers, 1, 1)
-        hidden_state = (sent_repr, sent_repr) if rnn_type.upper() == 'LSTM' else sent_repr
+        hidden_state = (sent_repr, sent_repr) if rnn_type == 'LSTM' else sent_repr
         return self.decoder(hidden_state, embs)
 
     @classmethod

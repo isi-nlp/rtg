@@ -42,30 +42,14 @@ usage() {
 
 while getopts ":d:e:i:o:a:m:n:" o; do
     case "${o}" in
-        d)
-            OUT=${OPTARG}
-            ;;
-        e)
-            CONDA_ENV=${OPTARG}
-            ;;
-        i)
-            INP=${OPTARG}
-            ;;
-        o)
-            OUTP=${OPTARG}
-            ;;
-        a)
-            ALPHA=${OPTARG}
-            ;;
-        m)
-            BEAMS=${OPTARG}
-            ;;
-        n)
-            ENSEMBLE=${APTARG}
-            ;;
-        *)
-            usage
-            ;;
+        d) OUT=${OPTARG} ;;
+        e) CONDA_ENV=${OPTARG} ;;
+        i) INP=${OPTARG} ;;
+        o) OUTP=${OPTARG} ;;
+        a) ALPHA=${OPTARG} ;;
+        m) BEAMS=${OPTARG} ;;
+        n) ENSEMBLE=${OPTARG} ;;
+        *) usage ;;
     esac
 done
 
