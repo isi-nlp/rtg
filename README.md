@@ -6,7 +6,7 @@ This toolkit is meant for MT/NLG/NLU research.
 <small>NOTE: It has no relation to the [regular tree grammar](https://en.wikipedia.org/wiki/Regular_tree_grammar))</small>
 
 ### Includes  :
-+ Flexible Pre-processing : [sentencepiece](https://github.com/google/sentencepiece) is under the hood
++ Flexible Pre-processing: [sentencepiece](https://github.com/google/sentencepiece) is under the hood
 + Translation Modeling:
   + [Transformer aka Tensor2Tensor or "Attention is all you need"](https://arxiv.org/abs/1706.03762)
   + [RNN based Encoder-Decoder](https://papers.nips.cc/paper/5346-sequence-to-sequence-learning-with-neural-networks.pdf) with [Attention](https://nlp.stanford.edu/pubs/emnlp15_attn.pdf)
@@ -40,15 +40,15 @@ export PYTHONPATH=$PWD  # Add directory to PYTHONPATH
 
 # Usage
 This repo is actively under development so whatever I write in README is getting outdated soon.
-Refer to `scripts/rtg-pipeline.sh` and bash script and `examples/pipeline.conf.yml` file
+Refer to `scripts/rtg-pipeline.sh` and bash script and `examples/transformer.base.yml` file
 
 
 TODO: Write tutorial
 ```bash
-# use examples/pipeline.conf.yml config to setup an experiment at 001-tfm dir
-$ scripts/rtg-pipeline.sh -d 001-tfm -c examples/pipeline.conf.yml
-# or simply this
-$ python -m rtg.pipeline 001-tfm examples/pipeline.conf.yml
+# use examples/pipeline.conf.yml config to setup an experiment at 001-tfm dir (TODO: edit paths in yml file)
+$ scripts/transformer.base.yml -d 001-tfm -c examples/transformer.base.yml
+# or if you already have rtg in PYTHONPATH
+$ python -m rtg.pipeline 001-tfm examples/transformer.base.yml
 
 ```
 

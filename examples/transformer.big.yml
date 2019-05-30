@@ -1,9 +1,9 @@
 model_args:
-  dropout: 0.1
-  ff_size: 512 # change to 2048
-  hid_size: 256  # change to 512
-  n_heads: 4    # change to 8
-  n_layers: 3   # change to 6
+  dropout: 0.3
+  ff_size: 4096
+  hid_size: 1024
+  n_heads: 16
+  n_layers: 6
   src_vocab: 8000
   tgt_vocab: 8000
   tied_emb: three-way
@@ -15,20 +15,23 @@ optim:
     - 0.98
     eps: 1.0e-09
     label_smoothing: 0.1
-    lr: 0.1
-    warmup_steps: 4000
+    lr: 0.2
+    warmup_steps: 8000
+    constant: 2
   name: ADAM
 prep:
-  max_types: 500  # change to 8000
+  max_types: 8000
   pieces: bpe
   shared_vocab: true
-  src_len: 128
-  tgt_len: 128
+  src_len: 256
+  tgt_len: 256
   train_src: data/train.src
   train_tgt: data/train.tgt
-  truncate: false
+  truncate: true
   valid_src: data/valid.src
   valid_tgt: data/valid.tgt
+  mono_src: []
+  mono_tgt: []
 tester:
   decoder:
     tune:
@@ -37,7 +40,7 @@ tester:
       tune_ref: data/valid.tgt
       beam_size: [1, 4, 8]
       ensemble: [1, 5, 10]
-      lp_alpha: [0.0, 0.6]
+      lp_alpha: [0.0, 0.4, 0.6, 1.0]
       suggested:
         - 1, 1, 0.0
         - 1, 1, 0.6
@@ -57,10 +60,10 @@ tester:
     - data/valid.tgt
 trainer:
   init_args:
-    chunk_size: 10   # generation in chunks of time steps to reduce memory consumption
-  batch_size: 1024   # tokens
-  check_point: 400  # change to 1000 or 2000
+    chunk_size: 10
+  batch_size: 2600
+  check_point: 1000
   keep_models: 10
-  steps: 2000   # change to 128000 or up
+  steps: 200000
 updated_at: '2019-03-09T21:15:33.707183'
 seed: 12345
