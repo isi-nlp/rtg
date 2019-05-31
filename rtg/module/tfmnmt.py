@@ -439,27 +439,28 @@ class SimpleLossFunction:
 class ChunkedLossCompute(SimpleLossFunction):
     chunk_size: int = 10
 
-    def __call__(self, x_feats, y_seqs, normalizer: Union[int, float], train_mode=True,
+    def __call__(self, y_feats, y_seqs, normalizer: Union[int, float], train_mode=True,
                  chunk_size=None):
         chunk_size = chunk_size or self.chunk_size
         assert chunk_size > 0
         total = 0
-        out_grads = []
-        for i in range(0, x_feats.shape[1], chunk_size):
+        _y_feats = y_feats.detach().clone()
+        _y_feats.requires_grad = True   # yet collect grads
+
+        for i in range(0, _y_feats.shape[1], chunk_size):
             # grad network is cut here
-            chunked_feats = x_feats[:, i:i + chunk_size].clone().detach().requires_grad_(train_mode)
+            chunked_feats = _y_feats[:, i:i + chunk_size]
             chunked_dist = self.generator(chunked_feats)
 
-            chunked_dist = chunked_dist.view(-1, chunked_dist.shape[-1])  # B x C x V -> B.C x V
+            chunked_dist = chunked_dist.contiguous().view(-1, chunked_dist.shape[-1])  # B x C x V -> B.C x V
             chunked_ys = y_seqs[:, i:i + chunk_size].contiguous().view(-1)  # B x C -> B.C
             loss = self.criterion(chunked_dist, chunked_ys).sum() / normalizer
             total = total + loss.detach().item()
             if train_mode:
                 loss.backward()
-                out_grads.append(chunked_feats.grad.data.clone())  # grads are collected
         if train_mode:
-            out_grad = torch.cat(out_grads, dim=1)
-            x_feats.backward(gradient=out_grad)
+            out_grad = _y_feats.grad.data
+            y_feats.backward(gradient=out_grad)
             self.opt.step()
             self.opt.zero_grad()
 
@@ -479,18 +480,22 @@ class MultiGPULossFunction(ChunkedLossCompute):
         self.dp_module: nn.DataParallel = dp_module
         self.sct_criteria = nn.parallel.replicate(self.criterion, devices=self.devices)
 
-    def __call__(self, x_feats, y_seqs, normalizer, train_mode=True, chunk_size=None):
-        """
-        if not self.multi_gpu:
-            # let the parent class deal with this
-            return super()(x_feats, y_seqs, norm, train_mode, chunk_size)
-        """
+    def __call__(self, y_feats, y_seqs, normalizer, train_mode=True, chunk_size=None):
+
         batch_dim = 0
-        assert x_feats.shape[batch_dim] == y_seqs.shape[batch_dim]
-        # naming: sct = Scattered   chk = Chunked
-        sct_feats = nn.parallel.scatter(x_feats, target_gpus=self.devices, dim=batch_dim)
+        assert y_feats.shape[batch_dim] == y_seqs.shape[batch_dim]
+
+        # disconnect y_feats nodes from rest of graph
+        _y_feats = y_feats.data.clone().detach()
+        _y_feats.requires_grad = True  # even though detached, we still need grads here
+
+        # naming: sct = Scattered  chk = Chunked
+        # Scatter is horizontal split (i.e. along batch) ; Chunk is vertical split (ie. along time)
+        # Scatter is handled by pytorch's dataparallel utils
+        sct_feats = nn.parallel.scatter(_y_feats, target_gpus=self.devices, dim=batch_dim)
         sct_ys = nn.parallel.scatter(y_seqs, target_gpus=self.devices, dim=batch_dim)
         assert len(sct_feats) == len(sct_ys)
+
         n_scts = len(sct_feats)  # if the batch is smaller than n_gpus; only use a subset
 
         sct_criteria = self.sct_criteria[:n_scts]
@@ -499,21 +504,19 @@ class MultiGPULossFunction(ChunkedLossCompute):
         generator = self.dp_module.module.generator
         sct_generators = nn.parallel.replicate(generator, devices=self.devices)[:n_scts]
 
-        chunk_size = chunk_size if chunk_size else self.chunk_size
+        chunk_size = chunk_size or self.chunk_size
         assert chunk_size > 0
-        seq_len = x_feats.shape[1]  # B x L x D
+        seq_len = y_feats.shape[1]  # B x L x D
         assert seq_len == y_seqs.shape[-1]  # B x L
         total_loss = 0
-        sct_chk_grads = [[] for _ in range(n_scts)]
 
         for i in range(0, seq_len, chunk_size):
-            chk_sct_feats = [sf[:, i:i + chunk_size].clone().detach().requires_grad_(train_mode)
-                             for sf in sct_feats]
-            chk_sct_dist = nn.parallel.parallel_apply(sct_generators, chk_sct_feats)
+            chk_sct_feats = [sf[:, i:i + chunk_size] for sf in sct_feats]
+            chk_sct_flat_ys = [sy[:, i:i + chunk_size].contiguous().view(-1) for sy in sct_ys]   # also falttened
 
-            args_pair = [(chk_distr.contiguous().view(-1, chk_distr.shape[-1]),
-                          sy[:, i:i + chunk_size].contiguous().view(-1))
-                         for chk_distr, sy in zip(chk_sct_dist, sct_ys)]
+            chk_sct_dist = nn.parallel.parallel_apply(sct_generators, chk_sct_feats)
+            chk_sct_flt_dist = [chk_dist.contiguous().view(-1, chk_dist.shape[-1]) for chk_dist in chk_sct_dist]
+            args_pair = list(zip(chk_sct_flt_dist, chk_sct_flat_ys))
             chk_sct_loss = nn.parallel.parallel_apply(sct_criteria, args_pair)
 
             # update total loss
@@ -522,19 +525,12 @@ class MultiGPULossFunction(ChunkedLossCompute):
             total_loss += chk_loss.item()
 
             if train_mode:
-                chk_loss.backward()
-                for chk_grads, chk_feats in zip(sct_chk_grads, chk_sct_feats):
-                    chk_grads.append(chk_feats.grad.data.clone())
+                chk_loss.backward()  # backward for the chunked part
 
         # back prop all loss through the rest of the network
         if train_mode:
-            # concat chunks along seq_len for each scatter
-            sct_grad = [torch.cat(chk_grads, dim=1) for chk_grads in sct_chk_grads]
-            # gather all scatter to single device
-            out_grad = nn.parallel.gather(sct_grad, target_device=x_feats.device)
             # back prop the rest of network
-            # TODO: backward pass runs on a single GPU :( :'( improve this!
-            x_feats.backward(gradient=out_grad)
+            y_feats.backward(gradient=_y_feats.grad.data)
             self.opt.step()
             self.opt.zero_grad()
 
