@@ -439,27 +439,28 @@ class SimpleLossFunction:
 class ChunkedLossCompute(SimpleLossFunction):
     chunk_size: int = 10
 
-    def __call__(self, x_feats, y_seqs, normalizer: Union[int, float], train_mode=True,
+    def __call__(self, y_feats, y_seqs, normalizer: Union[int, float], train_mode=True,
                  chunk_size=None):
         chunk_size = chunk_size or self.chunk_size
         assert chunk_size > 0
         total = 0
-        out_grads = []
-        for i in range(0, x_feats.shape[1], chunk_size):
+        _y_feats = y_feats.detach().clone()
+        _y_feats.requires_grad = True   # yet collect grads
+
+        for i in range(0, _y_feats.shape[1], chunk_size):
             # grad network is cut here
-            chunked_feats = x_feats[:, i:i + chunk_size].clone().detach().requires_grad_(train_mode)
+            chunked_feats = _y_feats[:, i:i + chunk_size]
             chunked_dist = self.generator(chunked_feats)
 
-            chunked_dist = chunked_dist.view(-1, chunked_dist.shape[-1])  # B x C x V -> B.C x V
+            chunked_dist = chunked_dist.contiguous().view(-1, chunked_dist.shape[-1])  # B x C x V -> B.C x V
             chunked_ys = y_seqs[:, i:i + chunk_size].contiguous().view(-1)  # B x C -> B.C
             loss = self.criterion(chunked_dist, chunked_ys).sum() / normalizer
             total = total + loss.detach().item()
             if train_mode:
                 loss.backward()
-                out_grads.append(chunked_feats.grad.data.clone())  # grads are collected
         if train_mode:
-            out_grad = torch.cat(out_grads, dim=1)
-            x_feats.backward(gradient=out_grad)
+            out_grad = _y_feats.grad.data
+            y_feats.backward(gradient=out_grad)
             self.opt.step()
             self.opt.zero_grad()
 
