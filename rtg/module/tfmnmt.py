@@ -206,10 +206,8 @@ class TransformerNMT(NMTModel):
 
 
         if enc_layers == 0:
-            log.info("Zero encoder layers specified.")
-            encoder = lambda emb, src_mask: emb
-        else:
-            encoder = Encoder(EncoderLayer(hid_size, c(attn), c(ff), dropout), enc_layers)
+            log.warning("Zero encoder layers!")
+        encoder = Encoder(EncoderLayer(hid_size, c(attn), c(ff), dropout), enc_layers)
 
         assert dec_layers > 0
         decoder = Decoder(DecoderLayer(hid_size, c(attn), c(attn), c(ff), dropout), dec_layers)
