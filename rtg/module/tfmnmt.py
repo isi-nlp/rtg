@@ -188,8 +188,8 @@ class TransformerNMT(NMTModel):
             self.src_embed[0].lut.weight = self.tgt_embed[0].lut.weight
 
     @classmethod
-    def make_model(cls, src_vocab, tgt_vocab, n_layers=6, hid_size=512, ff_size=2048, n_heads=8,
-                   dropout=0.1, tied_emb='three-way', exp: Experiment = None):
+    def make_model(cls, src_vocab, tgt_vocab, enc_layers=6, dec_layers=6, hid_size=512,
+                   ff_size=2048, n_heads=8, dropout=0.1, tied_emb='three-way', exp: Experiment = None):
         "Helper: Construct a model from hyper parameters."
 
         # get all args for reconstruction at a later phase
@@ -204,8 +204,15 @@ class TransformerNMT(NMTModel):
         attn = MultiHeadedAttention(n_heads, hid_size, dropout=dropout)
         ff = PositionwiseFeedForward(hid_size, ff_size, dropout)
 
-        encoder = Encoder(EncoderLayer(hid_size, c(attn), c(ff), dropout), n_layers)
-        decoder = Decoder(DecoderLayer(hid_size, c(attn), c(attn), c(ff), dropout), n_layers)
+
+        if enc_layers == 0:
+            log.info("Zero encoder layers specified.")
+            encoder = lambda emb, src_mask: emb
+        else:
+            encoder = Encoder(EncoderLayer(hid_size, c(attn), c(ff), dropout), enc_layers)
+
+        assert dec_layers > 0
+        decoder = Decoder(DecoderLayer(hid_size, c(attn), c(attn), c(ff), dropout), dec_layers)
 
         src_emb = nn.Sequential(Embeddings(hid_size, src_vocab),
                                 PositionalEncoding(hid_size, dropout))
@@ -743,7 +750,8 @@ def __test_model__():
     args = {
         'src_vocab': vocab_size,
         'tgt_vocab': vocab_size,
-        'n_layers': 4,
+        'enc_layers': 0,
+        'dec_layers': 4,
         'hid_size': 64,
         'ff_size': 64,
         'n_heads': 4
