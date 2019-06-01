@@ -35,18 +35,10 @@ usage() {
 
 while getopts ":fd:c:e:p:" o; do
     case "${o}" in
-        d)
-            OUT=${OPTARG}
-            ;;
-        c)
-            CONF_PATH=${OPTARG}
-            ;;
-        e)
-            CONDA_ENV=${OPTARG}
-            ;;
-        *)
-            usage
-            ;;
+        d) OUT=${OPTARG} ;;
+        c) CONF_PATH=${OPTARG} ;;
+        e) CONDA_ENV=${OPTARG} ;;
+        *) usage ;;
     esac
 done
 
@@ -73,7 +65,7 @@ fi
 
 if [[ -n ${CONDA_ENV} ]]; then
     echo "Activating environment $CONDA_ENV"
-    source activate ${CONDA_ENV} || { echp "Unable to activate $CONDA_ENV" ; exit 3; }
+    source activate ${CONDA_ENV} || { echo "Unable to activate $CONDA_ENV" ; exit 3; }
 fi
 
 
