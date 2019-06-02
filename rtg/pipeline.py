@@ -77,10 +77,12 @@ class Pipeline:
         cmd = f'{self.script} -h {hyp} -r {ref}'
         subprocess.run(cmd, shell=True, check=True)
 
-    def decode_eval_file(self, decoder, src: Union[Path, List[str]], out_file: Path, ref: Union[Path, List[str]],
-                         lowercase: bool=True, **dec_args) -> float:
+    def decode_eval_file(self, decoder, src: Union[Path, List[str]], out_file: Path,
+                         ref: Union[Path, List[str]],
+                         lowercase: bool = True, **dec_args) -> float:
         if out_file.exists() and out_file.stat().st_size > 0 \
-                and line_count(out_file) == (len(src) if isinstance(src, list) else line_count(src)):
+                and line_count(out_file) == (
+        len(src) if isinstance(src, list) else line_count(src)):
             log.warning(f"{out_file} exists and has desired number of lines. Skipped...")
         else:
             if isinstance(src, Path):
@@ -92,15 +94,18 @@ class Pipeline:
                 decoder.decode_file(src, out, **dec_args)
         return self.evaluate_file(out_file, ref, lowercase=lowercase)
 
-    def tune_decoder_params(self, exp: Experiment, tune_src: str, tune_ref: str,
+    def tune_decoder_params(self, exp: Experiment, tune_src: str, tune_ref: str, batch_size: int,
                             trials: int = 10, lowercase=True,
                             beam_size=[1, 4, 8], ensemble=[1, 5, 10], lp_alpha=[0.0, 0.4, 0.6],
-                            suggested:List[Tuple[int, int, float]]=None,
+                            suggested: List[Tuple[int, int, float]] = None,
                             **fixed_args):
         _, _, _, tune_args = inspect.getargvalues(inspect.currentframe())
-        for x in ['exp', 'self', 'fixed_args']:
-            del tune_args[x]  # exclude some args
         tune_args.update(fixed_args)
+        ex_args = ['exp', 'self', 'fixed_args', 'batch_size', 'max_len']
+        if trials == 0:
+            ex_args += ['beam_size', 'ensemble', 'lp_alpha']
+        for x in ex_args:
+            del tune_args[x]  # exclude some args
 
         _, step = exp.get_last_saved_model()
         tune_dir = exp.work_dir / f'tune_step{step}'
@@ -112,12 +117,12 @@ class Pipeline:
         tune_src, tune_ref = list(IO.get_lines(tune_src)), list(IO.get_lines(tune_ref))
         assert len(tune_src) == len(tune_ref)
 
-        tune_log = tune_dir / 'scores.json'   # resume the tuning
+        tune_log = tune_dir / 'scores.json'  # resume the tuning
         memory: Dict[Tuple, float] = {}
         if tune_log.exists():
             data = json.load(tune_log.open())
             # JSON keys cant be tuples, so they were stringified
-            memory = {eval(k) : v for k, v in data.items()}
+            memory = {eval(k): v for k, v in data.items()}
 
         beam_sizes, ensembles, lp_alphas = [], [], []
         if suggested:
@@ -143,23 +148,20 @@ class Pipeline:
             for ens, args in grouped_ens.items():
                 decoder = Decoder.new(exp, ensemble=ens)
                 for b_s, lp_a in args:
-                    batch_size = self.suggest_batch_size(b_s)
+                    eff_batch_size =  batch_size // b_s    # effective batch size
                     name = f'tune_step{step}_beam{b_s}_ens{ens}_lp{lp_a:.2f}'
                     log.info(name)
                     out_file = tune_dir / f'{name}.out.tsv'
                     score = self.decode_eval_file(decoder, tune_src, out_file, tune_ref,
-                                                  batch_size=batch_size, beam_size=b_s,
+                                                  batch_size=eff_batch_size, beam_size=b_s,
                                                   lp_alpha=lp_a, lowercase=lowercase, **fixed_args)
-                    memory[(b_s, ens, lp_a)] =  score
-            best_params = sorted(memory.items(), key=lambda x:x[1], reverse=True)[0][0]
+                    memory[(b_s, ens, lp_a)] = score
+            best_params = sorted(memory.items(), key=lambda x: x[1], reverse=True)[0][0]
             return dict(zip(['beam_size', 'ensemble', 'lp_alpha'], best_params)), tune_args
         finally:
             # JSON keys cant be tuples, so we stringify them
             data = {str(k): v for k, v in memory.items()}
             IO.write_lines(tune_log, json.dumps(data))
-
-    def suggest_batch_size(self, beam_size):
-        return 20000 // beam_size
 
     def run_tests(self, exp=None, args=None):
         if exp is None:
@@ -176,6 +178,7 @@ class Pipeline:
         dec_args: Dict = args['decoder']
         best_params = copy.deepcopy(dec_args)
         max_len = best_params.get('max_len', 50)
+        batch_size = best_params.get('batch_size', 20_000)
         # TODO: this has grown to become messy (trying to make backward compatible, improve the logic here
         if 'tune' in dec_args and not dec_args['tune'].get('tuned'):
             tune_args: Dict = dec_args['tune']
@@ -184,8 +187,8 @@ class Pipeline:
                 tune_args['tune_src'] = prep_args['valid_src']
             if 'tune_ref' not in tune_args:
                 tune_args['tune_ref'] = prep_args.get('valid_ref', prep_args['valid_tgt'])
-            tune_args['max_len'] = max_len
-            best_params, tuner_args_ext = self.tune_decoder_params(exp=exp, **tune_args)
+            best_params, tuner_args_ext = self.tune_decoder_params(
+                exp=exp, max_len=max_len, batch_size=batch_size, **tune_args)
             log.info(f"tuner args = {tuner_args_ext}")
             log.info(f"Tuning complete: best_params: {best_params}")
             dec_args['tune'].update(tuner_args_ext)  # Update the config file with default args
@@ -198,7 +201,7 @@ class Pipeline:
         beam_size = best_params.get('beam_size', 4)
         ensemble: int = best_params.pop('ensemble', 5)
         lp_alpha = best_params.get('lp_alpha', 0.0)
-        batch_size = best_params.get('batch_size', self.suggest_batch_size(beam_size))
+        eff_batch_size = batch_size // beam_size
 
         dec_args.update(dict(beam_size=beam_size, lp_alpha=lp_alpha, ensemble=ensemble,
                              max_len=max_len, batch_size=batch_size))
@@ -221,7 +224,7 @@ class Pipeline:
                         link.symlink_to(orig)
                 out_file = test_dir / f'{name}.out.tsv'
                 score = self.decode_eval_file(decoder, src_link, out_file, ref_link,
-                                              batch_size=batch_size, beam_size=beam_size,
+                                              batch_size=eff_batch_size, beam_size=beam_size,
                                               lp_alpha=lp_alpha, max_len=max_len)
                 self.external_eval(hyp=out_file, ref=ref_link)  # external eval script
             except Exception as e:
