@@ -9,7 +9,7 @@ This toolkit is meant for MT/NLG/NLU research.
 +  Uses [sentencepiece](https://github.com/google/sentencepiece) for preprocessing : word/char/bpe etc 
 + Translation Modeling:
   + [Transformer model from "Attention is all you need"](https://arxiv.org/abs/1706.03762) (fully tested and competes with [Tensor2Tensor](https://github.com/tensorflow/tensor2tensor) 
-  + [RNN based Encoder-Decoder](https://papers.nips.cc/paper/5346-sequence-to-sequence-learning-with-neural-networks.pdf) with [Attention] (https://nlp.stanford.edu/pubs/emnlp15_attn.pdf) . (No longer use it, but it's there for experimentation)
+  + [RNN based Encoder-Decoder](https://papers.nips.cc/paper/5346-sequence-to-sequence-learning-with-neural-networks.pdf) with [Attention](https://nlp.stanford.edu/pubs/emnlp15_attn.pdf) . (No longer use it, but it's there for experimentation)
 + Language Modeling: RNN, Transformer 
 + Multi GPU Parallelism for transformer model. All GPUs must be in the same node, though!
 + 
