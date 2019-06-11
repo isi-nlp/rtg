@@ -36,9 +36,9 @@ class Pipeline:
         assert self.exp.config['tester']['suit'] is not None
         for name, (src, ref) in self.exp.config['tester']['suit'].items():
             src, ref = Path(src).resolve(), Path(ref).resolve()
-            assert src.exists()
-            assert ref.exists()
-            assert line_count(src) == line_count(ref)
+            assert src.exists(), f'{src} doesnt exist'
+            assert ref.exists(), f'{ref} doesnt exist'
+            assert line_count(src) == line_count(ref), f'{src} and{ref} are not parallel'
 
         script: Path = RTG_PATH / 'scripts' / 'detok-n-bleu.sh'
         if not script.exists():
