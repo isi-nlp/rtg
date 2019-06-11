@@ -59,7 +59,7 @@ This toolkit is meant for MT/NLG/NLU research.
 Just need to add the root of this repo to PYTHONPATH
 
 ```bash
-git clone https://github.com/thammegowda/rtg.git
+git clone https://github.com/isi-nlp/rtg.git
 cd rtg                # go to the code
 
 conda env create .   # adds a conda env named rtg
