@@ -3,7 +3,8 @@ model_args:
   ff_size: 512
   hid_size: 256
   n_heads: 4
-  n_layers: 3
+  enc_layers: 3
+  dec_layers: 3
   src_vocab: 8000
   tgt_vocab: 8000
   tied_emb: three-way

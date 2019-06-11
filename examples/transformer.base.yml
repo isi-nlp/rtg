@@ -3,7 +3,8 @@ model_args: # model construction args
   ff_size: 2048
   hid_size: 512
   n_heads: 8
-  n_layers: 6
+  enc_layers: 6
+  dec_layers: 6
   src_vocab: 8000
   tgt_vocab: 8000
   tied_emb: three-way  # choices: null, one-way, two-way, three-way
