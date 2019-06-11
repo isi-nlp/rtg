@@ -636,7 +636,7 @@ class TransformerTrainer(SteppedTrainer):
 
     def train(self, steps: int, check_point: int, batch_size: int,
               check_pt_callback: Optional[Callable] = None, fine_tune=False, dec_bos_cut=False,
-              keep_models=10, sort_by='random', **args):
+              keep_models=10, sort_by='eq_len_rand_batch', **args):
         """
 
         :param steps: how many optimizer steps to train (also, means how many batches)
