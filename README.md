@@ -1,4 +1,3 @@
-![#f03c15](https://placehold.it/15/f03c15/000000?text=+)**THE DEVELOPMENT HAS BEEN MOVED TO https://github.com/isi-nlp/rtg**
 # RTG
 
 RTG is a Neural Machine Translation toolkit based on pytorch.
