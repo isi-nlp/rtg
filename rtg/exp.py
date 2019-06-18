@@ -587,7 +587,12 @@ class TranslationExperiment(BaseExperiment):
             run_args.update(args)
         if 'init_args' in run_args:
             del run_args['init_args']
-        steps = run_args['steps']
+        train_steps = run_args['steps']
+        finetune_steps = run_args.pop('finetune_steps', None)
+        if finetune_steps:
+            assert type(finetune_steps) is int
+            assert finetune_steps > train_steps, f'finetune_steps={finetune_steps} should be' \
+                f' greater than steps={train_steps}'
 
         _, last_step = self.get_last_saved_model()
         if self._trained_flag.exists():
@@ -597,20 +602,24 @@ class TranslationExperiment(BaseExperiment):
             except Exception as _:
                 pass
 
-        if last_step >= steps:
-            log.warning(f"Already trained upto {last_step}; Requested: {steps}. Skipped")
+        if last_step >= train_steps and (finetune_steps is None or last_step > finetune_steps):
+            log.warning(f"Already trained upto {last_step}; Requested: {train_steps}. Skipped")
             return
-        try:
-            from rtg.registry import trainers
-            name, optim_args = self.optim_args
-            trainer = trainers[self.model_type](self, optim=name, **optim_args)
-            trainer.train(**run_args)
-            self._trained_flag.write_text(yaml.dump({'steps': steps}, default_flow_style=False))
-        except RuntimeError as e:
-            from rtg.utils import log_tensor_sizes
-            if 'out of memory' in str(e).lower():
-                log_tensor_sizes()
-            raise e
+
+        from rtg.registry import trainers
+        name, optim_args = self.optim_args
+        trainer = trainers[self.model_type](self, optim=name, **optim_args)
+        if last_step < train_steps:  # regular training
+            trainer.train(fine_tune=False, **run_args)
+            self._trained_flag.write_text(
+                yaml.dump({'steps': train_steps}, default_flow_style=False))
+        if finetune_steps: # Fine tuning
+            log.info(f"Fine tuning upto {finetune_steps}")
+            run_args['steps'] = finetune_steps
+            trainer.train(fine_tune=True, **run_args)
+            self._trained_flag.write_text(
+                yaml.dump({'steps': finetune_steps}, default_flow_style=False))
+
 
     @property
     def src_vocab(self) -> Field:

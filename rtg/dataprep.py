@@ -532,7 +532,7 @@ class BatchIterable(Iterable[Batch]):
             else:
                 if this_len > self.batch_size:
                     raise Exception(f'Unable to make a batch of {self.batch_size} toks'
-                                    f' with a seq of x_len:{len(x_len)} y_len:{len(y_len)}')
+                                    f' with a seq of x_len:{x_len} y_len:{y_len}')
                 batches.append(batch)
                 batch = [id]  # new batch
                 max_len = this_len

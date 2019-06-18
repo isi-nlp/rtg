@@ -636,7 +636,7 @@ class TransformerTrainer(SteppedTrainer):
 
     def train(self, steps: int, check_point: int, batch_size: int,
               check_pt_callback: Optional[Callable] = None, fine_tune=False, dec_bos_cut=False,
-              keep_models=10, sort_by='eq_len_rand_batch', **args):
+              keep_models=10, sort_by='eq_len_rand_batch', log_interval: int=10, **args):
         """
 
         :param steps: how many optimizer steps to train (also, means how many batches)
@@ -650,6 +650,7 @@ class TransformerTrainer(SteppedTrainer):
         :return:
         """
         log_resources = args.pop('log_resources', False)
+        assert log_interval > 0
         if args:
             # no extra args. let user know if an extra arg is passed
             raise Exception(f" Found extra args: {args}")
@@ -696,11 +697,12 @@ class TransformerTrainer(SteppedTrainer):
                 # assumption:  y_seqs has EOS, and not BOS
                 loss = self.loss_func(out, batch.y_seqs, num_toks, True)
                 unsaved_state = True
-                self.tbd.add_scalars('training', {'step_loss': loss,
-                                                  'learn_rate': self.opt.curr_lr},
-                                     self.opt.curr_step)
-                if log_resources and cuda_available:
-                    self._log_resources(batch)
+                if self.opt.curr_step % log_interval == 0:
+                    self.tbd.add_scalars('training', {'step_loss': loss,
+                                                      'learn_rate': self.opt.curr_lr},
+                                         self.opt.curr_step)
+                    if log_resources and cuda_available:
+                        self._log_resources(batch)
 
                 progress_msg, is_check_pt = train_state.step(num_toks, loss)
                 progress_msg += f', LR={self.opt.curr_lr:g}'

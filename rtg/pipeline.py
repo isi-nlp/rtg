@@ -30,11 +30,12 @@ class Pipeline:
     def pre_checks(self):
         # Some more validation needed
         assert self.exp.work_dir.exists()
-        assert self.exp.config.get('prep') is not None
-        assert self.exp.config.get('trainer') is not None
-        assert self.exp.config.get('tester') is not None
-        assert self.exp.config['tester']['suit'] is not None
-        for name, (src, ref) in self.exp.config['tester']['suit'].items():
+        conf = self.exp.config
+        assert conf.get('prep') is not None
+        assert conf.get('trainer') is not None
+        assert conf.get('tester') is not None
+        assert conf['tester']['suit'] is not None
+        for name, (src, ref) in conf['tester']['suit'].items():
             src, ref = Path(src).resolve(), Path(ref).resolve()
             assert src.exists(), f'{src} doesnt exist'
             assert ref.exists(), f'{ref} doesnt exist'
@@ -45,6 +46,14 @@ class Pipeline:
             script = RTG_PATH.parent / 'scripts' / 'detok-n-bleu.sh'
         assert script.exists(), 'Unable to locate detok-n-bleu.sh script'
         self.script = script
+        assert conf['trainer']['steps'] > 0
+        if 'finetune_steps' in conf['trainer']:
+            assert conf['trainer']['finetune_steps'] > conf['trainer']['steps']
+            if not self.exp.finetune_file.exists():
+                assert 'finetune_src' in conf['prep']
+                assert 'finetune_tgt' in conf['prep']
+                assert Path(conf['prep']['finetune_src']).exists()
+                assert Path(conf['prep']['finetune_tgt']).exists()
 
     def detokenize(self, inp: Path, out: Path, col=0, lang='en', post_op=None):
         log.info(f"detok : {inp} --> {out}")
