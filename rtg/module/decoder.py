@@ -103,9 +103,9 @@ class DecoderBatch:
         for i, line in enumerate(lines):
             line = line.strip()
             if not line:
-                log.warning(f"line {i + 1} was empty. skipping it for now. "
+                log.warning(f"line {i + 1} was empty. inserting a dot (.). "
                             f"Empty lines are problematic when you want line-by-line alignment...")
-                continue
+                line = "."
             cols = line.split('\t')
             seq = vocab.encode_as_ids(line, add_eos=True, add_bos=False)
             ref = cols[1] if len(cols) > 1 else None
