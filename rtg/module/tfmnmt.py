@@ -189,7 +189,8 @@ class TransformerNMT(NMTModel):
 
     @classmethod
     def make_model(cls, src_vocab, tgt_vocab, enc_layers=6, dec_layers=6, hid_size=512,
-                   ff_size=2048, n_heads=8, dropout=0.1, tied_emb='three-way', exp: Experiment = None):
+                   ff_size=2048, n_heads=8, dropout=0.1, tied_emb='three-way', activation='relu',
+                   exp: Experiment = None):
         "Helper: Construct a model from hyper parameters."
 
         # get all args for reconstruction at a later phase
@@ -199,11 +200,11 @@ class TransformerNMT(NMTModel):
         # In case you are wondering, why I didnt use **kwargs here:
         #   these args are read from conf file where user can introduce errors, so the parameter
         #   validation and default value assignment is implicitly done by function call for us :)
-
+        assert activation in {'relu', 'elu', 'gelu'}
+        log.info(f"Make model, Args={args}")
         c = copy.deepcopy
         attn = MultiHeadedAttention(n_heads, hid_size, dropout=dropout)
-        ff = PositionwiseFeedForward(hid_size, ff_size, dropout)
-
+        ff = PositionwiseFeedForward(hid_size, ff_size, dropout, activation=activation)
 
         if enc_layers == 0:
             log.warning("Zero encoder layers!")
@@ -339,14 +340,24 @@ class MultiHeadedAttention(nn.Module):
 class PositionwiseFeedForward(nn.Module):
     "Implements FFN equation."
 
-    def __init__(self, d_model, d_ff, dropout=0.1):
+    def __init__(self, d_model, d_ff, dropout=0.1, activation='relu'):
         super().__init__()
         self.w_1 = nn.Linear(d_model, d_ff)
         self.w_2 = nn.Linear(d_ff, d_model)
         self.dropout = nn.Dropout(dropout)
+        activations = dict(relu=F.relu, elu=F.elu)
+
+        if activation == 'gelu':  # TODO: when torch 1.2 comes out, simplify this block
+            try:
+                activations['gelu'] = F.gelu
+            except:
+                log.warning(f"gelu is not available. using torch {torch.__version__}."
+                            f" GELU was added in https://github.com/pytorch/pytorch/pull/20665")
+                raise
+        self.activation = activations[activation]
 
     def forward(self, x):
-        return self.w_2(self.dropout(F.relu(self.w_1(x))))
+        return self.w_2(self.dropout(self.activation(self.w_1(x))))
 
 
 class Embeddings(nn.Module):
@@ -450,14 +461,15 @@ class ChunkedLossCompute(SimpleLossFunction):
         assert chunk_size > 0
         total = 0
         _y_feats = y_feats.detach().clone()
-        _y_feats.requires_grad = True   # yet collect grads
+        _y_feats.requires_grad = True  # yet collect grads
 
         for i in range(0, _y_feats.shape[1], chunk_size):
             # grad network is cut here
             chunked_feats = _y_feats[:, i:i + chunk_size]
             chunked_dist = self.generator(chunked_feats)
 
-            chunked_dist = chunked_dist.contiguous().view(-1, chunked_dist.shape[-1])  # B x C x V -> B.C x V
+            chunked_dist = chunked_dist.contiguous().view(-1, chunked_dist.shape[
+                -1])  # B x C x V -> B.C x V
             chunked_ys = y_seqs[:, i:i + chunk_size].contiguous().view(-1)  # B x C -> B.C
             loss = self.criterion(chunked_dist, chunked_ys).sum() / normalizer
             total = total + loss.detach().item()
@@ -517,10 +529,12 @@ class MultiGPULossFunction(ChunkedLossCompute):
 
         for i in range(0, seq_len, chunk_size):
             chk_sct_feats = [sf[:, i:i + chunk_size] for sf in sct_feats]
-            chk_sct_flat_ys = [sy[:, i:i + chunk_size].contiguous().view(-1) for sy in sct_ys]   # also falttened
+            chk_sct_flat_ys = [sy[:, i:i + chunk_size].contiguous().view(-1) for sy in
+                               sct_ys]  # also falttened
 
             chk_sct_dist = nn.parallel.parallel_apply(sct_generators, chk_sct_feats)
-            chk_sct_flt_dist = [chk_dist.contiguous().view(-1, chk_dist.shape[-1]) for chk_dist in chk_sct_dist]
+            chk_sct_flt_dist = [chk_dist.contiguous().view(-1, chk_dist.shape[-1]) for chk_dist in
+                                chk_sct_dist]
             args_pair = list(zip(chk_sct_flt_dist, chk_sct_flat_ys))
             chk_sct_loss = nn.parallel.parallel_apply(sct_criteria, args_pair)
 
@@ -636,7 +650,7 @@ class TransformerTrainer(SteppedTrainer):
 
     def train(self, steps: int, check_point: int, batch_size: int,
               check_pt_callback: Optional[Callable] = None, fine_tune=False, dec_bos_cut=False,
-              keep_models=10, sort_by='eq_len_rand_batch', log_interval: int=10, **args):
+              keep_models=10, sort_by='eq_len_rand_batch', log_interval: int = 10, **args):
         """
 
         :param steps: how many optimizer steps to train (also, means how many batches)
@@ -754,7 +768,8 @@ def __test_model__():
         'dec_layers': 4,
         'hid_size': 64,
         'ff_size': 64,
-        'n_heads': 4
+        'n_heads': 4,
+        'activation': 'gelu'
     }
     if False:
         for n, p in model.named_parameters():
