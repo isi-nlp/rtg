@@ -130,7 +130,7 @@ class TransformerNMT(NMTModel):
                  f" tgt_out: {id(self.generator.proj.weight.data)}")
         assert weights.shape == self.src_embed[0].lut.weight.shape
         self.src_embed[0].lut.weight.data.copy_(weights.data)
-        self.generator.proj.weight = self.tgt_embed[0].lut.weight
+        #self.generator.proj.weight = self.tgt_embed[0].lut.weight
 
     def init_tgt_embedding(self, weights, input=True, output=True):
         log.info(f"Are embedding tied ? see object ids: "
