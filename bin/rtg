@@ -4,4 +4,4 @@
 args="$@"
 [[ -n "${args}" ]] && args=".${args}"
 
-python -m rtg"${args}"
+python -m rtg${args}
