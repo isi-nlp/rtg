@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Created by Thamme Gowda on June 25, 2019
+
+args="$@"
+[[ -n "${args}" ]] && args=".${args}"
+
+python -m rtg${args}

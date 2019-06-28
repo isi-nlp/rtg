@@ -7,13 +7,14 @@ from typing import Optional, Dict, List, Tuple, Union, Any
 
 import numpy as np
 import torch
-import yaml
+from ruamel.yaml import YAML
 
 from rtg import log
 from rtg.dataprep import (TSVData, Field, BatchIterable, LoopingIterable, SqliteFile)
 from rtg.utils import IO, line_count
 
 seeded = False
+yaml = YAML()
 
 
 def load_conf(inp: Union[str, Path]):
@@ -76,9 +77,7 @@ class BaseExperiment:
             log.info("No manual seed! Letting the RNGs do their stuff")
 
     def store_config(self):
-        text = yaml.dump(self.config, default_flow_style=False)
-        assert text  # not empty
-        IO.write_lines(self._config_file, text)
+        yaml.dump(self.config, stream=self._config_file)
 
     @property
     def model_type(self) -> Optional[str]:
@@ -287,18 +286,18 @@ class TranslationExperiment(BaseExperiment):
 
         if args.get('shared_vocab'):  # shared vocab
             corpus = [args[key] for key in ['train_src', 'train_tgt', 'mono_src', 'mono_tgt']
-                      if key in args]
+                      if args.get(key)]
             self.shared_field = self._make_vocab("shared", self._shared_field_file, args['pieces'],
                                                  args['max_types'], corpus=corpus,
                                                  no_split_toks=no_split_toks)
         else:  # separate vocabularies
-            src_corpus = [args[key] for key in ['train_src', 'mono_src'] if key in args]
+            src_corpus = [args[key] for key in ['train_src', 'mono_src'] if args.get(key)]
             self.src_field = self._make_vocab("src", self._src_field_file, args['pieces'],
                                               args['max_src_types'], corpus=src_corpus,
                                               no_split_toks=no_split_toks)
 
             # target vocabulary
-            tgt_corpus = [args[key] for key in ['train_tgt', 'mono_tgt'] if key in args]
+            tgt_corpus = [args[key] for key in ['train_tgt', 'mono_tgt'] if args.get(key)]
             self.tgt_field = self._make_vocab("src", self._tgt_field_file, args['pieces'],
                                               args['max_tgt_types'], corpus=tgt_corpus,
                                               no_split_toks=no_split_toks)
@@ -338,8 +337,15 @@ class TranslationExperiment(BaseExperiment):
         if vocab_file.exists():
             log.info(f"{vocab_file} exists. Skipping the {name} vocab creation")
             return Field(str(vocab_file))
+        flat_uniq_corpus = set()  # remove dupes, flat the nested list or sets
+        for i in  corpus:
+            if isinstance(i, set) or isinstance(i, list):
+                flat_uniq_corpus.update(i)
+            else:
+                flat_uniq_corpus.add(i)
+
         log.info(f"Going to build {name} vocab from mono files")
-        return Field.train(model_type, vocab_size, str(vocab_file), corpus,
+        return Field.train(model_type, vocab_size, str(vocab_file), flat_uniq_corpus,
                            no_split_toks=no_split_toks)
 
     def pre_process_mono(self, args):
@@ -611,14 +617,12 @@ class TranslationExperiment(BaseExperiment):
         trainer = trainers[self.model_type](self, optim=name, **optim_args)
         if last_step < train_steps:  # regular training
             trainer.train(fine_tune=False, **run_args)
-            self._trained_flag.write_text(
-                yaml.dump({'steps': train_steps}, default_flow_style=False))
+            yaml.dump({'steps': train_steps}, stream=self._trained_flag)
         if finetune_steps: # Fine tuning
             log.info(f"Fine tuning upto {finetune_steps}")
             run_args['steps'] = finetune_steps
             trainer.train(fine_tune=True, **run_args)
-            self._trained_flag.write_text(
-                yaml.dump({'steps': finetune_steps}, default_flow_style=False))
+            yaml.dump({'steps': finetune_steps}, stream=self._trained_flag)
 
 
     @property

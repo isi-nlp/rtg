@@ -1,9 +1,9 @@
-# RTG
+# Reader-Translator-Generator (RTG)  
 
-RTG is a Neural Machine Translation toolkit based on pytorch.
-RTG stands for Reader-Translator-Generator when it is noun, and read-translate-generate when it is a verb.
-This toolkit is meant for MT/NLG/NLU research.
-<small>NOTE: It has no relation to the [regular tree grammar](https://en.wikipedia.org/wiki/Regular_tree_grammar))</small>
+Reader-Translator-Generator (RTG) is a Neural Machine Translation toolkit based on pytorch. 
+
+<tiny><small>NOTE: It has no relation to the [regular tree grammar](https://en.wikipedia.org/wiki/Regular_tree_grammar). 
+Since NMT is a ubiquitous name, we invented a synonym.)</small></tiny>
 
 ### Includes  :
 +  Uses [sentencepiece](https://github.com/google/sentencepiece) for preprocessing : word/char/bpe etc 
@@ -12,12 +12,11 @@ This toolkit is meant for MT/NLG/NLU research.
   + [RNN based Encoder-Decoder](https://papers.nips.cc/paper/5346-sequence-to-sequence-learning-with-neural-networks.pdf) with [Attention](https://nlp.stanford.edu/pubs/emnlp15_attn.pdf) . (No longer use it, but it's there for experimentation)
 + Language Modeling: RNN, Transformer 
 + Multi GPU Parallelism for transformer model. All GPUs must be in the same node, though!
-+ 
 
 ### Keep it simple:
 + Easy and interpretable code (for those who read code as much as papers)
-  + Object Orientated Design. (Not too many levels of fuctions and function factories)
-+ Experiments and reproducibility are main focus. To control an experiment you edit an YAML file, sitting inside the experiment directory.
+  + Object Orientated Design. (Not too many levels of functions and function factories)
++ Experiments and reproducibility are main focus. To control an experiment you edit an YAML file that is inside the experiment directory.
 + Where ever possible, prefer [convention-over-configuation](https://www.wikiwand.com/en/Convention_over_configuration). Have a look at this experiment directory for the [examples/transformer.test.yml](examples/transformer.test.yml);
 ```
 001-tfm
@@ -37,7 +36,7 @@ This toolkit is meant for MT/NLG/NLU research.
 │   ├── model_800_4.478784_4.606745.pkl
 │   ├── ...
 │   └── scores.tsv <-- train and validation losses. incase you dont want to see tensorboard
-├── rtg.log   <-- Oh yes, the python logs are redirected here
+├── rtg.log   <-- the python logs are redirected here
 ├── rtg.zip   <-- the source code used to run. just `export PYTHONPATH=rtg.zip` to 
 ├── scripts -> /Users/tg/work/me/rtg/scripts  <-- link to some perl scripts for detok+BLEU
 ├── tensorboard    <-- Tensorboard stuff for visualizations
@@ -51,12 +50,9 @@ This toolkit is meant for MT/NLG/NLU research.
     └── valid.out.tsv.detok.lc.bleu
 ```
 
-## Current focus :
-+ Unsupervised MT
-
 
 ### Setup
-Just need to add the root of this repo to PYTHONPATH
+Add the root of this repo to `PYTHONPATH` or install it via `pip --editable`
 
 ```bash
 git clone https://github.com/isi-nlp/rtg.git
@@ -64,20 +60,24 @@ cd rtg                # go to the code
 
 conda env create .   # adds a conda env named rtg
 conda activate rtg
-export PYTHONPATH=$PWD  # Add directory to PYTHONPATH 
 
+# install this as a local editable pip package
+pip install --editable .
+# or add it to PYTHONPATH
+export PYTHONPATH=$PWD 
 ```
 
 # Usage
 
-Refer to `scripts/rtg-pipeline.sh` bash script for making  and `examples/transformer.base.yml` file
-Look into transformer.
+Refer to `scripts/rtg-pipeline.sh` bash script and `examples/transformer.base.yml` file
 
 ```bash
-# use examples/pipeline.conf.yml config to setup an experiment at 001-tfm dir (TODO: edit paths in yml file)
-$ scripts/transformer.base.yml -d 001-tfm -c examples/transformer.base.yml
-# or if you already have rtg in PYTHONPATH
+# use examples/transformer.base.yml config to setup an experiment at 001-tfm dir (TODO: edit paths in yml file)
+$ scripts/rtg-pipeline.sh -d 001-tfm -c examples/transformer.base.yml
+# or if you have rtg module in $PYTHONPATH
 $ python -m rtg.pipeline 001-tfm examples/transformer.base.yml
+# or if your have `rtg` command in $PATH 
+rtg pipeline 001-tfm examples/transformer.base.yml
 ```
 TODO: Write tutorial and docs for other models and hidden features in the code
 
@@ -89,5 +89,3 @@ TODO: Write tutorial and docs for other models and hidden features in the code
 ### Credits / Thanks
 + OpenNMT and the Harvard NLP team for [Annotated transformer](http://nlp.seas.harvard.edu/2018/04/03/attention.html), I learned a lot from their work
 + [My team at USC ISI](https://www.isi.edu/research_groups/nlg/people) for everything else
-
-
