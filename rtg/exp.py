@@ -602,8 +602,8 @@ class TranslationExperiment(BaseExperiment):
             except Exception as _:
                 pass
 
-        if last_step >= train_steps and (finetune_steps is None or last_step > finetune_steps):
-            log.warning(f"Already trained upto {last_step}; Requested: {train_steps}. Skipped")
+        if last_step >= train_steps and (finetune_steps is None or last_step >= finetune_steps):
+            log.warning(f"Already trained upto {last_step}; Requested: train={train_steps}, finetune={finetune_steps} Skipped")
             return
 
         from rtg.registry import trainers
