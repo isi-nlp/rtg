@@ -27,7 +27,7 @@ while getopts ":di:o:l:" op; do
     case "${op}" in
         d) detok=true ;;
         i) inp=$OPTARG ;;
-        o) inp=$OPTARG ;;
+        o) out=$OPTARG ;;
         l) lang=$OPTARG ;;
        \? ) log "Unknown option: -$OPTARG";  usage; exit 1 ;;
         : ) log "Missing option argument for -$OPTARG"; usage; exit 1 ;;
