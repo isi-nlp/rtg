@@ -25,7 +25,6 @@ import subprocess
 @dataclass
 class Pipeline:
     exp: Experiment
-    script: Optional[Path] = None
 
     def pre_checks(self):
         # Some more validation needed
@@ -35,17 +34,20 @@ class Pipeline:
         assert conf.get('trainer') is not None
         assert conf.get('tester') is not None
         assert conf['tester']['suit'] is not None
-        for name, (src, ref) in conf['tester']['suit'].items():
-            src, ref = Path(src).resolve(), Path(ref).resolve()
-            assert src.exists(), f'{src} doesnt exist'
-            assert ref.exists(), f'{ref} doesnt exist'
-            assert line_count(src) == line_count(ref), f'{src} and{ref} are not parallel'
+        for name, data in conf['tester']['suit'].items():
+            if isinstance(data, str):
+                src, ref = data, None
+            elif isinstance(data, list):
+                src, ref = data[0], data[1] if len(data) > 1 else None
+            else:
+                src, ref = data['src'], data.get('ref')
 
-        script: Path = RTG_PATH / 'scripts' / 'detok-n-bleu.sh'
-        if not script.exists():
-            script = RTG_PATH.parent / 'scripts' / 'detok-n-bleu.sh'
-        assert script.exists(), 'Unable to locate detok-n-bleu.sh script'
-        self.script = script
+            src = Path(src).resolve()
+            assert src.exists(), f'{src} doesnt exist'
+            if ref:
+                ref = Path(ref).resolve()
+                assert ref.exists(), f'{ref} doesnt exist'
+                assert line_count(src) == line_count(ref), f'{src} and{ref} are not parallel'
         assert conf['trainer']['steps'] > 0
         if 'finetune_steps' in conf['trainer']:
             assert conf['trainer']['finetune_steps'] > conf['trainer']['steps']
@@ -55,7 +57,7 @@ class Pipeline:
                 assert Path(conf['prep']['finetune_src']).exists()
                 assert Path(conf['prep']['finetune_tgt']).exists()
 
-    def detokenize(self, inp: Path, out: Path, col=0, lang='en', post_op=None):
+    def moses_detokenize(self, inp: Path, out: Path, col=0, lang='en', post_op=None):
         log.info(f"detok : {inp} --> {out}")
         tok_lines = IO.get_lines(inp, col=col, line_mapper=lambda x: x.split())
         with MosesDetokenizer(lang=lang) as detok:
@@ -64,34 +66,52 @@ class Pipeline:
                 detok_lines = (post_op(line) for line in detok_lines)
             IO.write_lines(out, detok_lines)
 
-    def evaluate_file(self, hyp: Path, ref: Union[Path, List[str]], lowercase=True) -> float:
-        detok_hyp = hyp.with_name(hyp.name + '.mosesdetok')
-        self.detokenize(hyp, detok_hyp)
+    @classmethod
+    def shell_pipe(cls, cmd_line, inp, out):
+        """
+
+        :param cmd_line: shell commandlines
+        :param inp: input file, to read records
+        :param out:  output file to store records
+        :return:
+        """
+        log.info("Shell cmd:: {cmd_line}")
+        with IO.reader(inp) as rdr, IO.writer(out) as wtr:
+            proc = subprocess.Popen(cmd_line, stdin=rdr, stdout=wtr, shell=True)
+            proc.wait()
+        log.info("Shell cmd:: Done")
+
+    def detokenize(self, inp: Path):
+
+        ext_detokenizer = self.exp.config.get('tester', {}).get('detokenizer')
+        if ext_detokenizer:
+            detok_file = inp.with_suffix('.detok')
+            self.shell_pipe(cmd_line=ext_detokenizer, inp=inp, out=detok_file)
+        else:
+            detok_file = inp.with_suffix('.mosesdetok')
+            self.moses_detokenize(inp, out=detok_file, col=0)
+        return detok_file
+
+    def evaluate_file(self, detok_hyp: Path, ref: Union[Path, List[str]], lowercase=True) -> float:
         detok_lines = IO.get_lines(detok_hyp)
         # takes multiple refs, but here we have only one
         ref_liness = [IO.get_lines(ref) if isinstance(ref, Path) else ref]
         bleu: BLEU = corpus_bleu(sys_stream=detok_lines, ref_streams=ref_liness,
                                  lowercase=lowercase)
+        # this should be part of new sacrebleu  release (i sent a PR ;)
         bleu_str = f'BLEU = {bleu.score:.2f} {"/".join(f"{p:.1f}" for p in bleu.precisions)}' \
             f' (BP = {bleu.bp:.3f} ratio = {(bleu.sys_len / bleu.ref_len):.3f}' \
             f' hyp_len = {bleu.sys_len:d} ref_len={bleu.ref_len:d})'
         bleu_file = detok_hyp.with_suffix(('.lc' if lowercase else '.oc') + '.sacrebleu')
-        log.info(f'BLEU {hyp} : {bleu_str}')
+        log.info(f'BLEU {detok_hyp} : {bleu_str}')
         IO.write_lines(bleu_file, bleu_str)
         return bleu.score
 
-    def external_eval(self, hyp: Path, ref: Path):
-        for x in [hyp, ref]:
-            assert x.exists()
-        cmd = f'{self.script} -h {hyp} -r {ref}'
-        subprocess.run(cmd, shell=True, check=True)
-
     def decode_eval_file(self, decoder, src: Union[Path, List[str]], out_file: Path,
-                         ref: Union[Path, List[str]],
+                         ref: Optional[Union[Path, List[str]]],
                          lowercase: bool = True, **dec_args) -> float:
-        if out_file.exists() and out_file.stat().st_size > 0 \
-                and line_count(out_file) == (
-        len(src) if isinstance(src, list) else line_count(src)):
+        if out_file.exists() and out_file.stat().st_size > 0 and line_count(out_file) == (
+                len(src) if isinstance(src, list) else line_count(src)):
             log.warning(f"{out_file} exists and has desired number of lines. Skipped...")
         else:
             if isinstance(src, Path):
@@ -101,7 +121,9 @@ class Pipeline:
                 ref = list(IO.get_lines(ref))
             with IO.writer(out_file) as out:
                 decoder.decode_file(src, out, **dec_args)
-        return self.evaluate_file(out_file, ref, lowercase=lowercase)
+        detok_hyp = self.detokenize(out)
+        if ref and ref.exists():
+            return self.evaluate_file(detok_hyp, ref, lowercase=lowercase)
 
     def tune_decoder_params(self, exp: Experiment, tune_src: str, tune_ref: str, batch_size: int,
                             trials: int = 10, lowercase=True,
@@ -157,7 +179,7 @@ class Pipeline:
             for ens, args in grouped_ens.items():
                 decoder = Decoder.new(exp, ensemble=ens)
                 for b_s, lp_a in args:
-                    eff_batch_size =  batch_size // b_s    # effective batch size
+                    eff_batch_size = batch_size // b_s  # effective batch size
                     name = f'tune_step{step}_beam{b_s}_ens{ens}_lp{lp_a:.2f}'
                     log.info(name)
                     out_file = tune_dir / f'{name}.out.tsv'
@@ -222,20 +244,32 @@ class Pipeline:
         test_dir.mkdir(parents=True, exist_ok=True)
 
         decoder = Decoder.new(exp, ensemble=ensemble)
-        for name, (orig_src, orig_ref) in suit.items():
+        for name, data in suit.items():
             # noinspection PyBroadException
+            src, ref = data, None
+            out_file = None
+            if isinstance(data, list):
+                src, ref = data[:2]
+            elif isinstance(data, dict):
+                src, ref = data['src'], data.get('ref')
+                out_file = data.get('out')
             try:
-                orig_src, orig_ref = Path(orig_src).resolve(), Path(orig_ref).resolve()
+                orig_src = Path(src).resolve()
                 src_link = test_dir / f'{name}.src'
                 ref_link = test_dir / f'{name}.ref'
-                for link, orig in [(src_link, orig_src), (ref_link, orig_ref)]:
+                buffer = [(src_link, orig_src)]
+                if ref:
+                    orig_ref = Path(ref).resolve()
+                    buffer.append((ref_link, orig_ref))
+                for link, orig in buffer:
                     if not link.exists():
                         link.symlink_to(orig)
-                out_file = test_dir / f'{name}.out.tsv'
-                score = self.decode_eval_file(decoder, src_link, out_file, ref_link,
+                out_file = test_dir / f'{name}.out.tsv' if not out_file else out_file
+                out_file.parent().mkdir(parents=True, exist_ok=True)
+
+                self.decode_eval_file(decoder, src_link, out_file, ref_link,
                                               batch_size=eff_batch_size, beam_size=beam_size,
                                               lp_alpha=lp_alpha, max_len=max_len)
-                self.external_eval(hyp=out_file, ref=ref_link)  # external eval script
             except Exception as e:
                 log.exception(f"Something went wrong with '{name}' test")
                 err = test_dir / f'{name}.err'
