@@ -265,7 +265,7 @@ class Pipeline:
                     if not link.exists():
                         link.symlink_to(orig)
                 out_file = test_dir / f'{name}.out.tsv' if not out_file else out_file
-                out_file.parent().mkdir(parents=True, exist_ok=True)
+                out_file.parent.mkdir(parents=True, exist_ok=True)
 
                 self.decode_eval_file(decoder, src_link, out_file, ref_link,
                                               batch_size=eff_batch_size, beam_size=beam_size,
