@@ -4,8 +4,7 @@
 #$ -cwd
 #$ -pe mt 4
 #$ -l h_vmem=4G,h_rt=24:00:00,gpu=1
-#$ -l 'h=!vista04&!vista13'
-
+#$ -l 'h=vista01|vista02|vista03|vista04|vista05|vista08|vista09|vista12|vista14|vista15|vista16' # FAST GPUS
 # Pipeline script for MT
 #
 # Author = Thamme Gowda (tg@isi.edu)
@@ -26,6 +25,8 @@ BEAMS=4
 ALPHA=0.6
 CONDA_ENV=torch-3.7     # empty means don't activate environment
 ENSEMBLE=5
+BATCH=3000
+
 
 usage() {
     echo "Usage: $0 -d <exp/dir>
@@ -33,6 +34,7 @@ usage() {
     -o OUTPUT file to store translations
     [-m beam size (default: $BEAMS)]
     [-a length penalty alpha (default: $ALPHA)]
+    [-b batch_size (default: $BATCH) ]
     [-n ensemble models (default: $ENSEMBLE]
     [-e conda_env  default:$CONDA_ENV (empty string disables activation)]
 " 1>&2;
@@ -40,8 +42,9 @@ usage() {
 }
 
 
-while getopts ":d:e:i:o:a:m:n:" o; do
+while getopts ":b:d:e:i:o:a:m:n:" o; do
     case "${o}" in
+	b) BATCH=${OPTARG} ;;
         d) OUT=${OPTARG} ;;
         e) CONDA_ENV=${OPTARG} ;;
         i) INP=${OPTARG} ;;
@@ -79,7 +82,7 @@ fi
 export PYTHONPATH=$OUT/rtg.zip
 echo  "`date`: Starting decoding ... $OUT"
 
-cmd="python -m rtg.decode $OUT -sc -bs $BEAMS -lp $ALPHA -if $INP -of $OUTP -en $ENSEMBLE "
+cmd="python -m rtg.decode $OUT -sc -bc $BATCH -bs $BEAMS -lp $ALPHA -if $INP -of $OUTP -en $ENSEMBLE "
 echo "command::: $cmd"
 if eval ${cmd}; then
     echo "`date` :: Done"
