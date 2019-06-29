@@ -102,7 +102,7 @@ class Pipeline:
         bleu_str = f'BLEU = {bleu.score:.2f} {"/".join(f"{p:.1f}" for p in bleu.precisions)}' \
             f' (BP = {bleu.bp:.3f} ratio = {(bleu.sys_len / bleu.ref_len):.3f}' \
             f' hyp_len = {bleu.sys_len:d} ref_len={bleu.ref_len:d})'
-        bleu_file = detok_hyp.with_suffix(('.lc' if lowercase else '.oc') + '.sacrebleu')
+        bleu_file = detok_hyp.with_name(detok_hyp.name + ('.lc' if lowercase else '.oc') + '.sacrebleu')
         log.info(f'BLEU {detok_hyp} : {bleu_str}')
         IO.write_lines(bleu_file, bleu_str)
         return bleu.score
@@ -121,7 +121,7 @@ class Pipeline:
                 ref = list(IO.get_lines(ref))
             with IO.writer(out_file) as out:
                 decoder.decode_file(src, out, **dec_args)
-        detok_hyp = self.detokenize(out)
+        detok_hyp = self.detokenize(out_file)
         if ref and ref.exists():
             return self.evaluate_file(detok_hyp, ref, lowercase=lowercase)
 
