@@ -122,7 +122,7 @@ class Pipeline:
             with IO.writer(out_file) as out:
                 decoder.decode_file(src, out, **dec_args)
         detok_hyp = self.detokenize(out_file)
-        if ref and ref.exists():
+        if ref:
             return self.evaluate_file(detok_hyp, ref, lowercase=lowercase)
 
     def tune_decoder_params(self, exp: Experiment, tune_src: str, tune_ref: str, batch_size: int,
