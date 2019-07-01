@@ -7,14 +7,12 @@ from typing import Optional, Dict, List, Tuple, Union, Any
 
 import numpy as np
 import torch
-from ruamel.yaml import YAML
 
-from rtg import log
+from rtg import log, yaml
 from rtg.dataprep import (TSVData, Field, BatchIterable, LoopingIterable, SqliteFile)
 from rtg.utils import IO, line_count
 
 seeded = False
-yaml = YAML()
 
 
 def load_conf(inp: Union[str, Path]):

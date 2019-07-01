@@ -13,11 +13,10 @@ import torch.nn.functional as F
 from tqdm import tqdm
 from rtg.module.tfmnmt import LabelSmoothing
 from rtg.dataprep import PAD_TOK_IDX
-from rtg import log
+from rtg import log, yaml
 from rtg.utils import IO
 from rtg.lm.rnnlm import RnnLm
 from rtg.lm.tfmlm import TfmLm
-import yaml
 from rtg.dataprep import Batch
 
 

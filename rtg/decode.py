@@ -5,10 +5,9 @@ from argparse import ArgumentDefaultsHelpFormatter as ArgFormatter
 import torch
 from pathlib import Path
 
-from rtg import TranslationExperiment as Experiment, log
+from rtg import TranslationExperiment as Experiment, log, yaml
 from rtg.module.decoder import Decoder, ReloadEvent
 from rtg.utils import IO
-import yaml
 
 
 def parse_args():
