@@ -61,7 +61,7 @@ tester:
     - data/valid.tgt
   # in case we want to use external de tokenizer. interface:: $detokenizer < $out > out.detok
   # by default it uses moses-tokenizer python wrapper to perl script
-  # detokenizer: python -m rtg.tool.unicode_fix -l hi -d | perl scripts/indic-tok.perl -d
+  # detokenizer: cut -f1 | python -m rtg.tool.unicode_fix -l hi -d | perl scripts/indic-tok.perl -d
 trainer:
   init_args:
     chunk_size: 10   # generation in chunks of time steps to reduce memory consumption
