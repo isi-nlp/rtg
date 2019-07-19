@@ -75,7 +75,7 @@ class Corpus:
 
         low_deviations = low_deviations if low_deviations else float('inf')
         high_deviations = high_deviations if high_deviations else float('inf')
-        low, high = mean - low_deviations * std, mean + high_deviations * std
+        low, high = max(0.1, mean - low_deviations * std), mean + high_deviations * std
         log.info(f"mean:{mean}, std:{std:.4f} ;; low:{low:.4f} high:{high:.4f} ;; invert:{invert}")
         # invert => outside the [low, high] range; else inside the range
         if invert:
@@ -126,7 +126,7 @@ if __name__ == '__main__':
 
     p.add_argument('-o', '--out', type=argparse.FileType('w'), default=sys.stdout,
                    help='Output file path Format: SRC\\tTGT')
-    p.add_argument('-lrd', '--low-ratio-dev', dest='low_deviations', type=float, default=3,
+    p.add_argument('-lrd', '--low-ratio-dev', dest='low_deviations', type=float, default=2,
                    help='How many standard deviations are allowed below the mean len ratio;'
                         ' zero or None disables it')
     p.add_argument('-hrd', '--high-ratio-dev', dest='high_deviations', type=float, default=3,
