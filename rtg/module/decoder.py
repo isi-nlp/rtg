@@ -62,15 +62,17 @@ class DecoderBatch:
     srcs: List[str] = field(default_factory=list)
     seqs: List[str] = field(default_factory=list)  # processed srcs
     refs: List[str] = field(default_factory=list)  # references for logging if they exist
+    ids: List[str] = field(default_factory=list)   # original id column; not to be confused with
     line_count = 0
     tok_count = 0
     max_len = 0
 
-    def add(self, idx, src, ref, seq):
+    def add(self, idx, src, ref, seq, id):
         self.idxs.append(idx)
         self.srcs.append(src)
         self.refs.append(ref)
         self.seqs.append(seq)
+        self.ids.append(id)
         self.line_count += 1
         self.tok_count += len(seq)
         self.max_len = max(self.max_len, len(seq))
@@ -107,16 +109,22 @@ class DecoderBatch:
                             f"Empty lines are problematic when you want line-by-line alignment...")
                 line = "."
             cols = line.split('\t')
-            seq = vocab.encode_as_ids(line, add_eos=True, add_bos=False)
-            ref = cols[1] if len(cols) > 1 else None
-            buffer.append((i, cols[0], ref, seq)) #idx, src, ref, seq
+            id, ref = None, None
+            if len(cols) == 1: # SRC
+                src = cols[0]
+            elif len(cols) == 2: # ID \t SRC
+                id, src = cols
+            else: # ID \t SRC \t REF
+                id, src, ref = cols[:2]
+            seq = vocab.encode_as_ids(src, add_eos=True, add_bos=False)
+            buffer.append((i, src, ref, seq, id))  # idx, src, ref, seq, id
 
         if sort:
             log.info(f"Sorting based on the length. total = {len(buffer)}")
             buffer = sorted(buffer, reverse=True, key=lambda x: len(x[-1]))  # sort by length of seq
 
         batch = cls()
-        for idx, src, ref, seq in buffer:
+        for idx, src, ref, seq, orig_id in buffer:
             batch.add(idx=idx, src=src, ref=ref, seq=seq)
             if batch.padded_tok_count >= batch_size:
                 yield batch
@@ -560,6 +568,7 @@ class Decoder:
                 for i, hyps in enumerate(batched_hyps):
                     idx = batch.idxs[i]
                     src = batch.srcs[i]
+                    _id = batch.ids[i]
                     log.info(f"{idx}: SRC: {batch.srcs[i]}")
                     ref = batch.refs[i]  # just for the sake of logging, if it exists
                     if ref:
@@ -567,18 +576,20 @@ class Decoder:
 
                     result = []
                     for j, (score, hyp) in enumerate(hyps):
-                        hyp_line = self.out_vocab.decode_ids(hyp, trunc_eos=True)  # tok ids to string
+                        hyp_line = self.out_vocab.decode_ids(hyp,
+                                                             trunc_eos=True)  # tok ids to string
                         log.info(f"{idx}: HYP{j}: {score:g} : {hyp_line}")
                         result.append((score, hyp_line))
-                    buffer.append((idx, src, result))
+                    buffer.append((idx, src, result, _id))
 
-            buffer = sorted(buffer, key=lambda x:x[0]) # restore order
-            for _, src, result in buffer:
-                yield src, result
+            buffer = sorted(buffer, key=lambda x: x[0])  # restore order
+            for _, src, result, _id in buffer:
+                yield src, result, _id
 
-        streamed_results: Iterator[Tuple[str, List[StrHypothesis]]] = _decode_all()
-        for src, hyps in streamed_results:
-            out_line = '\n'.join(f'{hyp}\t{score:.4f}' for score, hyp in hyps)
+        streamed_results: Iterator[Tuple[str, List[StrHypothesis], Any]] = _decode_all()
+        for src, hyps, _id in streamed_results:
+            prefix = f'{_id}\t' if _id else ''  # optional Id
+            out_line = '\n'.join(f'{prefix}{hyp}\t{score:.4f}' for score, hyp in hyps)
             out.write(f'{out_line}\n')
             if num_hyp > 1:
                 out.write('\n')
