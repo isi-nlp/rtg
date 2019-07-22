@@ -195,10 +195,8 @@ class Pipeline:
             IO.write_lines(tune_log, json.dumps(data))
 
     def run_tests(self, exp=None, args=None):
-        if exp is None:
-            exp = self.exp
-        if not args:
-            args = exp.config['tester']
+        exp = exp or self.exp
+        args = args or exp.config['tester']
         suit: Dict[str, List] = args['suit']
         assert suit
         log.info(f"Found {len(suit)} suit :: {suit.keys()}")
