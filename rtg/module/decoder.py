@@ -115,17 +115,17 @@ class DecoderBatch:
             elif len(cols) == 2: # ID \t SRC
                 id, src = cols
             else: # ID \t SRC \t REF
-                id, src, ref = cols[:2]
+                id, src, ref = cols[:3]
             seq = vocab.encode_as_ids(src, add_eos=True, add_bos=False)
             buffer.append((i, src, ref, seq, id))  # idx, src, ref, seq, id
 
         if sort:
             log.info(f"Sorting based on the length. total = {len(buffer)}")
-            buffer = sorted(buffer, reverse=True, key=lambda x: len(x[-1]))  # sort by length of seq
+            buffer = sorted(buffer, reverse=True, key=lambda x: len(x[3]))  # sort by length of seq
 
         batch = cls()
-        for idx, src, ref, seq, orig_id in buffer:
-            batch.add(idx=idx, src=src, ref=ref, seq=seq)
+        for idx, src, ref, seq, _id in buffer:
+            batch.add(idx=idx, src=src, ref=ref, seq=seq, id=_id)
             if batch.padded_tok_count >= batch_size:
                 yield batch
                 batch = cls()
