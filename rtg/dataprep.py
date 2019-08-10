@@ -106,6 +106,46 @@ class Field(SentencePieceProcessor):
             assert model.piece_to_id(piece) == idx
         return model
 
+class BPEppField:
+    # this is experimental
+    from bpepp import BpeCodec
+
+    def __init__(self, path: Union[str, Path]):
+        self.codec = self.BpeCodec(path)
+        self.vocab = self.codec.vocab
+        log.info(f'Loaded {len(self.vocab)} vocab from {path}')
+        for tok, idx in RESERVED_TOKS: # reserved are reserved
+            assert self.vocab[idx].name == tok
+
+    def encode_as_ids(self, text: str, add_bos=False, add_eos=False) -> List[int]:
+        ids = self.codec.encode(text)
+        if add_bos and ids[0] != BOS_TOK[1]:
+            ids.insert(0, BOS_TOK[1])
+        if add_eos and ids[-1] != EOS_TOK[1]:
+            ids.append(EOS_TOK[1])
+        return ids
+
+    def decode_ids(self, ids: List[int], trunc_eos=False) -> str:
+        if trunc_eos:
+            try:
+                ids = ids[:ids.index(EOS_TOK[1])]
+            except ValueError:
+                pass
+        return self.codec.decode_as_str(ids)
+
+    def tokenize(self, text: str) -> List[str]:
+        return self.codec.encode(text, pieces=True)
+
+    def detokenize(self, tokens: List[str]) -> str:
+        return ''.join(tokens).replace(self.codec.space_tok, ' ').strip()
+
+    def __len__(self):
+        return len(self.vocab)
+
+    @staticmethod
+    def train(*args, **kwargs):
+        # TODO: integrate training API
+        raise Exception('You shouldn\'t be using this. Train BPE externally and set paths')
 
 Example = namedtuple('Example', ['x', 'y'])
 """

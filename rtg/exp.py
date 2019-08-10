@@ -9,7 +9,9 @@ import numpy as np
 import torch
 
 from rtg import log, yaml
-from rtg.dataprep import (TSVData, Field, BatchIterable, LoopingIterable, SqliteFile)
+from rtg.dataprep import (TSVData, BatchIterable, LoopingIterable, SqliteFile)
+#from rtg.dataprep import Field
+from rtg.dataprep import BPEppField as Field # experimental
 from rtg.utils import IO, line_count
 
 seeded = False
