@@ -91,13 +91,14 @@ class DecoderBatch:
         return seqs, lens
 
     @classmethod
-    def from_lines(cls, lines: Iterator[str], batch_size: int, vocab: Field, sort=True):
+    def from_lines(cls, lines: Iterator[str], batch_size: int, vocab: Field, sort=True, max_src_len=0):
         """
         Note: this changes the order based on sequence length if sort=True
         :param lines: stream of input lines
         :param batch_size: number of tokens in batch
         :param vocab: Field to use for mapping word pieces to ids
         :param sort: sort based on descending order of length
+        :param max_src_len : truncate at length ; 0 disables this
         :return: stream of DecoderBatches
         """
         log.info("Tokenizing sequences")
@@ -115,17 +116,20 @@ class DecoderBatch:
             elif len(cols) == 2: # ID \t SRC
                 id, src = cols
             else: # ID \t SRC \t REF
-                id, src, ref = cols[:2]
+                id, src, ref = cols[:3]
             seq = vocab.encode_as_ids(src, add_eos=True, add_bos=False)
+            if max_src_len > 0 and len(seq) > max_src_len:
+                log.warning(f"Line {i} full length={len(seq)} ; truncated to {max_src_len}")
+                seq = seq[:max_src_len]
             buffer.append((i, src, ref, seq, id))  # idx, src, ref, seq, id
 
         if sort:
             log.info(f"Sorting based on the length. total = {len(buffer)}")
-            buffer = sorted(buffer, reverse=True, key=lambda x: len(x[-1]))  # sort by length of seq
+            buffer = sorted(buffer, reverse=True, key=lambda x: len(x[3]))  # sort by length of seq
 
         batch = cls()
-        for idx, src, ref, seq, orig_id in buffer:
-            batch.add(idx=idx, src=src, ref=ref, seq=seq)
+        for idx, src, ref, seq, _id in buffer:
+            batch.add(idx=idx, src=src, ref=ref, seq=seq, id=_id)
             if batch.padded_tok_count >= batch_size:
                 yield batch
                 batch = cls()
@@ -553,11 +557,11 @@ class Decoder:
     def _remove_null_vals(args: Dict):
         return {k: v for k, v in args.items() if v is not None}  # remove None args
 
-    def decode_file(self, inp: Iterator[str], out, num_hyp=1, batch_size=1, **args):
+    def decode_file(self, inp: Iterator[str], out, num_hyp=1, batch_size=1, max_src_len=-1, **args):
         args = self._remove_null_vals(args)
-        log.info(f"Args to decoder : {args} and num_hyp={num_hyp} batch_size={batch_size}")
+        log.info(f"Args to decoder : {args} and num_hyp={num_hyp} batch_size={batch_size} max_src_len={max_src_len}")
         batches: Iterator[DecoderBatch] = DecoderBatch.from_lines(inp, batch_size=batch_size,
-                                                                  vocab=self.inp_vocab)
+                                                                  vocab=self.inp_vocab, max_src_len=max_src_len)
         def _decode_all():
             buffer = []
             for batch in batches:

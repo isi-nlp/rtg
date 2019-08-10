@@ -96,6 +96,8 @@ class Field(SentencePieceProcessor):
         arg += f" --user_defined_symbols={no_split_toks_str}"
         if model_type == 'bpe':  # BPE can have longer sentences, default is 2048
             arg += " --max_sentence_length=8192"
+        if model_type == 'word':
+            arg += ' --use_all_vocab'
         log.info(f"SPM: {arg}")
         SentencePieceTrainer.Train(arg)
         log.info("Training complete")
