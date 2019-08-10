@@ -44,15 +44,12 @@ tester:
       lp_alpha: [0.0, 0.4, 0.6, 1.0]
       suggested:  # list of suggested values for beam_size, ensemble, lp_alpha
         - 1, 1, 0.0
-        - 1, 1, 0.6
         - 4, 1, 0.0
         - 4, 1, 0.6
         - 1, 5, 0.0
-        - 1, 5, 0.6
         - 4, 5, 0.0
         - 4, 5, 0.6
         - 1, 10, 0.0
-        - 1, 10, 0.6
         - 4, 10, 0.0
         - 4, 10, 0.6
   suit:  # suit of tests to run after the training
