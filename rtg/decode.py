@@ -24,6 +24,8 @@ def parse_args():
                         help='batch size for 1 beam. effective_batch = batch_size/beam_size')
     parser.add_argument("-msl", '--max-src-len', type=int,
                         help='max source len; longer seqs will be truncated')
+    parser.add_argument("-nb", '--no-buffer', action='store_true',
+                        help='Processes one line per batch followed by flush output')
     args = vars(parser.parse_args())
     return args
 
@@ -55,10 +57,16 @@ def main():
     decoder = Decoder.new(exp, ensemble=dec_args.pop('ensemble', 1))
     for inp, out in zip(cli_args['input'], cli_args['output']):
         log.info(f"Decode :: {inp} -> {out}")
-        try:
-            return decoder.decode_file(inp, out, **dec_args)
-        except Exception as e:
-            log.exception(f"Decode failed for {inp} \n\n{e}")
+        if cli_args.get('no_buffer'):
+            try:
+                return decoder.decode_stream(inp, out, **dec_args)
+            except Exception as e:
+                log.exception(f"Decode failed for {inp} \n\n{e}")
+        else:
+            try:
+                return decoder.decode_file(inp, out, **dec_args)
+            except Exception as e:
+                log.exception(f"Decode failed for {inp} \n\n{e}")
 
 
 if __name__ == '__main__':
