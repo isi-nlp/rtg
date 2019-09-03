@@ -1,6 +1,7 @@
 import abc
 import time
 import traceback
+from io import StringIO
 from collections import OrderedDict
 from typing import List, Tuple, Type, Dict, Any, Optional, Iterator
 from pathlib import Path
@@ -557,11 +558,15 @@ class Decoder:
     def _remove_null_vals(args: Dict):
         return {k: v for k, v in args.items() if v is not None}  # remove None args
 
-    def decode_file(self, inp: Iterator[str], out, num_hyp=1, batch_size=1, max_src_len=-1, **args):
+    def decode_file(self, inp: Iterator[str], out: StringIO,
+                    num_hyp=1, batch_size=1, max_src_len=-1, **args):
         args = self._remove_null_vals(args)
-        log.info(f"Args to decoder : {args} and num_hyp={num_hyp} batch_size={batch_size} max_src_len={max_src_len}")
-        batches: Iterator[DecoderBatch] = DecoderBatch.from_lines(inp, batch_size=batch_size,
-                                                                  vocab=self.inp_vocab, max_src_len=max_src_len)
+        log.info(f"Args to decoder : {args} and num_hyp={num_hyp} "
+                 f"batch_size={batch_size} max_src_len={max_src_len}")
+
+        batches: Iterator[DecoderBatch] = DecoderBatch.from_lines(
+            inp, batch_size=batch_size, vocab=self.inp_vocab, max_src_len=max_src_len)
+
         def _decode_all():
             buffer = []
             for batch in batches:
@@ -597,3 +602,34 @@ class Decoder:
             out.write(f'{out_line}\n')
             if num_hyp > 1:
                 out.write('\n')
+
+    def decode_stream(self, inp: Iterator[str], out: StringIO,
+                      num_hyp=1, batch_size=1, max_src_len=-1, **args):
+        args = self._remove_null_vals(args)
+        log.info(f"Args to decoder : {args} and num_hyp={num_hyp}"
+                 f" batch_size={batch_size} max_src_len={max_src_len}")
+
+        batches: Iterator[DecoderBatch] = DecoderBatch.from_lines(
+            inp, batch_size=batch_size, sort=False, vocab=self.inp_vocab, max_src_len=max_src_len)
+
+        for batch in batches:
+            in_seqs, in_lens = batch.as_tensors(device=device)
+            batched_hyps: List[List[Hypothesis]] = self.beam_decode(in_seqs, in_lens,
+                                                                    num_hyp=num_hyp, **args)
+            assert len(batched_hyps) == batch.line_count
+            for i, hyps in enumerate(batched_hyps):
+                idx = batch.idxs[i]
+                src = batch.srcs[i]
+                _id = batch.ids[i]
+                log.info(f"{idx}: SRC: {src}")
+                ref = batch.refs[i]  # just for the sake of logging, if it exists
+                if ref:
+                    log.info(f"{idx}: REF: {ref}")
+
+                # tok ids to string
+                for j, (score, hyp) in enumerate(hyps):
+                    hyp_line = self.out_vocab.decode_ids(hyp, trunc_eos=True)
+                    log.info(f"{idx}: HYP{j}: {score:g} : {hyp_line}")
+                    out_line = f'{hyp_line}\t{score:.4f}\n'
+                    out.write(out_line)
+                    out.flush()
