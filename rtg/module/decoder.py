@@ -604,32 +604,14 @@ class Decoder:
                 out.write('\n')
 
     def decode_stream(self, inp: Iterator[str], out: StringIO,
-                      num_hyp=1, batch_size=1, max_src_len=-1, **args):
+                      max_src_len=-1, **args):
         args = self._remove_null_vals(args)
-        log.info(f"Args to decoder : {args} and num_hyp={num_hyp}"
-                 f" batch_size={batch_size} max_src_len={max_src_len}")
+        log.info(f"Args to decoder : {args} max_src_len={max_src_len}")
 
-        batches: Iterator[DecoderBatch] = DecoderBatch.from_lines(
-            inp, batch_size=batch_size, sort=False, vocab=self.inp_vocab, max_src_len=max_src_len)
+        inp_line = [line for line in inp][0]    # Only use one input line
+        log.info(f"SRC: {inp_line}")
+        out_line = self.decode_sentence(line=inp_line, **args)[0][1]    # 0th result, 1st hyp
+        log.info(f"HYP: {out_line} \n")
 
-        for batch in batches:
-            in_seqs, in_lens = batch.as_tensors(device=device)
-            batched_hyps: List[List[Hypothesis]] = self.beam_decode(in_seqs, in_lens,
-                                                                    num_hyp=num_hyp, **args)
-            assert len(batched_hyps) == batch.line_count
-            for i, hyps in enumerate(batched_hyps):
-                idx = batch.idxs[i]
-                src = batch.srcs[i]
-                _id = batch.ids[i]
-                log.info(f"{idx}: SRC: {src}")
-                ref = batch.refs[i]  # just for the sake of logging, if it exists
-                if ref:
-                    log.info(f"{idx}: REF: {ref}")
-
-                # tok ids to string
-                for j, (score, hyp) in enumerate(hyps):
-                    hyp_line = self.out_vocab.decode_ids(hyp, trunc_eos=True)
-                    log.info(f"{idx}: HYP{j}: {score:g} : {hyp_line}")
-                    out_line = f'{hyp_line}\t{score:.4f}\n'
-                    out.write(out_line)
-                    out.flush()
+        out.write(f'{out_line}\n')
+        out.flush()
