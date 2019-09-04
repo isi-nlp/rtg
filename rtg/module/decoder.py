@@ -608,10 +608,10 @@ class Decoder:
         args = self._remove_null_vals(args)
         log.info(f"Args to decoder : {args} max_src_len={max_src_len}")
 
-        inp_line = [line for line in inp][0]    # Only use one input line
-        log.info(f"SRC: {inp_line}")
-        out_line = self.decode_sentence(line=inp_line, **args)[0][1]    # 0th result, 1st hyp
-        log.info(f"HYP: {out_line} \n")
+        for inp_line in inp:
+            log.info(f"SRC: {inp_line}")
+            out_line = self.decode_sentence(line=inp_line, **args)[0][1]    # 0th result, 1st hyp
+            log.info(f"HYP: {out_line} \n")
 
-        out.write(f'{out_line}\n')
-        out.flush()
+            out.write(f'{out_line}\n')
+            out.flush()
