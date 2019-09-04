@@ -57,16 +57,13 @@ def main():
     decoder = Decoder.new(exp, ensemble=dec_args.pop('ensemble', 1))
     for inp, out in zip(cli_args['input'], cli_args['output']):
         log.info(f"Decode :: {inp} -> {out}")
-        if cli_args.get('no_buffer'):
-            try:
+        try:
+            if cli_args.get('no_buffer'):
                 return decoder.decode_stream(inp, out, **dec_args)
-            except Exception as e:
-                log.exception(f"Decode failed for {inp} \n\n{e}")
-        else:
-            try:
+            else:
                 return decoder.decode_file(inp, out, **dec_args)
-            except Exception as e:
-                log.exception(f"Decode failed for {inp} \n\n{e}")
+        except:
+            log.exception(f"Decode failed for {inp}")
 
 
 if __name__ == '__main__':
