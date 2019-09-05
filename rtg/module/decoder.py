@@ -1,6 +1,7 @@
 import abc
 import time
 import traceback
+from io import StringIO
 from collections import OrderedDict
 from typing import List, Tuple, Type, Dict, Any, Optional, Iterator
 from pathlib import Path
@@ -557,11 +558,15 @@ class Decoder:
     def _remove_null_vals(args: Dict):
         return {k: v for k, v in args.items() if v is not None}  # remove None args
 
-    def decode_file(self, inp: Iterator[str], out, num_hyp=1, batch_size=1, max_src_len=-1, **args):
+    def decode_file(self, inp: Iterator[str], out: StringIO,
+                    num_hyp=1, batch_size=1, max_src_len=-1, **args):
         args = self._remove_null_vals(args)
-        log.info(f"Args to decoder : {args} and num_hyp={num_hyp} batch_size={batch_size} max_src_len={max_src_len}")
-        batches: Iterator[DecoderBatch] = DecoderBatch.from_lines(inp, batch_size=batch_size,
-                                                                  vocab=self.inp_vocab, max_src_len=max_src_len)
+        log.info(f"Args to decoder : {args} and num_hyp={num_hyp} "
+                 f"batch_size={batch_size} max_src_len={max_src_len}")
+
+        batches: Iterator[DecoderBatch] = DecoderBatch.from_lines(
+            inp, batch_size=batch_size, vocab=self.inp_vocab, max_src_len=max_src_len)
+
         def _decode_all():
             buffer = []
             for batch in batches:
@@ -597,3 +602,16 @@ class Decoder:
             out.write(f'{out_line}\n')
             if num_hyp > 1:
                 out.write('\n')
+
+    def decode_stream(self, inp: Iterator[str], out: StringIO,
+                      max_src_len=-1, **args):
+        args = self._remove_null_vals(args)
+        log.info(f"Args to decoder : {args} max_src_len={max_src_len}")
+
+        for inp_line in inp:
+            log.info(f"SRC: {inp_line}")
+            out_line = self.decode_sentence(line=inp_line, **args)[0][1]    # 0th result, 1st hyp
+            log.info(f"HYP: {out_line} \n")
+
+            out.write(f'{out_line}\n')
+            out.flush()
