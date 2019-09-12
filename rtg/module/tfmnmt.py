@@ -63,7 +63,7 @@ class Encoder(nn.Module):
     def __init__(self, layer: EncoderLayer, N: int):
         super().__init__()
         self.layers = clones(layer, N)
-        self.norm = LayerNorm(layer.size)
+        self.norm = nn.LayerNorm(layer.size)
 
     def forward(self, x, mask):
         "Pass the input (and mask) through each layer in turn."
@@ -97,7 +97,7 @@ class Decoder(nn.Module):
     def __init__(self, layer: DecoderLayer, n_layers: int):
         super().__init__()
         self.layers = clones(layer, n_layers)
-        self.norm = LayerNorm(layer.size)
+        self.norm = nn.LayerNorm(layer.size)
 
     def forward(self, x, memory, src_mask, tgt_mask):
         for layer in self.layers:
@@ -228,22 +228,6 @@ class TransformerNMT(NMTModel):
         return model, args
 
 
-class LayerNorm(nn.Module):
-    "Construct a layernorm module (See citation for details)."
-
-    def __init__(self, features, eps=1e-6):
-        super().__init__()
-        self.a_2 = nn.Parameter(torch.ones(features))
-        self.b_2 = nn.Parameter(torch.zeros(features))
-        self.eps = eps
-
-    def forward(self, x):
-        mean = x.mean(-1, keepdim=True)
-        std = x.std(-1, keepdim=True)
-
-        return self.a_2 * (x - mean) / (std + self.eps) + self.b_2
-
-
 class SublayerConnection(nn.Module):
     """
     A residual connection followed by a layer norm.
@@ -252,7 +236,7 @@ class SublayerConnection(nn.Module):
 
     def __init__(self, size, dropout):
         super().__init__()
-        self.norm = LayerNorm(size)
+        self.norm = nn.LayerNorm(size)
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x, sublayer):
