@@ -72,6 +72,29 @@ class Encoder(nn.Module):
         return self.norm(x)
 
 
+class WidthVaryingEncoder(nn.Module):
+    "Stack of N encoders with heterogeneous feed forward dimensions"
+
+    def __init__(self, d_model: int, ff_dims: List[int], N: int,
+                 n_heads: int, dropout: float, activation: str = 'relu'):
+        super().__init__()
+
+        # Make N layers with different pointwise ff_dims
+        layers = list()
+        for n in range(N):
+            attn = MultiHeadedAttention(n_heads, d_model, dropout)
+            ff = PositionwiseFeedForward(d_model, ff_dims[n], dropout, activation=activation)
+            layers.append(EncoderLayer(d_model, attn, ff, dropout))
+        self.layers = nn.ModuleList(layers)
+        self.norm = LayerNorm(d_model)
+
+    def forward(self, x, mask):
+        "Pass the input (and mask) through each layer in turn."
+        for layer in self.layers:
+            x = layer(x, mask)
+        return self.norm(x)
+
+
 class DecoderLayer(nn.Module):
     "Decoder is made of self-attn, src-attn, and feed forward (defined below)"
 
@@ -102,6 +125,30 @@ class Decoder(nn.Module):
     def forward(self, x, memory, src_mask, tgt_mask):
         for layer in self.layers:
             x = layer(x, memory, src_mask, tgt_mask)
+        return self.norm(x)
+
+
+class WidthVaryingDecoder(nn.Module):
+    "Stack of N decoders with heterogeneous feed forward dimensions"
+
+    def __init__(self, d_model: int, ff_dims: List[int], N: int,
+                 n_heads: int, dropout: float, activation: str = 'relu'):
+        super().__init__()
+
+        # Make N layers with different pointwise ff_dims
+        layers = list()
+        for n in range(N):
+            self_attn = MultiHeadedAttention(n_heads, d_model, dropout)
+            src_attn = MultiHeadedAttention(n_heads, d_model, dropout)
+            ff = PositionwiseFeedForward(d_model, ff_dims[n], dropout, activation=activation)
+            layers.append(DecoderLayer(d_model, self_attn, src_attn, ff, dropout))
+        self.layers = nn.ModuleList(layers)
+        self.norm = LayerNorm(d_model)
+
+    def forward(self, x, mask):
+        "Pass the input (and mask) through each layer in turn."
+        for layer in self.layers:
+            x = layer(x, mask)
         return self.norm(x)
 
 
