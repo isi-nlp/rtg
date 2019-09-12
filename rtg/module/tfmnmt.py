@@ -345,15 +345,7 @@ class PositionwiseFeedForward(nn.Module):
         self.w_1 = nn.Linear(d_model, d_ff)
         self.w_2 = nn.Linear(d_ff, d_model)
         self.dropout = nn.Dropout(dropout)
-        activations = dict(relu=F.relu, elu=F.elu)
-
-        if activation == 'gelu':  # TODO: when torch 1.2 comes out, simplify this block
-            try:
-                activations['gelu'] = F.gelu
-            except:
-                log.warning(f"gelu is not available. using torch {torch.__version__}."
-                            f" GELU was added in https://github.com/pytorch/pytorch/pull/20665")
-                raise
+        activations = dict(relu=F.relu, elu=F.elu, gelu=F.gelu)
         self.activation = activations[activation]
 
     def forward(self, x):
