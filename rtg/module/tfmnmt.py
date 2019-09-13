@@ -149,10 +149,9 @@ class WidthVaryingDecoder(nn.Module):
         # TODO: Maybe remove norm (happens in SublayerConnection)
         self.norm = LayerNorm(d_model)
 
-    def forward(self, x, mask):
-        "Pass the input (and mask) through each layer in turn."
+    def forward(self, x, memory, src_mask, tgt_mask):
         for layer in self.layers:
-            x = layer(x, mask)
+            x = layer(x, memory, src_mask, tgt_mask)
         return self.norm(x)
 
 
