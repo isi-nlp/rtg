@@ -80,12 +80,14 @@ class WidthVaryingEncoder(nn.Module):
         super().__init__()
 
         # Make N layers with different pointwise ff_dims
+        assert len(ff_dims) >= N, 'Not enough ff_dims to complete the model'
         layers = list()
         for n in range(N):
             attn = MultiHeadedAttention(n_heads, d_model, dropout)
             ff = PositionwiseFeedForward(d_model, ff_dims[n], dropout, activation=activation)
             layers.append(EncoderLayer(d_model, attn, ff, dropout))
         self.layers = nn.ModuleList(layers)
+        # TODO: Maybe remove norm (happens in SublayerConnection)
         self.norm = LayerNorm(d_model)
 
     def forward(self, x, mask):
@@ -136,6 +138,7 @@ class WidthVaryingDecoder(nn.Module):
         super().__init__()
 
         # Make N layers with different pointwise ff_dims
+        assert len(ff_dims) >= N, 'Not enough ff_dims to complete the model'
         layers = list()
         for n in range(N):
             self_attn = MultiHeadedAttention(n_heads, d_model, dropout)
@@ -143,6 +146,7 @@ class WidthVaryingDecoder(nn.Module):
             ff = PositionwiseFeedForward(d_model, ff_dims[n], dropout, activation=activation)
             layers.append(DecoderLayer(d_model, self_attn, src_attn, ff, dropout))
         self.layers = nn.ModuleList(layers)
+        # TODO: Maybe remove norm (happens in SublayerConnection)
         self.norm = LayerNorm(d_model)
 
     def forward(self, x, mask):
@@ -259,6 +263,58 @@ class TransformerNMT(NMTModel):
 
         assert dec_layers > 0
         decoder = Decoder(DecoderLayer(hid_size, c(attn), c(attn), c(ff), dropout), dec_layers)
+
+        src_emb = nn.Sequential(Embeddings(hid_size, src_vocab),
+                                PositionalEncoding(hid_size, dropout))
+        tgt_emb = nn.Sequential(Embeddings(hid_size, tgt_vocab),
+                                PositionalEncoding(hid_size, dropout))
+        generator = Generator(hid_size, tgt_vocab)
+
+        model = cls(encoder, decoder, src_emb, tgt_emb, generator)
+
+        if tied_emb:
+            model.tie_embeddings(tied_emb)
+
+        model.init_params()
+        return model, args
+
+
+class WidthVaryingTransformerNMT(TransformerNMT):
+    """Enables heterogeneous feed forward dimensions in the Encoder and Decoder"""
+
+    def __init__(self, encoder: Encoder, decoder: Decoder,
+                 src_embed, tgt_embed,
+                 generator: Optional[Generator], tgt_vocab=None):
+        super().__init__(encoder=encoder, decoder=decoder,
+                         src_embed=src_embed, tgt_embed=tgt_embed,
+                         generator=generator, tgt_vocab=tgt_vocab)
+
+    @classmethod
+    def make_model(cls, src_vocab, tgt_vocab, enc_layers=6, dec_layers=6, hid_size=512,
+                   eff_dims: List[int] = (5120, 4096, 3072, 2048, 1024, 512),   # Using tuple for immutability
+                   dff_dims: List[int] = (5120, 4096, 3072, 2048, 1024, 512),
+                   n_heads=8, dropout=0.1, tied_emb='three-way', activation='relu',
+                   exp: Experiment = None):
+        "Helper: Construct a model from hyper parameters."
+
+        # get all args for reconstruction at a later phase
+        _, _, _, args = inspect.getargvalues(inspect.currentframe())
+        for exclusion in ['cls', 'exp']:
+            del args[exclusion]  # exclude some args
+        # In case you are wondering, why I didnt use **kwargs here:
+        #   these args are read from conf file where user can introduce errors, so the parameter
+        #   validation and default value assignment is implicitly done by function call for us :)
+        assert activation in {'relu', 'elu', 'gelu'}
+        log.info(f"Make model, Args={args}")
+
+        if enc_layers == 0:
+            log.warning("Zero encoder layers!")
+        encoder = WidthVaryingEncoder(d_model=hid_size, ff_dims=eff_dims, N=enc_layers,
+                                      n_heads=n_heads, dropout=dropout, activation=activation)
+
+        assert dec_layers > 0
+        decoder = WidthVaryingDecoder(d_model=hid_size, ff_dims=dff_dims, N=dec_layers,
+                                      n_heads=n_heads, dropout=dropout, activation=activation)
 
         src_emb = nn.Sequential(Embeddings(hid_size, src_vocab),
                                 PositionalEncoding(hid_size, dropout))
