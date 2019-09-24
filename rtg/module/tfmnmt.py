@@ -105,10 +105,10 @@ class Decoder(nn.Module):
         return self.norm(x)
 
 
-class TransformerNMT(NMTModel):
+class AbstractTransformerNMT(NMTModel):
     """
-    A standard Encoder-Decoder architecture. Base for this and many
-    other models.
+    Abstract instance of a standard Encoder-Decoder architecture.
+    Base for this and many other models.
     """
 
     def __init__(self, encoder: Encoder, decoder: Decoder,
@@ -121,6 +121,26 @@ class TransformerNMT(NMTModel):
         self.tgt_embed = tgt_embed
         self.generator = generator
         self.tgt_vocab = tgt_vocab if tgt_vocab else generator.vocab
+
+    @property
+    def model_dim(self):
+        return self.generator.d_model
+
+    @property
+    def vocab_size(self):
+        return self.tgt_vocab
+
+    def encode(self, src, src_mask):
+        return self.encoder(self.src_embed(src), src_mask)
+
+    def decode(self, memory, src_mask, tgt, tgt_mask):
+        return self.decoder(self.tgt_embed(tgt), memory, src_mask, tgt_mask)
+
+    def forward(self, src, tgt, src_mask, tgt_mask, gen_probs=False, log_probs=True):
+        "Take in and process masked src and target sequences."
+        enc_outs = self.encode(src, src_mask)
+        feats = self.decode(enc_outs, src_mask, tgt, tgt_mask)
+        return self.generator(feats, log_probs=log_probs) if gen_probs else feats
 
     def init_src_embedding(self, weights):
         log.info("Initializing source embeddings")
@@ -148,30 +168,6 @@ class TransformerNMT(NMTModel):
             assert weights.shape == self.generator.proj.weight.shape
             self.generator.proj.weight.data.copy_(weights.data)
 
-    @property
-    def model_dim(self):
-        return self.generator.d_model
-
-    @property
-    def vocab_size(self):
-        return self.tgt_vocab
-
-    @property
-    def model_type(self):
-        return 'tfmnmt'
-
-    def forward(self, src, tgt, src_mask, tgt_mask, gen_probs=False, log_probs=True):
-        "Take in and process masked src and target sequences."
-        enc_outs = self.encode(src, src_mask)
-        feats = self.decode(enc_outs, src_mask, tgt, tgt_mask)
-        return self.generator(feats, log_probs=log_probs) if gen_probs else feats
-
-    def encode(self, src, src_mask):
-        return self.encoder(self.src_embed(src), src_mask)
-
-    def decode(self, memory, src_mask, tgt, tgt_mask):
-        return self.decoder(self.tgt_embed(tgt), memory, src_mask, tgt_mask)
-
     def tie_embeddings(self, tie: str):
         assert tie in ('one-way', 'two-way', 'three-way')
         log.info(f"Tying embeddings: {tie}")
@@ -186,6 +182,29 @@ class TransformerNMT(NMTModel):
         if tie in ('two-way', 'three-way'):
             log.info(f"Tying embeddings: SrcInp == TgtInp")
             self.src_embed[0].lut.weight = self.tgt_embed[0].lut.weight
+
+    @classmethod
+    def make_model(cls, src_vocab, tgt_vocab, enc_layers=6, dec_layers=6, hid_size=512,
+                   ff_size=2048, n_heads=8, dropout=0.1, tied_emb='three-way', activation='relu',
+                   exp: Experiment = None):
+        raise NotImplementedError
+
+
+class TransformerNMT(AbstractTransformerNMT):
+    """
+    A standard Encoder-Decoder Transformer architecture.
+    """
+
+    def __init__(self, encoder: Encoder, decoder: Decoder,
+                 src_embed, tgt_embed,
+                 generator: Optional[Generator], tgt_vocab=None):
+        super().__init__(encoder=encoder, decoder=decoder,
+                         src_embed=src_embed, tgt_embed=tgt_embed,
+                         generator=generator, tgt_vocab=tgt_vocab)
+
+    @property
+    def model_type(self):
+        return 'tfmnmt'
 
     @classmethod
     def make_model(cls, src_vocab, tgt_vocab, enc_layers=6, dec_layers=6, hid_size=512,
