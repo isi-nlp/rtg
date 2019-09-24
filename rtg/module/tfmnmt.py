@@ -6,6 +6,7 @@ import math
 import time
 import inspect
 import gc
+from abc import ABC
 from typing import Callable, Optional, List, Union
 
 import torch
@@ -105,7 +106,7 @@ class Decoder(nn.Module):
         return self.norm(x)
 
 
-class AbstractTransformerNMT(NMTModel):
+class AbstractTransformerNMT(NMTModel, ABC):
     """
     Abstract instance of a standard Encoder-Decoder architecture.
     Base for this and many other models.
