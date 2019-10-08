@@ -208,8 +208,8 @@ class TransformerNMT(AbstractTransformerNMT):
         return 'tfmnmt'
 
     @classmethod
-    def make_model(cls, src_vocab, tgt_vocab, enc_layers=6, dec_layers=6, hid_size=512,
-                   ff_size=2048, n_heads=8, dropout=0.1, tied_emb='three-way', activation='relu',
+    def make_model(cls, src_vocab, tgt_vocab, enc_layers=6, dec_layers=6, hid_size=512, ff_size=2048,
+                   n_heads=8, attn_bias=True, dropout=0.1, tied_emb='three-way', activation='relu',
                    exp: Experiment = None):
         "Helper: Construct a model from hyper parameters."
 
@@ -223,7 +223,7 @@ class TransformerNMT(AbstractTransformerNMT):
         assert activation in {'relu', 'elu', 'gelu'}
         log.info(f"Make model, Args={args}")
         c = copy.deepcopy
-        attn = MultiHeadedAttention(n_heads, hid_size, dropout=dropout)
+        attn = MultiHeadedAttention(n_heads, hid_size, dropout=dropout, bias=attn_bias)
         ff = PositionwiseFeedForward(hid_size, ff_size, dropout, activation=activation)
 
         if enc_layers == 0:
@@ -303,14 +303,14 @@ def attention(query, key, value, mask=None, dropout=None):
 
 
 class MultiHeadedAttention(nn.Module):
-    def __init__(self, h, d_model, dropout=0.1):
+    def __init__(self, h, d_model, dropout=0.1, bias=True):
         "Take in model size and number of heads."
         super().__init__()
         assert d_model % h == 0
         # We assume d_v always equals d_k
         self.d_k = d_model // h
         self.h = h
-        self.linears = clones(nn.Linear(d_model, d_model, bias=False), 4)
+        self.linears = clones(nn.Linear(d_model, d_model, bias=bias), 4)
         self.attn = None
         self.dropout = nn.Dropout(p=dropout)
 
