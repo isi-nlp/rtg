@@ -287,7 +287,13 @@ def parse_args():
     parser.add_argument("exp", help="Working directory of experiment", type=Path)
     parser.add_argument("conf", type=Path, nargs='?',
                         help="Config File. By default <work_dir>/conf.yml is used")
+    parser.add_argument("-G", "--gpu-only", action="store_true", default=False,
+                        help="Crash if no GPU is available")
     args = parser.parse_args()
+
+    if args.gpu_only:
+        assert torch.cuda.is_available(), "No GPU found... exiting"
+
     conf_file: Path = args.conf if args.conf else args.exp / 'conf.yml'
     assert conf_file.exists()
     return Experiment(args.exp, config=conf_file)
