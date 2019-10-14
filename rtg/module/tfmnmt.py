@@ -6,6 +6,7 @@ import math
 import time
 import inspect
 import gc
+from abc import ABC
 from typing import Callable, Optional, List, Union
 
 import torch
@@ -63,7 +64,7 @@ class Encoder(nn.Module):
     def __init__(self, layer: EncoderLayer, N: int):
         super().__init__()
         self.layers = clones(layer, N)
-        self.norm = LayerNorm(layer.size)
+        self.norm = nn.LayerNorm(layer.size)
 
     def forward(self, x, mask):
         "Pass the input (and mask) through each layer in turn."
@@ -97,7 +98,7 @@ class Decoder(nn.Module):
     def __init__(self, layer: DecoderLayer, n_layers: int):
         super().__init__()
         self.layers = clones(layer, n_layers)
-        self.norm = LayerNorm(layer.size)
+        self.norm = nn.LayerNorm(layer.size)
 
     def forward(self, x, memory, src_mask, tgt_mask):
         for layer in self.layers:
@@ -105,10 +106,10 @@ class Decoder(nn.Module):
         return self.norm(x)
 
 
-class TransformerNMT(NMTModel):
+class AbstractTransformerNMT(NMTModel, ABC):
     """
-    A standard Encoder-Decoder architecture. Base for this and many
-    other models.
+    Abstract instance of a standard Encoder-Decoder architecture.
+    Base for this and many other models.
     """
 
     def __init__(self, encoder: Encoder, decoder: Decoder,
@@ -121,6 +122,26 @@ class TransformerNMT(NMTModel):
         self.tgt_embed = tgt_embed
         self.generator = generator
         self.tgt_vocab = tgt_vocab if tgt_vocab else generator.vocab
+
+    @property
+    def model_dim(self):
+        return self.generator.d_model
+
+    @property
+    def vocab_size(self):
+        return self.tgt_vocab
+
+    def encode(self, src, src_mask):
+        return self.encoder(self.src_embed(src), src_mask)
+
+    def decode(self, memory, src_mask, tgt, tgt_mask):
+        return self.decoder(self.tgt_embed(tgt), memory, src_mask, tgt_mask)
+
+    def forward(self, src, tgt, src_mask, tgt_mask, gen_probs=False, log_probs=True):
+        "Take in and process masked src and target sequences."
+        enc_outs = self.encode(src, src_mask)
+        feats = self.decode(enc_outs, src_mask, tgt, tgt_mask)
+        return self.generator(feats, log_probs=log_probs) if gen_probs else feats
 
     def init_src_embedding(self, weights):
         log.info("Initializing source embeddings")
@@ -148,30 +169,6 @@ class TransformerNMT(NMTModel):
             assert weights.shape == self.generator.proj.weight.shape
             self.generator.proj.weight.data.copy_(weights.data)
 
-    @property
-    def model_dim(self):
-        return self.generator.d_model
-
-    @property
-    def vocab_size(self):
-        return self.tgt_vocab
-
-    @property
-    def model_type(self):
-        return 'tfmnmt'
-
-    def forward(self, src, tgt, src_mask, tgt_mask, gen_probs=False, log_probs=True):
-        "Take in and process masked src and target sequences."
-        enc_outs = self.encode(src, src_mask)
-        feats = self.decode(enc_outs, src_mask, tgt, tgt_mask)
-        return self.generator(feats, log_probs=log_probs) if gen_probs else feats
-
-    def encode(self, src, src_mask):
-        return self.encoder(self.src_embed(src), src_mask)
-
-    def decode(self, memory, src_mask, tgt, tgt_mask):
-        return self.decoder(self.tgt_embed(tgt), memory, src_mask, tgt_mask)
-
     def tie_embeddings(self, tie: str):
         assert tie in ('one-way', 'two-way', 'three-way')
         log.info(f"Tying embeddings: {tie}")
@@ -191,6 +188,29 @@ class TransformerNMT(NMTModel):
     def make_model(cls, src_vocab, tgt_vocab, enc_layers=6, dec_layers=6, hid_size=512,
                    ff_size=2048, n_heads=8, dropout=0.1, tied_emb='three-way', activation='relu',
                    exp: Experiment = None):
+        raise NotImplementedError
+
+
+class TransformerNMT(AbstractTransformerNMT):
+    """
+    A standard Encoder-Decoder Transformer architecture.
+    """
+
+    def __init__(self, encoder: Encoder, decoder: Decoder,
+                 src_embed, tgt_embed,
+                 generator: Optional[Generator], tgt_vocab=None):
+        super().__init__(encoder=encoder, decoder=decoder,
+                         src_embed=src_embed, tgt_embed=tgt_embed,
+                         generator=generator, tgt_vocab=tgt_vocab)
+
+    @property
+    def model_type(self):
+        return 'tfmnmt'
+
+    @classmethod
+    def make_model(cls, src_vocab, tgt_vocab, enc_layers=6, dec_layers=6, hid_size=512, ff_size=2048,
+                   n_heads=8, attn_bias=True, dropout=0.1, tied_emb='three-way', activation='relu',
+                   exp: Experiment = None):
         "Helper: Construct a model from hyper parameters."
 
         # get all args for reconstruction at a later phase
@@ -203,7 +223,7 @@ class TransformerNMT(NMTModel):
         assert activation in {'relu', 'elu', 'gelu'}
         log.info(f"Make model, Args={args}")
         c = copy.deepcopy
-        attn = MultiHeadedAttention(n_heads, hid_size, dropout=dropout)
+        attn = MultiHeadedAttention(n_heads, hid_size, dropout=dropout, bias=attn_bias)
         ff = PositionwiseFeedForward(hid_size, ff_size, dropout, activation=activation)
 
         if enc_layers == 0:
@@ -228,22 +248,6 @@ class TransformerNMT(NMTModel):
         return model, args
 
 
-class LayerNorm(nn.Module):
-    "Construct a layernorm module (See citation for details)."
-
-    def __init__(self, features, eps=1e-6):
-        super().__init__()
-        self.a_2 = nn.Parameter(torch.ones(features))
-        self.b_2 = nn.Parameter(torch.zeros(features))
-        self.eps = eps
-
-    def forward(self, x):
-        mean = x.mean(-1, keepdim=True)
-        std = x.std(-1, keepdim=True)
-
-        return self.a_2 * (x - mean) / (std + self.eps) + self.b_2
-
-
 class SublayerConnection(nn.Module):
     """
     A residual connection followed by a layer norm.
@@ -252,7 +256,7 @@ class SublayerConnection(nn.Module):
 
     def __init__(self, size, dropout):
         super().__init__()
-        self.norm = LayerNorm(size)
+        self.norm = nn.LayerNorm(size)
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x, sublayer):
@@ -299,14 +303,14 @@ def attention(query, key, value, mask=None, dropout=None):
 
 
 class MultiHeadedAttention(nn.Module):
-    def __init__(self, h, d_model, dropout=0.1):
+    def __init__(self, h, d_model, dropout=0.1, bias=True):
         "Take in model size and number of heads."
         super().__init__()
         assert d_model % h == 0
         # We assume d_v always equals d_k
         self.d_k = d_model // h
         self.h = h
-        self.linears = clones(nn.Linear(d_model, d_model), 4)
+        self.linears = clones(nn.Linear(d_model, d_model, bias=bias), 4)
         self.attn = None
         self.dropout = nn.Dropout(p=dropout)
 
@@ -345,15 +349,7 @@ class PositionwiseFeedForward(nn.Module):
         self.w_1 = nn.Linear(d_model, d_ff)
         self.w_2 = nn.Linear(d_ff, d_model)
         self.dropout = nn.Dropout(dropout)
-        activations = dict(relu=F.relu, elu=F.elu)
-
-        if activation == 'gelu':  # TODO: when torch 1.2 comes out, simplify this block
-            try:
-                activations['gelu'] = F.gelu
-            except:
-                log.warning(f"gelu is not available. using torch {torch.__version__}."
-                            f" GELU was added in https://github.com/pytorch/pytorch/pull/20665")
-                raise
+        activations = dict(relu=F.relu, elu=F.elu, gelu=F.gelu)
         self.activation = activations[activation]
 
     def forward(self, x):
