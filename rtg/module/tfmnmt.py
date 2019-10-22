@@ -314,8 +314,8 @@ class WidthVaryingTransformerNMT(AbstractTransformerNMT):
 
     @classmethod
     def make_model(cls, src_vocab, tgt_vocab, enc_layers=6, dec_layers=6, hid_size=512,
-                   eff_dims: List[int] = (5120, 4096, 3072, 2048, 1024, 512),   # Using tuple for immutability
-                   dff_dims: List[int] = (5120, 4096, 3072, 2048, 1024, 512),
+                   eff_dims: List[int] = (4096, 3072, 2048, 1024, 1024, 1024),   # Using tuple for immutability
+                   dff_dims: List[int] = (4096, 3072, 2048, 1024, 1024, 1024),
                    n_heads=8, dropout=0.1, tied_emb='three-way', activation='relu',
                    exp: Experiment = None):
         "Helper: Construct a model from hyper parameters."
