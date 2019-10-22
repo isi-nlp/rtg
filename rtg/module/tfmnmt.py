@@ -89,7 +89,7 @@ class WidthVaryingEncoder(nn.Module):
             layers.append(EncoderLayer(d_model, attn, ff, dropout))
         self.layers = nn.ModuleList(layers)
         # TODO: Maybe remove norm (happens in SublayerConnection)
-        self.norm = LayerNorm(d_model)
+        self.norm = nn.LayerNorm(d_model)
 
     def forward(self, x, mask):
         "Pass the input (and mask) through each layer in turn."
@@ -148,7 +148,7 @@ class WidthVaryingDecoder(nn.Module):
             layers.append(DecoderLayer(d_model, self_attn, src_attn, ff, dropout))
         self.layers = nn.ModuleList(layers)
         # TODO: Maybe remove norm (happens in SublayerConnection)
-        self.norm = LayerNorm(d_model)
+        self.norm = nn.LayerNorm(d_model)
 
     def forward(self, x, memory, src_mask, tgt_mask):
         for layer in self.layers:
