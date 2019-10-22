@@ -15,7 +15,7 @@ import torch.nn as nn
 
 from rtg.module.tfmnmt import (Encoder, EncoderLayer, PositionwiseFeedForward, PositionalEncoding,
                                Generator, MultiHeadedAttention, Embeddings, TransformerNMT,
-                               TransformerTrainer, SublayerConnection, LayerNorm, clones)
+                               TransformerTrainer, SublayerConnection, clones)
 from rtg import TranslationExperiment as Experiment, log
 from rtg.dataprep import CLS_TOK_IDX as cls_idx, PAD_TOK_IDX as pad_idx
 
