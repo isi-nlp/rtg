@@ -171,6 +171,19 @@ class Decoder:
         return state_dict
 
     @staticmethod
+    def average_states_low_memory(model_paths: List[Path]):
+        for i, mp in enumerate(model_paths):
+            next_state = Decoder._checkpt_to_model_state(mp)
+            if i < 1:
+                state_dict = next_state
+                key_set = set(state_dict.keys())
+            else:
+                assert key_set == set(next_state.keys())
+                for key in key_set:     # Running average
+                    state_dict[key] = (i*state_dict[key] + next_state[key]) / (i + 1)
+        return state_dict
+
+    @staticmethod
     def _checkpt_to_model_state(checkpt_path: str):
         state = torch.load(checkpt_path, map_location=device)
         if 'model_state' in state:
@@ -191,8 +204,8 @@ class Decoder:
                 # Average
                 model_paths = exp.list_models()[:ensemble]
             log.info(f"Averaging {len(model_paths)} model states :: {model_paths}")
-            states = [Decoder._checkpt_to_model_state(mp) for mp in model_paths]
-            return Decoder.average_states(*states)
+            # states = [Decoder._checkpt_to_model_state(mp) for mp in model_paths]
+            return Decoder.average_states_low_memory(model_paths)
 
     @classmethod
     def combo_new(cls, exp: Experiment, model_paths: List[str], weights: List[float]):
