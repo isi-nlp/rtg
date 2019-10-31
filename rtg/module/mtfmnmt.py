@@ -12,7 +12,7 @@ import torch.nn as nn
 
 from rtg.module.tfmnmt import (Encoder, EncoderLayer, PositionwiseFeedForward, PositionalEncoding,
                                Generator, MultiHeadedAttention, Embeddings, TransformerNMT,
-                               TransformerTrainer, SublayerConnection, LayerNorm, clones)
+                               TransformerTrainer, SublayerConnection, clones)
 from rtg import TranslationExperiment as Experiment, log
 from rtg.dataprep import CLS_TOK_IDX as cls_idx, PAD_TOK_IDX as pad_idx
 
@@ -106,7 +106,7 @@ class MDecoder(nn.Module):
     def __init__(self, layer: MDecoderLayer, n_layers: int):
         super().__init__()
         self.layers = clones(layer, n_layers)
-        self.norm = LayerNorm(layer.size)
+        self.norm = nn.LayerNorm(layer.size)
 
     def forward(self, x, tgt_mask, sent_repr):
         for layer in self.layers:

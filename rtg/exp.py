@@ -612,9 +612,9 @@ class TranslationExperiment(BaseExperiment):
             log.warning(f"Already trained upto {last_step}; Requested: train={train_steps}, finetune={finetune_steps} Skipped")
             return
 
-        from rtg.registry import trainers
+        from rtg.registry import trainers, factories
         name, optim_args = self.optim_args
-        trainer = trainers[self.model_type](self, optim=name, **optim_args)
+        trainer = trainers[self.model_type](self, optim=name, model_factory=factories[self.model_type], **optim_args)
         if last_step < train_steps:  # regular training
             trainer.train(fine_tune=False, **run_args)
             yaml.dump({'steps': train_steps}, stream=self._trained_flag)

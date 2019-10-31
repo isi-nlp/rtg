@@ -1,6 +1,7 @@
 # CLI interface to decode task
 import argparse
 import sys
+import io
 from argparse import ArgumentDefaultsHelpFormatter as ArgFormatter
 import torch
 
@@ -9,19 +10,26 @@ from rtg.module.decoder import Decoder
 
 
 def parse_args():
+
+    stdin = io.TextIOWrapper(sys.stdin.buffer, encoding='utf-8', errors='ignore')
+    stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='ignore')
     parser = argparse.ArgumentParser(prog="rtg.decode", description="Decode using NMT model",
                                      formatter_class=ArgFormatter)
     parser.add_argument("exp_dir", help="Experiment directory", type=str)
-    parser.add_argument("-if", '--input', default=[sys.stdin], nargs='*',
+    parser.add_argument("-if", '--input', default=[stdin], nargs='*',
                         type=argparse.FileType('r', encoding='utf-8', errors='ignore'),
                         help='Input file path. default is STDIN')
-    parser.add_argument("-of", '--output', default=[sys.stdout], nargs='*',
+    parser.add_argument("-of", '--output', default=[stdout], nargs='*',
                         type=argparse.FileType('w', encoding='utf-8', errors='ignore'),
                         help='Output File path. default is STDOUT')
     parser.add_argument("-sc", '--skip-check', action='store_true',
                         help='Skip Checking whether the experiment dir is prepared and trained')
-    parser.add_argument("-b", '--batch-size', type=int, help='batch size for 1 beam. effective_batch = batch_size/beam_size')
-    parser.add_argument("-msl", '--max-src-len', type=int, help='max source len; longer seqs will be truncated')    
+    parser.add_argument("-b", '--batch-size', type=int,
+                        help='batch size for 1 beam. effective_batch = batch_size/beam_size')
+    parser.add_argument("-msl", '--max-src-len', type=int,
+                        help='max source len; longer seqs will be truncated')
+    parser.add_argument("-nb", '--no-buffer', action='store_true',
+                        help='Processes one line per batch followed by flush output')
     args = vars(parser.parse_args())
     return args
 
@@ -32,7 +40,7 @@ def validate_args(cli_args, conf_args, exp: Experiment):
             f'Experiment dir {exp.work_dir} is not ready to train. Please run "prep" sub task'
         assert exp.has_trained(), \
             f'Experiment dir {exp.work_dir} is not ready to decode.' \
-                f' Please run "train" sub task or --skip-check to ignore this'
+            f' Please run "train" sub task or --skip-check to ignore this'
     assert len(cli_args['input']) == len(cli_args['output'])
     if cli_args.get('batch_size'):
         batch_size = cli_args['batch_size'] / conf_args.get('beam_size', 1)
@@ -54,7 +62,10 @@ def main():
     for inp, out in zip(cli_args['input'], cli_args['output']):
         log.info(f"Decode :: {inp} -> {out}")
         try:
-            return decoder.decode_file(inp, out, **dec_args)
+            if cli_args.get('no_buffer'):
+                return decoder.decode_stream(inp, out, **dec_args)
+            else:
+                return decoder.decode_file(inp, out, **dec_args)
         except:
             log.exception(f"Decode failed for {inp}")
 
