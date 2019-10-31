@@ -80,7 +80,7 @@ if [[ -f $OUT/conf.yml && -n $CONF_PATH ]]; then
     CONF_ARG=""
 fi
 
-cmd="python -m rtg.pipeline $OUT $CONF_ARG"
+cmd="python -m rtg.pipeline $OUT $CONF_ARG --gpu-only"
 echo "command::: $cmd"
 if eval ${cmd}; then
     echo "`date` :: Done"
