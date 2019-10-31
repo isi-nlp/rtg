@@ -159,15 +159,16 @@ class Decoder:
         return self.gen_factory(self.model, x_seqs=x_seqs, x_lens=x_lens, **self.gen_args)
 
     @staticmethod
-    def average_states(state_dict: OrderedDict, *state_dicts: OrderedDict):
-        w = 1.0 / (1 + len(state_dicts))
-        if state_dicts:
-            key_set = set(state_dict.keys())
-            assert all(key_set == set(st.keys()) for st in state_dicts)
-            for key in key_set:
-                state_dict[key] *= w
-                for st in state_dicts:
-                    state_dict[key] += w * st[key]
+    def average_states(model_paths: List[Path]):
+        for i, mp in enumerate(model_paths):
+            next_state = Decoder._checkpt_to_model_state(mp)
+            if i < 1:
+                state_dict = next_state
+                key_set = set(state_dict.keys())
+            else:
+                assert key_set == set(next_state.keys())
+                for key in key_set:     # Running average
+                    state_dict[key] = (i*state_dict[key] + next_state[key]) / (i + 1)
         return state_dict
 
     @staticmethod
@@ -191,8 +192,7 @@ class Decoder:
                 # Average
                 model_paths = exp.list_models()[:ensemble]
             log.info(f"Averaging {len(model_paths)} model states :: {model_paths}")
-            states = [Decoder._checkpt_to_model_state(mp) for mp in model_paths]
-            return Decoder.average_states(*states)
+            return Decoder.average_states(model_paths)
 
     @classmethod
     def combo_new(cls, exp: Experiment, model_paths: List[str], weights: List[float]):
