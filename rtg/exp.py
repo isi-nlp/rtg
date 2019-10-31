@@ -11,7 +11,7 @@ import torch
 from rtg import log, yaml
 from rtg.dataprep import (TSVData, BatchIterable, LoopingIterable, SqliteFile)
 #from rtg.dataprep import Field
-from rtg.dataprep import BPEppField as Field # experimental
+from rtg.dataprep import NLCodecField as Field # experimental
 from rtg.utils import IO, line_count
 
 seeded = False
@@ -36,7 +36,7 @@ class BaseExperiment:
         self.data_dir = work_dir / 'data'
         self.model_dir = work_dir / 'models'
         self._config_file = work_dir / 'conf.yml'
-        self._shared_field_file = self.data_dir / 'sentpiece.shared.model'
+        self._shared_field_file = self.data_dir / 'nlcodec.shared.model'
         self._prepared_flag = self.work_dir / '_PREPARED'
         self._trained_flag = self.work_dir / '_TRAINED'
 
@@ -248,8 +248,8 @@ class TranslationExperiment(BaseExperiment):
     def __init__(self, work_dir: Union[str, Path], read_only=False,
                  config: Union[str, Path, Optional[Dict[str, Any]]] = None):
         super().__init__(work_dir, read_only=read_only, config=config)
-        self._src_field_file = self.data_dir / 'sentpiece.src.model'
-        self._tgt_field_file = self.data_dir / 'sentpiece.tgt.model'
+        self._src_field_file = self.data_dir / 'nlcodec.src.model'
+        self._tgt_field_file = self.data_dir / 'nlcodec.tgt.model'
 
         self.emb_src_file = self.data_dir / 'emb_src.pt'
         self.emb_tgt_file = self.data_dir / 'emb_tgt.pt'
@@ -344,7 +344,8 @@ class TranslationExperiment(BaseExperiment):
             else:
                 flat_uniq_corpus.add(i)
 
-        log.info(f"Going to build {name} vocab from mono files")
+        flat_uniq_corpus = list(flat_uniq_corpus)
+        log.info(f"Going to build {name} vocab from files")
         return Field.train(model_type, vocab_size, str(vocab_file), flat_uniq_corpus,
                            no_split_toks=no_split_toks)
 

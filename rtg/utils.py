@@ -119,13 +119,19 @@ class IO:
         return cls(path, ('a' if append else 'w') + ('t' if text else 'b'))
 
     @classmethod
-    def get_lines(cls, path, col=0, delim='\t', line_mapper=None):
+    def _get_lines(cls, path, col=0, delim='\t', line_mapper=None):
         with cls.reader(path) as inp:
             if col >= 0:
                 inp = (line.split(delim)[col].strip() for line in inp)
             if line_mapper:
                 inp = (line_mapper(line) for line in inp)
             yield from inp
+
+    @classmethod
+    def get_lines(cls, *paths, col=0, delim='\t', line_mapper=None):
+        assert paths
+        for p in paths:
+            yield from cls._get_lines(path=p, col=col, delim=delim, line_mapper=line_mapper)
 
     @classmethod
     def write_lines(cls, path: Path, text):

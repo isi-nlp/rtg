@@ -108,15 +108,17 @@ class Field(SentencePieceProcessor):
             assert model.piece_to_id(piece) == idx
         return model
 
-class BPEppField:
-    # this is experimental
-    from bpepp import BpeCodec
+class NLCodecField:
+    # from nlcodec lib
 
     def __init__(self, path: Union[str, Path]):
-        self.codec = self.BpeCodec(path)
-        self.vocab = self.codec.vocab
-        log.info(f'Loaded {len(self.vocab)} vocab from {path}')
+        # this is experimental
+        from nlcodec import load_scheme, EncoderScheme, Type, Reseved
+        self.codec: EncoderScheme = load_scheme(path)
+        self.vocab: List[Type] = self.codec.table
+        log.info(f'Loaded {len(self.codec)} types from {path}')
         for tok, idx in RESERVED_TOKS: # reserved are reserved
+            # Todo swap it with nlcodec.Reserved
             assert self.vocab[idx].name == tok
 
     def encode_as_ids(self, text: str, add_bos=False, add_eos=False) -> List[int]:
@@ -133,21 +135,26 @@ class BPEppField:
                 ids = ids[:ids.index(EOS_TOK[1])]
             except ValueError:
                 pass
-        return self.codec.decode_as_str(ids)
+        return self.codec.decode(ids)
 
     def tokenize(self, text: str) -> List[str]:
-        return self.codec.encode(text, pieces=True)
+        return self.codec.encode_str(text)
 
     def detokenize(self, tokens: List[str]) -> str:
-        return ''.join(tokens).replace(self.codec.space_tok, ' ').strip()
+        return self.codec.decode_str(tokens)
 
     def __len__(self):
         return len(self.vocab)
 
-    @staticmethod
-    def train(*args, **kwargs):
+    @classmethod
+    def train(cls, model_type: str, vocab_size: int, model_path: str, files: List[str],
+              no_split_toks: Optional[List[str]] = None, min_freq: int = -1):
         # TODO: integrate training API
-        raise Exception('You shouldn\'t be using this. Train BPE externally and set paths')
+        from nlcodec import learn_vocab, load_scheme
+        inp = IO.get_lines(*files)
+        learn_vocab(inp=inp, level=model_type, model=model_path, vocab_size=vocab_size,
+                    min_freq=min_freq)
+        return cls(model_path)
 
 Example = namedtuple('Example', ['x', 'y'])
 """
