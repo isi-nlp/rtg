@@ -34,21 +34,20 @@ class ExperimentExporter:
             log.info("Going to average models and then copy")
             model_paths = self.exp.list_models()[:ensemble]
             log.info(f'Model paths: {model_paths}')
-            checkpts = [torch.load(mp) for mp in model_paths]
-            states = [chkpt['model_state'] for chkpt in checkpts]
-
             log.info("Averaging them ...")
-            avg_state = Decoder.average_states(*states)
+            avg_state = Decoder.average_states(model_paths)
+
+            ex_model = torch.load(model_paths[0])
             chkpt_state = dict(model_state=avg_state,
-                               model_type=checkpts[0]['model_type'],
-                               model_args=checkpts[0]['model_args'])
+                               model_type=ex_model['model_type'],
+                               model_args=ex_model['model_args'])
             log.info("Instantiating it ...")
             model = instantiate_model(checkpt_state=chkpt_state, exp=self.exp)
             log.info(f"Exporting to {target}")
             to_exp = Experiment(target, config=self.exp.config)
             to_exp.persist_state()
 
-            src_chkpt = checkpts[0]
+            src_chkpt = ex_model
             log.warning("step number, training loss and validation loss are not recalculated.")
             step_num, train_loss, val_loss = [src_chkpt.get(n, -1)
                                               for n in ['step', 'train_loss', 'val_loss']]
