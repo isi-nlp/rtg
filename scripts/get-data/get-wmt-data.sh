@@ -61,7 +61,6 @@ download_all(){
         maybe_download "$file" "$url"
         files+=($file)
      done
-
 }
 
 
@@ -113,6 +112,30 @@ extract_all(){
     done
 }
 
+sgm_to_plain(){
+    inp=$1
+    out=$2
+    [[ -n $out ]] || { log "ERROR: output file not given"; exit 9;  }
+    [[ $inp == $out ]] && { log "ERROR: $inp and $out are same"; exit 9; }
+
+    [[ $inp == *.sgm ]] || { log "ERROR: $inp is not a sgm"; exit 10; }
+    converter=${TOOLS}/mosesdecoder/scripts/ems/support/input-from-sgm.perl
+    [[ -f $converter ]] || { log "SGM converter not found: $converter "; exit 11; }
+    $converter < $inp > $out
+}
+
+
+sgm_to_plain_all(){
+    local -n dirs=$1
+    for dir in "${dirs[@]}"; do
+        sgms=(`find $dir -maxdepth 1 -name "*.sgm"`)
+        for sgm in "${sgms[@]}"; do
+            plain=$(echo $sgm | sed 's/.sgm$//' )
+            [[ -f $plain ]] || sgm_to_plain $sgm $plain
+        done
+    done
+}
+
 get_tokenizer(){
     moses_code_url="https://github.com/moses-smt/mosesdecoder/archive/master.tar.gz" # tested on oct 15, 2019
     moses_code_zip="${DOWNLD}/mosesdecoder.tar.gz"
@@ -126,6 +149,7 @@ get_tokenizer(){
     fi
     [[ -f "$tokenizer" ]] && echo $tokenizer || { log  "Error: Couldnt setup Moses tokr"; exit 6; }
 }
+
 
 tokenize_all(){
     local -n dirs=$1
@@ -184,6 +208,9 @@ main(){
     local lang_dirs=()
 
     extract_all "$DATA" dl_files lang_dirs
+
+    sgm_to_plain_all lang_dirs
+
     tokenize_all lang_dirs
 
 }
