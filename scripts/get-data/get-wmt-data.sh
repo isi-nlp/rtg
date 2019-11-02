@@ -6,7 +6,8 @@
 #  Author : Thamme Gowda [tg@isi.edu]
 #  Created: Oct 15, 2019
 #
-#
+# requires bash=4.4+ gzip=1.7+ 
+
 set -e   # Exit immediately if a command returns a non-zero status.
 
 log(){
