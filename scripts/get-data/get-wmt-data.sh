@@ -44,12 +44,17 @@ download_all(){
     fi_en="$euro_parl_v9/europarl-v9.fi-en.tsv.gz"
     lt_en="$euro_parl_v9/europarl-v9.lt-en.tsv.gz"
      # cant find these in euro_parl_v9
-     euro_parl_v7="http://www.statmt.org/europarl/v7"
+    euro_parl_v7="http://www.statmt.org/europarl/v7"
     fr_en="$euro_parl_v7/fr-en.tgz"
     bg_en="$euro_parl_v7/bg-en.tgz"
     wmt19_dev="http://data.statmt.org/wmt19/translation-task/dev.tgz"
 
-    queue=($de_en $fi_en $lt_en $fr_en $bg_en $wmt19_dev)
+     # news commentary v14
+     nc_v14="http://data.statmt.org/news-commentary/v14/training"
+     nc14_de_en="$nc_v14/news-commentary-v14.de-en.tsv.gz"
+     nc14_fr_en="$nc_v14/news-commentary-v14.en-fr.tsv.gz"
+
+    queue=($de_en $fi_en $lt_en $fr_en $bg_en $wmt19_dev $nc14_de_en $nc14_fr_en)
     local url
     for url in "${queue[@]}"; do
         file=$dir/$(basename $url)
@@ -66,43 +71,68 @@ extract_all(){
     local -n out_dirs=$3
     local file
     for file in "${in_files[@]}"; do
+
         if [[ "$file" == *.tgz ]]; then
-            # XX-YY.tgz  or dev.tgz
             pair=$(basename $file | cut -d. -f1)
-            out_dir="${data_dir}/$pair"
-            maybe_mkdir "$out_dir"
-            [[ "$(basename $file)" == "dev.tgz" ]] && local opts="--strip=1" || local opts=
-
-            if [[ -f $out_dir/_EXTRACTED ]]; then
-                log "Skip: $out_dir"
-            else
-                log "tar xvf $file $opts -C $out_dir "
-                tar xvf "$file" $opts -C "$out_dir"  && touch $out_dir/_EXTRACTED
-            fi
-
         elif [[ $file == *.tsv.gz ]]; then
-            # europarl-v9.XX-YY.tsv.gz
             pair=$(basename $file | cut -d. -f2)
-            out_dir="${data_dir}/$pair"
-            maybe_mkdir $out_dir
-            if [[ -f $out_dir/_EXTRACTED ]]; then
-                log "Skip: $out_dir"
-            else
-                out_file=$(echo $out_dir/$(basename $file)| sed 's/.gz$//')
-                log "gunzip -ck $file > $out_file"
-                gunzip -ck $file > $out_file
-                first=$(echo $out_file | sed 's/.\([[:alpha:]]*\)-\([[:alpha:]]*\).tsv/.\1-\2.\1/')
-                second=$(echo $out_file | sed 's/.\([[:alpha:]]*\)-\([[:alpha:]]*\).tsv/.\1-\2.\2/')
-                [[ "$first" = "$second" || "$first" == "$out_file" ]] && { log "Error: $out_file --> $first $second"; exit 5; }
-                cut -f1 $out_file > $first
-                cut -f2 $out_file > $second
-                touch $out_dir/_EXTRACTED
-            fi
         else
             log "Error: Dont know how do handle $file "
             exit 4
         fi
+
+        pair=$(echo $pair | tr '-' '\n' | sort | tr '\n' '-' | sed 's/-$//')
+        out_dir="${data_dir}/$pair"
+        maybe_mkdir "$out_dir"
+        flag=$out_dir/$(basename $file | tr '.' '_')_EXTRACTED
+        if [[ -f $flag ]]; then
+            log "Skip: $file"
+        else
+            if [[ "$file" == *.tgz ]]; then
+                [[ "$(basename $file)" == "dev.tgz" ]] && local opts="--strip=1" || local opts=
+                log "tar xvf $file $opts -C $out_dir "
+                tar xvf "$file" $opts -C "$out_dir" && touch $flag
+            elif [[ $file == *.tsv.gz ]]; then
+                out_file=$(echo $out_dir/$(basename $file)| sed 's/.gz$//')
+                cmd="gunzip -ck $file > $out_file"
+                log "$cmd"
+                eval "$cmd"
+                first=$(echo $out_file | sed "s/\.\([^-]*\)-\([^.]*\).tsv$/.$pair.\1/")
+                second=$(echo $out_file | sed "s/\.\([^-]*\)-\([^.]*\).tsv$/.$pair.\2/")
+                [[ "$first" == "$second" || "$first" == "$out_file" ]] && { log "Error: $out_file --> $first $second"; exit 5; }
+                cut -f1 $out_file > $first
+                cut -f2 $out_file > $second
+                touch $flag
+            else
+                log "Error: Dont know how do handle $file "
+                exit 4
+            fi
+        fi
         out_dirs+=("$out_dir")
+    done
+}
+
+sgm_to_plain(){
+    inp=$1
+    out=$2
+    [[ -n $out ]] || { log "ERROR: output file not given"; exit 9;  }
+    [[ $inp == $out ]] && { log "ERROR: $inp and $out are same"; exit 9; }
+
+    [[ $inp == *.sgm ]] || { log "ERROR: $inp is not a sgm"; exit 10; }
+    converter=${TOOLS}/mosesdecoder/scripts/ems/support/input-from-sgm.perl
+    [[ -f $converter ]] || { log "SGM converter not found: $converter "; exit 11; }
+    $converter < $inp > $out
+}
+
+
+sgm_to_plain_all(){
+    local -n dirs=$1
+    for dir in "${dirs[@]}"; do
+        sgms=(`find $dir -maxdepth 1 -name "*.sgm"`)
+        for sgm in "${sgms[@]}"; do
+            plain=$(echo $sgm | sed 's/.sgm$//' )
+            [[ -f $plain ]] || sgm_to_plain $sgm $plain
+        done
     done
 }
 
@@ -119,6 +149,7 @@ get_tokenizer(){
     fi
     [[ -f "$tokenizer" ]] && echo $tokenizer || { log  "Error: Couldnt setup Moses tokr"; exit 6; }
 }
+
 
 tokenize_all(){
     local -n dirs=$1
@@ -177,6 +208,9 @@ main(){
     local lang_dirs=()
 
     extract_all "$DATA" dl_files lang_dirs
+
+    sgm_to_plain_all lang_dirs
+
     tokenize_all lang_dirs
 
 }
