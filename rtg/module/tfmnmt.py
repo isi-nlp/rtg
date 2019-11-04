@@ -349,7 +349,12 @@ class PositionwiseFeedForward(nn.Module):
         self.w_1 = nn.Linear(d_model, d_ff)
         self.w_2 = nn.Linear(d_ff, d_model)
         self.dropout = nn.Dropout(dropout)
-        activations = dict(relu=F.relu, elu=F.elu, gelu=F.gelu)
+        activations = dict(relu=F.relu, elu=F.elu)
+
+        if activation == 'gelu':
+            activations['gelu'] = F.gelu
+            # probably you are using old torch; please upgrade to torch 1.2+
+
         self.activation = activations[activation]
 
     def forward(self, x):
