@@ -13,10 +13,10 @@ from abc import abstractmethod
 from typing import Optional, Callable
 from dataclasses import dataclass
 import time
-from tensorboardX import SummaryWriter
 
 from torch import optim
 from torch.optim.optimizer import Optimizer
+from torch.utils.tensorboard import SummaryWriter
 from enum import Enum
 import inspect
 from pathlib import Path
@@ -230,7 +230,6 @@ class SteppedTrainer:
         if self.start_step == 0:
             self.init_embeddings()
         self.model = self.model.to(device)
-
 
     def init_embeddings(self):
         def load_matrix(path: Path):
