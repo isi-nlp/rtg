@@ -286,6 +286,11 @@ class SteppedTrainer:
 
         self.tbd.add_scalars(f'losses', {'train_loss': train_loss,
                                          'valid_loss': val_loss}, step_num)
+        # TODO: add metadata (text) of each subword
+        # TODO: Update tag to include tie configuration
+        self.tbd.add_embedding(self.model.generator.proj.weight,
+                               global_step=step_num, tag=f'Target embeddings')
+
         # Unwrap model state from DataParallel and persist
         model = (self.model.module if isinstance(self.model, nn.DataParallel) else self.model)
         state = {
