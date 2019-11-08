@@ -104,7 +104,8 @@ class IO:
             if 'b' in self.mode:  # binary mode doesnt take encoding or errors
                 self.fd = self.path.open(self.mode)
             else:
-                self.fd = self.path.open(self.mode, encoding=self.encoding, errors=self.errors)
+                self.fd = self.path.open(self.mode, encoding=self.encoding, errors=self.errors,
+                                         newline='\n')
         return self.fd
 
     def __exit__(self, _type, value, traceback):
