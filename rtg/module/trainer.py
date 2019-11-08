@@ -13,10 +13,10 @@ from abc import abstractmethod
 from typing import Optional, Callable
 from dataclasses import dataclass
 import time
-from tensorboardX import SummaryWriter
 
 from torch import optim
 from torch.optim.optimizer import Optimizer
+from torch.utils.tensorboard import SummaryWriter
 from enum import Enum
 import inspect
 from pathlib import Path
@@ -231,7 +231,6 @@ class SteppedTrainer:
             self.init_embeddings()
         self.model = self.model.to(device)
 
-
     def init_embeddings(self):
         def load_matrix(path: Path):
             return torch.load(path) if path.exists() else None
@@ -287,6 +286,11 @@ class SteppedTrainer:
 
         self.tbd.add_scalars(f'losses', {'train_loss': train_loss,
                                          'valid_loss': val_loss}, step_num)
+        # TODO: add metadata (text) of each subword
+        # TODO: Update tag to include tie configuration
+        self.tbd.add_embedding(self.model.generator.proj.weight,
+                               global_step=step_num, tag=f'Target embeddings')
+
         # Unwrap model state from DataParallel and persist
         model = (self.model.module if isinstance(self.model, nn.DataParallel) else self.model)
         state = {
