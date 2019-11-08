@@ -104,7 +104,8 @@ class IO:
             if 'b' in self.mode:  # binary mode doesnt take encoding or errors
                 self.fd = self.path.open(self.mode)
             else:
-                self.fd = self.path.open(self.mode, encoding=self.encoding, errors=self.errors)
+                self.fd = self.path.open(self.mode, encoding=self.encoding, errors=self.errors,
+                                         newline='\n')
         return self.fd
 
     def __exit__(self, _type, value, traceback):
@@ -119,12 +120,14 @@ class IO:
         return cls(path, ('a' if append else 'w') + ('t' if text else 'b'))
 
     @classmethod
-    def get_lines(cls, path, col=0, delim='\t', line_mapper=None):
+    def get_lines(cls, path, col=0, delim='\t', line_mapper=None, newline_fix=True):
         with cls.reader(path) as inp:
             if col >= 0:
                 inp = (line.split(delim)[col].strip() for line in inp)
             if line_mapper:
                 inp = (line_mapper(line) for line in inp)
+            if newline_fix:
+                inp = (line.replace('\r', '') for line in inp)
             yield from inp
 
     @classmethod

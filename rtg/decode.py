@@ -11,7 +11,7 @@ from rtg.module.decoder import Decoder
 
 def parse_args():
 
-    stdin = io.TextIOWrapper(sys.stdin.buffer, encoding='utf-8', errors='ignore')
+    stdin = io.TextIOWrapper(sys.stdin.buffer, encoding='utf-8', errors='ignore', newline='\n')
     stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='ignore')
     parser = argparse.ArgumentParser(prog="rtg.decode", description="Decode using NMT model",
                                      formatter_class=ArgFormatter)
