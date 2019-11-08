@@ -73,6 +73,31 @@ class Encoder(nn.Module):
         return self.norm(x)
 
 
+class WidthVaryingEncoder(nn.Module):
+    "Stack of N encoders with heterogeneous feed forward dimensions"
+
+    def __init__(self, d_model: int, ff_dims: List[int], N: int,
+                 n_heads: int, dropout: float, activation: str = 'relu'):
+        super().__init__()
+
+        # Make N layers with different pointwise ff_dims
+        assert len(ff_dims) >= N, 'Not enough ff_dims to complete the model'
+        layers = list()
+        for n in range(N):
+            attn = MultiHeadedAttention(n_heads, d_model, dropout)
+            ff = PositionwiseFeedForward(d_model, ff_dims[n], dropout, activation=activation)
+            layers.append(EncoderLayer(d_model, attn, ff, dropout))
+        self.layers = nn.ModuleList(layers)
+        # TODO: Maybe remove norm (happens in SublayerConnection)
+        self.norm = nn.LayerNorm(d_model)
+
+    def forward(self, x, mask):
+        "Pass the input (and mask) through each layer in turn."
+        for layer in self.layers:
+            x = layer(x, mask)
+        return self.norm(x)
+
+
 class DecoderLayer(nn.Module):
     "Decoder is made of self-attn, src-attn, and feed forward (defined below)"
 
@@ -99,6 +124,31 @@ class Decoder(nn.Module):
         super().__init__()
         self.layers = clones(layer, n_layers)
         self.norm = nn.LayerNorm(layer.size)
+
+    def forward(self, x, memory, src_mask, tgt_mask):
+        for layer in self.layers:
+            x = layer(x, memory, src_mask, tgt_mask)
+        return self.norm(x)
+
+
+class WidthVaryingDecoder(nn.Module):
+    "Stack of N decoders with heterogeneous feed forward dimensions"
+
+    def __init__(self, d_model: int, ff_dims: List[int], N: int,
+                 n_heads: int, dropout: float, activation: str = 'relu'):
+        super().__init__()
+
+        # Make N layers with different pointwise ff_dims
+        assert len(ff_dims) >= N, 'Not enough ff_dims to complete the model'
+        layers = list()
+        for n in range(N):
+            self_attn = MultiHeadedAttention(n_heads, d_model, dropout)
+            src_attn = MultiHeadedAttention(n_heads, d_model, dropout)
+            ff = PositionwiseFeedForward(d_model, ff_dims[n], dropout, activation=activation)
+            layers.append(DecoderLayer(d_model, self_attn, src_attn, ff, dropout))
+        self.layers = nn.ModuleList(layers)
+        # TODO: Maybe remove norm (happens in SublayerConnection)
+        self.norm = nn.LayerNorm(d_model)
 
     def forward(self, x, memory, src_mask, tgt_mask):
         for layer in self.layers:
@@ -232,6 +282,62 @@ class TransformerNMT(AbstractTransformerNMT):
 
         assert dec_layers > 0
         decoder = Decoder(DecoderLayer(hid_size, c(attn), c(attn), c(ff), dropout), dec_layers)
+
+        src_emb = nn.Sequential(Embeddings(hid_size, src_vocab),
+                                PositionalEncoding(hid_size, dropout))
+        tgt_emb = nn.Sequential(Embeddings(hid_size, tgt_vocab),
+                                PositionalEncoding(hid_size, dropout))
+        generator = Generator(hid_size, tgt_vocab)
+
+        model = cls(encoder, decoder, src_emb, tgt_emb, generator)
+
+        if tied_emb:
+            model.tie_embeddings(tied_emb)
+
+        model.init_params()
+        return model, args
+
+
+class WidthVaryingTransformerNMT(AbstractTransformerNMT):
+    """Enables heterogeneous feed forward dimensions in the Encoder and Decoder"""
+
+    def __init__(self, encoder: Encoder, decoder: Decoder,
+                 src_embed, tgt_embed,
+                 generator: Optional[Generator], tgt_vocab=None):
+        super().__init__(encoder=encoder, decoder=decoder,
+                         src_embed=src_embed, tgt_embed=tgt_embed,
+                         generator=generator, tgt_vocab=tgt_vocab)
+
+    @property
+    def model_type(self):
+        return 'wvtfmnmt'
+
+    @classmethod
+    def make_model(cls, src_vocab, tgt_vocab, enc_layers=6, dec_layers=6, hid_size=512,
+                   eff_dims: List[int] = (4096, 3072, 2048, 1024, 1024, 1024),   # Using tuple for immutability
+                   dff_dims: List[int] = (4096, 3072, 2048, 1024, 1024, 1024),
+                   n_heads=8, dropout=0.1, tied_emb='three-way', activation='relu',
+                   exp: Experiment = None):
+        "Helper: Construct a model from hyper parameters."
+
+        # get all args for reconstruction at a later phase
+        _, _, _, args = inspect.getargvalues(inspect.currentframe())
+        for exclusion in ['cls', 'exp']:
+            del args[exclusion]  # exclude some args
+        # In case you are wondering, why I didnt use **kwargs here:
+        #   these args are read from conf file where user can introduce errors, so the parameter
+        #   validation and default value assignment is implicitly done by function call for us :)
+        assert activation in {'relu', 'elu', 'gelu'}
+        log.info(f"Make model, Args={args}")
+
+        if enc_layers == 0:
+            log.warning("Zero encoder layers!")
+        encoder = WidthVaryingEncoder(d_model=hid_size, ff_dims=eff_dims, N=enc_layers,
+                                      n_heads=n_heads, dropout=dropout, activation=activation)
+
+        assert dec_layers > 0
+        decoder = WidthVaryingDecoder(d_model=hid_size, ff_dims=dff_dims, N=dec_layers,
+                                      n_heads=n_heads, dropout=dropout, activation=activation)
 
         src_emb = nn.Sequential(Embeddings(hid_size, src_vocab),
                                 PositionalEncoding(hid_size, dropout))
