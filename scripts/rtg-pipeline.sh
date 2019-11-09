@@ -52,13 +52,12 @@ echo "Output dir = $OUT"
 [[ -d $OUT ]] || mkdir -p $OUT
 OUT=`realpath $OUT`
 
-if [[ ! -f $OUT/rtg.zip || ! -e $OUT/scripts ]]; then
+if [[ ! -f $OUT/rtg.zip ]]; then
     [[ -f $RTG_PATH/rtg/__init__.py ]] || { echo "Error: RTG_PATH=$RTG_PATH is not valid"; exit 2; }
     echo "Zipping source code to $OUT/rtg.zip"
     OLD_DIR=$PWD
     cd ${RTG_PATH}
     zip -r $OUT/rtg.zip rtg -x "*__pycache__*"
-    ln -s ${PWD}/scripts $OUT/scripts  # scripts are needed
     git rev-parse HEAD > $OUT/githead   # git commit message
     cd $OLD_DIR
 fi
