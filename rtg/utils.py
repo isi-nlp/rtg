@@ -122,12 +122,12 @@ class IO:
     @classmethod
     def get_lines(cls, path, col=0, delim='\t', line_mapper=None, newline_fix=True):
         with cls.reader(path) as inp:
+            if newline_fix and delim != '\r':
+                inp = (line.replace('\r', '') for line in inp)
             if col >= 0:
                 inp = (line.split(delim)[col].strip() for line in inp)
             if line_mapper:
                 inp = (line_mapper(line) for line in inp)
-            if newline_fix:
-                inp = (line.replace('\r', '') for line in inp)
             yield from inp
 
     @classmethod
