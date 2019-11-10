@@ -140,10 +140,10 @@ class IO:
                 out.write('\n')
 
     @classmethod
-    def copy_file(cls, src: Path, dest: Path):
+    def copy_file(cls, src: Path, dest: Path, text=False):
         assert src.resolve() != dest.resolve()
         log.info(f"Copy {src} → {dest}")
-        with IO.reader(src) as inp, IO.writer(dest) as out:
+        with IO.reader(src, text=text) as inp, IO.writer(dest, text=text) as out:
             shutil.copyfileobj(inp, out)
 
     @classmethod
