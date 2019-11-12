@@ -209,6 +209,7 @@ main(){
 
     extract_all "$DATA" dl_files lang_dirs
 
+    get_tokenizer   # dummy call to setup moses decoder which is needed for sgm convertion
     sgm_to_plain_all lang_dirs
 
     tokenize_all lang_dirs
