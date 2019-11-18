@@ -60,6 +60,8 @@ cd rtg                # go to the code
 
 conda env create .   # adds a conda env named rtg
 conda activate rtg
+# Or, to update existing environment `rtg` from .yml file
+# conda env update --name rtg --file environment.yml
 
 # install this as a local editable pip package
 pip install --editable .
