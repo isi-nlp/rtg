@@ -276,12 +276,19 @@ class TranslationExperiment(BaseExperiment):
             Field(str(f)) if f.exists() else None for f in (
                 self._src_field_file, self._tgt_field_file, self._shared_field_file)]
 
+    def check_line_count(self, name, file1, file2):
+        count1 = line_count(file1)
+        count2 = line_count(file2)
+        if count1 == count2:
+            log.info(f"Found {count1:,} parallel lines for {name}")
+        else:
+            log.error(f"Found line mismatch in {name} ")
+            raise Exception(f'{file1} has {count1:,} lines but {file2} has {count2:,} lines')
+
     def pre_process_parallel(self, args: Dict[str, Any]):
         # check if files are parallel
-        n_train_exs = line_count(args['train_src'])
-        log.info(f"Found {n_train_exs} parallel sentences for training")
-        assert n_train_exs == line_count(args['train_tgt'])
-        assert line_count(args['valid_src']) == line_count(args['valid_tgt'])
+        self.check_line_count('training', args['train_src'], args['train_tgt'])
+        self.check_line_count('validation', args['valid_src'], args['valid_tgt'])
         no_split_toks = args.get('no_split_toks')
 
         if args.get('shared_vocab'):  # shared vocab

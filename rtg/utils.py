@@ -104,7 +104,8 @@ class IO:
             if 'b' in self.mode:  # binary mode doesnt take encoding or errors
                 self.fd = self.path.open(self.mode)
             else:
-                self.fd = self.path.open(self.mode, encoding=self.encoding, errors=self.errors)
+                self.fd = self.path.open(self.mode, encoding=self.encoding, errors=self.errors,
+                                         newline='\n')
         return self.fd
 
     def __exit__(self, _type, value, traceback):
@@ -119,8 +120,10 @@ class IO:
         return cls(path, ('a' if append else 'w') + ('t' if text else 'b'))
 
     @classmethod
-    def _get_lines(cls, path, col=0, delim='\t', line_mapper=None):
+    def get_lines(cls, path, col=0, delim='\t', line_mapper=None, newline_fix=True):
         with cls.reader(path) as inp:
+            if newline_fix and delim != '\r':
+                inp = (line.replace('\r', '') for line in inp)
             if col >= 0:
                 inp = (line.split(delim)[col].strip() for line in inp)
             if line_mapper:
@@ -143,10 +146,10 @@ class IO:
                 out.write('\n')
 
     @classmethod
-    def copy_file(cls, src: Path, dest: Path):
+    def copy_file(cls, src: Path, dest: Path, text=False):
         assert src.resolve() != dest.resolve()
         log.info(f"Copy {src} → {dest}")
-        with IO.reader(src) as inp, IO.writer(dest) as out:
+        with IO.reader(src, text=text) as inp, IO.writer(dest, text=text) as out:
             shutil.copyfileobj(inp, out)
 
     @classmethod
