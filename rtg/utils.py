@@ -120,7 +120,7 @@ class IO:
         return cls(path, ('a' if append else 'w') + ('t' if text else 'b'))
 
     @classmethod
-    def get_lines(cls, path, col=0, delim='\t', line_mapper=None, newline_fix=True):
+    def _get_lines(cls, path, col=0, delim='\t', line_mapper=None, newline_fix=True):
         with cls.reader(path) as inp:
             if newline_fix and delim != '\r':
                 inp = (line.replace('\r', '') for line in inp)
