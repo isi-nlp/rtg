@@ -8,6 +8,7 @@ import rtg
 from rtg import log, TranslationExperiment as Experiment, device, BatchIterable
 from rtg.module import NMTModel
 from rtg.utils import IO
+from rtg.module import criterion as criteria
 
 from abc import abstractmethod
 from typing import Optional, Callable
@@ -20,6 +21,7 @@ from torch.utils.tensorboard import SummaryWriter
 from enum import Enum
 import inspect
 from pathlib import Path
+
 
 
 class NoamOpt(Optimizer):
@@ -154,6 +156,15 @@ class SteppedTrainer:
     """
     A base class for Trainers that use step based training (not epoch based training)
     """
+    default_optim_args = {
+        'lr': 0.1,
+        'betas': [0.9, 0.98],
+        'eps': 1e-9,
+        'criterion': 'smooth_kld',
+        'label_smoothing': 0.1,
+        'warmup_steps': 8000,
+        'constant': 2
+    }
 
     def __init__(self, exp: Experiment,
                  model: Optional[NMTModel] = None,
@@ -184,29 +195,23 @@ class SteppedTrainer:
             else:
                 log.info("No earlier check point found. Looks like this is a fresh start")
 
-        # making optimizer
-        optim_args['lr'] = optim_args.get('lr', 0.1)
-        optim_args['betas'] = optim_args.get('betas', [0.9, 0.98])
-        optim_args['eps'] = optim_args.get('eps', 1e-9)
-
-        warmup_steps = optim_args.pop('warmup_steps', 8000)
-        self._smoothing = optim_args.pop('label_smoothing', 0.1)
-        constant = optim_args.pop('constant', 2)
+        # optimizer : default args for missing fields
+        for k, v in self.default_optim_args.items():
+            optim_args[k] = optim_args.get(k, v)
 
         self.model = self.model.to(device)
 
-        inner_opt = Optims[optim].new(self.model.parameters(), **optim_args)
+        inner_opt_args = {k: optim_args[k] for k in ['lr', 'betas', 'eps']}
+        inner_opt = Optims[optim].new(self.model.parameters(), **inner_opt_args )
         if optim_state:
             log.info("restoring optimizer state from checkpoint")
             try:
                 inner_opt.load_state_dict(optim_state)
             except Exception:
                 log.exception("Unable to restore optimizer, skipping it.")
-        self.opt = NoamOpt(self.model.model_dim, constant, warmup_steps, inner_opt,
-                           step=self.start_step)
+        self.opt = NoamOpt(self.model.model_dim, optim_args['constant'], optim_args['warmup_steps'],
+                           inner_opt, step=self.start_step)
 
-        optim_args.update(dict(warmup_steps=warmup_steps, label_smoothing=self._smoothing,
-                               constant=constant))
         if self.exp.read_only:
             self.tbd = NoOpSummaryWriter()
         else:
@@ -230,6 +235,20 @@ class SteppedTrainer:
         if self.start_step == 0:
             self.init_embeddings()
         self.model = self.model.to(device)
+
+        self.criterion = self.create_criterion(optim_args['criterion'])
+
+    def create_criterion(self, criterion):
+        log.info(f"Criterion = {criterion}")
+        if criterion == 'smooth_kld':
+            return criteria.SmoothKLD(vocab_size=self.model.generator.vocab,
+                                  smoothing=self.exp.optim_args[1]['label_smoothing'])
+        elif criterion == 'cross_entropy':
+            return criteria.CrossEntropy()
+        elif criterion == 'binary_cross_entropy':
+            return criteria.BinaryCrossEntropy()
+        else:
+            raise Exception(f'criterion={criterion} is not supported')
 
     def init_embeddings(self):
         def load_matrix(path: Path):

@@ -5,6 +5,7 @@
 
 import abc
 import torch
+from rtg import log
 from rtg.binmt.bicycle import BiNMT
 from rtg.module.rnnmt import RNNMT
 from rtg.lm.rnnlm import RnnLm
@@ -54,14 +55,23 @@ class BiNMTGenerator(Seq2SeqGenerator):
 
 class T2TGenerator(GeneratorFactory):
 
-    def __init__(self, model: TransformerNMT, x_seqs, x_lens=None):
+    multi_label_warned = False
+
+    def __init__(self, model: TransformerNMT, x_seqs, x_lens=None, multi_label=True):
         super().__init__(model)
         self.x_mask = (x_seqs != PAD_IDX).unsqueeze(1)
         self.memory = self.model.encode(x_seqs, self.x_mask)
+        self.multi_label = multi_label
+        if multi_label and not type(self).multi_label_warned:
+            log.warning(">>> Multi-label decoding mode enabled")
+            type(self).multi_label_warned = True
 
     def generate_next(self, past_ys):
         out = self.model.decode(self.memory, self.x_mask, past_ys, subsequent_mask(past_ys.size(1)))
-        log_probs = self.model.generator(out[:, -1])
+        if self.multi_label:
+            log_probs = self.model.generator(out[:, -1], score='sigmoid').log()
+        else:
+            log_probs = self.model.generator(out[:, -1], score='log_softmax')
         return log_probs
 
 
