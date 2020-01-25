@@ -247,6 +247,9 @@ class SteppedTrainer:
             return criteria.CrossEntropy()
         elif criterion == 'binary_cross_entropy':
             return criteria.BinaryCrossEntropy()
+        elif criterion == 'triplet_loss':
+            tgt_embedding = self.model.tgt_embed[0].lut
+            return criteria.TripletLoss(embedding=tgt_embedding)
         else:
             raise Exception(f'criterion={criterion} is not supported')
 

@@ -38,7 +38,9 @@ class Generator(nn.Module):
         'logits': lambda x, dim=None: x,
         'softmax': F.softmax,
         'log_softmax': F.log_softmax,
-        'sigmoid': lambda x, dim=None: x.sigmoid()
+        'sigmoid': lambda x, dim=None: x.sigmoid(),
+        'embedding': None,
+        'identity': None
     }
 
     def __init__(self, d_model: int, vocab: int):
@@ -72,6 +74,8 @@ class Generator(nn.Module):
                 log.warning(warn_msg)
                 traceback.print_stack(limit=6)
         assert score in self.scores, f'{self.scores.keys()} supported but given "{score}"'
+        if score == 'embedding' or score == 'identity':
+            return x
         x = self.proj(x)
         return self.scores[score](x, dim=-1)
 
@@ -887,7 +891,8 @@ def __test_model__():
         'trainer': {'init_args': {'chunk_size': 2}},
         'optim':{
             'args':{
-                'criterion': "binary_cross_entropy"  # "cross_entropy", "smooth_kld", "binary_cross_entropy"
+                # "cross_entropy", "smooth_kld", "binary_cross_entropy", "triplet_loss"
+                'criterion': "binary_cross_entropy"
             }
         }
     }

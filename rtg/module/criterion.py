@@ -5,9 +5,9 @@
 
 import torch
 from torch import nn
+import torch.nn.functional as F
 from rtg.dataprep import PAD_TOK_IDX
 import abc
-
 
 
 class Criterion(nn.Module, abc.ABC):
@@ -105,3 +105,40 @@ class SmoothKLD(Criterion):
 
         loss = self.criterion(x, smooth_truth)
         return loss
+
+
+class TripletLoss(Criterion):
+    ## Note: Triplet loss doesnt work fully yet; it sorta works and then overfits
+
+    def __init__(self, embedding,  margin=1.0):
+        super().__init__(input_type="embedding")
+        self.embedding = embedding
+        self.vocab_size = embedding.weight.shape[0]
+        self.margin = margin
+
+    @classmethod
+    def dot(cls, a, b):
+        # a, b: [B x D]
+        B, D = a.shape[0], a.shape[1]
+        # [B x 1 x 1] = [B x 1 x D] * [B x D x 1]
+        dots = torch.bmm(a.view(B, 1, D), b.view(B, D, 1))
+        return dots.view(B)
+
+    @classmethod
+    def distance(cls, a, b):
+        # (a - b)^2 = a.a + b.b - 2.a.b
+        dist_sq = cls.dot(a, a) + cls.dot(b, b) - 2 * cls.dot(a, b)
+        # the root is ignored; do we really need it? I dont think so
+        return dist_sq
+
+    def forward(self, x, targets):
+        # x: [B x D]   targets:[B]
+        anchors = x # [B x D]
+        pos_embs = self.embedding(targets)  # [B x D]
+        neg_ids = torch.randint_like(targets, low=self.pad_idx + 1, high=self.vocab_size)
+        neg_embs = self.embedding(neg_ids)   # [B x D]
+
+        triplet_loss = self.distance(anchors, pos_embs) - self.distance(anchors, neg_embs)
+        triplet_loss = F.relu(triplet_loss + self.margin)
+        triplet_loss.masked_fill_(targets == self.pad_idx, 0)
+        return triplet_loss
