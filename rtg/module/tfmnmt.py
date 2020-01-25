@@ -892,10 +892,11 @@ def __test_model__():
         'optim':{
             'args':{
                 # "cross_entropy", "smooth_kld", "binary_cross_entropy", "triplet_loss"
-                'criterion': "binary_cross_entropy"
+                'criterion': "smooth_kld"
             }
         }
     }
+
     exp = DummyExperiment("work.tmp.t2t", config=config, read_only=True,
                           vocab_size=vocab_size)
     exp.model_args = args

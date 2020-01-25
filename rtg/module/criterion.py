@@ -110,11 +110,14 @@ class SmoothKLD(Criterion):
 class TripletLoss(Criterion):
     ## Note: Triplet loss doesnt work fully yet; it sorta works and then overfits
 
-    def __init__(self, embedding,  margin=1.0):
+    def __init__(self, embedding,  margin=0, mode='dot'):
+        # TODO: whats the right margin?
         super().__init__(input_type="embedding")
         self.embedding = embedding
         self.vocab_size = embedding.weight.shape[0]
         self.margin = margin
+        assert mode in ('dot', 'l2')
+        self.mode = mode
 
     @classmethod
     def dot(cls, a, b):
@@ -135,10 +138,18 @@ class TripletLoss(Criterion):
         # x: [B x D]   targets:[B]
         anchors = x # [B x D]
         pos_embs = self.embedding(targets)  # [B x D]
-        neg_ids = torch.randint_like(targets, low=self.pad_idx + 1, high=self.vocab_size)
+        neg_ids = torch.randint_like(targets, low=self.pad_idx+1, high=self.vocab_size)
         neg_embs = self.embedding(neg_ids)   # [B x D]
 
-        triplet_loss = self.distance(anchors, pos_embs) - self.distance(anchors, neg_embs)
-        triplet_loss = F.relu(triplet_loss + self.margin)
-        triplet_loss.masked_fill_(targets == self.pad_idx, 0)
+        if self.mode == 'l2':
+            triplet_loss = self.distance(anchors, pos_embs) \
+                           - self.distance(anchors, neg_embs) + self.margin
+            triplet_loss = F.relu(triplet_loss)
+        elif self.mode == 'dot':
+            triplet_loss = self.dot(anchors, pos_embs) - self.dot(anchors, neg_embs) + self.margin
+            triplet_loss = F.relu(-triplet_loss)
+        else:
+            raise Exception(self.mode + ' not supported')
+        #triplet_loss = torch.exp(1 + triplet_loss).masked_fill(targets == self.pad_idx, 0)
+        triplet_loss = triplet_loss.masked_fill_(targets == self.pad_idx, 0)
         return triplet_loss

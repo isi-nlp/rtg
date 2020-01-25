@@ -57,7 +57,7 @@ class T2TGenerator(GeneratorFactory):
 
     multi_label_warned = False
 
-    def __init__(self, model: TransformerNMT, x_seqs, x_lens=None, multi_label=True):
+    def __init__(self, model: TransformerNMT, x_seqs, x_lens=None, multi_label=False):
         super().__init__(model)
         self.x_mask = (x_seqs != PAD_IDX).unsqueeze(1)
         self.memory = self.model.encode(x_seqs, self.x_mask)
