@@ -691,10 +691,8 @@ class TransformerTrainer(SteppedTrainer):
                                                   opt=self.opt,
                                                   chunk_size=chunk_size, devices=device_ids)
         else:
-            #self.loss_func = ChunkedLossCompute(generator=generator, criterion=self.criterion,
-            #                                    opt=self.opt, chunk_size=chunk_size)
-            self.loss_func = SimpleLossFunction(generator=generator, opt=self.opt,
-                                                criterion=self.criterion)
+            self.loss_func = ChunkedLossCompute(generator=generator, criterion=self.criterion,
+                                                opt=self.opt, chunk_size=chunk_size)
 
     def run_valid_epoch(self, data_iter: BatchIterable, dec_bos_cut=False):
         """
@@ -892,7 +890,7 @@ def __test_model__():
         'optim':{
             'args':{
                 # "cross_entropy", "smooth_kld", "binary_cross_entropy", "triplet_loss"
-                'criterion': "smooth_kld"
+                'criterion': "binary_cross_entropy"
             }
         }
     }
