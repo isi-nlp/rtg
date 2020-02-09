@@ -766,11 +766,12 @@ class TransformerTrainer(SteppedTrainer):
         :param check_pt_callback: function to call back after checkpt
         :param fine_tune: should the fine tune corpus be used instead of training corpus
         :param dec_bos_cut: copy the first time step of input as decoder's BOS
-        :param keep_models: how many to checkpts to keep
+        :param keep_models: how many checkpts to keep
         :param args: any extra args
         :return:
         """
         log_resources = args.pop('log_resources', False)
+        log_embedding = args.pop('log_embedding', False)
         assert log_interval > 0
         if args:
             # no extra args. let user know if an extra arg is passed
@@ -835,7 +836,8 @@ class TransformerTrainer(SteppedTrainer):
                     train_loss = train_state.reset()
                     train_state.train_mode(False)
                     val_loss = self.run_valid_epoch(val_data, dec_bos_cut=dec_bos_cut)
-                    self.make_check_point(train_loss, val_loss=val_loss, keep_models=keep_models)
+                    self.make_check_point(train_loss, val_loss=val_loss, keep_models=keep_models,
+                                          log_embedding=log_embedding)
                     if check_pt_callback:
                         check_pt_callback(model=self.model,
                                           step=self.opt.curr_step,

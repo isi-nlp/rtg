@@ -289,7 +289,8 @@ class SteppedTrainer:
             outs = '\n'.join(outs)
             log.info(f"==={i}===\nSRC:{line}\nREF:{ref}\n{outs}")
 
-    def make_check_point(self, train_loss: float, val_loss: float, keep_models: int):
+    def make_check_point(self, train_loss: float, val_loss: float, keep_models: int,
+                         log_embedding=False):
         """
         Check point the model
         :param train_loss: training loss value
@@ -308,10 +309,11 @@ class SteppedTrainer:
 
         self.tbd.add_scalars(f'losses', {'train_loss': train_loss,
                                          'valid_loss': val_loss}, step_num)
-        # TODO: add metadata (text) of each subword
-        # TODO: Update tag to include tie configuration
-        self.tbd.add_embedding(self.model.generator.proj.weight,
-                               global_step=step_num, tag=f'Target embeddings')
+        if log_embedding:
+            # TODO: add metadata (text) of each subword
+            # TODO: Update tag to include tie configuration
+            self.tbd.add_embedding(self.model.generator.proj.weight,
+                                   global_step=step_num, tag=f'Target embeddings')
 
         # Unwrap model state from DataParallel and persist
         model = (self.model.module if isinstance(self.model, nn.DataParallel) else self.model)
