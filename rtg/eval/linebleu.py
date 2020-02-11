@@ -11,6 +11,7 @@ import argparse
 import sys
 import logging as log
 from itertools import zip_longest
+import io
 
 log.basicConfig(level=log.INFO)
 
@@ -56,7 +57,7 @@ def sentence_bleu(cand: Union[str, List[str]], ref: Union[str, List[str]], n: in
     n_precisions = [n_gram_precision(cand, ref, i) for i in range(1, n + 1)]
     n_precision = functools.reduce(operator.mul, n_precisions, 1.0)
     precision = pow(n_precision, 1.0 / n)
-    brevity_penalty = min(1.0, len(cand) / len(ref))
+    brevity_penalty = min(1.0, len(cand) / len(ref))  # TODO: exponent
     bleu_score = brevity_penalty * precision
     if log.getLogger().isEnabledFor(level=log.DEBUG):
         msg = f'score={bleu_score:g} brev_penalty={brevity_penalty:g} precisions:{n_precisions}' \
@@ -94,11 +95,13 @@ def main(cands, refs, n, out, no_refs=False, no_cands=False):
 
 
 if __name__ == '__main__':
+    stdin = io.TextIOWrapper(sys.stdin.buffer, encoding='utf-8', errors='ignore', newline='\n')
+    stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='ignore')
     p = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter,
                                 description="Computes BLEU score per record.")
-    p.add_argument('-c', '--cands', type=argparse.FileType('r'), default=sys.stdin,
+    p.add_argument('-c', '--cands', type=argparse.FileType('r'), default=stdin,
                    help='Candidate (aka output from NLG system) file')
-    p.add_argument('-r', '--refs', type=argparse.FileType('r'), default=sys.stdin,
+    p.add_argument('-r', '--refs', type=argparse.FileType('r'), default=stdin,
                    help='Reference (aka human label) file')
     p.add_argument('-n', '--n', type=int, default=4,
                    help='maximum n as in ngram.')
@@ -106,11 +109,11 @@ if __name__ == '__main__':
                    action='store_true')
     p.add_argument('-nc', '--no-cands', help='Do not write candidates to --out',
                    action='store_true')
-    p.add_argument('-o', '--out', type=argparse.FileType('w'), default=sys.stdout,
+    p.add_argument('-o', '--out', type=argparse.FileType('w'), default=stdout,
                    help='Output file path to store the result.')
     p.add_argument('-v', '--verbose', action='store_true', help='verbose mode')
     args = vars(p.parse_args())
-    assert not(args['cands'] == sys.stdin and args['refs'] == sys.stdout), \
+    assert not(args['cands'] == stdin and args['refs'] == stdin), \
         'Only one of --refs and --cands can be read from STDIN'
 
     if args.pop('verbose'):
