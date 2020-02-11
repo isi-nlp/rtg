@@ -47,16 +47,19 @@ class CrossEntropy(Criterion):
 
 class BinaryCrossEntropy(Criterion):
 
-    def __init__(self):
+    def __init__(self, smoothing=0.1):
+        assert 0 <= smoothing < 1
         super().__init__(input_type='logits')
         self.bce_loss = nn.BCEWithLogitsLoss(reduction='none')
+        self.smoothing = smoothing
 
     def forward(self, logits, targets, mask_pad=True):
         # logits: [B x V] targets: [B]
         assert targets.shape[0] == logits.shape[0]
         targets = targets.unsqueeze(1)
 
-        truth_full = torch.zeros_like(logits, requires_grad=False)
+        truth_full = torch.full_like(logits, fill_value=self.smoothing, requires_grad=False)
+        #truth_full = torch.zeros_like(logits, requires_grad=False)
         truth_full.scatter_(1, targets, 1)
 
         per_time_per_class_loss = self.bce_loss(logits, truth_full)

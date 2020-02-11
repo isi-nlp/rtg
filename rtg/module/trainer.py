@@ -240,13 +240,14 @@ class SteppedTrainer:
 
     def create_criterion(self, criterion):
         log.info(f"Criterion = {criterion}")
+        smoothing = self.exp.optim_args[1].get('label_smoothing', 0.0)
         if criterion == 'smooth_kld':
             return criteria.SmoothKLD(vocab_size=self.model.generator.vocab,
-                                  smoothing=self.exp.optim_args[1]['label_smoothing'])
+                                  smoothing=smoothing)
         elif criterion == 'cross_entropy':
             return criteria.CrossEntropy()
         elif criterion == 'binary_cross_entropy':
-            return criteria.BinaryCrossEntropy()
+            return criteria.BinaryCrossEntropy(smoothing=smoothing)
         elif criterion == 'triplet_loss':
             tgt_embedding = self.model.tgt_embed[0].lut
             return criteria.TripletLoss(embedding=tgt_embedding)
