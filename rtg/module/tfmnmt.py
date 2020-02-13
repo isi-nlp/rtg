@@ -1,4 +1,4 @@
-# Tensor 2 Tensor aka Attention is all you need
+# Transformer aka "Attention is all you need"
 # Thanks to http://nlp.seas.harvard.edu/2018/04/03/attention.html
 import os
 import copy
@@ -8,6 +8,7 @@ import inspect
 import gc
 from abc import ABC
 from typing import Callable, Optional, List, Union
+import traceback
 
 import torch
 import torch.nn as nn
@@ -19,6 +20,7 @@ from rtg import device, log, my_tensor as tensor, TranslationExperiment as Exper
 from rtg.dataprep import Batch, BatchIterable
 from rtg.module import NMTModel
 from rtg.module.trainer import TrainerState, SteppedTrainer
+from rtg.module.criterion import Criterion
 from torch.optim.optimizer import Optimizer
 from dataclasses import dataclass
 
@@ -31,15 +33,51 @@ def clones(module, N):
 class Generator(nn.Module):
     "Define standard linear + softmax generation step."
 
+    # compile a pool of post processors
+    scores = {
+        'logits': lambda x, dim=None: x,
+        'softmax': F.softmax,
+        'log_softmax': F.log_softmax,
+        'sigmoid': lambda x, dim=None: x.sigmoid(),
+        'embedding': None,
+        'identity': None
+    }
+
     def __init__(self, d_model: int, vocab: int):
         super().__init__()
         self.d_model = d_model
         self.vocab = vocab
         self.proj = nn.Linear(d_model, vocab)
+        self.warn_msgs = set()
 
-    def forward(self, x, log_probs=True):
+    def forward(self, x, score=None, gen_probs=True, log_probs=True):
+        """
+        :param x: features or hidden states
+        :param score: what scores are do you want in return? Your options are
+            'logits' -- scores without any normalization
+            'softmax' -- raw probs for multi class
+            'log_softmax' -- log probs for multiclass
+            'sigmoid' -- for multilabel task
+        :param gen_probs: (deprecated, use 'score=logits') False to get logits; default is True
+        :param log_probs: (deprecated, use score='log_softmax' or 'softmax').
+            False to get raw probs from softmax, True to get probs from log_softmax.
+        :return: scores based on choice of score=xxx
+        """
+        # made this mess to preserve backward compatibility
+        if not score:
+            score = 'logits'
+            if gen_probs:
+                score = 'log_softmax' if log_probs else 'softmax'
+            warn_msg = f'API deprecated. use "score={score}" attribute.'
+            if warn_msg not in self.warn_msgs:  # warn only Once
+                self.warn_msgs.add(warn_msg)
+                log.warning(warn_msg)
+                traceback.print_stack(limit=6)
+        assert score in self.scores, f'{self.scores.keys()} supported but given "{score}"'
+        if score == 'embedding' or score == 'identity':
+            return x
         x = self.proj(x)
-        return (F.log_softmax if log_probs else F.softmax)(x, dim=-1)
+        return self.scores[score](x, dim=-1)
 
 
 class EncoderLayer(nn.Module):
@@ -500,56 +538,20 @@ class PositionalEncoding(nn.Module):
         return self.dropout(x)
 
 
-class LabelSmoothing(nn.Module):
-    """
-    Label smoothing
-    """
-
-    def __init__(self, vocab_size: int, padding_idx: int, smoothing=0.1):
-        super().__init__()
-        self.size = vocab_size
-        assert 0.0 <= smoothing <= 1.0
-        self.padding_idx = padding_idx
-        # want elementwise_mean but due to padded tokens, we do the division ourselves
-        self.criterion = nn.KLDivLoss(reduction='sum')
-        self.fill_val = smoothing / (vocab_size - 2)  # exclude 2  = padding, and expected word
-        self.confidence = 1.0 - smoothing
-
-    def forward(self, x, target):
-        # 'x' is log probabilities, originally [B, T, V], but here [B.T, V]
-        # 'target' is expected word Ids, originally [B, T] but here [B.T]
-        assert x.shape[1] == self.size
-        assert x.shape[0] == target.shape[0]
-        target = target.unsqueeze(1)  # [B.T x 1]   # and it has class_idx of correct class
-
-        smooth_truth = torch.full_like(x, fill_value=self.fill_val, requires_grad=False)
-        smooth_truth[:, self.padding_idx] = 0
-        smooth_truth.scatter_(1, target, self.confidence)
-
-        mask = target.eq(self.padding_idx)
-        smooth_truth.masked_fill_(mask, 0)
-        # note: x is log probs, smooth_truth is just probs
-        loss = self.criterion(x, smooth_truth)
-        # loss is a scalar value (0-dim )
-        # but data parallel expects tensors (for gathering along a dim), so doing this
-        return loss.unsqueeze(0)
-
-
 @dataclass
 class SimpleLossFunction:
     """
     A simple loss function that computes the loss using the criterion given
     """
     generator: Generator
-    criterion: LabelSmoothing
+    criterion: Criterion
     opt: Optimizer
 
     def __call__(self, x_feats, y_seqs, normalizer, train_mode=True):
-        x_probs = self.generator(x_feats)  # B x T x D --> B x T x V
+        x_probs = self.generator(x_feats, score=self.criterion.input_type) # B x T x D --> B x T x V
 
         scores = x_probs.contiguous().view(-1, x_probs.size(-1))  # B x T x V --> B.T x V
         truth = y_seqs.contiguous().view(-1)  # B x T --> B.T
-        # TODO: normalize by per sequence length, not just the total number of tokens
         loss = self.criterion(scores, truth).sum() / normalizer
         if train_mode:  # don't do this for validation set
             loss.backward()
@@ -573,7 +575,7 @@ class ChunkedLossCompute(SimpleLossFunction):
         for i in range(0, _y_feats.shape[1], chunk_size):
             # grad network is cut here
             chunked_feats = _y_feats[:, i:i + chunk_size]
-            chunked_dist = self.generator(chunked_feats)
+            chunked_dist = self.generator(chunked_feats, score=self.criterion.input_type)
 
             chunked_dist = chunked_dist.contiguous().view(-1, chunked_dist.shape[
                 -1])  # B x C x V -> B.C x V
@@ -593,7 +595,7 @@ class ChunkedLossCompute(SimpleLossFunction):
 
 class MultiGPULossFunction(ChunkedLossCompute):
 
-    def __init__(self, dp_module: nn.DataParallel, criterion: LabelSmoothing, opt: Optimizer,
+    def __init__(self, dp_module: nn.DataParallel, criterion: Criterion, opt: Optimizer,
                  chunk_size: int, devices: List, out_device=None):
         super().__init__(None, criterion, opt, chunk_size)
         self.multi_gpu = len(devices) > 1
@@ -618,6 +620,7 @@ class MultiGPULossFunction(ChunkedLossCompute):
         # Scatter is handled by pytorch's dataparallel utils
         sct_feats = nn.parallel.scatter(_y_feats, target_gpus=self.devices, dim=batch_dim)
         sct_ys = nn.parallel.scatter(y_seqs, target_gpus=self.devices, dim=batch_dim)
+        kwargs_tup = [dict(score=self.criterion.input_type) for _ in sct_feats]
         assert len(sct_feats) == len(sct_ys)
 
         n_scts = len(sct_feats)  # if the batch is smaller than n_gpus; only use a subset
@@ -636,10 +639,11 @@ class MultiGPULossFunction(ChunkedLossCompute):
 
         for i in range(0, seq_len, chunk_size):
             chk_sct_feats = [sf[:, i:i + chunk_size] for sf in sct_feats]
-            chk_sct_flat_ys = [sy[:, i:i + chunk_size].contiguous().view(-1) for sy in
-                               sct_ys]  # also falttened
 
-            chk_sct_dist = nn.parallel.parallel_apply(sct_generators, chk_sct_feats)
+            chk_sct_flat_ys = [sy[:, i:i + chunk_size].contiguous().view(-1) for sy in sct_ys]
+
+            chk_sct_dist = nn.parallel.parallel_apply(sct_generators, chk_sct_feats,
+                                                      kwargs_tup=kwargs_tup)
             chk_sct_flt_dist = [chk_dist.contiguous().view(-1, chk_dist.shape[-1]) for chk_dist in
                                 chk_sct_dist]
             args_pair = list(zip(chk_sct_flt_dist, chk_sct_flat_ys))
@@ -672,10 +676,6 @@ class TransformerTrainer(SteppedTrainer):
                  **optim_args):
         super().__init__(exp, model, model_factory=model_factory, optim=optim, **optim_args)
         generator = self.model.generator
-        criterion = LabelSmoothing(vocab_size=generator.vocab,
-                                   padding_idx=Batch.pad_value,
-                                   smoothing=self._smoothing)
-
         self.n_gpus = torch.cuda.device_count()
         chunk_size = self.exp.config.get('trainer', {}).get('init_args', {}).get('chunk_size', 10)
         log.info(f"Going to use {self.n_gpus} GPUs; "
@@ -687,11 +687,11 @@ class TransformerTrainer(SteppedTrainer):
             log.warning("Multi GPU mode <<this feature is not well tested>>")
             self.model = nn.DataParallel(self.model, dim=0, device_ids=device_ids)
 
-            self.loss_func = MultiGPULossFunction(self.model, criterion=criterion,
+            self.loss_func = MultiGPULossFunction(self.model, criterion=self.criterion,
                                                   opt=self.opt,
                                                   chunk_size=chunk_size, devices=device_ids)
         else:
-            self.loss_func = ChunkedLossCompute(generator=generator, criterion=criterion,
+            self.loss_func = ChunkedLossCompute(generator=generator, criterion=self.criterion,
                                                 opt=self.opt, chunk_size=chunk_size)
 
     def run_valid_epoch(self, data_iter: BatchIterable, dec_bos_cut=False):
@@ -766,11 +766,12 @@ class TransformerTrainer(SteppedTrainer):
         :param check_pt_callback: function to call back after checkpt
         :param fine_tune: should the fine tune corpus be used instead of training corpus
         :param dec_bos_cut: copy the first time step of input as decoder's BOS
-        :param keep_models: how many to checkpts to keep
+        :param keep_models: how many checkpts to keep
         :param args: any extra args
         :return:
         """
         log_resources = args.pop('log_resources', False)
+        log_embedding = args.pop('log_embedding', False)
         assert log_interval > 0
         if args:
             # no extra args. let user know if an extra arg is passed
@@ -835,7 +836,8 @@ class TransformerTrainer(SteppedTrainer):
                     train_loss = train_state.reset()
                     train_state.train_mode(False)
                     val_loss = self.run_valid_epoch(val_data, dec_bos_cut=dec_bos_cut)
-                    self.make_check_point(train_loss, val_loss=val_loss, keep_models=keep_models)
+                    self.make_check_point(train_loss, val_loss=val_loss, keep_models=keep_models,
+                                          log_embedding=log_embedding)
                     if check_pt_callback:
                         check_pt_callback(model=self.model,
                                           step=self.opt.curr_step,
@@ -876,7 +878,7 @@ def __test_model__():
         'hid_size': 64,
         'ff_size': 64,
         'n_heads': 4,
-        'activation': 'gelu'
+        'activation': 'relu'
     }
     if False:
         for n, p in model.named_parameters():
@@ -884,11 +886,21 @@ def __test_model__():
 
     from rtg.module.decoder import Decoder
 
-    config = {'model_type': 'tfmnmt', 'trainer': {'init_args': {'chunk_size': 2}}}
+    config = {
+        'model_type': 'tfmnmt',
+        'trainer': {'init_args': {'chunk_size': 2}},
+        'optim':{
+            'args':{
+                # "cross_entropy", "smooth_kld", "binary_cross_entropy", "triplet_loss"
+                'criterion': "binary_cross_entropy"
+            }
+        }
+    }
+
     exp = DummyExperiment("work.tmp.t2t", config=config, read_only=True,
                           vocab_size=vocab_size)
     exp.model_args = args
-    trainer = TransformerTrainer(exp=exp, warmup_steps=200)
+    trainer = TransformerTrainer(exp=exp, warmup_steps=200, **config['optim']['args'])
     decr = Decoder.new(exp, trainer.model)
 
     assert 2 == Batch.bos_val

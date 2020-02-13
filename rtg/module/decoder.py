@@ -232,6 +232,10 @@ class Decoder:
 
         model = model.eval().to(device=device)
         generator = generators[model_type]
+        if exp.optim_args[1]['criterion'] == 'binary_cross_entropy':
+            log.info("((Going to decode in multi-label mode))")
+            gen_args = gen_args or {}
+            gen_args['multi_label'] = True
         return cls(model, generator, exp, gen_args)
 
     def greedy_decode(self, x_seqs, x_lens, max_len, **args) -> List[Hypothesis]:
