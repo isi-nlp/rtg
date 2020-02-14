@@ -19,6 +19,8 @@ optim:
     lr: 0.2
     warmup_steps: 8000
     constant: 2
+    criterion: smooth_kld  # multi label classification, binary decision per class
+    # all options "cross_entropy", "smooth_kld", "binary_cross_entropy", "triplet_loss"
   name: ADAM
 prep: # data preparation
   max_types: 8000  # maximum number of types in vocab ; if shared_vocab=false, set max_src_types and max_tgt_types separately instead of this one
@@ -62,6 +64,7 @@ tester:
 trainer:
   init_args:
     chunk_size: 10   # generation in chunks of time steps to reduce memory consumption
+    grad_accum: 1    # How many batches to accumulate gradients over
   batch_size: 4200   # not exceeding these many tokens (including paddings). in tensor2tensor it is mean batch size
   check_point: 1000  # how often to checkpoint?
   keep_models: 10   # how many checkpoints to keep on disk (small enough to save disk, large enough for checkpt averaging
