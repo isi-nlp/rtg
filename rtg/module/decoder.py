@@ -160,6 +160,7 @@ class Decoder:
 
     @staticmethod
     def average_states(model_paths: List[Path]):
+        assert model_paths, 'at least one model checkpoint should be given. Check your directory'
         for i, mp in enumerate(model_paths):
             next_state = Decoder._checkpt_to_model_state(mp)
             if i < 1:
