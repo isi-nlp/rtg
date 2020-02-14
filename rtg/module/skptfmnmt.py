@@ -147,7 +147,7 @@ def __test_model__():
 
     config = {
         'model_type': 'skptfmnmt',
-        'trainer': {'init_args': {'chunk_size': 2}},
+        'trainer': {'init_args': {'chunk_size': 2, 'grad_accum': 2}},
         'optim': {
             'args': {
                 # "cross_entropy", "smooth_kld", "binary_cross_entropy", "triplet_loss"
@@ -174,8 +174,8 @@ def __test_model__():
             log.info(f'{score:.4f} :: {seq}')
 
     batch_size = 50
-    steps = 1000
-    check_point = 50
+    steps = 500
+    check_point = 25
     trainer.train(steps=steps, check_point=check_point, batch_size=batch_size,
                   check_pt_callback=check_pt_callback)
 
