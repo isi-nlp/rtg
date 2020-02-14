@@ -232,7 +232,7 @@ class Decoder:
 
         model = model.eval().to(device=device)
         generator = generators[model_type]
-        if exp.optim_args[1]['criterion'] == 'binary_cross_entropy':
+        if exp.optim_args[1] and exp.optim_args[1].get('criterion') == 'binary_cross_entropy':
             log.info("((Going to decode in multi-label mode))")
             gen_args = gen_args or {}
             gen_args['multi_label'] = True
