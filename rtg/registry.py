@@ -7,13 +7,17 @@
 
 
 from rtg.module.tfmnmt import TransformerTrainer
+from rtg.module.skptfmnmt import SKPTransformerTrainer
 from rtg.module.wvtfmnmt import WVTransformerTrainer
+from rtg.module.wvskptfmnmt import WVSKPTransformerTrainer
 from rtg.module.mtfmnmt import MTransformerTrainer
 from rtg.module.rnnmt import SteppedRNNMTTrainer
 from rtg.binmt.bicycle import BiNmtTrainer
 from rtg.lm.rnnlm import RnnLmTrainer
 from rtg.lm.tfmlm import TfmLmTrainer
+from rtg.module.skptfmnmt import SkipTransformerNMT
 from rtg.module.wvtfmnmt import WidthVaryingTransformerNMT
+from rtg.module.wvskptfmnmt import WidthVaryingSkipTransformerNMT
 from rtg.module.mtfmnmt import MTransformerNMT
 from rtg.module.ext.tfmextemb import TfmExtEmbNMT
 from rtg.module.hybridmt import HybridMT
@@ -25,7 +29,9 @@ trainers = {
     'binmt': BiNmtTrainer,
     'seq2seq': SteppedRNNMTTrainer,
     'tfmnmt': TransformerTrainer,
+    'skptfmnmt': SKPTransformerTrainer,
     'wvtfmnmt': WVTransformerTrainer,
+    'wvskptfmnmt': WVSKPTransformerTrainer,
     'rnnmt': SteppedRNNMTTrainer,
     'rnnlm': RnnLmTrainer,
     'tfmlm': TfmLmTrainer,
@@ -41,7 +47,9 @@ factories = {
     'seq2seq': RNNMT.make_model,
     'binmt': BiNMT.make_model,
     'tfmnmt': TransformerNMT.make_model,
+    'skptfmnmt': SkipTransformerNMT.make_model,
     'wvtfmnmt': WidthVaryingTransformerNMT.make_model,
+    'wvskptfmnmt': WidthVaryingSkipTransformerNMT.make_model,
     'rnnmt': RNNMT.make_model,
     'rnnlm': RnnLm.make_model,
     'tfmlm': TfmLm.make_model,
@@ -58,7 +66,9 @@ generators = {
     'binmt': BiNMTGenerator,
     'combo': ComboGenerator,
     'tfmnmt': T2TGenerator,
+    'skptfmnmt': T2TGenerator,
     'wvtfmnmt': T2TGenerator,
+    'wvskptfmnmt': T2TGenerator,
     'rnnmt': Seq2SeqGenerator,
     'rnnlm': RnnLmGenerator,
     'tfmlm': TfmLmGenerator,
