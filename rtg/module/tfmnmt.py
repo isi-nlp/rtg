@@ -674,13 +674,14 @@ class TransformerTrainer(SteppedTrainer):
 
         # Gradient accumulation
         opt_steps = steps
-        steps = steps * self.grad_accum_interval
+        batches = steps * self.grad_accum_interval
+        start_batch = self.start_step * self.grad_accum_interval
         check_point = check_point * self.grad_accum_interval
 
         if args:
             # no extra args. let user know if an extra arg is passed
             raise Exception(f" Found extra args: {args}")
-        log.info(f'Going to train for {opt_steps} optimizer steps over {steps} batches'
+        log.info(f'Going to train for {opt_steps} optimizer steps over {batches} batches'
                  f' (from {self.start_step} steps);'
                  f' batch_size={batch_size} toks; sort_by={sort_by};'
                  f' check point size:{check_point}; fine_tune={fine_tune};'
@@ -689,10 +690,10 @@ class TransformerTrainer(SteppedTrainer):
             batch_size *= self.n_gpus
             log.info(f"# GPUs = {self.n_gpus}, batch_size is set to {batch_size}")
 
-        if steps <= self.start_step:
+        if batches <= start_batch:
             raise Exception(f'The model was already trained to {self.start_step} steps. '
                             f'Please increase the steps or clear the existing models')
-        train_data = self.exp.get_train_data(batch_size=batch_size, steps=steps - self.start_step,
+        train_data = self.exp.get_train_data(batch_size=batch_size, steps=batches - start_batch,
                                              sort_by=sort_by, batch_first=True, fine_tune=fine_tune)
         val_data = self.exp.get_val_data(batch_size, shuffle=False, batch_first=True,
                                          sort_desc=False)
@@ -702,7 +703,7 @@ class TransformerTrainer(SteppedTrainer):
         unsaved_state = False
         cuda_available = torch.cuda.is_available()
         update_interval = 0
-        with tqdm(train_data, initial=self.start_step, total=steps, unit='batch',
+        with tqdm(train_data, initial=self.start_step, total=batches, unit='batch',
                   dynamic_ncols=True) as data_bar:
             for batch in data_bar:
                 if update_interval == 0:
