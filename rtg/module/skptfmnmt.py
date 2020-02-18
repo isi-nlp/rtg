@@ -5,25 +5,21 @@
 
 
 import copy
-import inspect
 import torch
 import torch.nn as nn
 from abc import ABC
-from typing import *
+from typing import List, Optional
 
-from rtg.module.tfmnmt import (EncoderLayer, DecoderLayer, PositionwiseFeedForward, MultiHeadedAttention, clones,
-                               Embeddings, PositionalEncoding, Generator, AbstractTransformerNMT, TransformerTrainer)
+from rtg.module import tfmnmt as tfm
+from rtg.utils import get_my_args
 from rtg import TranslationExperiment as Experiment, log
 
 
-class SkipEncoder(nn.Module):
+class SkipEncoder(tfm.Encoder):
     """Core encoder is a stack of N layers"""
 
-    def __init__(self, layer: EncoderLayer, N: int, depth_probs: List[float] = None):
-        super().__init__()
-        self.layers = clones(layer, N)
-        self.norm = nn.LayerNorm(layer.size)
-
+    def __init__(self, layer: tfm.EncoderLayer, N: int, depth_probs: List[float] = None):
+        super().__init__(layer=layer, N=N)
         if depth_probs:
             assert len(depth_probs) == N
             self.depth_probs = depth_probs
@@ -38,14 +34,11 @@ class SkipEncoder(nn.Module):
         return self.norm(x)
 
 
-class SkipDecoder(nn.Module):
+class SkipDecoder(tfm.Decoder):
     """Generic N layer decoder with masking."""
 
-    def __init__(self, layer: DecoderLayer, N: int, depth_probs: List[float] = None):
-        super().__init__()
-        self.layers = clones(layer, N)
-        self.norm = nn.LayerNorm(layer.size)
-
+    def __init__(self, layer: tfm.DecoderLayer, N: int, depth_probs: List[float] = None):
+        super().__init__(layer=layer, n_layers=N)
         if depth_probs:
             assert len(depth_probs) == N
             self.depth_probs = depth_probs
@@ -59,14 +52,14 @@ class SkipDecoder(nn.Module):
         return self.norm(x)
 
 
-class SkipTransformerNMT(AbstractTransformerNMT, ABC):
+class SkipTransformerNMT(tfm.AbstractTransformerNMT, ABC):
     """
     A standard Encoder-Decoder Transformer architecture.
     """
 
     def __init__(self, encoder: SkipEncoder, decoder: SkipDecoder,
                  src_embed, tgt_embed,
-                 generator: Optional[Generator], tgt_vocab=None):
+                 generator: Optional[tfm.Generator], tgt_vocab=None):
         super().__init__(encoder=encoder, decoder=decoder,
                          src_embed=src_embed, tgt_embed=tgt_embed,
                          generator=generator, tgt_vocab=tgt_vocab)
@@ -82,32 +75,31 @@ class SkipTransformerNMT(AbstractTransformerNMT, ABC):
                    dec_depth_probs: List[float] = (1.0, 0.9, 0.8, 0.7, 0.6, 0.5),
                    exp: Experiment = None):
         """Helper: Construct a model from hyper parameters."""
-
+        assert len(enc_depth_probs) == enc_layers
+        assert len(dec_depth_probs) == dec_layers
         # get all args for reconstruction at a later phase
-        _, _, _, args = inspect.getargvalues(inspect.currentframe())
-        for exclusion in ['cls', 'exp']:
-            del args[exclusion]  # exclude some args
-        # In case you are wondering, why I didnt use **kwargs here:
-        #   these args are read from conf file where user can introduce errors, so the parameter
-        #   validation and default value assignment is implicitly done by function call for us :)
+        args = get_my_args(exclusions=['cls', 'exp'])
+
         assert activation in {'relu', 'elu', 'gelu'}
         log.info(f"Make model, Args={args}")
         c = copy.deepcopy
-        attn = MultiHeadedAttention(n_heads, hid_size, dropout=dropout, bias=attn_bias)
-        ff = PositionwiseFeedForward(hid_size, ff_size, dropout, activation=activation)
+        attn = tfm.MultiHeadedAttention(n_heads, hid_size, dropout=dropout, bias=attn_bias)
+        ff = tfm.PositionwiseFeedForward(hid_size, ff_size, dropout, activation=activation)
 
         if enc_layers == 0:
             log.warning("Zero encoder layers!")
-        encoder = SkipEncoder(EncoderLayer(hid_size, c(attn), c(ff), dropout), enc_layers, enc_depth_probs)
+        encoder = SkipEncoder(tfm.EncoderLayer(hid_size, c(attn), c(ff), dropout), enc_layers,
+                              enc_depth_probs)
 
         assert dec_layers > 0
-        decoder = SkipDecoder(DecoderLayer(hid_size, c(attn), c(attn), c(ff), dropout), dec_layers, dec_depth_probs)
+        decoder = SkipDecoder(tfm.DecoderLayer(hid_size, c(attn), c(attn), c(ff), dropout),
+                              dec_layers, dec_depth_probs)
 
-        src_emb = nn.Sequential(Embeddings(hid_size, src_vocab),
-                                PositionalEncoding(hid_size, dropout))
-        tgt_emb = nn.Sequential(Embeddings(hid_size, tgt_vocab),
-                                PositionalEncoding(hid_size, dropout))
-        generator = Generator(hid_size, tgt_vocab)
+        src_emb = nn.Sequential(tfm.Embeddings(hid_size, src_vocab),
+                                tfm.PositionalEncoding(hid_size, dropout))
+        tgt_emb = nn.Sequential(tfm.Embeddings(hid_size, tgt_vocab),
+                                tfm.PositionalEncoding(hid_size, dropout))
+        generator = tfm.Generator(hid_size, tgt_vocab)
 
         model = cls(encoder, decoder, src_emb, tgt_emb, generator)
 
@@ -118,7 +110,7 @@ class SkipTransformerNMT(AbstractTransformerNMT, ABC):
         return model, args
 
 
-class SKPTransformerTrainer(TransformerTrainer):
+class SKPTransformerTrainer(tfm.TransformerTrainer):
 
     def __init__(self, *args, model_factory=SkipTransformerNMT.make_model, **kwargs):
         super().__init__(*args, model_factory=model_factory, **kwargs)

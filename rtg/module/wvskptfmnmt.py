@@ -4,35 +4,24 @@
 # Created: 2/13/20
 
 
-import inspect
 import torch
 import torch.nn as nn
-from abc import ABC
-from typing import *
+from typing import List, Optional
 
-from rtg.module.tfmnmt import (EncoderLayer, DecoderLayer, PositionwiseFeedForward, MultiHeadedAttention,
-                               Embeddings, PositionalEncoding, Generator, AbstractTransformerNMT, TransformerTrainer)
+from rtg.module import wvtfmnmt as wvtfm
+from rtg.module import tfmnmt as tfm
 from rtg import TranslationExperiment as Experiment, log
+from rtg.utils import get_my_args
 
 
-class WidthVaryingSkipEncoder(nn.Module):
+class WidthVaryingSkipEncoder(wvtfm.WidthVaryingEncoder):
     """Stack of N encoders with heterogeneous feed forward dimensions"""
 
     def __init__(self, d_model: int, ff_dims: List[int], N: int,
                  n_heads: int, dropout: float, activation: str = 'relu',
                  depth_probs: List[float] = None):
-        super().__init__()
-
-        # Make N layers with different pointwise ff_dims
-        assert len(ff_dims) >= N, 'Not enough ff_dims to complete the model'
-        layers = list()
-        for n in range(N):
-            attn = MultiHeadedAttention(n_heads, d_model, dropout)
-            ff = PositionwiseFeedForward(d_model, ff_dims[n], dropout, activation=activation)
-            layers.append(EncoderLayer(d_model, attn, ff, dropout))
-        self.layers = nn.ModuleList(layers)
-        self.norm = nn.LayerNorm(d_model)
-
+        super().__init__(d_model=d_model, ff_dims=ff_dims,N=N, n_heads=n_heads, dropout=dropout,
+                         activation=activation)
         if depth_probs:
             assert len(depth_probs) == N
             self.depth_probs = depth_probs
@@ -47,24 +36,14 @@ class WidthVaryingSkipEncoder(nn.Module):
         return self.norm(x)
 
 
-class WidthVaryingSkipDecoder(nn.Module):
+class WidthVaryingSkipDecoder(wvtfm.WidthVaryingDecoder):
     """Stack of N decoders with heterogeneous feed forward dimensions"""
 
     def __init__(self, d_model: int, ff_dims: List[int], N: int,
                  n_heads: int, dropout: float, activation: str = 'relu',
                  depth_probs: List[float] = None):
-        super().__init__()
-
-        # Make N layers with different pointwise ff_dims
-        assert len(ff_dims) >= N, 'Not enough ff_dims to complete the model'
-        layers = list()
-        for n in range(N):
-            self_attn = MultiHeadedAttention(n_heads, d_model, dropout)
-            src_attn = MultiHeadedAttention(n_heads, d_model, dropout)
-            ff = PositionwiseFeedForward(d_model, ff_dims[n], dropout, activation=activation)
-            layers.append(DecoderLayer(d_model, self_attn, src_attn, ff, dropout))
-        self.layers = nn.ModuleList(layers)
-        self.norm = nn.LayerNorm(d_model)
+        super().__init__(d_model=d_model, ff_dims=ff_dims, N=N, n_heads=n_heads, dropout=dropout,
+                         activation=activation)
 
         if depth_probs:
             assert len(depth_probs) == N
@@ -79,12 +58,12 @@ class WidthVaryingSkipDecoder(nn.Module):
         return self.norm(x)
 
 
-class WidthVaryingSkipTransformerNMT(AbstractTransformerNMT, ABC):
+class WidthVaryingSkipTransformerNMT(tfm.AbstractTransformerNMT):
     """Enables heterogeneous feed forward dimensions in the Encoder and Decoder"""
 
     def __init__(self, encoder: WidthVaryingSkipEncoder, decoder: WidthVaryingSkipDecoder,
                  src_embed, tgt_embed,
-                 generator: Optional[Generator], tgt_vocab=None):
+                 generator: Optional[tfm.Generator], tgt_vocab=None):
         super().__init__(encoder=encoder, decoder=decoder,
                          src_embed=src_embed, tgt_embed=tgt_embed,
                          generator=generator, tgt_vocab=tgt_vocab)
@@ -103,13 +82,10 @@ class WidthVaryingSkipTransformerNMT(AbstractTransformerNMT, ABC):
                    exp: Experiment = None):
         """Helper: Construct a model from hyper parameters."""
 
+        assert len(eff_dims) == len(enc_depth_probs) == enc_layers
+        assert len(dff_dims) == len(dec_depth_probs) == dec_layers
         # get all args for reconstruction at a later phase
-        _, _, _, args = inspect.getargvalues(inspect.currentframe())
-        for exclusion in ['cls', 'exp']:
-            del args[exclusion]  # exclude some args
-        # In case you are wondering, why I didnt use **kwargs here:
-        #   these args are read from conf file where user can introduce errors, so the parameter
-        #   validation and default value assignment is implicitly done by function call for us :)
+        args = get_my_args(exclusions=['cls', 'exp'])
         assert activation in {'relu', 'elu', 'gelu'}
         log.info(f"Make model, Args={args}")
 
@@ -124,11 +100,11 @@ class WidthVaryingSkipTransformerNMT(AbstractTransformerNMT, ABC):
                                           n_heads=n_heads, dropout=dropout, activation=activation,
                                           depth_probs=dec_depth_probs)
 
-        src_emb = nn.Sequential(Embeddings(hid_size, src_vocab),
-                                PositionalEncoding(hid_size, dropout))
-        tgt_emb = nn.Sequential(Embeddings(hid_size, tgt_vocab),
-                                PositionalEncoding(hid_size, dropout))
-        generator = Generator(hid_size, tgt_vocab)
+        src_emb = nn.Sequential(tfm.Embeddings(hid_size, src_vocab),
+                                tfm.PositionalEncoding(hid_size, dropout))
+        tgt_emb = nn.Sequential(tfm.Embeddings(hid_size, tgt_vocab),
+                                tfm.PositionalEncoding(hid_size, dropout))
+        generator = tfm.Generator(hid_size, tgt_vocab)
 
         model = cls(encoder, decoder, src_emb, tgt_emb, generator)
 
@@ -139,7 +115,7 @@ class WidthVaryingSkipTransformerNMT(AbstractTransformerNMT, ABC):
         return model, args
 
 
-class WVSKPTransformerTrainer(TransformerTrainer):
+class WVSKPTransformerTrainer(tfm.TransformerTrainer):
 
     def __init__(self, *args, model_factory=WidthVaryingSkipTransformerNMT.make_model, **kwargs):
         super().__init__(*args, model_factory=model_factory, **kwargs)

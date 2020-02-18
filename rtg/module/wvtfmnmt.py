@@ -12,6 +12,7 @@ from typing import *
 from rtg.module.tfmnmt import (EncoderLayer, DecoderLayer, PositionwiseFeedForward, MultiHeadedAttention,
                                Embeddings, PositionalEncoding, Generator, AbstractTransformerNMT, TransformerTrainer)
 from rtg import TranslationExperiment as Experiment, log
+from rtg.utils import get_my_args
 
 
 class WidthVaryingEncoder(nn.Module):
@@ -22,11 +23,11 @@ class WidthVaryingEncoder(nn.Module):
         super().__init__()
 
         # Make N layers with different pointwise ff_dims
-        assert len(ff_dims) >= N, 'Not enough ff_dims to complete the model'
+        assert len(ff_dims) == N, f'N:{N} != ff_dims:{len(ff_dims)}'
         layers = list()
-        for n in range(N):
+        for ff_dim in ff_dims:
             attn = MultiHeadedAttention(n_heads, d_model, dropout)
-            ff = PositionwiseFeedForward(d_model, ff_dims[n], dropout, activation=activation)
+            ff = PositionwiseFeedForward(d_model, ff_dim, dropout, activation=activation)
             layers.append(EncoderLayer(d_model, attn, ff, dropout))
         self.layers = nn.ModuleList(layers)
         self.norm = nn.LayerNorm(d_model)
@@ -46,12 +47,12 @@ class WidthVaryingDecoder(nn.Module):
         super().__init__()
 
         # Make N layers with different pointwise ff_dims
-        assert len(ff_dims) >= N, 'Not enough ff_dims to complete the model'
+        assert len(ff_dims) == N, f'N:{N} != ff_dims:{len(ff_dims)}'
         layers = list()
-        for n in range(N):
+        for ff_dim in ff_dims:
             self_attn = MultiHeadedAttention(n_heads, d_model, dropout)
             src_attn = MultiHeadedAttention(n_heads, d_model, dropout)
-            ff = PositionwiseFeedForward(d_model, ff_dims[n], dropout, activation=activation)
+            ff = PositionwiseFeedForward(d_model, ff_dim, dropout, activation=activation)
             layers.append(DecoderLayer(d_model, self_attn, src_attn, ff, dropout))
         self.layers = nn.ModuleList(layers)
         self.norm = nn.LayerNorm(d_model)
@@ -83,13 +84,11 @@ class WidthVaryingTransformerNMT(AbstractTransformerNMT, ABC):
                    exp: Experiment = None):
         """Helper: Construct a model from hyper parameters."""
 
+        assert enc_layers == len(eff_dims)
+        assert dec_layers == len(dff_dims)
+
         # get all args for reconstruction at a later phase
-        _, _, _, args = inspect.getargvalues(inspect.currentframe())
-        for exclusion in ['cls', 'exp']:
-            del args[exclusion]  # exclude some args
-        # In case you are wondering, why I didnt use **kwargs here:
-        #   these args are read from conf file where user can introduce errors, so the parameter
-        #   validation and default value assignment is implicitly done by function call for us :)
+        args = get_my_args(exclusions=['cls', 'exp'])
         assert activation in {'relu', 'elu', 'gelu'}
         log.info(f"Make model, Args={args}")
 
@@ -132,10 +131,10 @@ def __test_model__():
     args = {
         'src_vocab': vocab_size,
         'tgt_vocab': vocab_size,
-        'enc_layers': 0,
+        'enc_layers': 2,
         'dec_layers': 4,
         'hid_size': 32,
-        'eff_dims': [],
+        'eff_dims': [16, 24],
         'dff_dims': [64, 128, 128, 64],
         'n_heads': 4,
         'activation': 'relu'

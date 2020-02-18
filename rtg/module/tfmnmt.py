@@ -17,6 +17,7 @@ from torch.autograd import Variable
 from tqdm import tqdm
 
 from rtg import device, log, my_tensor as tensor, TranslationExperiment as Experiment
+from rtg.utils import get_my_args
 from rtg.dataprep import Batch, BatchIterable
 from rtg.module import NMTModel
 from rtg.module.trainer import TrainerState, SteppedTrainer
@@ -229,7 +230,7 @@ class AbstractTransformerNMT(NMTModel, ABC):
         raise NotImplementedError
 
 
-class TransformerNMT(AbstractTransformerNMT, ABC):
+class TransformerNMT(AbstractTransformerNMT):
     """
     A standard Encoder-Decoder Transformer architecture.
     """
@@ -252,12 +253,7 @@ class TransformerNMT(AbstractTransformerNMT, ABC):
         "Helper: Construct a model from hyper parameters."
 
         # get all args for reconstruction at a later phase
-        _, _, _, args = inspect.getargvalues(inspect.currentframe())
-        for exclusion in ['cls', 'exp']:
-            del args[exclusion]  # exclude some args
-        # In case you are wondering, why I didnt use **kwargs here:
-        #   these args are read from conf file where user can introduce errors, so the parameter
-        #   validation and default value assignment is implicitly done by function call for us :)
+        args = get_my_args(exclusions=['cls', 'exp'])
         assert activation in {'relu', 'elu', 'gelu'}
         log.info(f"Make model, Args={args}")
         c = copy.deepcopy
