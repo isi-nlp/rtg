@@ -438,7 +438,7 @@ class SimpleLossFunction:
     opt: Optimizer
 
     def __call__(self, x_feats, y_seqs, normalizer, train_mode=True):
-        x_probs = self.generator(x_feats, score=self.criterion.input_type) # B x T x D --> B x T x V
+        x_probs = self.generator(x_feats, score=self.criterion.input_type)  # B x T x D --> B x T x V
 
         scores = x_probs.contiguous().view(-1, x_probs.size(-1))  # B x T x V --> B.T x V
         truth = y_seqs.contiguous().view(-1)  # B x T --> B.T
@@ -781,8 +781,17 @@ def __test_model__():
         'trainer': {'init_args': {'chunk_size': 2}},
         'optim':{
             'args':{
-                # "cross_entropy", "smooth_kld", "binary_cross_entropy", "triplet_loss"
-                'criterion': "binary_cross_entropy"
+                # "cross_entropy", "smooth_kld", "binary_cross_entropy",
+                # "triplet_loss", "smooth_kld_and_triplet_loss"
+                # 'criterion': "triplet_loss",
+                # 'criterion': "smooth_kld",
+                'criterion': "smooth_kld_and_triplet_loss",
+                'label_smoothing': 0.1,
+                'margin': 0.2,
+                'k': 1,
+                'mode': 'dot',
+                'neg_sampling': 'random',
+                'alpha': 1.0
             }
         }
     }

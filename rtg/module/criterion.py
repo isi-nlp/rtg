@@ -25,6 +25,7 @@ class Criterion(nn.Module, abc.ABC):
         self.pad_idx = pad_idx
         self.input_type = input_type
 
+
 class CrossEntropy(Criterion):
 
     def __init__(self):
@@ -78,7 +79,7 @@ class SmoothKLD(Criterion):
     Label smoothing
     """
 
-    def __init__(self, vocab_size: int, smoothing: float=0.1):
+    def __init__(self, vocab_size: int, smoothing: float = 0.1):
         super().__init__(input_type='log_softmax')
         self.size = vocab_size
         assert 0.0 <= smoothing <= 1.0
@@ -88,7 +89,7 @@ class SmoothKLD(Criterion):
         self.fill_val = smoothing / (vocab_size - 2)  # exclude 2  = padding, and expected word
         self.confidence = 1.0 - smoothing
 
-    def forward(self, x, target, mask_pad = True):
+    def forward(self, x, target, mask_pad=True):
         # 'x' is log probabilities, originally [B, T, V], but here [B.T, V]
         # 'target' is expected word Ids, originally [B, T] but here [B.T]
         assert x.shape[1] == self.size
@@ -111,16 +112,23 @@ class SmoothKLD(Criterion):
 
 
 class TripletLoss(Criterion):
-    ## Note: Triplet loss doesnt work fully yet; it sorta works and then overfits
+    # Note: Triplet loss doesnt work fully yet; it sorta works and then overfits
 
-    def __init__(self, embedding,  margin=0, mode='dot'):
+    def __init__(self, embedding,  margin: float = 0., k: int = 10,
+                 mode: str = 'dot', neg_sampling: str = 'random'):
         # TODO: whats the right margin?
-        super().__init__(input_type="embedding")
+        super().__init__(input_type='embedding')
         self.embedding = embedding
         self.vocab_size = embedding.weight.shape[0]
+        assert margin >= 0
         self.margin = margin
+        assert k > 0
+        self.k = k
         assert mode in ('dot', 'l2')
         self.mode = mode
+        assert neg_sampling in ('random', 'hard')
+        self.neg_sampling = neg_sampling
+        self.region = max(int(0.05 * self.vocab_size), 5)
 
     @classmethod
     def dot(cls, a, b):
@@ -139,20 +147,47 @@ class TripletLoss(Criterion):
 
     def forward(self, x, targets):
         # x: [B x D]   targets:[B]
-        anchors = x # [B x D]
+        anchors = x      # [B x D]
         pos_embs = self.embedding(targets)  # [B x D]
-        neg_ids = torch.randint_like(targets, low=self.pad_idx+1, high=self.vocab_size)
+        if self.neg_sampling == 'random':
+            neg_ids = torch.randint_like(targets, low=self.pad_idx+1, high=self.vocab_size)
+        elif self.neg_sampling == 'hard':
+            # candidates = torch.einsum('bd,vd->bv', anchors, self.embedding)
+            # candidates = candidates.masked_fill()
+            # neg_ids = 0
+            raise Exception('Hard negative sampling is not implemented yet')
+        else:
+            raise Exception(self.neg_sampling + ' not supported')
         neg_embs = self.embedding(neg_ids)   # [B x D]
 
         if self.mode == 'l2':
-            triplet_loss = self.distance(anchors, pos_embs) \
-                           - self.distance(anchors, neg_embs) + self.margin
+            triplet_loss = self.distance(anchors, pos_embs) - self.distance(anchors, neg_embs) + self.margin
             triplet_loss = F.relu(triplet_loss)
         elif self.mode == 'dot':
             triplet_loss = self.dot(anchors, pos_embs) - self.dot(anchors, neg_embs) + self.margin
             triplet_loss = F.relu(-triplet_loss)
         else:
             raise Exception(self.mode + ' not supported')
-        #triplet_loss = torch.exp(1 + triplet_loss).masked_fill(targets == self.pad_idx, 0)
-        triplet_loss = triplet_loss.masked_fill_(targets == self.pad_idx, 0)
+
+        triplet_loss = triplet_loss.masked_fill(targets == self.pad_idx, 0)
         return triplet_loss
+
+
+class SmoothKLDAndTripletLoss(Criterion):
+
+    def __init__(self, embedding, margin: float = 0., k: int = 10,
+                 mode: str = 'dot', neg_sampling: str = 'random',
+                 smoothing: float = 0.1, alpha: float = 1.0):
+        super().__init__(input_type='identity')
+        self.embeddings = embedding.weight
+        self.smoothKLD = SmoothKLD(embedding.weight.shape[0], smoothing)
+        self.tripletLoss = TripletLoss(embedding, margin, k, mode, neg_sampling)
+        self.alpha = alpha
+
+    def forward(self, x, targets, mask_pad=True):
+        smx = F.log_softmax(torch.einsum('bd,vd->bv', x, self.embeddings), dim=-1)
+        sKLD = self.smoothKLD(smx, targets, mask_pad)
+        tLoss = self.tripletLoss(x, targets)
+
+        # Must sum here to match sizes
+        return sKLD.sum() + self.alpha * tLoss.sum()

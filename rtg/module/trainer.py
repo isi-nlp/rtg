@@ -240,17 +240,28 @@ class SteppedTrainer:
 
     def create_criterion(self, criterion):
         log.info(f"Criterion = {criterion}")
+
         smoothing = self.exp.optim_args[1].get('label_smoothing', 0.0)
+        margin = self.exp.optim_args[1].get('margin', 0.0)
+        k = self.exp.optim_args[1].get('k', 1)
+        mode = self.exp.optim_args[1].get('mode', 'dot')
+        neg_sampling = self.exp.optim_args[1].get('neg_sampling', 'random')
+        alpha = self.exp.optim_args[1].get('alpha', 1.0)
+        tgt_embedding = self.model.tgt_embed[0].lut
+
         if criterion == 'smooth_kld':
-            return criteria.SmoothKLD(vocab_size=self.model.generator.vocab,
-                                  smoothing=smoothing)
+            return criteria.SmoothKLD(vocab_size=self.model.generator.vocab, smoothing=smoothing)
         elif criterion == 'cross_entropy':
             return criteria.CrossEntropy()
         elif criterion == 'binary_cross_entropy':
             return criteria.BinaryCrossEntropy(smoothing=smoothing)
         elif criterion == 'triplet_loss':
-            tgt_embedding = self.model.tgt_embed[0].lut
-            return criteria.TripletLoss(embedding=tgt_embedding)
+            return criteria.TripletLoss(embedding=tgt_embedding, margin=margin, k=k,
+                                        mode=mode, neg_sampling=neg_sampling)
+        elif criterion == 'smooth_kld_and_triplet_loss':
+            return criteria.SmoothKLDAndTripletLoss(embedding=tgt_embedding, margin=margin, k=k,
+                                                    mode=mode, neg_sampling=neg_sampling,
+                                                    smoothing=smoothing, alpha=alpha)
         else:
             raise Exception(f'criterion={criterion} is not supported')
 
