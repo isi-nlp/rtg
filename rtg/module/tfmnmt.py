@@ -248,8 +248,8 @@ class TransformerNMT(AbstractTransformerNMT):
 
     @classmethod
     def make_model(cls, src_vocab, tgt_vocab, enc_layers=6, dec_layers=6, hid_size=512, ff_size=2048,
-                   n_heads=8, attn_bias=True, dropout=0.1, tied_emb='three-way', activation='relu',
-                   exp: Experiment = None):
+                   n_heads=8, attn_bias=True, attn_dropout=0.1, dropout=0.2, activation='relu',
+                   tied_emb='three-way', exp: Experiment = None):
         "Helper: Construct a model from hyper parameters."
 
         # get all args for reconstruction at a later phase
@@ -257,7 +257,7 @@ class TransformerNMT(AbstractTransformerNMT):
         assert activation in {'relu', 'elu', 'gelu'}
         log.info(f"Make model, Args={args}")
         c = copy.deepcopy
-        attn = MultiHeadedAttention(n_heads, hid_size, dropout=dropout, bias=attn_bias)
+        attn = MultiHeadedAttention(n_heads, hid_size, dropout=attn_dropout, bias=attn_bias)
         ff = PositionwiseFeedForward(hid_size, ff_size, dropout, activation=activation)
 
         if enc_layers == 0:

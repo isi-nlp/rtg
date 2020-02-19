@@ -1,9 +1,10 @@
 model_args: # model construction args
-  dropout: 0.1
   eff_dims: [5120, 4096, 3072, 2048, 1024, 512]
   dff_dims: [5120, 4096, 3072, 2048, 1024, 512]
   hid_size: 512
   n_heads: 8
+  attn_dropout: 0.1
+  dropout: 0.2
   enc_layers: 6
   dec_layers: 6
   src_vocab: 8000
