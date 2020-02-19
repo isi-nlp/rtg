@@ -144,7 +144,7 @@ def __test_model__():
 
     config = {
         'model_type': 'wvtfmnmt',
-        'trainer': {'init_args': {'chunk_size': 2}},
+        'trainer': {'init_args': {'chunk_size': 2, 'grad_accum': 1}},
         'optim': {
             'args': {
                 # "cross_entropy", "smooth_kld", "binary_cross_entropy", "triplet_loss"

@@ -23,7 +23,6 @@ import inspect
 from pathlib import Path
 
 
-
 class NoamOpt(Optimizer):
     """
     Optimizer wrapper that implements learning rate as a function of step.
@@ -315,7 +314,7 @@ class SteppedTrainer:
         if step_num == self.last_step:
             log.warning("Ignoring checkpt request")
             return  # calling multiple times doesnt save
-        log.info(f"Checkpoint at step {step_num}. Training Loss {train_loss:g},"
+        log.info(f"Checkpoint at optimizer step {step_num}. Training Loss {train_loss:g},"
                  f" Validation Loss:{val_loss:g}")
         self.show_samples()
 
