@@ -586,6 +586,8 @@ class BatchIterable(Iterable[Batch]):
         self.sort_by = sort_by
         if not isinstance(data_path, Path):
             data_path = Path(data_path)
+        assert data_path.exists(), f'Invalid State: Training data doesnt exist;' \
+            f' Please remove _PREPARED and rerun.'
         if data_path.name.endswith(".db"):
             self.data = SqliteFile(data_path, sort_by=sort_by, **kwargs)
         else:
