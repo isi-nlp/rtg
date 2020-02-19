@@ -114,21 +114,20 @@ class SmoothKLD(Criterion):
 class TripletLoss(Criterion):
     # Note: Triplet loss doesnt work fully yet; it sorta works and then overfits
 
-    def __init__(self, embedding,  margin: float = 0., k: int = 10,
+    def __init__(self, embedding,  margin: float = 0., neg_region: float = 0.05,
                  mode: str = 'dot', neg_sampling: str = 'random'):
         # TODO: whats the right margin?
         super().__init__(input_type='embedding')
         self.embedding = embedding
+        self.embeddings = embedding.weight
         self.vocab_size = embedding.weight.shape[0]
         assert margin >= 0
         self.margin = margin
-        assert k > 0
-        self.k = k
         assert mode in ('dot', 'l2')
         self.mode = mode
         assert neg_sampling in ('random', 'hard')
         self.neg_sampling = neg_sampling
-        self.region = max(int(0.05 * self.vocab_size), 5)
+        self.hard_neg_region = max(int(neg_region * self.vocab_size), 5)
 
     @classmethod
     def dot(cls, a, b):
@@ -152,10 +151,13 @@ class TripletLoss(Criterion):
         if self.neg_sampling == 'random':
             neg_ids = torch.randint_like(targets, low=self.pad_idx+1, high=self.vocab_size)
         elif self.neg_sampling == 'hard':
-            # candidates = torch.einsum('bd,vd->bv', anchors, self.embedding)
-            # candidates = candidates.masked_fill()
-            # neg_ids = 0
-            raise Exception('Hard negative sampling is not implemented yet')
+            candidates = torch.einsum('bd,vd->bv', anchors, self.embeddings)
+            mask = candidates.new_full(candidates.shape, False, dtype=torch.bool)
+            for r, t in enumerate(torch.unbind(targets)):
+                mask[r, t.item()] = True
+            candidates = candidates.masked_fill(mask, -1)
+            c, indexes = torch.sort(candidates)
+            neg_ids = indexes[:, -self.hard_neg_region].contiguous().view(-1)
         else:
             raise Exception(self.neg_sampling + ' not supported')
         neg_embs = self.embedding(neg_ids)   # [B x D]
@@ -175,13 +177,13 @@ class TripletLoss(Criterion):
 
 class SmoothKLDAndTripletLoss(Criterion):
 
-    def __init__(self, embedding, margin: float = 0., k: int = 10,
+    def __init__(self, embedding, margin: float = 0., neg_region: float = 0.05,
                  mode: str = 'dot', neg_sampling: str = 'random',
                  smoothing: float = 0.1, alpha: float = 1.0):
         super().__init__(input_type='identity')
         self.embeddings = embedding.weight
         self.smoothKLD = SmoothKLD(embedding.weight.shape[0], smoothing)
-        self.tripletLoss = TripletLoss(embedding, margin, k, mode, neg_sampling)
+        self.tripletLoss = TripletLoss(embedding, margin, neg_region, mode, neg_sampling)
         self.alpha = alpha
 
     def forward(self, x, targets, mask_pad=True):

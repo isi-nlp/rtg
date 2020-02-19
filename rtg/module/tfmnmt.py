@@ -779,8 +779,8 @@ def __test_model__():
     config = {
         'model_type': 'tfmnmt',
         'trainer': {'init_args': {'chunk_size': 2}},
-        'optim':{
-            'args':{
+        'optim': {
+            'args': {
                 # "cross_entropy", "smooth_kld", "binary_cross_entropy",
                 # "triplet_loss", "smooth_kld_and_triplet_loss"
                 # 'criterion': "triplet_loss",
@@ -788,9 +788,9 @@ def __test_model__():
                 'criterion': "smooth_kld_and_triplet_loss",
                 'label_smoothing': 0.1,
                 'margin': 0.2,
-                'k': 1,
                 'mode': 'dot',
-                'neg_sampling': 'random',
+                'neg_sampling': 'hard',
+                'neg_region': 0.05,
                 'alpha': 1.0
             }
         }

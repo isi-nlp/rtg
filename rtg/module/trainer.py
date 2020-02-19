@@ -242,12 +242,12 @@ class SteppedTrainer:
         log.info(f"Criterion = {criterion}")
 
         smoothing = self.exp.optim_args[1].get('label_smoothing', 0.0)
+        tgt_embedding = self.model.tgt_embed[0].lut
         margin = self.exp.optim_args[1].get('margin', 0.0)
-        k = self.exp.optim_args[1].get('k', 1)
         mode = self.exp.optim_args[1].get('mode', 'dot')
         neg_sampling = self.exp.optim_args[1].get('neg_sampling', 'random')
+        neg_region = self.exp.optim_args[1].get('neg_region', 0.05)
         alpha = self.exp.optim_args[1].get('alpha', 1.0)
-        tgt_embedding = self.model.tgt_embed[0].lut
 
         if criterion == 'smooth_kld':
             return criteria.SmoothKLD(vocab_size=self.model.generator.vocab, smoothing=smoothing)
@@ -256,10 +256,10 @@ class SteppedTrainer:
         elif criterion == 'binary_cross_entropy':
             return criteria.BinaryCrossEntropy(smoothing=smoothing)
         elif criterion == 'triplet_loss':
-            return criteria.TripletLoss(embedding=tgt_embedding, margin=margin, k=k,
+            return criteria.TripletLoss(embedding=tgt_embedding, margin=margin, neg_region=neg_region,
                                         mode=mode, neg_sampling=neg_sampling)
         elif criterion == 'smooth_kld_and_triplet_loss':
-            return criteria.SmoothKLDAndTripletLoss(embedding=tgt_embedding, margin=margin, k=k,
+            return criteria.SmoothKLDAndTripletLoss(embedding=tgt_embedding, margin=margin, neg_region=neg_region,
                                                     mode=mode, neg_sampling=neg_sampling,
                                                     smoothing=smoothing, alpha=alpha)
         else:
