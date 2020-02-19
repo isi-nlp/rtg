@@ -19,14 +19,14 @@ class WidthVaryingEncoder(nn.Module):
     """Stack of N encoders with heterogeneous feed forward dimensions"""
 
     def __init__(self, d_model: int, ff_dims: List[int], N: int,
-                 n_heads: int, dropout: float, activation: str = 'relu'):
+                 n_heads: int, attn_dropout: float, dropout: float, activation: str = 'relu'):
         super().__init__()
 
         # Make N layers with different pointwise ff_dims
         assert len(ff_dims) == N, f'N:{N} != ff_dims:{len(ff_dims)}'
         layers = list()
         for ff_dim in ff_dims:
-            attn = MultiHeadedAttention(n_heads, d_model, dropout)
+            attn = MultiHeadedAttention(n_heads, d_model, attn_dropout)
             ff = PositionwiseFeedForward(d_model, ff_dim, dropout, activation=activation)
             layers.append(EncoderLayer(d_model, attn, ff, dropout))
         self.layers = nn.ModuleList(layers)
@@ -43,14 +43,14 @@ class WidthVaryingDecoder(nn.Module):
     """Stack of N decoders with heterogeneous feed forward dimensions"""
 
     def __init__(self, d_model: int, ff_dims: List[int], N: int,
-                 n_heads: int, dropout: float, activation: str = 'relu'):
+                 n_heads: int, attn_dropout: float, dropout: float, activation: str = 'relu'):
         super().__init__()
 
         # Make N layers with different pointwise ff_dims
         assert len(ff_dims) == N, f'N:{N} != ff_dims:{len(ff_dims)}'
         layers = list()
         for ff_dim in ff_dims:
-            self_attn = MultiHeadedAttention(n_heads, d_model, dropout)
+            self_attn = MultiHeadedAttention(n_heads, d_model, attn_dropout)
             src_attn = MultiHeadedAttention(n_heads, d_model, dropout)
             ff = PositionwiseFeedForward(d_model, ff_dim, dropout, activation=activation)
             layers.append(DecoderLayer(d_model, self_attn, src_attn, ff, dropout))
@@ -78,10 +78,10 @@ class WidthVaryingTransformerNMT(AbstractTransformerNMT, ABC):
 
     @classmethod
     def make_model(cls, src_vocab, tgt_vocab, enc_layers=6, dec_layers=6, hid_size=512,
+                   n_heads=8, attn_dropout=0.1, dropout=0.2, activation='relu',
                    eff_dims: List[int] = (1024, 1024, 2048, 2048, 1024, 1024),   # Using tuple for immutability
                    dff_dims: List[int] = (1024, 1024, 2048, 2048, 1024, 1024),
-                   n_heads=8, dropout=0.1, tied_emb='three-way', activation='relu',
-                   exp: Experiment = None):
+                   tied_emb='three-way', exp: Experiment = None):
         """Helper: Construct a model from hyper parameters."""
 
         assert enc_layers == len(eff_dims)
@@ -94,12 +94,16 @@ class WidthVaryingTransformerNMT(AbstractTransformerNMT, ABC):
 
         if enc_layers == 0:
             log.warning("Zero encoder layers!")
-        encoder = WidthVaryingEncoder(d_model=hid_size, ff_dims=eff_dims, N=enc_layers,
-                                      n_heads=n_heads, dropout=dropout, activation=activation)
+        encoder = WidthVaryingEncoder(
+            d_model=hid_size, ff_dims=eff_dims, N=enc_layers, n_heads=n_heads,
+            attn_dropout=attn_dropout, dropout=dropout, activation=activation
+        )
 
         assert dec_layers > 0
-        decoder = WidthVaryingDecoder(d_model=hid_size, ff_dims=dff_dims, N=dec_layers,
-                                      n_heads=n_heads, dropout=dropout, activation=activation)
+        decoder = WidthVaryingDecoder(
+            d_model=hid_size, ff_dims=dff_dims, N=dec_layers, n_heads=n_heads,
+            attn_dropout=attn_dropout, dropout=dropout, activation=activation
+        )
 
         src_emb = nn.Sequential(Embeddings(hid_size, src_vocab),
                                 PositionalEncoding(hid_size, dropout))
