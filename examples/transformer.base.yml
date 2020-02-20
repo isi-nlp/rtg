@@ -1,8 +1,9 @@
 model_args: # model construction args
-  dropout: 0.1
   ff_size: 2048
   hid_size: 512
   n_heads: 8
+  attn_dropout: 0.1
+  dropout: 0.2
   enc_layers: 6
   dec_layers: 6
   src_vocab: 8000

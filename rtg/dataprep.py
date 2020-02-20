@@ -584,6 +584,7 @@ class BatchIterable(Iterable[Batch]):
         self.batch_size = batch_size
         self.batch_first = batch_first
         self.sort_by = sort_by
+        self.data_path = data_path
         if not isinstance(data_path, Path):
             data_path = Path(data_path)
         assert data_path.exists(), f'Invalid State: Training data doesnt exist;' \
@@ -650,6 +651,8 @@ class BatchIterable(Iterable[Batch]):
         # every pass introduces some randomness
         batches = self._make_eq_len_batch_ids()
         log.info(f"length sorted random batches = {len(batches)}. Shuffling🔀...")
+        if not batches:
+            raise Exception(f'Found no training data. Please check config and {self.data_path}')
         random.shuffle(batches)
 
         for batch_ids in batches:
