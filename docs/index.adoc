@@ -1,0 +1,7 @@
+= Reader-Translator-Generator (RTG)
+
+:toc:
+
+
+. link:clitools.adoc[Command Line Tools and Usage]
+. link:conf.yml.adoc[RTG `conf.yml` file]

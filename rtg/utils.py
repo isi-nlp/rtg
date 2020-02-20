@@ -131,10 +131,10 @@ class IO:
             yield from inp
 
     @classmethod
-    def get_lines(cls, *paths, col=0, delim='\t', line_mapper=None):
-        assert paths
-        for p in paths:
-            yield from cls._get_lines(path=p, col=col, delim=delim, line_mapper=line_mapper)
+    def get_liness(cls, *paths, **kwargs):
+        for path in paths:
+            yield from cls.get_lines(path, **kwargs)
+
 
     @classmethod
     def write_lines(cls, path: Path, text):
