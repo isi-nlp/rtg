@@ -174,12 +174,14 @@ class NLField(Field):
             ids.append(EOS_TOK[1])
         return ids
 
-    def decode_ids(self, ids: List[int], trunc_eos=False) -> str:
+    def decode_ids(self, ids: List[int], trunc_eos=False, remove_pads=True) -> str:
         if trunc_eos:
             try:
                 ids = ids[:ids.index(EOS_TOK[1])]
             except ValueError:
                 pass
+        if remove_pads:
+            ids = [i for i in ids if i != PAD_TOK_IDX]
         return self.codec.decode(ids)
 
     def tokenize(self, text: str) -> List[str]:
