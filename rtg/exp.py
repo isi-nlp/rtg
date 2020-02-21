@@ -9,7 +9,8 @@ import numpy as np
 import torch
 
 from rtg import log, yaml
-from rtg.dataprep import (TSVData, Field, BatchIterable, LoopingIterable, SqliteFile)
+from rtg.dataprep import (TSVData, BatchIterable, LoopingIterable, SqliteFile)
+from rtg.dataprep import Field, SPField, NLField
 from rtg.utils import IO, line_count
 
 seeded = False
@@ -34,7 +35,17 @@ class BaseExperiment:
         self.data_dir = work_dir / 'data'
         self.model_dir = work_dir / 'models'
         self._config_file = work_dir / 'conf.yml'
-        self._shared_field_file = self.data_dir / 'sentpiece.shared.model'
+        if isinstance(config, str) or isinstance(config, Path):
+            config = load_conf(config)
+        self.config = config if config else load_conf(self._config_file)
+
+        self.codec_name = self.config.get('prep', {}).get('codec_lib', 'sentpiece')
+        codec_libs = {'sentpiece': SPField, 'nlcodec': NLField}
+        assert self.codec_name in codec_libs # only these are supported
+        log.info(f"codec lib = {self.codec_name}")
+        self.Field = codec_libs[self.codec_name]
+
+        self._shared_field_file = self.data_dir / f'{self.codec_name}.shared.model'
         self._prepared_flag = self.work_dir / '_PREPARED'
         self._trained_flag = self.work_dir / '_TRAINED'
 
@@ -50,13 +61,11 @@ class BaseExperiment:
             for _dir in [self.model_dir, self.data_dir]:
                 if not _dir.exists():
                     _dir.mkdir(parents=True)
-        if isinstance(config, str) or isinstance(config, Path):
-            config = load_conf(config)
-        self.config = config if config else load_conf(self._config_file)
+
         assert self.config, 'Looks like config is emtpy or invalid'
         self.maybe_seed()
 
-        self.shared_field = Field(str(self._shared_field_file)) \
+        self.shared_field = self.Field(str(self._shared_field_file)) \
             if self._shared_field_file.exists() else None
 
     def maybe_seed(self):
@@ -246,8 +255,8 @@ class TranslationExperiment(BaseExperiment):
     def __init__(self, work_dir: Union[str, Path], read_only=False,
                  config: Union[str, Path, Optional[Dict[str, Any]]] = None):
         super().__init__(work_dir, read_only=read_only, config=config)
-        self._src_field_file = self.data_dir / 'sentpiece.src.model'
-        self._tgt_field_file = self.data_dir / 'sentpiece.tgt.model'
+        self._src_field_file = self.data_dir / f'{self.codec_name}.src.model'
+        self._tgt_field_file = self.data_dir / f'{self.codec_name}.tgt.model'
 
         self.emb_src_file = self.data_dir / 'emb_src.pt'
         self.emb_tgt_file = self.data_dir / 'emb_tgt.pt'
@@ -271,7 +280,7 @@ class TranslationExperiment(BaseExperiment):
 
     def reload_vocabs(self):
         self.src_field, self.tgt_field, self.shared_field = [
-            Field(str(f)) if f.exists() else None for f in (
+            self.Field(str(f)) if f.exists() else None for f in (
                 self._src_field_file, self._tgt_field_file, self._shared_field_file)]
 
     def check_line_count(self, name, file1, file2):
@@ -287,25 +296,22 @@ class TranslationExperiment(BaseExperiment):
         # check if files are parallel
         self.check_line_count('training', args['train_src'], args['train_tgt'])
         self.check_line_count('validation', args['valid_src'], args['valid_tgt'])
-        no_split_toks = args.get('no_split_toks')
-
+        xt_args = dict(no_split_toks=args.get('no_split_toks'),
+                      char_coverage=args.get('char_coverage', 0))
         if args.get('shared_vocab'):  # shared vocab
             corpus = [args[key] for key in ['train_src', 'train_tgt', 'mono_src', 'mono_tgt']
                       if args.get(key)]
             self.shared_field = self._make_vocab("shared", self._shared_field_file, args['pieces'],
-                                                 args['max_types'], corpus=corpus,
-                                                 no_split_toks=no_split_toks)
+                                                 args['max_types'], corpus=corpus, **xt_args)
         else:  # separate vocabularies
             src_corpus = [args[key] for key in ['train_src', 'mono_src'] if args.get(key)]
             self.src_field = self._make_vocab("src", self._src_field_file, args['pieces'],
-                                              args['max_src_types'], corpus=src_corpus,
-                                              no_split_toks=no_split_toks)
+                                              args['max_src_types'], corpus=src_corpus, **xt_args)
 
             # target vocabulary
             tgt_corpus = [args[key] for key in ['train_tgt', 'mono_tgt'] if args.get(key)]
             self.tgt_field = self._make_vocab("src", self._tgt_field_file, args['pieces'],
-                                              args['max_tgt_types'], corpus=tgt_corpus,
-                                              no_split_toks=no_split_toks)
+                                              args['max_tgt_types'], corpus=tgt_corpus, **xt_args)
 
         train_file = self.train_db
         self._pre_process_parallel('train_src', 'train_tgt', out_file=train_file, args=args,
@@ -328,7 +334,7 @@ class TranslationExperiment(BaseExperiment):
         TSVData.write_parallel_recs(samples, self.samples_file)
 
     def _make_vocab(self, name: str, vocab_file: Path, model_type: str, vocab_size: int,
-                    corpus: List, no_split_toks: List[str] = None) -> Field:
+                    corpus: List, no_split_toks: List[str] = None, char_coverage=0) -> Field:
         """
         Construct vocabulary file
         :param name: name : src, tgt or shared -- for the sake of logging
@@ -341,7 +347,7 @@ class TranslationExperiment(BaseExperiment):
         """
         if vocab_file.exists():
             log.info(f"{vocab_file} exists. Skipping the {name} vocab creation")
-            return Field(str(vocab_file))
+            return self.Field(str(vocab_file))
         flat_uniq_corpus = set()  # remove dupes, flat the nested list or sets
         for i in  corpus:
             if isinstance(i, set) or isinstance(i, list):
@@ -349,25 +355,26 @@ class TranslationExperiment(BaseExperiment):
             else:
                 flat_uniq_corpus.add(i)
 
-        log.info(f"Going to build {name} vocab from mono files")
-        return Field.train(model_type, vocab_size, str(vocab_file), flat_uniq_corpus,
-                           no_split_toks=no_split_toks)
+        flat_uniq_corpus = list(flat_uniq_corpus)
+        log.info(f"Going to build {name} vocab from files")
+        return self.Field.train(model_type, vocab_size, str(vocab_file), flat_uniq_corpus,
+                           no_split_toks=no_split_toks, char_coverage=char_coverage)
 
     def pre_process_mono(self, args):
-        no_split_toks = args.get('no_split_toks')
+        xt_args = dict(no_split_toks=args.get('no_split_toks'),
+                       char_coverage=args.get('char_coverage', 0))
+
         mono_files = [args[key] for key in ['mono_train_src', 'mono_train_tgt'] if key in args]
         assert mono_files, "At least one of 'mono_train_src', 'mono_train_tgt' should be set"
         log.info(f"Found mono files: {mono_files}")
         if args.get('shared_vocab'):
             self.shared_field = self._make_vocab("shared", self._shared_field_file, args['pieces'],
-                                                 args['max_types'], corpus=mono_files,
-                                                 no_split_toks=no_split_toks)
+                                                 args['max_types'], corpus=mono_files, **xt_args)
         else:  # separate vocabularies
             if 'mono_train_src' in args:
                 self.src_field = self._make_vocab("src", self._src_field_file,
                                                   args['pieces'], args['max_src_types'],
-                                                  corpus=[args['mono_train_src']],
-                                                  no_split_toks=no_split_toks)
+                                                  corpus=[args['mono_train_src']], **xt_args)
             else:
                 log.warning("Skipping source vocab creation since mono_train_src is not given")
 
@@ -375,8 +382,7 @@ class TranslationExperiment(BaseExperiment):
             if 'mono_train_tgt' in args:
                 self.tgt_field = self._make_vocab("src", self._tgt_field_file,
                                                   args['pieces'], args['max_tgt_types'],
-                                                  corpus=[args['mono_train_tgt']],
-                                                  no_split_toks=no_split_toks)
+                                                  corpus=[args['mono_train_tgt']], **xt_args)
             else:
                 log.warning("Skipping target vocab creation since mono_train_tgt is not given")
 
@@ -561,7 +567,7 @@ class TranslationExperiment(BaseExperiment):
                 parent = TranslationExperiment(vocabs, read_only=True)
                 parent.copy_vocabs(self)
                 self.shared_field, self.src_field, self.tgt_field = [
-                    Field(str(f)) if f.exists() else None
+                    self.Field(str(f)) if f.exists() else None
                     for f in (self._shared_field_file, self._src_field_file, self._tgt_field_file)]
             if self._unsupervised:
                 self.pre_process_mono(args)
