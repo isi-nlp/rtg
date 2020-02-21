@@ -1,8 +1,9 @@
 model_args:
-  dropout: 0.1
   ff_size: 512
   hid_size: 256
   n_heads: 4
+  attn_dropout: 0.1
+  dropout: 0.2
   enc_layers: 3
   dec_layers: 3
   src_vocab: 8000

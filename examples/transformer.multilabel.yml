@@ -1,6 +1,5 @@
 model_args: # model construction args
-  eff_dims: [5120, 4096, 3072, 2048, 1024, 512]
-  dff_dims: [5120, 4096, 3072, 2048, 1024, 512]
+  ff_size: 2048
   hid_size: 512
   n_heads: 8
   attn_dropout: 0.1
@@ -10,7 +9,7 @@ model_args: # model construction args
   src_vocab: 8000
   tgt_vocab: 8000
   tied_emb: three-way  # choices: null, one-way, two-way, three-way
-model_type: wvtfmnmt  # model type. wvtfmnmt is the WidthVaryingTransformerNMT model
+model_type: tfmnmt  # model type. tfmnmt is the transformer NMT model
 optim:
   args:
     betas:
@@ -21,6 +20,8 @@ optim:
     lr: 0.2
     warmup_steps: 8000
     constant: 2
+    criterion: binary_cross_entropy  # multi label classification, binary decision per class
+    # all options "cross_entropy", "smooth_kld", "binary_cross_entropy", "triplet_loss"
   name: ADAM
 prep: # data preparation
   max_types: 8000  # maximum number of types in vocab ; if shared_vocab=false, set max_src_types and max_tgt_types separately instead of this one
@@ -37,30 +38,12 @@ prep: # data preparation
   mono_tgt: []
 tester:
   decoder:
-    tune:  # If this block is missing, then tuner will not be run, and some default values are picked from the code
-      trials: 6  # number of random trials, in addition to "suggested" values
-      tune_src: data/valid.src  # dataset for tuning
-      tune_ref: data/valid.tgt
-      beam_size: [1, 4, 8]    # pool of values for beam_size
-      ensemble: [1, 5, 10]
-      lp_alpha: [0.0, 0.4, 0.6, 1.0]
-      suggested:  # list of suggested values for beam_size, ensemble, lp_alpha
-        - 1, 1, 0.0
-        - 4, 1, 0.0
-        - 4, 1, 0.6
-        - 1, 5, 0.0
-        - 4, 5, 0.0
-        - 4, 5, 0.6
-        - 1, 10, 0.0
-        - 4, 10, 0.0
-        - 4, 10, 0.6
+    beam_size: 4
+    batch_size: 18000
   suit:  # suit of tests to run after the training
     valid:  # name of test and list of src.tok, ref files (ref should be unmodified)
     - data/valid.src
     - data/valid.tgt
-  # in case we want to use external de tokenizer. interface:: $detokenizer < $out > out.detok
-  # by default it uses moses-tokenizer python wrapper to perl script
-  # detokenizer: cut -f1 | python -m rtg.tool.unicode_fix -l hi -d | perl scripts/indic-tok.perl -d
 trainer:
   init_args:
     chunk_size: 10   # generation in chunks of time steps to reduce memory consumption
