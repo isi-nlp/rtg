@@ -70,10 +70,10 @@ class SkipTransformerNMT(tfm.AbstractTransformerNMT, ABC):
 
     @classmethod
     def make_model(cls, src_vocab, tgt_vocab, enc_layers=6, dec_layers=6, hid_size=512, ff_size=2048,
-                   n_heads=8, attn_bias=True, dropout=0.1, tied_emb='three-way', activation='relu',
+                   n_heads=8, attn_bias=True, attn_dropout=0.1, dropout=0.2, activation='relu',
                    enc_depth_probs: List[float] = (1.0, 0.9, 0.8, 0.7, 0.6, 0.5),
                    dec_depth_probs: List[float] = (1.0, 0.9, 0.8, 0.7, 0.6, 0.5),
-                   exp: Experiment = None):
+                   tied_emb='three-way', exp: Experiment = None):
         """Helper: Construct a model from hyper parameters."""
         assert len(enc_depth_probs) == enc_layers
         assert len(dec_depth_probs) == dec_layers
@@ -83,7 +83,7 @@ class SkipTransformerNMT(tfm.AbstractTransformerNMT, ABC):
         assert activation in {'relu', 'elu', 'gelu'}
         log.info(f"Make model, Args={args}")
         c = copy.deepcopy
-        attn = tfm.MultiHeadedAttention(n_heads, hid_size, dropout=dropout, bias=attn_bias)
+        attn = tfm.MultiHeadedAttention(n_heads, hid_size, dropout=attn_dropout, bias=attn_bias)
         ff = tfm.PositionwiseFeedForward(hid_size, ff_size, dropout, activation=activation)
 
         if enc_layers == 0:

@@ -18,10 +18,10 @@ class WidthVaryingSkipEncoder(wvtfm.WidthVaryingEncoder):
     """Stack of N encoders with heterogeneous feed forward dimensions"""
 
     def __init__(self, d_model: int, ff_dims: List[int], N: int,
-                 n_heads: int, dropout: float, activation: str = 'relu',
-                 depth_probs: List[float] = None):
-        super().__init__(d_model=d_model, ff_dims=ff_dims,N=N, n_heads=n_heads, dropout=dropout,
-                         activation=activation)
+                 n_heads: int, attn_dropout: float, dropout: float,
+                 activation: str = 'relu', depth_probs: List[float] = None):
+        super().__init__(d_model=d_model, ff_dims=ff_dims,N=N, n_heads=n_heads,
+                         attn_dropout=attn_dropout, dropout=dropout, activation=activation)
         if depth_probs:
             assert len(depth_probs) == N
             self.depth_probs = depth_probs
@@ -40,10 +40,10 @@ class WidthVaryingSkipDecoder(wvtfm.WidthVaryingDecoder):
     """Stack of N decoders with heterogeneous feed forward dimensions"""
 
     def __init__(self, d_model: int, ff_dims: List[int], N: int,
-                 n_heads: int, dropout: float, activation: str = 'relu',
-                 depth_probs: List[float] = None):
-        super().__init__(d_model=d_model, ff_dims=ff_dims, N=N, n_heads=n_heads, dropout=dropout,
-                         activation=activation)
+                 n_heads: int, attn_dropout: float, dropout: float,
+                 activation: str = 'relu', depth_probs: List[float] = None):
+        super().__init__(d_model=d_model, ff_dims=ff_dims, N=N, n_heads=n_heads,
+                         attn_dropout=attn_dropout, dropout=dropout, activation=activation)
 
         if depth_probs:
             assert len(depth_probs) == N
@@ -74,12 +74,12 @@ class WidthVaryingSkipTransformerNMT(tfm.AbstractTransformerNMT):
 
     @classmethod
     def make_model(cls, src_vocab, tgt_vocab, enc_layers=9, dec_layers=9, hid_size=512,
+                   n_heads=8, attn_dropout=0.1, dropout=0.2, activation='relu',
                    eff_dims: List[int] = (2048, 2048, 2048, 1024, 1024, 1024, 2048, 2048, 2048),
                    dff_dims: List[int] = (2048, 2048, 2048, 1024, 1024, 1024, 2048, 2048, 2048),
                    enc_depth_probs: List[float] = (1.0, 0.875, 0.75, 0.625, 0.5, 0.625, 0.75, 0.875, 1.0),
                    dec_depth_probs: List[float] = (1.0, 0.875, 0.75, 0.625, 0.5, 0.625, 0.75, 0.875, 1.0),
-                   n_heads=8, dropout=0.1, tied_emb='three-way', activation='relu',
-                   exp: Experiment = None):
+                   tied_emb='three-way', exp: Experiment = None):
         """Helper: Construct a model from hyper parameters."""
 
         assert len(eff_dims) == len(enc_depth_probs) == enc_layers
@@ -91,14 +91,16 @@ class WidthVaryingSkipTransformerNMT(tfm.AbstractTransformerNMT):
 
         if enc_layers == 0:
             log.warning("Zero encoder layers!")
-        encoder = WidthVaryingSkipEncoder(d_model=hid_size, ff_dims=eff_dims, N=enc_layers,
-                                          n_heads=n_heads, dropout=dropout, activation=activation,
-                                          depth_probs=enc_depth_probs)
+        encoder = WidthVaryingSkipEncoder(
+            d_model=hid_size, ff_dims=eff_dims, N=enc_layers, n_heads=n_heads,
+            attn_dropout=attn_dropout, dropout=dropout, activation=activation, depth_probs=enc_depth_probs
+        )
 
         assert dec_layers > 0
-        decoder = WidthVaryingSkipDecoder(d_model=hid_size, ff_dims=dff_dims, N=dec_layers,
-                                          n_heads=n_heads, dropout=dropout, activation=activation,
-                                          depth_probs=dec_depth_probs)
+        decoder = WidthVaryingSkipDecoder(
+            d_model=hid_size, ff_dims=dff_dims, N=dec_layers, n_heads=n_heads,
+            attn_dropout=attn_dropout, dropout=dropout, activation=activation, depth_probs=dec_depth_probs
+        )
 
         src_emb = nn.Sequential(tfm.Embeddings(hid_size, src_vocab),
                                 tfm.PositionalEncoding(hid_size, dropout))
