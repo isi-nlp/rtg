@@ -699,7 +699,7 @@ class TransformerTrainer(SteppedTrainer):
         unsaved_state = False
         cuda_available = torch.cuda.is_available()
         update_interval = 0
-        with tqdm(train_data, initial=self.start_step, total=batches, unit='batch',
+        with tqdm(train_data, initial=start_batch, total=batches, unit='batch',
                   dynamic_ncols=True) as data_bar:
             for batch in data_bar:
                 if update_interval == 0:
