@@ -35,7 +35,9 @@ model_args: # model construction args
   tied_emb: three-way  # choices: null, one-way, two-way, three-way
 model_type: tfmnmt  # model type. tfmnmt is the transformer NMT model
 optim:
+  name: ADAM
   args:
+    criterion: smooth_kld  # other choices: "cross_entropy", "binary_cross_entropy", "triplet_loss", "smooth_kld_and_triplet_loss"
     betas:
       - 0.9
       - 0.98
@@ -44,8 +46,9 @@ optim:
     lr: 0.2
     warmup_steps: 8000
     constant: 2
-    criterion: smooth_kld  # other choices: "cross_entropy", "binary_cross_entropy", "triplet_loss"
-  name: ADAM
+    inv_sqrt: false        # False = default NoamOpt learning rate schedule
+    amsgrad: false
+    weight_decay: 0
 prep: # data preparation
   max_types: 8000  # maximum number of types in vocab ; if shared_vocab=false, set max_src_types and max_tgt_types separately
   pieces: bpe   # choices: bpe, char, word, unigram  from google/sentencepiece
@@ -79,6 +82,33 @@ updated_at: '2019-03-09T21:15:33.707183'  # automatically updated by system
 seed: 12345  # fix the manual seed of pytorch + cuda + numpy + python_stdlib RNGs. Remove/comment this to disable
 ----
 
+## Optimizer
+
+By default, we use the `ADAM` optimizer from
+link:https://arxiv.org/abs/1412.6980[Adam: A Method for Stochastic Optimization].
+It is also possible to use `ADAMW` from link:https://arxiv.org/abs/1711.05101[Decoupled Weight Decay Regularization],
+since weight decay is different in optimizers with variable step sizes.
+
+Note: When `inv_sqrt: false`, `lr` does nothing. When `inv_sqrt: true`, `constant` does nothing.
+
+An alternative optimizer may look like:
+----
+optim:
+  name: ADAMW
+  args:
+    criterion: smooth_kld_and_triplet_loss
+    betas:
+      - 0.9
+      - 0.98
+    eps: 1.0e-08
+    label_smoothing: 0.1
+    lr: 0.0005
+    warmup_steps: 4000
+    constant: 2           # Does nothing if inv_sqrt==True
+    inv_sqrt: true        # If truem lr should be under 0.005
+    amsgrad: true
+    weight_decay: 1e-3    # Use ADAMW if weight decay != 0
+----
 
 ## Fine Tuning
 
