@@ -74,6 +74,7 @@ class NoamOpt(Optimizer):
 
 class Optims(Enum):
     ADAM = optim.Adam
+    ADAMW = optim.AdamW
     SGD = optim.SGD
 
     def new(self, parameters, lr=0.001, **args):
@@ -160,6 +161,8 @@ class SteppedTrainer:
         'lr': 0.1,
         'betas': [0.9, 0.98],
         'eps': 1e-9,
+        'amsgrad': False,
+        'weight_decay': 0,
         'criterion': 'smooth_kld',
         'label_smoothing': 0.1,
         'warmup_steps': 8000,
@@ -201,7 +204,7 @@ class SteppedTrainer:
 
         self.model = self.model.to(device)
 
-        inner_opt_args = {k: optim_args[k] for k in ['lr', 'betas', 'eps']}
+        inner_opt_args = {k: optim_args[k] for k in ['lr', 'betas', 'eps', 'weight_decay', 'amsgrad']}
         inner_opt = Optims[optim].new(self.model.parameters(), **inner_opt_args )
         if optim_state:
             log.info("restoring optimizer state from checkpoint")
