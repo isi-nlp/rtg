@@ -114,7 +114,6 @@ class SKPTransformerTrainer(tfm.TransformerTrainer):
 
     def __init__(self, *args, model_factory=SkipTransformerNMT.make_model, **kwargs):
         super().__init__(*args, model_factory=model_factory, **kwargs)
-        assert isinstance(self.model, SkipTransformerNMT)  # type check
 
 
 def __test_model__():

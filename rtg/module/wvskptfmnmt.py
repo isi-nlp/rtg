@@ -121,7 +121,6 @@ class WVSKPTransformerTrainer(tfm.TransformerTrainer):
 
     def __init__(self, *args, model_factory=WidthVaryingSkipTransformerNMT.make_model, **kwargs):
         super().__init__(*args, model_factory=model_factory, **kwargs)
-        assert isinstance(self.model, WidthVaryingSkipTransformerNMT)  # type check
 
 
 def __test_model__():
