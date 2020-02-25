@@ -23,21 +23,41 @@ import inspect
 from pathlib import Path
 
 
-
 class NoamOpt(Optimizer):
     """
     Optimizer wrapper that implements learning rate as a function of step.
+
+    If inv_sqrt==True:
+    - Linear warmup followed by inverse sqrt decay.
+    - Uses learning rate in conf.yml as maximum learning rate after warmup
+
+        Modeled after FairSeq's Inverse Square Root LR Scheduler:
+            https://github.com/pytorch/fairseq/blob/master/fairseq/optim/lr_scheduler/
+                inverse_square_root_schedule.py
+
+    Else:
+    - Independent of learning rate set in conf.yml
+
+        Modeled after The Annotated Transformer's LR Scheduler:
+            https://nlp.seas.harvard.edu/2018/04/03/attention.html
     """
 
-    def __init__(self, model_size, factor, warmup, optimizer: Optimizer, step=0):
+    def __init__(self, model_size, factor, warmup, optimizer: Optimizer, step=0, inv_sqrt=False):
         super().__init__(params=optimizer.param_groups, defaults=dict(warmup=warmup, step=step))
         self.optimizer = optimizer
         self._step = step
         self.warmup = warmup
         self.factor = factor
         self.model_size = model_size
+
+        self.inv_sqrt = inv_sqrt
+        lr = optimizer.defaults['lr']
+        self.warmup_rate = lr/warmup
+        self.decay_factor = lr * warmup**0.5
+
         self._rate = 0
-        log.info(f"model_size={model_size}, factor={factor}, warmup={warmup}, step={step}")
+        log.info(f"model_size={model_size}, factor={factor}, warmup={warmup}, step={step}, "
+                 f"inv_sqrt={inv_sqrt}")
 
     def step(self, closure=None):
         "Update parameters and rate"
@@ -63,8 +83,14 @@ class NoamOpt(Optimizer):
         "Implement `lrate` above"
         if step is None:
             step = self._step
-        return self.factor * (
-                self.model_size ** (-0.5) * min(step ** (-0.5), step * self.warmup ** (-1.5)))
+        if self.inv_sqrt:
+            if step < self.warmup:
+                lr = self.warmup_rate * step
+            else:
+                lr = self.decay_factor * step**(-0.5)
+        else:
+            lr = self.factor * self.model_size**(-0.5) * min(step**(-0.5), step * self.warmup**(-1.5))
+        return lr
 
     @staticmethod
     def get_std_opt(model):
@@ -158,7 +184,7 @@ class SteppedTrainer:
     A base class for Trainers that use step based training (not epoch based training)
     """
     default_optim_args = {
-        'lr': 0.1,
+        'lr': 0.01,
         'betas': [0.9, 0.98],
         'eps': 1e-9,
         'amsgrad': False,
@@ -166,6 +192,7 @@ class SteppedTrainer:
         'criterion': 'smooth_kld',
         'label_smoothing': 0.1,
         'warmup_steps': 8000,
+        'inv_sqrt': False,
         'constant': 2
     }
 
@@ -213,7 +240,7 @@ class SteppedTrainer:
             except Exception:
                 log.exception("Unable to restore optimizer, skipping it.")
         self.opt = NoamOpt(self.model.model_dim, optim_args['constant'], optim_args['warmup_steps'],
-                           inner_opt, step=self.start_step)
+                           inner_opt, step=self.start_step, inv_sqrt=optim_args['inv_sqrt'])
 
         if self.exp.read_only:
             self.tbd = NoOpSummaryWriter()
