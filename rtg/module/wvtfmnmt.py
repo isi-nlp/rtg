@@ -123,6 +123,8 @@ class WVTransformerTrainer(TransformerTrainer):
 
     def __init__(self, *args, model_factory=WidthVaryingTransformerNMT.make_model, **kwargs):
         super().__init__(*args, model_factory=model_factory, **kwargs)
+        assert isinstance(self.model, WidthVaryingTransformerNMT) or \
+            (isinstance(self.model, nn.DataParallel) and isinstance(self.model.module, WidthVaryingTransformerNMT))
 
 
 def __test_model__():

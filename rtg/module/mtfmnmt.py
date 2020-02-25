@@ -205,7 +205,8 @@ class MTransformerTrainer(TransformerTrainer):
 
     def __init__(self, *args, model_factory=MTransformerNMT.make_model, **kwargs):
         super().__init__(*args, model_factory=model_factory, **kwargs)
-        assert isinstance(self.model, MTransformerNMT)  # type check
+        assert isinstance(self.model, MTransformerNMT) or \
+            (isinstance(self.model, nn.DataParallel) and isinstance(self.model.module, MTransformerNMT))
 
 
 def __test_model__():
