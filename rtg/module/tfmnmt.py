@@ -438,7 +438,7 @@ class SimpleLossFunction:
     opt: Optimizer
 
     def __call__(self, x_feats, y_seqs, normalizer, train_mode=True):
-        x_probs = self.generator(x_feats, score=self.criterion.input_type) # B x T x D --> B x T x V
+        x_probs = self.generator(x_feats, score=self.criterion.input_type)  # B x T x D --> B x T x V
 
         scores = x_probs.contiguous().view(-1, x_probs.size(-1))  # B x T x V --> B.T x V
         truth = y_seqs.contiguous().view(-1)  # B x T --> B.T
@@ -454,8 +454,8 @@ class SimpleLossFunction:
 class ChunkedLossCompute(SimpleLossFunction):
     chunk_size: int = 10
 
-    def __call__(self, y_feats, y_seqs, normalizer: Union[int, float], train_mode=True,
-                 chunk_size=None):
+    def __call__(self, y_feats, y_seqs, normalizer: Union[int, float],
+                 train_mode=True, chunk_size=None, take_step=True):
         chunk_size = chunk_size or self.chunk_size
         assert chunk_size > 0
         total = 0
@@ -477,8 +477,9 @@ class ChunkedLossCompute(SimpleLossFunction):
         if train_mode:
             out_grad = _y_feats.grad.data
             y_feats.backward(gradient=out_grad)
-            self.opt.step()
-            self.opt.zero_grad()
+            if take_step:
+                self.opt.step()
+                self.opt.zero_grad()
 
         return total
 
@@ -496,7 +497,8 @@ class MultiGPULossFunction(ChunkedLossCompute):
         self.dp_module: nn.DataParallel = dp_module
         self.sct_criteria = nn.parallel.replicate(self.criterion, devices=self.devices)
 
-    def __call__(self, y_feats, y_seqs, normalizer, train_mode=True, chunk_size=None):
+    def __call__(self, y_feats, y_seqs, normalizer: Union[int, float],
+                 train_mode=True, chunk_size=None, take_step=True):
 
         batch_dim = 0
         assert y_feats.shape[batch_dim] == y_seqs.shape[batch_dim]
@@ -551,8 +553,9 @@ class MultiGPULossFunction(ChunkedLossCompute):
         if train_mode:
             # back prop the rest of network
             y_feats.backward(gradient=_y_feats.grad.data)
-            self.opt.step()
-            self.opt.zero_grad()
+            if take_step:
+                self.opt.step()
+                self.opt.zero_grad()
 
         return total_loss
 
@@ -567,6 +570,7 @@ class TransformerTrainer(SteppedTrainer):
         super().__init__(exp, model, model_factory=model_factory, optim=optim, **optim_args)
         generator = self.model.generator
         self.n_gpus = torch.cuda.device_count()
+        self.grad_accum_interval = self.exp.config.get('trainer', {}).get('init_args', {}).get('grad_accum', 1)
         chunk_size = self.exp.config.get('trainer', {}).get('init_args', {}).get('chunk_size', 10)
         log.info(f"Going to use {self.n_gpus} GPUs; "
                  f" Chunk_size={chunk_size} CUDA_VISIBLE_DEVICES="
@@ -663,10 +667,18 @@ class TransformerTrainer(SteppedTrainer):
         log_resources = args.pop('log_resources', False)
         log_embedding = args.pop('log_embedding', False)
         assert log_interval > 0
+
+        # Gradient accumulation
+        opt_steps = steps
+        batches = steps * self.grad_accum_interval
+        start_batch = self.start_step * self.grad_accum_interval
+        check_point = check_point * self.grad_accum_interval
+
         if args:
             # no extra args. let user know if an extra arg is passed
             raise Exception(f" Found extra args: {args}")
-        log.info(f'Going to train for {steps} steps (from {self.start_step} steps);'
+        log.info(f'Going to train for {opt_steps} optimizer steps over {batches} batches'
+                 f' (from {self.start_step} steps);'
                  f' batch_size={batch_size} toks; sort_by={sort_by};'
                  f' check point size:{check_point}; fine_tune={fine_tune};'
                  f' dec_bos_cut={dec_bos_cut}')
@@ -674,10 +686,10 @@ class TransformerTrainer(SteppedTrainer):
             batch_size *= self.n_gpus
             log.info(f"# GPUs = {self.n_gpus}, batch_size is set to {batch_size}")
 
-        if steps <= self.start_step:
+        if batches <= start_batch:
             raise Exception(f'The model was already trained to {self.start_step} steps. '
                             f'Please increase the steps or clear the existing models')
-        train_data = self.exp.get_train_data(batch_size=batch_size, steps=steps - self.start_step,
+        train_data = self.exp.get_train_data(batch_size=batch_size, steps=batches - start_batch,
                                              sort_by=sort_by, batch_first=True, fine_tune=fine_tune)
         val_data = self.exp.get_val_data(batch_size, shuffle=False, batch_first=True,
                                          sort_desc=False)
@@ -686,10 +698,14 @@ class TransformerTrainer(SteppedTrainer):
         train_state.train_mode(True)
         unsaved_state = False
         cuda_available = torch.cuda.is_available()
-        with tqdm(train_data, initial=self.start_step, total=steps, unit='batch',
+        update_interval = 0
+        with tqdm(train_data, initial=self.start_step, total=batches, unit='batch',
                   dynamic_ncols=True) as data_bar:
             for batch in data_bar:
-                self.model.zero_grad()
+                if update_interval == 0:
+                    self.model.zero_grad()
+
+                # Prep batch
                 batch = batch.to(device)
                 num_toks = batch.y_toks
                 x_seqs = batch.x_seqs
@@ -699,15 +715,27 @@ class TransformerTrainer(SteppedTrainer):
                 else:
                     bos_step = torch.full((len(batch), 1), fill_value=Batch.bos_val,
                                           dtype=torch.long, device=device)
+
+                # Prep masks
                 x_mask = (x_seqs != batch.pad_value).unsqueeze(1)
                 y_seqs_with_bos = torch.cat([bos_step, batch.y_seqs], dim=1)
                 y_mask = Batch.make_target_mask(y_seqs_with_bos)
-                out = self.model(x_seqs, y_seqs_with_bos, x_mask, y_mask)
+
                 # [Batch x Time x D]
+                out = self.model(x_seqs, y_seqs_with_bos, x_mask, y_mask)
+
                 # skip the last time step (the one with EOS as input)
                 out = out[:, :-1, :]
+
+                # Trigger optimizer step after gradient accumulation
+                if update_interval == self.grad_accum_interval-1:
+                    opt_step = True
+                else:
+                    opt_step = False
                 # assumption:  y_seqs has EOS, and not BOS
-                loss = self.loss_func(out, batch.y_seqs, num_toks, True)
+                loss = self.loss_func(out, batch.y_seqs, num_toks, train_mode=True, take_step=opt_step)
+
+                # Log
                 unsaved_state = True
                 if self.opt.curr_step % log_interval == 0:
                     self.tbd.add_scalars('training', {'step_loss': loss,
@@ -715,13 +743,12 @@ class TransformerTrainer(SteppedTrainer):
                                          self.opt.curr_step)
                     if log_resources and cuda_available:
                         self._log_resources(batch)
-
                 progress_msg, is_check_pt = train_state.step(num_toks, loss)
                 progress_msg += f', LR={self.opt.curr_lr:g}'
-
                 data_bar.set_postfix_str(progress_msg, refresh=False)
                 del batch
 
+                # Save checkpoint
                 if is_check_pt:
                     train_loss = train_state.reset()
                     train_state.train_mode(False)
@@ -735,6 +762,11 @@ class TransformerTrainer(SteppedTrainer):
                     train_state.train_mode(True)
                     unsaved_state = False
                     gc.collect()
+
+                # Track gradient accumulation updates
+                update_interval += 1
+                if update_interval >= self.grad_accum_interval:
+                    update_interval = 0
 
         # End of training
         if unsaved_state:
@@ -778,13 +810,24 @@ def __test_model__():
 
     config = {
         'model_type': 'tfmnmt',
-        'trainer': {'init_args': {'chunk_size': 2}},
-        'optim':{
-            'args':{
-                # "cross_entropy", "smooth_kld", "binary_cross_entropy", "triplet_loss"
-                'criterion': "binary_cross_entropy",
+        'trainer': {'init_args': {'chunk_size': 2, 'grad_accum': 2}},
+        'optim': {
+            'args': {
+                # "cross_entropy", "smooth_kld", "binary_cross_entropy",
+                # "triplet_loss", "smooth_kld_and_triplet_loss"
+                # 'criterion': "triplet_loss",
+                # 'criterion': "smooth_kld",
+                'criterion': "smooth_kld_and_triplet_loss",
+                'label_smoothing': 0.1,
+                'margin': 0.2,
+                'mode': 'dot',
+                'neg_sampling': 'hard',
+                'neg_region': 0.05,
+                'alpha': 1.0,
                 'lr': 0.01,
-                'inv_sqrt': True
+                'inv_sqrt': True,
+                'amsgrad': True,
+                'weight_decay': 0
             }
         }
     }
@@ -807,8 +850,8 @@ def __test_model__():
             log.info(f'{score:.4f} :: {seq}')
 
     batch_size = 50
-    steps = 1000
-    check_point = 50
+    steps = 500
+    check_point = 25
     trainer.train(steps=steps, check_point=check_point, batch_size=batch_size,
                   check_pt_callback=check_pt_callback)
 

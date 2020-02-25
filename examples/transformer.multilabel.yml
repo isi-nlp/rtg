@@ -47,6 +47,7 @@ tester:
 trainer:
   init_args:
     chunk_size: 10   # generation in chunks of time steps to reduce memory consumption
+    grad_accum: 1    # How many batches to accumulate gradients over
   batch_size: 4200   # not exceeding these many tokens (including paddings). in tensor2tensor it is mean batch size
   check_point: 1000  # how often to checkpoint?
   keep_models: 10   # how many checkpoints to keep on disk (small enough to save disk, large enough for checkpt averaging
