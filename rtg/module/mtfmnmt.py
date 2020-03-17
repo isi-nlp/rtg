@@ -11,7 +11,7 @@ import torch
 import torch.nn as nn
 
 from rtg.module.tfmnmt import (Encoder, EncoderLayer, PositionwiseFeedForward, PositionalEncoding,
-                               Generator, MultiHeadedAttention, Embeddings, TransformerNMT,
+                               Generator, MultiHeadedAttention, Embeddings, AbstractTransformerNMT,
                                TransformerTrainer, SublayerConnection, clones)
 from rtg import TranslationExperiment as Experiment, log
 from rtg.dataprep import CLS_TOK_IDX as cls_idx, PAD_TOK_IDX as pad_idx
@@ -114,16 +114,16 @@ class MDecoder(nn.Module):
         return self.norm(x)
 
 
-class MTransformerNMT(TransformerNMT):
+class MTransformerNMT(AbstractTransformerNMT):
 
     @property
     def model_type(self):
         return 'mtfmnmt'
 
     @classmethod
-    def make_model(cls, src_vocab, tgt_vocab, n_layers=6, hid_size=512, ff_size=2048, n_heads=8,
-                   dropout=0.1, tied_emb='three-way', plug_mode='cat_attn', activation='relu',
-                   exp: Experiment = None):
+    def make_model(cls, src_vocab, tgt_vocab, n_layers=6, hid_size=512, ff_size=2048,
+                   n_heads=8, attn_dropout=0.1, dropout=0.1, activation='relu',
+                   tied_emb='three-way', plug_mode='cat_attn', exp: Experiment = None):
         """
         Helper: Construct a model from hyper parameters."
         :return: model, args
@@ -138,7 +138,7 @@ class MTransformerNMT(TransformerNMT):
         #   validation and default value assignment is implicitly done by function call for us :)
         log.info(f"making mtfmnmt model: {args}")
         c = copy.deepcopy
-        attn = MultiHeadedAttention(n_heads, hid_size)
+        attn = MultiHeadedAttention(n_heads, hid_size, dropout=attn_dropout)
         ff = PositionwiseFeedForward(hid_size, ff_size, dropout, activation=activation)
 
         enc_layer = EncoderLayer(hid_size, c(attn), c(ff), dropout)
@@ -205,7 +205,8 @@ class MTransformerTrainer(TransformerTrainer):
 
     def __init__(self, *args, model_factory=MTransformerNMT.make_model, **kwargs):
         super().__init__(*args, model_factory=model_factory, **kwargs)
-        assert isinstance(self.model, MTransformerNMT)  # type check
+        assert isinstance(self.model, MTransformerNMT) or \
+            (isinstance(self.model, nn.DataParallel) and isinstance(self.model.module, MTransformerNMT))
 
 
 def __test_model__():

@@ -131,6 +131,12 @@ class IO:
             yield from inp
 
     @classmethod
+    def get_liness(cls, *paths, **kwargs):
+        for path in paths:
+            yield from cls.get_lines(path, **kwargs)
+
+
+    @classmethod
     def write_lines(cls, path: Path, text):
         if isinstance(text, str):
             text = [text]

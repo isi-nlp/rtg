@@ -1,0 +1,171 @@
+# RTG *`conf.yml`* File
+
+The key component of RTG toolkit is a `conf.yml`. As the name says - it is a YAML file containing configuration
+for an experiment.
+Before we get into understanding what goes into configuration file
+
+* Experiment - the top level entity that wraps everything below, for the sake of reproducibility.
+* Data Preparation - NLP datasets require preparation of textual data. Typically, creation of
+vocabulary to map text into sequence of integers. Here we can specify type of encoding scheme
+such as BPE/char/words, and vocabulary size.
+* Model - model is neural net for NMT or LM tasks. Here we
+* Optimizer - Optimizer and optimization criteria
+* Trainer - training steps, batch size etc
+* Tester [Optional] -- testing to do post training
+** Tuner [Optional] - to search for beam size, length penalty etc
+** Decoder - the Beam decoder parameters, maybe overwritten by Tuner
+** Suite - a set of source and reference file pairs, for computing BLEU scores
+
+
+## Minimal Yet Complete Config File:
+
+.conf.yml
+[source,yaml]
+----
+model_args: # model construction args
+  ff_size: 2048
+  hid_size: 512
+  n_heads: 8
+  attn_dropout: 0.1  # Use lower dropout rates for attention because it masks an entire timestep 
+  dropout: 0.2
+  enc_layers: 6
+  dec_layers: 6
+  src_vocab: 8000
+  tgt_vocab: 8000
+  tied_emb: three-way  # choices: null, one-way, two-way, three-way
+model_type: tfmnmt  # model type. tfmnmt is the transformer NMT model
+optim:
+  args:
+    betas:
+      - 0.9
+      - 0.98
+    eps: 1.0e-09
+    label_smoothing: 0.1
+    lr: 0.2
+    warmup_steps: 8000
+    constant: 2
+    criterion: smooth_kld  # other choices: "cross_entropy", "binary_cross_entropy", "triplet_loss"
+  name: ADAM
+prep: # data preparation
+  max_types: 8000  # maximum number of types in vocab ; if shared_vocab=false, set max_src_types and max_tgt_types separately
+  pieces: bpe   # choices: bpe, char, word, unigram  from google/sentencepiece
+  shared_vocab: true  # true means same vocab for src and tgt, false means different vocabs
+  src_len: 256   # longer sentences, decision is made as per 'truncate={true,false}'
+  tgt_len: 256
+  truncate: true  # what to do with long sentences: if true truncate at src_len or tgt_len; if false filter away
+  train_src: wmt_data/data/de-en/europarl-v9.de-en.de.tok   # training data
+  train_tgt: wmt_data/data/de-en/europarl-v9.de-en.en.tok
+  valid_src: wmt_data/data/dev/newstest2013.de.tok
+  valid_tgt: wmt_data/data/dev/newstest2013.en.tok
+tester:
+  decoder:
+   beam_size: 4
+   batch_size: 18000   # effective size = batch_size/beam_size
+  suit:  # suit of tests to run after the training
+    newstest2013:  # name of test and list of src.tok, ref file (ref should be unmodified)
+      - wmt_data/data/dev/newstest2013.de.tok
+      - wmt_data/data/dev/newstest2013.en
+    newstest2014:  # name of test and list of src.tok, ref file (ref should be unmodified)
+      - wmt_data/data/dev/newstest2014-deen-src.de.tok
+      - wmt_data/data/dev/newstest2014-deen-ref.en
+trainer:
+  init_args:
+    chunk_size: 10   # generation in chunks of time steps to reduce memory consumption
+  batch_size: 4200   # not exceeding these many tokens (including paddings)
+  check_point: 1000  # how often to checkpoint?
+  keep_models: 10   # how many checkpoints to keep on disk (small enough to save disk, large enough for checkpt averaging
+  steps: 200000   # how many steps to train
+updated_at: '2019-03-09T21:15:33.707183'  # automatically updated by system
+seed: 12345  # fix the manual seed of pytorch + cuda + numpy + python_stdlib RNGs. Remove/comment this to disable
+----
+
+
+## Fine Tuning
+
+We define fine tuning as the act of  changing the training data at certain time step in the training process.
+To enable this feature, we need to do following.
+
+Step1. specify, `finetune_src` `finetune_tgt` in the `prep` block as follows
+[source,yaml]
+----
+prep: # data preparation
+  ....
+  train_src: wmt_data/data/de-en/europarl-v9.de-en.de.tok   # training data
+  train_tgt: wmt_data/data/de-en/europarl-v9.de-en.en.tok
+  finetune_src: wmt_data/data/de-en/finetune.de-en.de.tok   # Finetuning data
+  finetune_tgt: wmt_data/data/de-en/finetune.de-en.en.tok
+  valid_src: wmt_data/data/dev/newstest2013.de.tok
+  valid_tgt: wmt_data/data/dev/newstest2013.en.tok
+----
+Step2, Inform the Trainer to continue training, edit the `trainer` block with `finetune_steps`.
+[source,yaml]
+----
+trainer:
+  steps: 200000   # how many steps to train
+  finetune_steps: 300000 # fine tuning steps.
+----
+This makes the trainer use `train_{src,tgt}` for 0 - 200k steps,  followed by `finetune_{src,tgt}`
+for 200k-300k steps. Note that `finetune_steps > steps` .
+
+
+
+## Sharing the data from other experiment
+
+In the new experiment config, add `same_data` to reference parent experiment from which the data
+should be reused for training and validation. Note that this uses the same vocabulary as parent.
+The child experiment creates a symbolic link to parent experiments data (instead of copying,
+to reduce the disk space).
+
+[source,yaml]
+----
+
+prep:
+  same_data: path/to/prior/experiment_dir
+
+----
+
+## Vocabulary Preprocessing using Sentencepiece or NLCodec
+
+link:https://github.com/google/sentencepiece[Google's sentencepiece] is an awesome lib for
+preprocessing the text datasets.
+We've used sentencepiece's python API since day-1 of RTG and it is the default library.
+However, since the core sentencepiece is written in C++, it was hard to modify to explore some new
+ideas on BPE (without knowing C++). So, we reimplemented BPE in pure python, with advanced
+datastructures such as linked-lists, prefix tries and dirty-maxheap to match the speed.
+Our reimplementation is named as link:https://github.com/isi-nlp/nlcodec/[NLCodec].
+NLCoded can be enabled as:
+
+[source, yaml]
+----
+prep:
+  ....
+  codec_lib: nlcodec  # default is sentpiece
+----
+
+### Vocabulary Types
+Both `sentpiece` or `nlcodec` support `pieces=` `bpe`, `char`, `word`.
+
+[source, yaml]
+----
+prep:
+  ....
+  codec_lib: nlcodec  # other option: sentpiece
+  pieces: bpe         # other options: char, word
+----
+As of now, only `sentpiece` supports `pieces=unigram`.
+
+### Character coverage
+
+For `bpe` and `char` vocabulary types, a useful trick is to exclude low frequency character and mark them as `UNK's`.
+Usually expressed as percentage of character coverage in training corpus.
+Sentencepiece's default (when we last checked) is 99.95% ie 0.9995.
+Here is how to set this for eg to 99.99% i.e. 0.9999 in `nlcodec`
+[source, yaml]
+----
+prep:
+  ....
+  codec_lib: nlcodec  # other option: sentpiece
+  pieces: bpe         # other options: char, word
+  char_coverage: 0.9999         # other options: char, word
+----
+

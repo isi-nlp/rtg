@@ -11,7 +11,7 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 from tqdm import tqdm
-from rtg.module.tfmnmt import LabelSmoothing
+from rtg.module.criterion import SmoothKLD
 from rtg.dataprep import PAD_TOK_IDX
 from rtg import log, yaml
 from rtg.utils import IO
@@ -216,9 +216,9 @@ class SysCombTrainer:
         self.combo = combo.to(device)
         self.exp = exp
         self.optim = torch.optim.Adam(combo.parameters(), lr=lr)
-        self.criterion = LabelSmoothing(vocab_size=combo.vocab_size,
-                                        padding_idx=PAD_TOK_IDX,
-                                        smoothing=smoothing)
+        self.criterion = SmoothKLD(vocab_size=combo.vocab_size,
+                                   padding_idx=PAD_TOK_IDX,
+                                   smoothing=smoothing)
 
     def train(self, steps: int, batch_size: int):
         log.info(f"Going to train for {steps}")

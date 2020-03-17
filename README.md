@@ -59,7 +59,11 @@ git clone https://github.com/isi-nlp/rtg.git
 cd rtg                # go to the code
 
 conda env create .   # adds a conda env named rtg
+# if you modify environment.yml, to update the conda env, run
+# conda env update -f environment.yml
 conda activate rtg
+# Or, to update existing environment `rtg` from .yml file
+# conda env update --name rtg --file environment.yml
 
 # install this as a local editable pip package
 pip install --editable .

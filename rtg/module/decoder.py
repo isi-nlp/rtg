@@ -1,8 +1,6 @@
-import abc
 import time
 import traceback
 from io import StringIO
-from collections import OrderedDict
 from typing import List, Tuple, Type, Dict, Any, Optional, Iterator
 from pathlib import Path
 import math
@@ -160,6 +158,7 @@ class Decoder:
 
     @staticmethod
     def average_states(model_paths: List[Path]):
+        assert model_paths, 'at least one model checkpoint should be given. Check your directory'
         for i, mp in enumerate(model_paths):
             next_state = Decoder._checkpt_to_model_state(mp)
             if i < 1:
@@ -232,6 +231,10 @@ class Decoder:
 
         model = model.eval().to(device=device)
         generator = generators[model_type]
+        if exp.optim_args[1] and exp.optim_args[1].get('criterion') == 'binary_cross_entropy':
+            log.info("((Going to decode in multi-label mode))")
+            gen_args = gen_args or {}
+            gen_args['multi_label'] = True
         return cls(model, generator, exp, gen_args)
 
     def greedy_decode(self, x_seqs, x_lens, max_len, **args) -> List[Hypothesis]:
