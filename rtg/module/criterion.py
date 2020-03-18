@@ -149,15 +149,14 @@ class TripletLoss(Criterion):
         anchors = x      # [B x D]
         pos_embs = self.embedding(targets)  # [B x D]
         if self.neg_sampling == 'random':
-            neg_ids = torch.randint_like(targets, low=self.pad_idx+1, high=self.vocab_size)
+            neg_ids = torch.randint_like(targets, low=self.pad_idx+1, high=self.vocab_size)  # [B]
         elif self.neg_sampling == 'hard':
-            candidates = torch.einsum('bd,vd->bv', anchors, self.embeddings)
-            mask = candidates.new_full(candidates.shape, False, dtype=torch.bool)
-            for r, t in enumerate(torch.unbind(targets)):
-                mask[r, t.item()] = True
+            candidates = torch.einsum('bd,vd->bv', anchors, self.embeddings)    # [B, V]
+            mask = candidates.new_full(candidates.shape, False, dtype=torch.bool) # [B, V]
+            mask.scatter_(dim=1, index=targets.view(-1, 1), value=True)
             candidates = candidates.masked_fill(mask, -1)
             c, indexes = torch.sort(candidates)
-            neg_ids = indexes[:, -self.hard_neg_region].contiguous().view(-1)
+            neg_ids = indexes[:, -self.hard_neg_region].contiguous().view(-1)  #[B]
         else:
             raise Exception(self.neg_sampling + ' not supported')
         neg_embs = self.embedding(neg_ids)   # [B x D]
