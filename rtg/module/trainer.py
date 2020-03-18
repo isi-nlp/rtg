@@ -240,13 +240,14 @@ class SteppedTrainer:
     def create_criterion(self, criterion):
         log.info(f"Criterion = {criterion}")
 
-        smoothing = self.exp.optim_args[1].get('label_smoothing', 0.0)
+        optim_args = self.exp.optim_args[1]
+        smoothing = optim_args.get('label_smoothing', 0.0)
         tgt_embedding = self.model.tgt_embed[0].lut
-        margin = self.exp.optim_args[1].get('margin', 0.0)
-        mode = self.exp.optim_args[1].get('mode', 'dot')
-        neg_sampling = self.exp.optim_args[1].get('neg_sampling', 'random')
-        neg_region = self.exp.optim_args[1].get('neg_region', 0.05)
-        alpha = self.exp.optim_args[1].get('alpha', 1.0)
+        margin = optim_args.get('margin', 0.0)
+        mode = optim_args.get('mode', 'dot')
+        neg_sampling = optim_args.get('neg_sampling', 'random')
+        neg_region = optim_args.get('neg_region', 0.05)
+        alpha = optim_args.get('alpha', 1.0)
 
         if criterion == 'smooth_kld':
             return criteria.SmoothKLD(vocab_size=self.model.generator.vocab, smoothing=smoothing)
