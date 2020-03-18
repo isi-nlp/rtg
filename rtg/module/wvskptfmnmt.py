@@ -121,7 +121,8 @@ class WVSKPTransformerTrainer(tfm.TransformerTrainer):
 
     def __init__(self, *args, model_factory=WidthVaryingSkipTransformerNMT.make_model, **kwargs):
         super().__init__(*args, model_factory=model_factory, **kwargs)
-        assert isinstance(self.model, WidthVaryingSkipTransformerNMT)  # type check
+        assert isinstance(self.model, WidthVaryingSkipTransformerNMT) or \
+            (isinstance(self.model, nn.DataParallel) and isinstance(self.model.module, WidthVaryingSkipTransformerNMT))
 
 
 def __test_model__():
@@ -147,7 +148,7 @@ def __test_model__():
 
     config = {
         'model_type': 'wvskptfmnmt',
-        'trainer': {'init_args': {'chunk_size': 2}},
+        'trainer': {'init_args': {'chunk_size': 2, 'grad_accum': 5}},
         'optim': {
             'args': {
                 # "cross_entropy", "smooth_kld", "binary_cross_entropy", "triplet_loss"
@@ -174,8 +175,8 @@ def __test_model__():
             log.info(f'{score:.4f} :: {seq}')
 
     batch_size = 50
-    steps = 1000
-    check_point = 50
+    steps = 200
+    check_point = 10
     trainer.train(steps=steps, check_point=check_point, batch_size=batch_size,
                   check_pt_callback=check_pt_callback)
 

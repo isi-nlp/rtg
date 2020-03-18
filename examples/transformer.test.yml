@@ -19,6 +19,8 @@ optim:
     label_smoothing: 0.1
     lr: 0.1
     warmup_steps: 4000
+    criterion: smooth_kld  # multi label classification, binary decision per class
+    # all options "cross_entropy", "smooth_kld", "binary_cross_entropy", "triplet_loss"
   name: ADAM
 prep:
   max_types: 500
@@ -59,6 +61,7 @@ tester:
 trainer:
   init_args:
     chunk_size: 10
+    grad_accum: 1    # How many batches to accumulate gradients over
   batch_size: 1024
   check_point: 400
   keep_models: 10
