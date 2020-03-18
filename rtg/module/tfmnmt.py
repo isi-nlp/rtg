@@ -248,8 +248,8 @@ class TransformerNMT(AbstractTransformerNMT):
 
     @classmethod
     def make_model(cls, src_vocab, tgt_vocab, enc_layers=6, dec_layers=6, hid_size=512, ff_size=2048,
-                   n_heads=8, attn_bias=True, dropout=0.1, tied_emb='three-way', activation='relu',
-                   exp: Experiment = None):
+                   n_heads=8, attn_bias=True, attn_dropout=0.1, dropout=0.2, activation='relu',
+                   tied_emb='three-way', exp: Experiment = None):
         "Helper: Construct a model from hyper parameters."
 
         # get all args for reconstruction at a later phase
@@ -257,7 +257,7 @@ class TransformerNMT(AbstractTransformerNMT):
         assert activation in {'relu', 'elu', 'gelu'}
         log.info(f"Make model, Args={args}")
         c = copy.deepcopy
-        attn = MultiHeadedAttention(n_heads, hid_size, dropout=dropout, bias=attn_bias)
+        attn = MultiHeadedAttention(n_heads, hid_size, dropout=attn_dropout, bias=attn_bias)
         ff = PositionwiseFeedForward(hid_size, ff_size, dropout, activation=activation)
 
         if enc_layers == 0:
@@ -437,16 +437,19 @@ class SimpleLossFunction:
     criterion: Criterion
     opt: Optimizer
 
-    def __call__(self, x_feats, y_seqs, normalizer, train_mode=True):
+    def __call__(self, x_feats, y_seqs, normalizer, train_mode=True, take_step=True):
         x_probs = self.generator(x_feats, score=self.criterion.input_type)  # B x T x D --> B x T x V
 
         scores = x_probs.contiguous().view(-1, x_probs.size(-1))  # B x T x V --> B.T x V
         truth = y_seqs.contiguous().view(-1)  # B x T --> B.T
         loss = self.criterion(scores, truth).sum() / normalizer
+
         if train_mode:  # don't do this for validation set
             loss.backward()
-            self.opt.step()
-            self.opt.zero_grad()
+            if take_step:
+                self.opt.step()
+                self.opt.zero_grad()
+
         return loss.item()
 
 
@@ -471,7 +474,7 @@ class ChunkedLossCompute(SimpleLossFunction):
                 -1])  # B x C x V -> B.C x V
             chunked_ys = y_seqs[:, i:i + chunk_size].contiguous().view(-1)  # B x C -> B.C
             loss = self.criterion(chunked_dist, chunked_ys).sum() / normalizer
-            total = total + loss.detach().item()
+            total += loss.detach().item()
             if train_mode:
                 loss.backward()
         if train_mode:
@@ -570,8 +573,11 @@ class TransformerTrainer(SteppedTrainer):
         super().__init__(exp, model, model_factory=model_factory, optim=optim, **optim_args)
         generator = self.model.generator
         self.n_gpus = torch.cuda.device_count()
-        self.grad_accum_interval = self.exp.config.get('trainer', {}).get('init_args', {}).get('grad_accum', 1)
-        chunk_size = self.exp.config.get('trainer', {}).get('init_args', {}).get('chunk_size', 10)
+        trainer_args = self.exp.config.get('trainer', {}).get('init_args', {})
+        chunk_size = trainer_args.get('chunk_size', 10)
+        self.grad_accum_interval = trainer_args.get('grad_accum', 1)
+        assert self.grad_accum_interval > 0
+
         log.info(f"Going to use {self.n_gpus} GPUs; "
                  f" Chunk_size={chunk_size} CUDA_VISIBLE_DEVICES="
                  f"{os.environ.get('CUDA_VISIBLE_DEVICES')}")
@@ -581,8 +587,7 @@ class TransformerTrainer(SteppedTrainer):
             log.warning("Multi GPU mode <<this feature is not well tested>>")
             self.model = nn.DataParallel(self.model, dim=0, device_ids=device_ids)
 
-            self.loss_func = MultiGPULossFunction(self.model, criterion=self.criterion,
-                                                  opt=self.opt,
+            self.loss_func = MultiGPULossFunction(self.model, criterion=self.criterion, opt=self.opt,
                                                   chunk_size=chunk_size, devices=device_ids)
         else:
             self.loss_func = ChunkedLossCompute(generator=generator, criterion=self.criterion,
@@ -699,7 +704,7 @@ class TransformerTrainer(SteppedTrainer):
         unsaved_state = False
         cuda_available = torch.cuda.is_available()
         update_interval = 0
-        with tqdm(train_data, initial=self.start_step, total=batches, unit='batch',
+        with tqdm(train_data, initial=start_batch, total=batches, unit='batch',
                   dynamic_ncols=True) as data_bar:
             for batch in data_bar:
                 if update_interval == 0:
@@ -728,10 +733,8 @@ class TransformerTrainer(SteppedTrainer):
                 out = out[:, :-1, :]
 
                 # Trigger optimizer step after gradient accumulation
-                if update_interval == self.grad_accum_interval-1:
-                    opt_step = True
-                else:
-                    opt_step = False
+                opt_step = update_interval == (self.grad_accum_interval-1)
+
                 # assumption:  y_seqs has EOS, and not BOS
                 loss = self.loss_func(out, batch.y_seqs, num_toks, train_mode=True, take_step=opt_step)
 

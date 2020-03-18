@@ -11,6 +11,7 @@ from pathlib import Path
 import sqlite3
 import pickle
 from itertools import zip_longest
+from abc import ABCMeta, abstractmethod
 
 PAD_TOK = '<pad>', 0
 UNK_TOK = '<unk>', 1
@@ -33,15 +34,56 @@ ParallelSeqRecord = Tuple[MonoSeqRecord, MonoSeqRecord]
 TokStream = Union[Iterator[Iterator[str]], Iterator[str]]
 
 
-class Field(SentencePieceProcessor):
+class Field(metaclass=ABCMeta):
+
+    @abstractmethod
+    def encode_as_ids(self, text, add_bos, add_eos):
+        pass
+
+    @abstractmethod
+    def decode_ids(self, ids, trunc_eos):
+        """
+        convert ids to text
+        :param ids:
+        :param trunc_eos: skip everything after first EOS token in sequence
+        :return:
+        """
+        pass
+
+    @abstractmethod
+    def tokenize(self, text):
+        pass
+
+    @abstractmethod
+    def detokenize(self, tokens):
+        pass
+
+    @staticmethod
+    @abstractmethod
+    def train(model_type: str, vocab_size: int, model_path: str, files: Iterator[str],
+              no_split_toks: Optional[List[str]] = None,
+              char_coverage: float = -1.0):
+        """
+        Train Sentence Piece Model
+        :param model_type: sentence piece model type: {unigram, BPE, word, char}
+        :param vocab_size: target vocabulary size
+        :param model_path: where to store model
+        :param files: input files
+        :param no_split_toks: Don't split these tokens
+        :return:
+        """
+        pass
+
+
+class SPField(SentencePieceProcessor, Field):
     """A wrapper class for sentence piece trainer and processor"""
 
     def __init__(self, path: str):
-        super(Field, self).__init__()
+        super().__init__()
         assert self.load(path)
 
     def encode_as_ids(self, text: str, add_bos=False, add_eos=False) -> List[int]:
-        ids = super(Field, self).encode_as_ids(text)
+        ids = super(SPField, self).encode_as_ids(text)
         if add_bos and ids[0] != BOS_TOK[1]:
             ids.insert(0, BOS_TOK[1])
         if add_eos and ids[-1] != EOS_TOK[1]:
@@ -60,7 +102,7 @@ class Field(SentencePieceProcessor):
                 ids = ids[:ids.index(EOS_TOK[1])]
             except ValueError:
                 pass
-        return super(Field, self).decode_ids(ids)
+        return super(SPField, self).decode_ids(ids)
 
     def tokenize(self, text: str) -> List[str]:
         return self.encode_as_pieces(text.encode())
@@ -70,7 +112,7 @@ class Field(SentencePieceProcessor):
 
     @staticmethod
     def train(model_type: str, vocab_size: int, model_path: str, files: Iterator[str],
-              no_split_toks: Optional[List[str]] = None, cover_all_chars: bool = False):
+              no_split_toks: Optional[List[str]] = None, char_coverage: float = 0):
         """
         Train Sentence Piece Model
         :param model_type: sentence piece model type: {unigram, BPE, word, char}
@@ -78,6 +120,7 @@ class Field(SentencePieceProcessor):
         :param model_path: where to store model
         :param files: input files
         :param no_split_toks: Don't split these tokens
+        :param char_coverage: character coverage (0, 1]. value <= 0 => default coverage 0.9995%
         :return:
         """
         model_prefix = model_path.replace('.model', '')
@@ -85,8 +128,9 @@ class Field(SentencePieceProcessor):
         arg = f"--input={files} --vocab_size={vocab_size} --model_prefix={model_prefix}" \
             f" --model_type={model_type} --pad_id={PAD_TOK[1]} --bos_id={BOS_TOK[1]}" \
             f" --eos_id={EOS_TOK[1]} --unk_id={UNK_TOK[1]} --hard_vocab_limit=false"
-        if cover_all_chars:
-            arg += f" --character_coverage=1.0"
+        if char_coverage > 0:
+            assert 0 < char_coverage <= 1
+            arg += f" --character_coverage={char_coverage}"
         # CLS token goes in the beginning because we need it get index 4
         cls_tok_str = CLS_TOK[0]
         if no_split_toks:
@@ -103,10 +147,71 @@ class Field(SentencePieceProcessor):
         log.info("Training complete")
         if not model_path.endswith('.model'):
             model_path += '.model'
-        model = Field(model_path)
+        model = SPField(model_path)
         for piece, idx in RESERVED_TOKS:
             assert model.piece_to_id(piece) == idx
         return model
+
+
+class NLField(Field):
+    # from nlcodec lib
+
+    def __init__(self, path: Union[str, Path]):
+        # this is experimental
+        from nlcodec import load_scheme, EncoderScheme, Type
+        self.codec: EncoderScheme = load_scheme(path)
+        self.vocab: List[Type] = self.codec.table
+        log.info(f'Loaded {len(self.codec)} types from {path}')
+        for tok, idx in RESERVED_TOKS:  # reserved are reserved
+            # Todo swap it with nlcodec.Reserved
+            assert self.vocab[idx].name == tok
+
+    def encode_as_ids(self, text: str, add_bos=False, add_eos=False) -> List[int]:
+        ids = self.codec.encode(text)
+        if add_bos and ids[0] != BOS_TOK[1]:
+            ids.insert(0, BOS_TOK[1])
+        if add_eos and ids[-1] != EOS_TOK[1]:
+            ids.append(EOS_TOK[1])
+        return ids
+
+    def decode_ids(self, ids: List[int], trunc_eos=False, remove_pads=True) -> str:
+        if trunc_eos:
+            try:
+                ids = ids[:ids.index(EOS_TOK[1])]
+            except ValueError:
+                pass
+        if remove_pads:
+            ids = [i for i in ids if i != PAD_TOK_IDX]
+        return self.codec.decode(ids)
+
+    def tokenize(self, text: str) -> List[str]:
+        return self.codec.encode_str(text)
+
+    def detokenize(self, tokens: List[str]) -> str:
+        return self.codec.decode_str(tokens)
+
+    def __len__(self):
+        return len(self.vocab)
+
+    @classmethod
+    def train(cls, model_type: str, vocab_size: int, model_path: str, files: List[str],
+              no_split_toks: Optional[List[str]] = None, char_coverage: float = 0):
+        """
+
+        :param model_type: word, char, bpe
+        :param vocab_size: vocabulary size
+        :param model_path: where to store vocabulary model
+        :param files: text for creating vcabulary
+        :param no_split_toks:
+        :param char_coverage: character coverage (0, 1]. value <= 0 => default coverage
+        :return:
+        """
+        from nlcodec import learn_vocab
+        inp = IO.get_liness(*files)
+        assert not no_split_toks, 'not supported in nlcodec yet'
+        kwargs = dict(char_coverage=char_coverage) if char_coverage > 0 else {}
+        learn_vocab(inp=inp, level=model_type, model=model_path, vocab_size=vocab_size, **kwargs)
+        return cls(model_path)
 
 
 Example = namedtuple('Example', ['x', 'y'])
@@ -484,6 +589,8 @@ class BatchIterable(Iterable[Batch]):
         self.data_path = data_path
         if not isinstance(data_path, Path):
             data_path = Path(data_path)
+        assert data_path.exists(), f'Invalid State: Training data doesnt exist;' \
+            f' Please remove _PREPARED and rerun.'
         if data_path.name.endswith(".db"):
             self.data = SqliteFile(data_path, sort_by=sort_by, **kwargs)
         else:

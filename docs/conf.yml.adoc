@@ -23,10 +23,11 @@ such as BPE/char/words, and vocabulary size.
 [source,yaml]
 ----
 model_args: # model construction args
-  dropout: 0.1
   ff_size: 2048
   hid_size: 512
   n_heads: 8
+  attn_dropout: 0.1  # Use lower dropout rates for attention because it masks an entire timestep 
+  dropout: 0.2
   enc_layers: 6
   dec_layers: 6
   src_vocab: 8000
@@ -34,6 +35,7 @@ model_args: # model construction args
   tied_emb: three-way  # choices: null, one-way, two-way, three-way
 model_type: tfmnmt  # model type. tfmnmt is the transformer NMT model
 optim:
+  name: ADAM
   args:
     betas:
       - 0.9
@@ -43,8 +45,9 @@ optim:
     lr: 0.2
     warmup_steps: 8000
     constant: 2
-    criterion: smooth_kld  # other choices: "cross_entropy", "binary_cross_entropy", "triplet_loss"
-  name: ADAM
+    criterion: smooth_kld  # other choices: "cross_entropy", "binary_cross_entropy",
+                           #                "smooth_kld_and_triplet_loss",
+                           #                "triplet_loss" (doesn't converge alone)
 prep: # data preparation
   max_types: 8000  # maximum number of types in vocab ; if shared_vocab=false, set max_src_types and max_tgt_types separately
   pieces: bpe   # choices: bpe, char, word, unigram  from google/sentencepiece
@@ -78,6 +81,25 @@ updated_at: '2019-03-09T21:15:33.707183'  # automatically updated by system
 seed: 12345  # fix the manual seed of pytorch + cuda + numpy + python_stdlib RNGs. Remove/comment this to disable
 ----
 
+## Optimization
+
+Another possible config could look like:
+[source,yaml]
+----
+optim:
+  name: ADAM
+  args:
+    betas:
+      - 0.9
+      - 0.98
+    eps: 1.0e-08
+    label_smoothing: 0.1
+    lr: 0.2
+    warmup_steps: 12000
+    constant: 2
+    criterion: smooth_kld_and_triplet_loss
+----
+
 
 ## Fine Tuning
 
@@ -105,3 +127,66 @@ trainer:
 ----
 This makes the trainer use `train_{src,tgt}` for 0 - 200k steps,  followed by `finetune_{src,tgt}`
 for 200k-300k steps. Note that `finetune_steps > steps` .
+
+
+
+## Sharing the data from other experiment
+
+In the new experiment config, add `same_data` to reference parent experiment from which the data
+should be reused for training and validation. Note that this uses the same vocabulary as parent.
+The child experiment creates a symbolic link to parent experiments data (instead of copying,
+to reduce the disk space).
+
+[source,yaml]
+----
+
+prep:
+  same_data: path/to/prior/experiment_dir
+
+----
+
+## Vocabulary Preprocessing using Sentencepiece or NLCodec
+
+link:https://github.com/google/sentencepiece[Google's sentencepiece] is an awesome lib for
+preprocessing the text datasets.
+We've used sentencepiece's python API since day-1 of RTG and it is the default library.
+However, since the core sentencepiece is written in C++, it was hard to modify to explore some new
+ideas on BPE (without knowing C++). So, we reimplemented BPE in pure python, with advanced
+datastructures such as linked-lists, prefix tries and dirty-maxheap to match the speed.
+Our reimplementation is named as link:https://github.com/isi-nlp/nlcodec/[NLCodec].
+NLCoded can be enabled as:
+
+[source, yaml]
+----
+prep:
+  ....
+  codec_lib: nlcodec  # default is sentpiece
+----
+
+### Vocabulary Types
+Both `sentpiece` or `nlcodec` support `pieces=` `bpe`, `char`, `word`.
+
+[source, yaml]
+----
+prep:
+  ....
+  codec_lib: nlcodec  # other option: sentpiece
+  pieces: bpe         # other options: char, word
+----
+As of now, only `sentpiece` supports `pieces=unigram`.
+
+### Character coverage
+
+For `bpe` and `char` vocabulary types, a useful trick is to exclude low frequency character and mark them as `UNK's`.
+Usually expressed as percentage of character coverage in training corpus.
+Sentencepiece's default (when we last checked) is 99.95% ie 0.9995.
+Here is how to set this for eg to 99.99% i.e. 0.9999 in `nlcodec`
+[source, yaml]
+----
+prep:
+  ....
+  codec_lib: nlcodec  # other option: sentpiece
+  pieces: bpe         # other options: char, word
+  char_coverage: 0.9999         # other options: char, word
+----
+
