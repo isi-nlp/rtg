@@ -37,7 +37,9 @@ model_type: tfmnmt  # model type. tfmnmt is the transformer NMT model
 optim:
   name: ADAM
   args:
-    criterion: smooth_kld  # other choices: "cross_entropy", "binary_cross_entropy", "triplet_loss", "smooth_kld_and_triplet_loss"
+    criterion: smooth_kld  # other choices: "cross_entropy", "binary_cross_entropy",
+                           #                "smooth_kld_and_triplet_loss",
+                           #                "triplet_loss" (doesn't converge alone)
     betas:
       - 0.9
       - 0.98
