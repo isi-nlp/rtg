@@ -437,7 +437,7 @@ class SimpleLossFunction:
     opt: Optimizer
 
     def __call__(self, x_feats, y_seqs, normalizer, train_mode=True, take_step=True):
-        x_probs = self.generator(x_feats, score=self.criterion.input_type) # B x T x D --> B x T x V
+        x_probs = self.generator(x_feats, score=self.criterion.input_type)  # B x T x D --> B x T x V
 
         scores = x_probs.contiguous().view(-1, x_probs.size(-1))  # B x T x V --> B.T x V
         truth = y_seqs.contiguous().view(-1)  # B x T --> B.T
