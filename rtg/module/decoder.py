@@ -57,6 +57,7 @@ class ReloadEvent(Exception):
 
 @dataclass
 class DecoderBatch:
+
     idxs: List[int] = field(default_factory=list)  # index in the file, for restoring the order
     srcs: List[str] = field(default_factory=list)
     seqs: List[str] = field(default_factory=list)  # processed srcs
@@ -65,6 +66,7 @@ class DecoderBatch:
     line_count = 0
     tok_count = 0
     max_len = 0
+    max_len_buffer = 0   # Some extra buffer for target size; eg: tgt_len = 50 + src_len
 
     def add(self, idx, src, ref, seq, id):
         self.idxs.append(idx)
@@ -78,7 +80,7 @@ class DecoderBatch:
 
     @property
     def padded_tok_count(self):
-        return self.max_len * self.line_count
+        return ( self.max_len + self.max_len_buffer ) * self.line_count
 
     def as_tensors(self, device):
         seqs = torch.zeros(self.line_count, self.max_len, device=device,
@@ -90,7 +92,8 @@ class DecoderBatch:
         return seqs, lens
 
     @classmethod
-    def from_lines(cls, lines: Iterator[str], batch_size: int, vocab: Field, sort=True, max_src_len=0):
+    def from_lines(cls, lines: Iterator[str], batch_size: int, vocab: Field, sort=True,
+                   max_src_len=0, max_len_buffer=0):
         """
         Note: this changes the order based on sequence length if sort=True
         :param lines: stream of input lines
@@ -127,11 +130,13 @@ class DecoderBatch:
             buffer = sorted(buffer, reverse=True, key=lambda x: len(x[3]))  # sort by length of seq
 
         batch = cls()
+        batch.max_len_buffer = max_len_buffer
         for idx, src, ref, seq, _id in buffer:
             batch.add(idx=idx, src=src, ref=ref, seq=seq, id=_id)
             if batch.padded_tok_count >= batch_size:
                 yield batch
                 batch = cls()
+                batch.max_len_buffer = max_len_buffer
 
         if batch.line_count > 0:
             yield batch
@@ -568,7 +573,8 @@ class Decoder:
                  f"batch_size={batch_size} max_src_len={max_src_len}")
 
         batches: Iterator[DecoderBatch] = DecoderBatch.from_lines(
-            inp, batch_size=batch_size, vocab=self.inp_vocab, max_src_len=max_src_len)
+            inp, batch_size=batch_size, vocab=self.inp_vocab, max_src_len=max_src_len,
+            max_len_buffer=args.get('max_len', 1))
 
         def _decode_all():
             buffer = []
