@@ -7,7 +7,9 @@ import torch
 from rtg import log
 import inspect
 import shutil
+import os
 from datetime import datetime
+import atexit
 
 
 # Size of each element in tensor
@@ -146,11 +148,10 @@ class IO:
                 out.write('\n')
 
     @classmethod
-    def copy_file(cls, src: Path, dest: Path, text=False):
-        assert src.resolve() != dest.resolve()
+    def copy_file(cls, src: Path, dest: Path, follow_symlinks=True):
         log.info(f"Copy {src} → {dest}")
-        with IO.reader(src, text=text) as inp, IO.writer(dest, text=text) as out:
-            shutil.copyfileobj(inp, out)
+        assert src.resolve() != dest.resolve()
+        shutil.copy2(str(src), str(dest), follow_symlinks=follow_symlinks)
 
     @classmethod
     def maybe_backup(cls, file: Path):
@@ -159,3 +160,38 @@ class IO:
             dest = file.with_suffix(f'.{time}')
             log.info(f"Backup {file} → {dest}")
             file.rename(dest)
+
+    @classmethod
+    def safe_delete(cls, path: Path):
+        try:
+            if path.exists():
+                if path.is_file():
+                    log.info(f"Delete file {path}")
+                    path.unlink()
+                elif path.is_dir():
+                    log.info(f"Delete dir {path}")
+                    path.rmdir()
+                else:
+                    log.warning(f"Coould not delete {path}")
+        except:
+            log.exception(f"Error while clearning up {path}")
+
+    @classmethod
+    def maybe_tmpfs(cls, file: Path):
+        """
+        Optionally copies a file to tmpfs that maybe fast.
+        :param file: input file to be copied to
+        :return:  file that maybe on tmp fs
+        """
+        tmp_dir = os.environ.get('RTG_TMP')
+        if tmp_dir:
+            assert file.is_file()
+            tmp_dir = Path(tmp_dir)
+            usr_dir = str(Path('~/').expanduser())
+            new_path = str(file.absolute()).replace(usr_dir, '').lstrip('/')
+            tmp_file = tmp_dir / new_path
+            tmp_file.parent.mkdir(parents=True, exist_ok=True)
+            cls.copy_file(file, tmp_file)
+            file = tmp_file
+            atexit.register(cls.safe_delete, tmp_file)
+        return file
