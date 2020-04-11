@@ -659,7 +659,7 @@ class TranslationExperiment(BaseExperiment):
                 self._pre_process_parallel('finetune_src', 'finetune_tgt', self.finetune_file)
             log.info("Using Fine tuning corpus instead of training corpus")
             inp_file = self.finetune_file
-
+        inp_file = IO.maybe_tmpfs(inp_file)
         train_data = BatchIterable(inp_file, batch_size=batch_size, sort_by=sort_by,
                                    batch_first=batch_first, shuffle=shuffle,
                                    **self._get_batch_args())
@@ -678,7 +678,8 @@ class TranslationExperiment(BaseExperiment):
         if not self.combo_file.exists():
             # user may have added fine tune file later
             self._pre_process_parallel('combo_src', 'combo_tgt', self.combo_file)
-        data = BatchIterable(self.combo_file, batch_size=batch_size, sort_desc=sort_desc,
+        combo_file = IO.maybe_tmpfs(self.combo_file)
+        data = BatchIterable(combo_file, batch_size=batch_size, sort_desc=sort_desc,
                              batch_first=batch_first, shuffle=shuffle,
                              **self._get_batch_args())
         if steps > 0:
