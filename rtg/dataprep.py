@@ -414,9 +414,9 @@ class SqliteFile:
         if path.exists():
             log.warning(f"Overwriting {path} with new records")
             os.remove(str(path))
-        log.info(f'Creating {path}')
-
-        conn = sqlite3.connect(str(path))
+        maybe_tmp = IO.maybe_tmpfs(path)
+        log.info(f'Creating {maybe_tmp}')
+        conn = sqlite3.connect(str(maybe_tmp))
         cur = conn.cursor()
         cur.execute(cls.TABLE_STATEMENT)
         count = 0
@@ -429,8 +429,10 @@ class SqliteFile:
             count += 1
         cur.close()
         conn.commit()
+        if maybe_tmp != path:
+            # bring the file back to original location where it should be
+            IO.copy_file(maybe_tmp, path)
         log.info(f"stored {count} rows in {path}")
-
 
 def read_tsv(path: str):
     assert os.path.exists(path)

@@ -185,13 +185,14 @@ class IO:
         """
         tmp_dir = os.environ.get('RTG_TMP')
         if tmp_dir:
-            assert file.is_file()
             tmp_dir = Path(tmp_dir)
             usr_dir = str(Path('~/').expanduser())
             new_path = str(file.absolute()).replace(usr_dir, '').lstrip('/')
             tmp_file = tmp_dir / new_path
             tmp_file.parent.mkdir(parents=True, exist_ok=True)
-            cls.copy_file(file, tmp_file)
+            if file.exists():
+                assert file.is_file()
+                cls.copy_file(file, tmp_file)
             file = tmp_file
             atexit.register(cls.safe_delete, tmp_file)
         return file
