@@ -29,9 +29,11 @@ cd rtg                # go to the code
 # use rtg-xt.git if you dont have access to rtg.git
 
 conda env create -n rtg python=3.7.   # adds a conda env named rtg
+conda activate rtg  # activate it
 
 # install this as a local editable pip package
-pip install --editable .
+pip install --editable .   
+# The requirements are in setup.py
 
 # or add it to PYTHONPATH 
 export PYTHONPATH=$PWD 
