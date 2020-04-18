@@ -84,7 +84,8 @@ class Generator(nn.Module):
 class EncoderLayer(nn.Module):
     "Encoder is made up of self-attn and feed forward (defined below)"
 
-    def __init__(self, size, self_attn, feed_forward, dropout):
+    def __init__(self, size, self_attn: 'MultiHeadedAttention',
+                 feed_forward: 'PositionwiseFeedForward', dropout):
         super().__init__()
         self.self_attn = self_attn
         self.feed_forward = feed_forward
@@ -234,6 +235,12 @@ class TransformerNMT(AbstractTransformerNMT):
     """
     A standard Encoder-Decoder Transformer architecture.
     """
+    # Factories; looks a bit complicated, but very useful if child classes want to customize these.
+    GeneratorFactory = Generator
+    EncoderLayerFactory = EncoderLayer
+    DecoderLayerFactory = DecoderLayer
+    EncoderFactory = Encoder
+    DecoderFactory = Decoder
 
     def __init__(self, encoder: Encoder, decoder: Decoder,
                  src_embed, tgt_embed,
@@ -262,16 +269,16 @@ class TransformerNMT(AbstractTransformerNMT):
 
         if enc_layers == 0:
             log.warning("Zero encoder layers!")
-        encoder = Encoder(EncoderLayer(hid_size, c(attn), c(ff), dropout), enc_layers)
+        encoder = cls.EncoderFactory(cls.EncoderLayerFactory(hid_size, c(attn), c(ff), dropout), enc_layers)
 
         assert dec_layers > 0
-        decoder = Decoder(DecoderLayer(hid_size, c(attn), c(attn), c(ff), dropout), dec_layers)
+        decoder = cls.DecoderFactory(cls.DecoderLayerFactory(hid_size, c(attn), c(attn), c(ff), dropout), dec_layers)
 
         src_emb = nn.Sequential(Embeddings(hid_size, src_vocab),
                                 PositionalEncoding(hid_size, dropout))
         tgt_emb = nn.Sequential(Embeddings(hid_size, tgt_vocab),
                                 PositionalEncoding(hid_size, dropout))
-        generator = Generator(hid_size, tgt_vocab)
+        generator = cls.GeneratorFactory(hid_size, tgt_vocab)
 
         model = cls(encoder, decoder, src_emb, tgt_emb, generator)
 
