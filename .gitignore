@@ -29,3 +29,4 @@ wheels/
 .installed.cfg
 *.egg
 MANIFEST
+/runs/
