@@ -45,7 +45,8 @@ class RoBERTaMT(TransformerNMT):
 
     @classmethod
     def make_model(cls, model_id='pytorch/fairseq:xlmr.base', inner_args=None, init=True,
-                   exp: Experiment = None, **args):
+                   exp: Experiment = None, src_vocab='not_used', tgt_vocab='not_used',
+                   **args):
         """
         Helper: Construct a model from hyper parameters."
         :return: model, args

@@ -296,7 +296,7 @@ def parse_args():
         assert torch.cuda.is_available(), "No GPU found... exiting"
 
     conf_file: Path = args.conf if args.conf else args.exp / 'conf.yml'
-    assert conf_file.exists()
+    assert conf_file.exists(), f'NOT FOUND: {conf_file}'
     return Experiment(args.exp, config=conf_file)
 
 def main():
