@@ -287,6 +287,10 @@ class TransformerNMT(AbstractTransformerNMT):
         model.init_params()
         return model, args
 
+    @classmethod
+    def make_trainer(cls, *args, **kwargs):
+        return TransformerTrainer(*args, **kwargs)
+
 
 class SublayerConnection(nn.Module):
     """
@@ -475,9 +479,8 @@ class ChunkedLossCompute(SimpleLossFunction):
             # grad network is cut here
             chunked_feats = _y_feats[:, i:i + chunk_size]
             chunked_dist = self.generator(chunked_feats, score=self.criterion.input_type)
-
-            chunked_dist = chunked_dist.contiguous().view(-1, chunked_dist.shape[
-                -1])  # B x C x V -> B.C x V
+            # B x C x V -> B.C x V
+            chunked_dist = chunked_dist.contiguous().view(-1, chunked_dist.shape[-1])
             chunked_ys = y_seqs[:, i:i + chunk_size].contiguous().view(-1)  # B x C -> B.C
             loss = self.criterion(chunked_dist, chunked_ys).sum() / normalizer
             total += loss.detach().item()

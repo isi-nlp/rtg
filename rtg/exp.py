@@ -10,7 +10,7 @@ import torch
 
 from rtg import log, yaml
 from rtg.data.dataset import (TSVData, BatchIterable, LoopingIterable, SqliteFile)
-from rtg.data.codec import Field, SPField, NLField
+from rtg.data.codec import Field, SPField, NLField, PretrainMatchField
 from rtg.utils import IO, line_count
 
 seeded = False
@@ -39,9 +39,11 @@ class BaseExperiment:
             config = load_conf(config)
         self.config = config if config else load_conf(self._config_file)
 
-        self.codec_name = self.config.get('prep', {}).get('codec_lib', 'sentpiece')
-        codec_libs = {'sentpiece': SPField, 'nlcodec': NLField}
-        assert self.codec_name in codec_libs # only these are supported
+        self.codec_name = self.config.get('prep', {}).get('codec_lib', 'sentpiece') # with default
+        codec_libs = {'sentpiece': SPField,
+                      'nlcodec': NLField,
+                      'pretrainmatch': PretrainMatchField}
+        assert self.codec_name in codec_libs, f'{self.codec_name} is not in {codec_libs.keys()}'
         log.info(f"codec lib = {self.codec_name}")
         self.Field = codec_libs[self.codec_name]
 
@@ -62,7 +64,7 @@ class BaseExperiment:
                 if not _dir.exists():
                     _dir.mkdir(parents=True)
 
-        assert self.config, 'Looks like config is emtpy or invalid'
+        assert self.config, 'Looks like the config is emtpy or invalid'
         self.maybe_seed()
 
         self.shared_field = self.Field(str(self._shared_field_file)) \

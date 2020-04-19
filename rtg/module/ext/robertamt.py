@@ -18,21 +18,20 @@ class RobertaGenerator(Generator):
     def __init__(self, d_model: int, vocab: int, activation='gelu'):
         super().__init__(d_model, vocab)
         self.dense = nn.Linear(d_model, d_model)
-        self.activation = None
         self.layer_norm = nn.LayerNorm(d_model)
         self.activation = dict(relu=nn.ReLU, gelu=nn.GELU, elu=nn.ELU,
                                leaky_relu=nn.LeakyReLU)[activation]
 
-    def forward(self, x, score=None, **args):
+    def forward(self, x, score=None, *args, **kwargs):
         assert not args, f'Support for {args} are removed. Please use "{score}" argument'
         if score not in ('embedding', 'identity'):
             x = self.dense(x)
             x = self.activation(x)
             x = self.layer_norm(x)
-        return super().forward(x)
+        return super().forward(x, score=score, **kwargs)
 
 
-class XLMMT(TransformerNMT):
+class RoBERTaMT(TransformerNMT):
     GeneratorFactory = RobertaGenerator
 
     def __init__(self, *args, **kwargs):
@@ -45,14 +44,15 @@ class XLMMT(TransformerNMT):
         return 'xlmmt'
 
     @classmethod
-    def make_model(cls, name='pytorch/fairseq:xlmr.base', inner_args=None, init=True,
-                   exp: Experiment = None):
+    def make_model(cls, model_id='pytorch/fairseq:xlmr.base', inner_args=None, init=True,
+                   exp: Experiment = None, **args):
         """
         Helper: Construct a model from hyper parameters."
         :return: model, args
         """
-        log.info(f"making mtfmnmt model: {name}")
-        group, model_name = name.split(':')
+        assert not args, f'{args} not supported'
+        log.info(f"making mtfmnmt model: {model_id}")
+        group, model_name = model_id.split(':')
         hub_api = torch.hub.load(group, model_name)
         # hub_api = torch.hub.load('pytorch/fairseq', 'xlmr.base.v0')
         roberta: 'RobertaEncoder' = hub_api.model.decoder
@@ -75,8 +75,8 @@ class XLMMT(TransformerNMT):
 
         xlmmt, inner_args = super().make_model(**args, exp=exp)
         if init:
-            xlmmt.init_from_roberta(roberta)
-        return xlmmt, dict(name=name, inner_args=inner_args, init=init)
+            xlmmt.init_from_roberta(roberta, init)
+        return xlmmt, dict(model_id=model_id, inner_args=inner_args, init=init)
 
     def init_from_roberta(self, roberta: 'RobertaEncoder', init):
         # fairseq stuff; imports are not really needed. Placed here just in case for inspection
@@ -179,7 +179,7 @@ class XLMMT(TransformerNMT):
 
 
 def __test_model__():
-    model = XLMMT.make_model()
+    model = RoBERTaMT.make_model()
 
 
 if __name__ == '__main__':

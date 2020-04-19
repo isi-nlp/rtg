@@ -9,7 +9,7 @@ from typing import List, Iterator, Union, Optional
 
 from sentencepiece import SentencePieceProcessor, SentencePieceTrainer
 
-from rtg import log
+from rtg import log, yaml
 from rtg.utils import IO
 
 
@@ -206,3 +206,65 @@ class NLField(Field):
         learn_vocab(inp=inp, level=model_type, model=model_path, vocab_size=vocab_size, **kwargs)
         return cls(model_path)
 
+
+class PretrainMatchField(Field):
+
+    # this order is for fairseq's XML-R
+
+    bos_tok, bos_idx = '<s>', 0
+    pad_tok, pad_idx = '<pad>', 1
+    eos_tok, eos_idx = '</s>', 2
+    unk_tok, unk_idx = '<unk>', 3
+    reserved_idxs = [pad_idx, unk_idx, bos_idx, eos_idx]
+    reserved_toks = [pad_tok, unk_tok, bos_tok, eos_tok]
+
+    def __init__(self, path: Union[str, Path]):
+        with IO.reader(path) as rdr:
+            data = yaml.load(rdr)
+        github, model_name = data['model_id'].split(':')
+        from torch.hub import load as load_model
+        hub_api = load_model(github, model_name)
+        # these are for XML-R wiz RoBERTa from fairseq  ; generalize it for other models later
+        self.bpe = hub_api.bpe
+        self.dicto = hub_api.task.dictionary
+
+        for tok, idx in self.reserved():  # reserved are reserved
+            assert self.dicto.indices[tok] == idx
+            assert self.dicto.symbols[idx] == tok
+
+    @classmethod
+    def train(cls, model_type: str, vocab_size: int, model_path: Union[Path, str], *args, **kwargs):
+        # IDEA: shrink vocabulary to only include training data types
+        data = {'model_id': model_type}
+        with IO.writer(model_path) as wrtr:
+            yaml.dump(data, wrtr)
+        return cls(model_path)
+
+    def encode_as_ids(self, text: str, add_bos=False, add_eos=False) -> List[int]:
+        pieces = self.tokenize(text)
+        ids = [self.dicto.indices.get(p, self.unk_idx) for p in pieces]
+        if add_bos and ids[0] != self.bos_idx:
+            ids.insert(0, self.bos_idx)
+        if add_eos and ids[-1] != self.eos_idx:
+            ids.append(self.eos_idx)
+        return ids
+
+    def decode_ids(self, ids: List[int], trunc_eos=False, remove_pads=True) -> str:
+        if trunc_eos:
+            try:
+                ids = ids[:ids.index(self.eos_idx)]
+            except ValueError:
+                pass
+        if remove_pads:
+            ids = [i for i in ids if i != self.pad_idx]
+        pieces = [self.dicto.symbols[i] for i in ids]
+        return self.detokenize(pieces)
+
+    def tokenize(self, text: str) -> List[str]:
+        return self.bpe.encode(text).split()
+
+    def detokenize(self, tokens: List[str]) -> str:
+        return self.bpe.decode(' '.join(tokens))
+
+    def __len__(self):
+        return len(self.dicto)
