@@ -53,7 +53,7 @@ def add_on_off_conf(parser, name:str, help, dest=None, default=True):
                        help=f'Negation of --{name}', default=not default)
 
 
-if __name__ == '__main__':
+def main():
     p = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter,
                                 description="fork an experiment.")
     p.add_argument('from_exp', type=Path, help="From experiment. Should be valid experiment dir")
@@ -65,3 +65,8 @@ if __name__ == '__main__':
     args = vars(p.parse_args())
     print(args)
     fork_experiment(**args)
+
+
+if __name__ == '__main__':
+    main()
+

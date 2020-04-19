@@ -90,7 +90,11 @@ def parse_args():
     return args
 
 
-if __name__ == '__main__':
+def main():
     args = parse_args()
     tool = ExperimentExporter(Experiment(args.pop('source')))
     tool.export(**args)
+
+
+if __name__ == '__main__':
+    main()

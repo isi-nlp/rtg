@@ -298,7 +298,10 @@ def parse_args():
     assert conf_file.exists()
     return Experiment(args.exp, config=conf_file)
 
-
-if __name__ == '__main__':
+def main():
     pipe = Pipeline(exp=parse_args())
     pipe.run()
+
+
+if __name__ == '__main__':
+    main()
