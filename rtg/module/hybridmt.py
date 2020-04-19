@@ -17,7 +17,6 @@ from rtg.module.tfmnmt import (Encoder, EncoderLayer, PositionwiseFeedForward, P
                                Generator, MultiHeadedAttention, Embeddings, TransformerNMT,
                                TransformerTrainer, SublayerConnection, clones)
 from rtg import TranslationExperiment as Experiment, log
-from rtg.dataprep import CLS_TOK_IDX as cls_idx, PAD_TOK_IDX as pad_idx
 
 
 class RnnDecoder(nn.Module):

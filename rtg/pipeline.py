@@ -127,7 +127,7 @@ class Pipeline:
 
     def tune_decoder_params(self, exp: Experiment, tune_src: str, tune_ref: str, batch_size: int,
                             trials: int = 10, lowercase=True,
-                            beam_size=[1, 4, 8], ensemble=[1, 5, 10], lp_alpha=[0.0, 0.4, 0.6],
+                            beam_size=(1, 4, 8), ensemble=(1, 5, 10), lp_alpha=(0.0, 0.4, 0.6),
                             suggested: List[Tuple[int, int, float]] = None,
                             **fixed_args):
         _, _, _, tune_args = inspect.getargvalues(inspect.currentframe())

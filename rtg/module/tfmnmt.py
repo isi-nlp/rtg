@@ -4,7 +4,6 @@ import os
 import copy
 import math
 import time
-import inspect
 import gc
 from abc import ABC
 from typing import Callable, Optional, List, Union
@@ -620,12 +619,12 @@ class TransformerTrainer(SteppedTrainer):
                     bos_step = x_seqs[:, :1]
                     x_seqs = x_seqs[:, 1:]
                 else:
-                    bos_step = torch.full((len(batch), 1), fill_value=Batch.bos_val,
+                    bos_step = torch.full((len(batch), 1), fill_value=batch.bos_val,
                                           dtype=torch.long, device=device)
 
                 x_mask = (x_seqs != batch.pad_value).unsqueeze(1)
                 y_seqs_with_bos = torch.cat([bos_step, batch.y_seqs], dim=1)
-                y_mask = Batch.make_target_mask(y_seqs_with_bos)
+                y_mask = batch.make_autoreg_mask(y_seqs_with_bos)
                 out = self.model(x_seqs, y_seqs_with_bos, x_mask, y_mask)
                 # [Batch x Time x D]
                 # skip the last time step (the one with EOS as input)
@@ -726,13 +725,13 @@ class TransformerTrainer(SteppedTrainer):
                     bos_step = x_seqs[:, :1]
                     x_seqs = x_seqs[:, 1:]
                 else:
-                    bos_step = torch.full((len(batch), 1), fill_value=Batch.bos_val,
+                    bos_step = torch.full((len(batch), 1), fill_value=batch.bos_val,
                                           dtype=torch.long, device=device)
 
                 # Prep masks
                 x_mask = (x_seqs != batch.pad_value).unsqueeze(1)
                 y_seqs_with_bos = torch.cat([bos_step, batch.y_seqs], dim=1)
-                y_mask = Batch.make_target_mask(y_seqs_with_bos)
+                y_mask = batch.make_autoreg_mask(y_seqs_with_bos)
 
                 # [Batch x Time x D]
                 out = self.model(x_seqs, y_seqs_with_bos, x_mask, y_mask)

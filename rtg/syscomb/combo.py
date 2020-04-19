@@ -12,7 +12,6 @@ from torch import nn
 import torch.nn.functional as F
 from tqdm import tqdm
 from rtg.module.criterion import SmoothKLD
-from rtg.dataprep import PAD_TOK_IDX
 from rtg import log, yaml
 from rtg.utils import IO
 from rtg.lm.rnnlm import RnnLm
@@ -150,10 +149,10 @@ class Combo(nn.Module):
 
         x_seqs = batch.x_seqs
         x_mask = (batch.x_seqs != batch.pad_value).unsqueeze(1)
-        bos_step = torch.full((len(batch), 1), fill_value=Batch.bos_val, dtype=torch.long,
+        bos_step = torch.full((len(batch), 1), fill_value=batch.bos_val, dtype=torch.long,
                               device=device)
         y_seqs_with_bos = torch.cat([bos_step, batch.y_seqs], dim=1)
-        y_mask = Batch.make_target_mask(y_seqs_with_bos)
+        y_mask = batch.make_autoreg_mask(y_seqs_with_bos)
 
         for i, model in enumerate(self.models):
             distr_i = model(x_seqs, y_seqs_with_bos, x_mask, y_mask,
@@ -217,7 +216,7 @@ class SysCombTrainer:
         self.exp = exp
         self.optim = torch.optim.Adam(combo.parameters(), lr=lr)
         self.criterion = SmoothKLD(vocab_size=combo.vocab_size,
-                                   padding_idx=PAD_TOK_IDX,
+                                   padding_idx=exp.tgt_vocab.pad_idx,
                                    smoothing=smoothing)
 
     def train(self, steps: int, batch_size: int):

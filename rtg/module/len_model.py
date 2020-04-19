@@ -124,8 +124,10 @@ class Trainer:
     def train(self, num_epochs: int, batch_size: int, **args):
         log.info(f'Going to train for {num_epochs} epochs; batch_size={batch_size}')
 
-        train_data = BatchIterable(self.exp.train_file, batch_size=batch_size, in_mem=True)
-        val_data = BatchIterable(self.exp.valid_file, batch_size=batch_size, in_mem=True)
+        train_data = BatchIterable(self.exp.train_file, batch_size=batch_size, in_mem=True,
+                                   field=self.exp.tgt_vocab)
+        val_data = BatchIterable(self.exp.valid_file, batch_size=batch_size, in_mem=True,
+                                 field=self.exp.tgt_vocab)
         keep_models = args.get('keep_models', 4)
         if num_epochs <= self.start_epoch:
             raise Exception(f'The model was already trained to {self.start_epoch} epochs. '

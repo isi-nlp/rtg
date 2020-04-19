@@ -661,7 +661,7 @@ class TranslationExperiment(BaseExperiment):
             inp_file = self.finetune_file
         inp_file = IO.maybe_tmpfs(inp_file)
         train_data = BatchIterable(inp_file, batch_size=batch_size, sort_by=sort_by,
-                                   batch_first=batch_first, shuffle=shuffle,
+                                   batch_first=batch_first, shuffle=shuffle, field=self.tgt_vocab,
                                    **self._get_batch_args())
         if steps > 0:
             train_data = LoopingIterable(train_data, steps)
@@ -670,7 +670,7 @@ class TranslationExperiment(BaseExperiment):
     def get_val_data(self, batch_size: int, sort_desc=False, batch_first=True,
                      shuffle=False):
         return BatchIterable(self.valid_file, batch_size=batch_size, sort_desc=sort_desc,
-                             batch_first=batch_first, shuffle=shuffle,
+                             batch_first=batch_first, shuffle=shuffle, field=self.tgt_vocab,
                              **self._get_batch_args())
 
     def get_combo_data(self, batch_size: int, steps: int = 0, sort_desc=False, batch_first=True,
@@ -680,7 +680,7 @@ class TranslationExperiment(BaseExperiment):
             self._pre_process_parallel('combo_src', 'combo_tgt', self.combo_file)
         combo_file = IO.maybe_tmpfs(self.combo_file)
         data = BatchIterable(combo_file, batch_size=batch_size, sort_desc=sort_desc,
-                             batch_first=batch_first, shuffle=shuffle,
+                             field=self.tgt_vocab, batch_first=batch_first, shuffle=shuffle,
                              **self._get_batch_args())
         if steps > 0:
             data = LoopingIterable(data, steps)
@@ -730,9 +730,9 @@ class TranslationExperiment(BaseExperiment):
         }[(split, side)]
         assert inp_file.exists()
         # read this file
-
+        field = self.tgt_vocab if side == 'tgt' else self.src_field
         data = BatchIterable(inp_file, batch_size=batch_size, sort_desc=sort_desc,
-                             batch_first=batch_first, shuffle=shuffle,
+                             batch_first=batch_first, shuffle=shuffle, field=field,
                              **self._get_batch_args())
 
         if num_batches > 0:

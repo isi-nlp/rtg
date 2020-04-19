@@ -12,209 +12,16 @@ import sqlite3
 import pickle
 from itertools import zip_longest
 from abc import ABCMeta, abstractmethod
+from rtg.data.codec import Field
 
-PAD_TOK = '<pad>', 0
-UNK_TOK = '<unk>', 1
-BOS_TOK = '<s>', 2
-EOS_TOK = '</s>', 3
-CLS_TOK = '<cls>', 4
-
-PAD_TOK_IDX = PAD_TOK[1]
-UNK_TOK_IDX = UNK_TOK[1]
-BOS_TOK_IDX = BOS_TOK[1]
-EOS_TOK_IDX = EOS_TOK[1]
-CLS_TOK_IDX = CLS_TOK[1]
-
-RESERVED_TOKS = [PAD_TOK, UNK_TOK, BOS_TOK, EOS_TOK, CLS_TOK]
 
 RawRecord = Tuple[str, str]
 TokRawRecord = Tuple[List[str], List[str]]
 MonoSeqRecord = List[Union[int, str]]
 ParallelSeqRecord = Tuple[MonoSeqRecord, MonoSeqRecord]
 TokStream = Union[Iterator[Iterator[str]], Iterator[str]]
-
-
-class Field(metaclass=ABCMeta):
-
-    @abstractmethod
-    def encode_as_ids(self, text, add_bos, add_eos):
-        pass
-
-    @abstractmethod
-    def decode_ids(self, ids, trunc_eos):
-        """
-        convert ids to text
-        :param ids:
-        :param trunc_eos: skip everything after first EOS token in sequence
-        :return:
-        """
-        pass
-
-    @abstractmethod
-    def tokenize(self, text):
-        pass
-
-    @abstractmethod
-    def detokenize(self, tokens):
-        pass
-
-    @staticmethod
-    @abstractmethod
-    def train(model_type: str, vocab_size: int, model_path: str, files: Iterator[str],
-              no_split_toks: Optional[List[str]] = None,
-              char_coverage: float = -1.0):
-        """
-        Train Sentence Piece Model
-        :param model_type: sentence piece model type: {unigram, BPE, word, char}
-        :param vocab_size: target vocabulary size
-        :param model_path: where to store model
-        :param files: input files
-        :param no_split_toks: Don't split these tokens
-        :return:
-        """
-        pass
-
-
-class SPField(SentencePieceProcessor, Field):
-    """A wrapper class for sentence piece trainer and processor"""
-
-    def __init__(self, path: str):
-        super().__init__()
-        assert self.load(path)
-
-    def encode_as_ids(self, text: str, add_bos=False, add_eos=False) -> List[int]:
-        ids = super(SPField, self).encode_as_ids(text)
-        if add_bos and ids[0] != BOS_TOK[1]:
-            ids.insert(0, BOS_TOK[1])
-        if add_eos and ids[-1] != EOS_TOK[1]:
-            ids.append(EOS_TOK[1])
-        return ids
-
-    def decode_ids(self, ids: List[int], trunc_eos=False) -> str:
-        """
-        convert ids to text
-        :param ids:
-        :param trunc_eos: skip everything after first EOS token in sequence
-        :return:
-        """
-        if trunc_eos:
-            try:
-                ids = ids[:ids.index(EOS_TOK[1])]
-            except ValueError:
-                pass
-        return super(SPField, self).decode_ids(ids)
-
-    def tokenize(self, text: str) -> List[str]:
-        return self.encode_as_pieces(text.encode())
-
-    def detokenize(self, tokens: List[str]) -> str:
-        return ''.join(tokens).replace('▁', ' ').strip()
-
-    @staticmethod
-    def train(model_type: str, vocab_size: int, model_path: str, files: Iterator[str],
-              no_split_toks: Optional[List[str]] = None, char_coverage: float = 0):
-        """
-        Train Sentence Piece Model
-        :param model_type: sentence piece model type: {unigram, BPE, word, char}
-        :param vocab_size: target vocabulary size
-        :param model_path: where to store model
-        :param files: input files
-        :param no_split_toks: Don't split these tokens
-        :param char_coverage: character coverage (0, 1]. value <= 0 => default coverage 0.9995%
-        :return:
-        """
-        model_prefix = model_path.replace('.model', '')
-        files = ','.join(files)  # remove duplicates
-        arg = f"--input={files} --vocab_size={vocab_size} --model_prefix={model_prefix}" \
-            f" --model_type={model_type} --pad_id={PAD_TOK[1]} --bos_id={BOS_TOK[1]}" \
-            f" --eos_id={EOS_TOK[1]} --unk_id={UNK_TOK[1]} --hard_vocab_limit=false"
-        if char_coverage > 0:
-            assert 0 < char_coverage <= 1
-            arg += f" --character_coverage={char_coverage}"
-        # CLS token goes in the beginning because we need it get index 4
-        cls_tok_str = CLS_TOK[0]
-        if no_split_toks:
-            no_split_toks_str = ','.join([cls_tok_str] + no_split_toks)
-        else:
-            no_split_toks_str = cls_tok_str
-        arg += f" --user_defined_symbols={no_split_toks_str}"
-        if model_type == 'bpe':  # BPE can have longer sentences, default is 2048
-            arg += " --max_sentence_length=8192"
-        if model_type == 'word':
-            arg += ' --use_all_vocab'
-        log.info(f"SPM: {arg}")
-        SentencePieceTrainer.Train(arg)
-        log.info("Training complete")
-        if not model_path.endswith('.model'):
-            model_path += '.model'
-        model = SPField(model_path)
-        for piece, idx in RESERVED_TOKS:
-            assert model.piece_to_id(piece) == idx
-        return model
-
-
-class NLField(Field):
-    # from nlcodec lib
-
-    def __init__(self, path: Union[str, Path]):
-        # this is experimental
-        from nlcodec import load_scheme, EncoderScheme, Type
-        self.codec: EncoderScheme = load_scheme(path)
-        self.vocab: List[Type] = self.codec.table
-        log.info(f'Loaded {len(self.codec)} types from {path}')
-        for tok, idx in RESERVED_TOKS:  # reserved are reserved
-            # Todo swap it with nlcodec.Reserved
-            assert self.vocab[idx].name == tok
-
-    def encode_as_ids(self, text: str, add_bos=False, add_eos=False) -> List[int]:
-        ids = self.codec.encode(text)
-        if add_bos and ids[0] != BOS_TOK[1]:
-            ids.insert(0, BOS_TOK[1])
-        if add_eos and ids[-1] != EOS_TOK[1]:
-            ids.append(EOS_TOK[1])
-        return ids
-
-    def decode_ids(self, ids: List[int], trunc_eos=False, remove_pads=True) -> str:
-        if trunc_eos:
-            try:
-                ids = ids[:ids.index(EOS_TOK[1])]
-            except ValueError:
-                pass
-        if remove_pads:
-            ids = [i for i in ids if i != PAD_TOK_IDX]
-        return self.codec.decode(ids)
-
-    def tokenize(self, text: str) -> List[str]:
-        return self.codec.encode_str(text)
-
-    def detokenize(self, tokens: List[str]) -> str:
-        return self.codec.decode_str(tokens)
-
-    def __len__(self):
-        return len(self.vocab)
-
-    @classmethod
-    def train(cls, model_type: str, vocab_size: int, model_path: str, files: List[str],
-              no_split_toks: Optional[List[str]] = None, char_coverage: float = 0):
-        """
-
-        :param model_type: word, char, bpe
-        :param vocab_size: vocabulary size
-        :param model_path: where to store vocabulary model
-        :param files: text for creating vcabulary
-        :param no_split_toks:
-        :param char_coverage: character coverage (0, 1]. value <= 0 => default coverage
-        :return:
-        """
-        from nlcodec import learn_vocab
-        inp = IO.get_liness(*files)
-        assert not no_split_toks, 'not supported in nlcodec yet'
-        kwargs = dict(char_coverage=char_coverage) if char_coverage > 0 else {}
-        learn_vocab(inp=inp, level=model_type, model=model_path, vocab_size=vocab_size, **kwargs)
-        return cls(model_path)
-
-
 Example = namedtuple('Example', ['x', 'y'])
+
 """
 An object of this class holds an example in sequence to sequence dataset
 """
@@ -478,44 +285,21 @@ class Batch:
     """
     An object of this class holds a batch of examples
     """
-    pad_value = PAD_TOK[1]
-    bos_val = BOS_TOK[1]
-    eos_val = EOS_TOK[1]
-
     _x_attrs = ['x_len', 'x_seqs']
     _y_attrs = ['y_len', 'y_seqs']
 
-    @classmethod
-    def bos_eos_check(cls, batch: List[Example], side: str, bos: bool, eos: bool):
-        """
-        ensures and inserts (if needed) EOS and BOS tokens
-        :param batch:
-        :param side: which side? choices: {'x', 'y'}
-        :param bos: True if should have BOS, False if should not have BOS
-        :param eos: True if should have EOS, False if should not have EOS
-        :return: None, all modifications are inplace of batch
-        """
-        assert side in ('x', 'y')
-        for ex in batch:
-            seq: List = ex.x if side == 'x' else ex.y
-            if bos:
-                if not seq[0] == cls.bos_val:
-                    seq.insert(0, cls.bos_val)
-            else:  # should not have BOS
-                assert seq[0] != cls.bos_val
-            if eos:
-                if not seq[-1] == cls.eos_val:
-                    seq.append(cls.eos_val)
-            else:  # Should not have EOS
-                assert seq[-1] != cls.eos_val
-
     def __init__(self, batch: List[Example], sort_dec=False, batch_first=True,
-                 add_eos_x=True, add_eos_y=True, add_bos_x=False, add_bos_y=False):
+                 add_eos_x=True, add_eos_y=True, add_bos_x=False, add_bos_y=False,
+                 field: Field=None):
         """
         :param batch: List fo Examples
         :param sort_dec: True if the examples be sorted as descending order of their source sequence lengths
         :Param Batch_First: first dimension is batch
         """
+        assert field
+        self.bos_val: int = field.bos_idx
+        self.eos_val: int = field.eos_idx
+        self.pad_val: int = field.pad_idx
         self.eos_x = add_eos_x
         self.eos_y = add_eos_y
         self.bos_x = add_bos_x
@@ -531,7 +315,7 @@ class Batch:
         self.max_x_len = self.x_len.max()
 
         # create x_seqs on CPU RAM and move to GPU at once
-        self.x_seqs = torch.full(size=(self._len, self.max_x_len), fill_value=self.pad_value,
+        self.x_seqs = torch.full(size=(self._len, self.max_x_len), fill_value=self.pad_val,
                                  dtype=torch.long)
         for i, ex in enumerate(batch):
             self.x_seqs[i, :len(ex.x)] = torch.tensor(ex.x, dtype=torch.long)
@@ -546,13 +330,37 @@ class Batch:
             self.y_len = tensor([len(e.y) for e in batch])
             self.y_toks = self.y_len.sum().float().item()
             self.max_y_len = self.y_len.max().item()
-            y_seqs = torch.full(size=(self._len, self.max_y_len), fill_value=self.pad_value,
+            y_seqs = torch.full(size=(self._len, self.max_y_len), fill_value=self.pad_val,
                                 dtype=torch.long)
             for i, ex in enumerate(batch):
                 y_seqs[i, :len(ex.y)] = torch.tensor(ex.y, dtype=torch.long)
             self.y_seqs = y_seqs.to(device)
             if not batch_first:  # transpose
                 self.y_seqs = self.y_seqs.t()
+
+    def bos_eos_check(self, batch: List[Example], side: str, bos: bool, eos: bool):
+        """
+        ensures and inserts (if needed) EOS and BOS tokens
+        :param batch:
+        :param side: which side? choices: {'x', 'y'}
+        :param bos: True if should have BOS, False if should not have BOS
+        :param eos: True if should have EOS, False if should not have EOS
+        :return: None, all modifications are inplace of batch
+        """
+        assert side in ('x', 'y')
+        for ex in batch:
+            seq: List = ex.x if side == 'x' else ex.y
+            if bos:
+                if not seq[0] == self.bos_val:
+                    seq.insert(0, self.bos_val)
+            else:  # should not have BOS
+                assert seq[0] != self.bos_val
+            if eos:
+                if not seq[-1] == self.eos_val:
+                    seq.append(self.eos_val)
+            else:  # Should not have EOS
+                assert seq[-1] != self.eos_val
+
 
     def __len__(self):
         return self._len
@@ -563,10 +371,14 @@ class Batch:
             setattr(self, name, getattr(self, name).to(device))
         return self
 
+    def make_autoreg_mask(self, tgt):
+        "Create a mask to hide padding and future words for autoregressive generation."
+        return self.make_autogres_mask_(tgt, self.pad_val)
+
     @staticmethod
-    def make_target_mask(tgt, pad=pad_value):
+    def make_autogres_mask_(tgt, pad_val:int):
         "Create a mask to hide padding and future words."
-        tgt_mask = (tgt != pad).unsqueeze(1)
+        tgt_mask = (tgt != pad_val).unsqueeze(1)
         tgt_mask = tgt_mask & subsequent_mask(tgt.size(-1)).type_as(tgt_mask.data)
         return tgt_mask
 
@@ -574,7 +386,7 @@ class Batch:
 class BatchIterable(Iterable[Batch]):
 
     # This should have been called as Dataset
-    def __init__(self, data_path: Union[str, Path], batch_size: int,
+    def __init__(self, data_path: Union[str, Path], batch_size: int, field: Field,
                  sort_desc: bool = False, batch_first: bool = True, shuffle: bool = False,
                  sort_by: str = None, **kwargs):
         """
@@ -584,6 +396,7 @@ class BatchIterable(Iterable[Batch]):
 
         :param sort_desc: should the batch be sorted by src sequence len (useful for RNN api)
         """
+        self.field = field
         self.sort_desc = sort_desc
         self.batch_size = batch_size
         self.batch_first = batch_first
@@ -618,12 +431,14 @@ class BatchIterable(Iterable[Batch]):
                     raise Exception(f'Unable to make a batch of {self.batch_size} toks'
                                     f' with a seq of x_len:{len(ex.x)} y_len:{len(ex.y)}')
                 # yield the current batch
-                yield Batch(batch, sort_dec=self.sort_desc, batch_first=self.batch_first)
+                yield Batch(batch, sort_dec=self.sort_desc, batch_first=self.batch_first,
+                            field=self.field)
                 batch = [ex]  # new batch
                 max_len = this_len
         if batch:
             log.debug(f"\nLast batch, size={len(batch)}")
-            yield Batch(batch, sort_dec=self.sort_desc, batch_first=self.batch_first)
+            yield Batch(batch, sort_dec=self.sort_desc, batch_first=self.batch_first,
+                        field=self.field)
 
     def _make_eq_len_batch_ids(self):
         rows = self.data.get_all(cols=['id', 'x_len', 'y_len'], sort='y_len desc, random() desc')
@@ -662,7 +477,8 @@ class BatchIterable(Iterable[Batch]):
         for batch_ids in batches:
             batch = list(self.data.get_all_ids(batch_ids))
             batch = [Example(r['x'], r.get('y')) for r in batch]
-            yield Batch(batch, sort_dec=self.sort_desc, batch_first=self.batch_first)
+            yield Batch(batch, sort_dec=self.sort_desc, batch_first=self.batch_first,
+                        field=self.field)
 
     def __iter__(self) -> Iterator[Batch]:
         if self.sort_by == 'eq_len_rand_batch':
