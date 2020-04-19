@@ -293,6 +293,9 @@ def parse_args():
 
     if args.gpu_only:
         assert torch.cuda.is_available(), "No GPU found... exiting"
+    if torch.cuda.is_available():
+        for i in range(torch.cuda.device_count()):
+            log.info(f'Cuda {i}: {torch.cuda.get_device_properties(i)}')
 
     conf_file: Path = args.conf if args.conf else args.exp / 'conf.yml'
     assert conf_file.exists()
