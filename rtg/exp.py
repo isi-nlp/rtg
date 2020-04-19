@@ -9,7 +9,7 @@ import numpy as np
 import torch
 
 from rtg import log, yaml
-from rtg.dataprep import (TSVData, BatchIterable, LoopingIterable, SqliteFile)
+from rtg.data.dataset import (TSVData, BatchIterable, LoopingIterable, SqliteFile)
 from rtg.data.codec import Field, SPField, NLField
 from rtg.utils import IO, line_count
 

@@ -16,7 +16,6 @@ from rtg import log, yaml
 from rtg.utils import IO
 from rtg.lm.rnnlm import RnnLm
 from rtg.lm.tfmlm import TfmLm
-from rtg.dataprep import Batch
 
 
 class RnnLmWrapper(nn.Module):

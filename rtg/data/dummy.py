@@ -1,10 +1,10 @@
 #!/usr/bin/env python
 # Generates dummy data for testing
-from rtg.dataprep import Batch, Example
+from rtg.data.dataset import Batch, Example
 import argparse
 from rtg import log, TranslationExperiment as Experiment
 from rtg.utils import IO
-from rtg.dataprep import LoopingIterable
+from rtg.data.dataset import LoopingIterable
 
 import numpy as np
 from pathlib import Path

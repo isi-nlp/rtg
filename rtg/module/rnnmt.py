@@ -8,7 +8,7 @@ from tqdm import tqdm
 
 from rtg import log, TranslationExperiment as Experiment
 from rtg import my_tensor as tensor, device
-from rtg.dataprep import Batch, BatchIterable, padded_sequence_mask
+from rtg.data.dataset import Batch, BatchIterable, padded_sequence_mask
 from rtg.data.codec import Field
 from rtg.module import NMTModel
 from rtg.module.trainer import TrainerState, SteppedTrainer
@@ -558,7 +558,7 @@ def __test_seq2seq_model__():
         trainer = SteppedRNNNMTTrainer(exp=exp, lr=0.01, warmup_steps=100)
         trainer.train(steps=steps, check_point=check_pt, batch_size=batch_size)
     """
-    from rtg.dummy import DummyExperiment
+    from rtg.data.dummy import DummyExperiment
     from rtg.module.decoder import Decoder
 
     vocab_size = 50

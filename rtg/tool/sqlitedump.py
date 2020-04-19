@@ -8,7 +8,7 @@ import sys
 import logging as log
 from pathlib import Path
 from typing import TextIO
-from rtg.dataprep import SqliteFile
+from rtg.data.dataset import SqliteFile
 
 log.basicConfig(level=log.INFO)
 

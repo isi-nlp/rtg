@@ -11,7 +11,7 @@ from rtg.module.rnnmt import RNNMT
 from rtg.lm.rnnlm import RnnLm
 from rtg.lm.tfmlm import TfmLm
 from rtg.module.tfmnmt import TransformerNMT
-from rtg.dataprep import subsequent_mask
+from rtg.data.dataset import subsequent_mask
 from rtg.data.codec import Field
 
 INTERACTIVE = False

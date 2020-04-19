@@ -1,22 +1,20 @@
 # NOTE: this is obsolete ; TG wrote this when he was learning to implement and train networks
 
-import torch
-import torch.nn as nn
 import torch.optim as optim
 import tqdm
 from tqdm import tqdm
 
 from rtg import TranslationExperiment as Experiment
-from rtg import device, log
+from rtg import log
 from rtg import my_tensor as tensor
-from rtg.dataprep import BatchIterable
+from rtg.data.dataset import BatchIterable
 
 import torch
 import torch.nn as nn
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 from rtg import device
-from rtg.dataprep import Batch, Field
+from rtg.data.dataset import Batch, Field
 
 
 class LSTMEncoder(nn.Module):

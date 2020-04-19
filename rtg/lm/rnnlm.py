@@ -6,7 +6,7 @@
 import torch
 from typing import Callable, Optional
 from rtg import log, device, my_tensor as tensor
-from rtg.dataprep import padded_sequence_mask
+from rtg.data.dataset import padded_sequence_mask
 
 import inspect
 from rtg.module.rnnmt import Embedder, Generator, SeqDecoder

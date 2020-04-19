@@ -213,8 +213,8 @@ class MTransformerTrainer(TransformerTrainer):
 
 
 def __test_model__():
-    from rtg.dummy import DummyExperiment
-    from rtg import Batch, my_tensor as tensor
+    from rtg.data.dummy import DummyExperiment
+    from rtg import my_tensor as tensor
 
     vocab_size = 24
     args = {

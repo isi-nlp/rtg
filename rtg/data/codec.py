@@ -3,20 +3,14 @@
 # Author: Thamme Gowda [tg (at) isi (dot) edu] 
 # Created: 4/18/20
 
-import os
-from typing import List, Iterator, Tuple, Union, Optional, Iterable, Dict, Any
-import torch
-from rtg import log, my_tensor as tensor, device
-from rtg.utils import IO, line_count, get_my_args
-import math
-import random
-from collections import namedtuple
-from sentencepiece import SentencePieceProcessor, SentencePieceTrainer
-from pathlib import Path
-import sqlite3
-import pickle
-from itertools import zip_longest
 from abc import ABCMeta, abstractmethod
+from pathlib import Path
+from typing import List, Iterator, Union, Optional
+
+from sentencepiece import SentencePieceProcessor, SentencePieceTrainer
+
+from rtg import log
+from rtg.utils import IO
 
 
 class Field(metaclass=ABCMeta):

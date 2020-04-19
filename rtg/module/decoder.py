@@ -10,9 +10,9 @@ import torch
 from torch import nn as nn
 
 from rtg import TranslationExperiment as Experiment
-from rtg import log, device, my_tensor as tensor, debug_mode
+from rtg import log, device, my_tensor as tensor
 from rtg.module.generator import GeneratorFactory
-from rtg.dataprep import Field
+from rtg.data.dataset import Field
 from rtg.registry import factories, generators
 
 Hypothesis = Tuple[float, List[int]]
