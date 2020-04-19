@@ -148,7 +148,7 @@ class Combo(nn.Module):
         result_distr = None
 
         x_seqs = batch.x_seqs
-        x_mask = (batch.x_seqs != batch.pad_value).unsqueeze(1)
+        x_mask = (batch.x_seqs != batch.pad_val).unsqueeze(1)
         bos_step = torch.full((len(batch), 1), fill_value=batch.bos_val, dtype=torch.long,
                               device=device)
         y_seqs_with_bos = torch.cat([bos_step, batch.y_seqs], dim=1)

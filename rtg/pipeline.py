@@ -8,7 +8,6 @@ from rtg import log, TranslationExperiment as Experiment
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
 from rtg.module.decoder import Decoder
-from rtg import RTG_PATH
 from rtg.utils import IO, line_count
 from dataclasses import dataclass
 import torch
@@ -273,13 +272,15 @@ class Pipeline:
                 err = test_dir / f'{name}.err'
                 err.write_text(str(e))
 
-    def run(self):
-        log.update_file_handler(str(self.exp.log_file))
+    def run(self, run_tests=True):
+        if not self.exp.read_only:
+            log.update_file_handler(str(self.exp.log_file))
         self.pre_checks()  # fail early, so TG can fix and restart
         self.exp.pre_process()
         self.exp.train()
-        with torch.no_grad():
-            self.run_tests()
+        if run_tests:
+            with torch.no_grad():
+                self.run_tests()
 
 
 def parse_args():

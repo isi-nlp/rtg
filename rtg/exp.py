@@ -10,7 +10,7 @@ import torch
 
 from rtg import log, yaml
 from rtg.dataprep import (TSVData, BatchIterable, LoopingIterable, SqliteFile)
-from rtg.dataprep import Field, SPField, NLField
+from rtg.data.codec import Field, SPField, NLField
 from rtg.utils import IO, line_count
 
 seeded = False
@@ -628,7 +628,8 @@ class TranslationExperiment(BaseExperiment):
         trainer = trainers[self.model_type](self, optim=name, model_factory=factories[self.model_type], **optim_args)
         if last_step < train_steps:  # regular training
             trainer.train(fine_tune=False, **run_args)
-            yaml.dump({'steps': train_steps}, stream=self._trained_flag)
+            if not self.read_only:
+                yaml.dump({'steps': train_steps}, stream=self._trained_flag)
         if finetune_steps: # Fine tuning
             log.info(f"Fine tuning upto {finetune_steps}")
             run_args['steps'] = finetune_steps

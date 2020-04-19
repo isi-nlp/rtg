@@ -1,0 +1,16 @@
+# Development:
+
+## Run Tests
+
+Test cases are done using the link:https://docs.pytest.org/en/latest/[`pytest'] framework.
+It can be installed using `pip install pytest`
+
+All tests should be run from the root dir of the project.
+
+
+1. Run all tests, with minimal outputs: `python -m pytest`
+2. Run all tests and also see STDOUT/STDERR `python -m pytest -s`
+3.  Run a specific test such as `python -m pytest  -s -k 'test_pipeline_transformer'`
+
+TODO: add more tests to `tests` directory.
+

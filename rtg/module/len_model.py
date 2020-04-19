@@ -16,7 +16,7 @@ import torch.nn as nn
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 from rtg import device
-from rtg.dataprep import Batch
+from rtg.dataprep import Batch, Field
 
 
 class LSTMEncoder(nn.Module):
@@ -24,7 +24,7 @@ class LSTMEncoder(nn.Module):
     Encoder module for encoding sequences
     """
 
-    def __init__(self, vocab_size, emb_dim=100, hid_dim=100, pad_idx=Batch.pad_value, dropout=0.4, last_step_only=True,
+    def __init__(self, vocab_size, emb_dim=100, hid_dim=100, pad_idx=Field.pad_idx, dropout=0.4, last_step_only=True,
                  num_layers=2, num_directions=2):
         """
         :param vocab_size: size of vocabulary i.e. maximum index in the input sequence

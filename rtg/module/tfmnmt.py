@@ -622,7 +622,7 @@ class TransformerTrainer(SteppedTrainer):
                     bos_step = torch.full((len(batch), 1), fill_value=batch.bos_val,
                                           dtype=torch.long, device=device)
 
-                x_mask = (x_seqs != batch.pad_value).unsqueeze(1)
+                x_mask = (x_seqs != batch.pad_val).unsqueeze(1)
                 y_seqs_with_bos = torch.cat([bos_step, batch.y_seqs], dim=1)
                 y_mask = batch.make_autoreg_mask(y_seqs_with_bos)
                 out = self.model(x_seqs, y_seqs_with_bos, x_mask, y_mask)
@@ -729,7 +729,7 @@ class TransformerTrainer(SteppedTrainer):
                                           dtype=torch.long, device=device)
 
                 # Prep masks
-                x_mask = (x_seqs != batch.pad_value).unsqueeze(1)
+                x_mask = (x_seqs != batch.pad_val).unsqueeze(1)
                 y_seqs_with_bos = torch.cat([bos_step, batch.y_seqs], dim=1)
                 y_mask = batch.make_autoreg_mask(y_seqs_with_bos)
 
@@ -819,7 +819,7 @@ def __test_model__():
                                   weighing={'gamma': [0.0, 0.5]}))
 
     trainer = TransformerTrainer(exp=exp, **exp.optim_args[1])
-    assert 2 == Batch.bos_val
+    assert 2 == exp.tgt_vocab.bos_idx
     batch_size = 256
     steps = 2000
     check_point = 200

@@ -249,19 +249,21 @@ class SteppedTrainer:
         neg_region = optim_args.get('neg_region', 0.05)
         alpha = optim_args.get('alpha', 1.0)
 
+        pad_idx = self.exp.tgt_vocab.pad_idx
         if criterion == 'smooth_kld':
-            return criteria.SmoothKLD(vocab_size=self.model.generator.vocab, smoothing=smoothing)
+            return criteria.SmoothKLD(vocab_size=self.model.generator.vocab, smoothing=smoothing,
+                                      pad_idx=pad_idx)
         elif criterion == 'cross_entropy':
             return criteria.CrossEntropy()
         elif criterion == 'binary_cross_entropy':
-            return criteria.BinaryCrossEntropy(smoothing=smoothing)
+            return criteria.BinaryCrossEntropy(smoothing=smoothing,pad_idx=pad_idx)
         elif criterion == 'triplet_loss':
             return criteria.TripletLoss(embedding=tgt_embedding, margin=margin, neg_region=neg_region,
-                                        mode=mode, neg_sampling=neg_sampling)
+                                        mode=mode, neg_sampling=neg_sampling, pad_idx=pad_idx)
         elif criterion == 'smooth_kld_and_triplet_loss':
-            return criteria.SmoothKLDAndTripletLoss(embedding=tgt_embedding, margin=margin, neg_region=neg_region,
-                                                    mode=mode, neg_sampling=neg_sampling,
-                                                    smoothing=smoothing, alpha=alpha)
+            return criteria.SmoothKLDAndTripletLoss(
+                embedding=tgt_embedding, margin=margin, neg_region=neg_region, mode=mode,
+                neg_sampling=neg_sampling, smoothing=smoothing, alpha=alpha, pad_idx=pad_idx)
         else:
             raise Exception(f'criterion={criterion} is not supported')
 

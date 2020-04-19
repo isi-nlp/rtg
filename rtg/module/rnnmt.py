@@ -8,9 +8,12 @@ from tqdm import tqdm
 
 from rtg import log, TranslationExperiment as Experiment
 from rtg import my_tensor as tensor, device
-from rtg.dataprep import PAD_TOK_IDX, BOS_TOK_IDX, Batch, BatchIterable, padded_sequence_mask
+from rtg.dataprep import Batch, BatchIterable, padded_sequence_mask
+from rtg.data.codec import Field
 from rtg.module import NMTModel
 from rtg.module.trainer import TrainerState, SteppedTrainer
+
+PAD_IDX = Field.pad_idx  #
 
 
 class Embedder(nn.Embedding):
@@ -20,11 +23,11 @@ class Embedder(nn.Embedding):
     """
 
     def __init__(self, name: str, vocab_size: int, emb_size: int,
-                 weights: Optional[torch.Tensor] = None, freeze: bool=False):
+                 weights: Optional[torch.Tensor] = None, freeze: bool = False, pad_idx=PAD_IDX):
         self.name = name
         self.vocab_size = vocab_size
         self.emb_size = emb_size
-        super(Embedder, self).__init__(self.vocab_size, self.emb_size, padding_idx=PAD_TOK_IDX,
+        super(Embedder, self).__init__(self.vocab_size, self.emb_size, padding_idx=pad_idx,
                                        _weight=weights)
         self.weight.requires_grad = not freeze
 
@@ -91,7 +94,7 @@ class SeqEncoder(nn.Module):
         packed = nn.utils.rnn.pack_padded_sequence(embedded, input_lengths, batch_first=True)
         outputs, hidden = self.rnn_node(packed, hidden)
         outputs, output_lengths = nn.utils.rnn.pad_packed_sequence(outputs, batch_first=True,
-                                                                   padding_value=PAD_TOK_IDX)
+                                                                   padding_value=PAD_IDX)
         # Sum bidirectional outputs
         # outputs = outputs[:, :, :self.hid_size] + outputs[:, :, self.hid_size:]
         dec_state = self.to_dec_state(hidden)
@@ -213,7 +216,7 @@ class AttnModel(nn.Module):
 
 class AttnSeqDecoder(SeqDecoder):
     def __init__(self, prev_emb_node: Embedder, generator: Generator, n_layers: int,
-                 ctx_size: Optional[int]=None,
+                 ctx_size: Optional[int] = None,
                  dropout: float = 0.5, attention='dot'):
         super(AttnSeqDecoder, self).__init__(prev_emb_node, generator, n_layers, dropout=dropout)
 
@@ -274,11 +277,11 @@ class Seq2SeqBridge(nn.Module):
         self.inp_size = dec.hid_size
         self.out_size = enc.hid_size
 
-    def forward(self, enc_outs, enc_hids, max_len):
+    def forward(self, enc_outs, enc_hids, max_len, bos_idx):
         batch_size = len(enc_outs)
         assert batch_size == enc_hids[0].shape[1] == enc_hids[1].shape[1]
 
-        dec_inps = tensor([[BOS_TOK_IDX]] * batch_size, dtype=torch.long)
+        dec_inps = tensor([[bos_idx]] * batch_size, dtype=torch.long)
         dec_hids = enc_hids
         result = torch.zeros((batch_size, max_len, self.dec.hid_size), device=device)
         for t in range(max_len):
@@ -345,7 +348,7 @@ class RNNMT(NMTModel):
         enc_outs, enc_hids = self.encode(batch.x_seqs, batch.x_len, hids=None,
                                          max_y_len=batch.max_y_len)
 
-        dec_inps = tensor([[BOS_TOK_IDX]] * batch_size, dtype=torch.long)
+        dec_inps = tensor([[batch.bos_val]] * batch_size, dtype=torch.long)
         dec_hids = enc_hids
         outp_probs = torch.zeros((batch.max_y_len - 1, batch_size), device=device)
 
@@ -368,7 +371,7 @@ class RNNMT(NMTModel):
     @staticmethod
     def make_model(src_lang, tgt_lang, src_vocab: int, tgt_vocab: int, emb_size: int = 300,
                    hid_size: int = 300, n_layers: int = 2, attention='general', dropout=0.33,
-                   tied_emb: Optional[str] = 'three-way', exp: Experiment=None):
+                   tied_emb: Optional[str] = 'three-way', exp: Experiment = None):
         args = {
             'src_lang': src_lang,
             'tgt_lang': tgt_lang,

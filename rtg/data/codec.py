@@ -26,7 +26,6 @@ class Field(metaclass=ABCMeta):
     bos_tok, bos_idx = '<s>', 2
     eos_tok, eos_idx = '</s>', 3
     cls_tok, cls_idx = '<cls>', 4
-    #mask_tok, mask_idx = '<mask>', 5   $ TODO: support <mask>
     reserved_toks = [pad_tok, unk_tok, bos_tok, eos_tok, cls_tok]
     reserved_idxs = [pad_idx, unk_idx, bos_idx, eos_idx, cls_idx]
 
@@ -79,6 +78,7 @@ class Field(metaclass=ABCMeta):
 
 class SPField(SentencePieceProcessor, Field):
     """A wrapper class for sentence piece trainer and processor"""
+    #mask_tok, mask_idx = '<mask>', 5   # TODO: support <mask>
 
     def __init__(self, path: str):
         super().__init__()
@@ -134,7 +134,7 @@ class SPField(SentencePieceProcessor, Field):
             assert 0 < char_coverage <= 1
             arg += f" --character_coverage={char_coverage}"
         # CLS token goes in the beginning because we need it get index 4
-        extra = [cls.cls_tok, cls.mask_tok] + (no_split_toks or [])
+        extra = [cls.cls_tok] + (no_split_toks or [])
         no_split_toks_str = ','.join(extra)
         arg += f" --user_defined_symbols={no_split_toks_str}"
         if model_type == 'bpe':  # BPE can have longer sentences, default is 2048

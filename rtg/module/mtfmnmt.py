@@ -14,7 +14,10 @@ from rtg.module.tfmnmt import (Encoder, EncoderLayer, PositionwiseFeedForward, P
                                Generator, MultiHeadedAttention, Embeddings, AbstractTransformerNMT,
                                TransformerTrainer, SublayerConnection, clones)
 from rtg import TranslationExperiment as Experiment, log
-from rtg.dataprep import CLS_TOK_IDX as cls_idx, PAD_TOK_IDX as pad_idx
+from rtg.data.codec import Field
+
+cls_idx = Field.cls_idx
+pad_idx = Field.cls_idx
 
 
 class MEmbeddings(nn.Module):
@@ -231,7 +234,7 @@ def __test_model__():
     trainer = MTransformerTrainer(exp=exp, warmup_steps=200)
     decr = Decoder.new(exp, trainer.model)
 
-    assert 2 == Batch.bos_val
+    assert 2 == exp.tgt_vocab.bos_idx
     src = tensor([[4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
                   [13, 12, 11, 10, 9, 8, 7, 6, 5, 4]])
     src_lens = tensor([src.size(1)] * src.size(0))
