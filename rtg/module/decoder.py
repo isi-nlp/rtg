@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 import torch
 from torch import nn as nn
 
-from rtg import TranslationExperiment as Experiment
+from rtg import TranslationExperiment as Experiment, debug_mode
 from rtg import log, device, my_tensor as tensor
 from rtg.module.generator import GeneratorFactory
 from rtg.data.dataset import Field
@@ -355,7 +355,7 @@ class Decoder:
                 # we need to pick the top k beams from a single beam
                 # How? mask out all beams, except the first beam
                 beam_mask = torch.full((batch_size, beam_size, 1), fill_value=1, device=device,
-                                       dtype=torch.uint8)
+                                       dtype=torch.bool)
                 beam_mask[:, 0, :] = 0
                 log_prob.masked_fill_(mask=beam_mask, value=float('-inf'))
 
