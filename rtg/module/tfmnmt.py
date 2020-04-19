@@ -4,7 +4,6 @@ import os
 import copy
 import math
 import time
-import inspect
 import gc
 from abc import ABC
 from typing import Callable, Optional, List, Union
@@ -16,7 +15,7 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 from tqdm import tqdm
 
-from rtg import device, log, my_tensor as tensor, TranslationExperiment as Experiment
+from rtg import device, log, TranslationExperiment as Experiment
 from rtg.utils import get_my_args
 from rtg.dataprep import Batch, BatchIterable
 from rtg.module import NMTModel
@@ -794,11 +793,7 @@ class TransformerTrainer(SteppedTrainer):
 
 
 def __test_model__():
-    from rtg.dummy import DummyExperiment
-    vocab_size = 30
-    args = {
-        'src_vocab': vocab_size,
-        'tgt_vocab': vocab_size,
+    model_args = {
         'enc_layers': 0,
         'dec_layers': 4,
         'hid_size': 64,
@@ -806,54 +801,22 @@ def __test_model__():
         'n_heads': 4,
         'activation': 'relu'
     }
-    if False:
-        for n, p in model.named_parameters():
-            print(n, p.shape)
 
-    from rtg.module.decoder import Decoder
+    # if you are running this in pycharm, please set Working Dir=<rtg repo base dir> for run config
+    dir = 'experiments/sample-exp'
+    exp = Experiment(work_dir=dir, read_only=True)
 
-    config = {
-        'model_type': 'tfmnmt',
-        'trainer': {'init_args': {'chunk_size': 2, 'grad_accum': 2}},
-        'optim': {
-            'args': {
-                # "cross_entropy", "smooth_kld", "binary_cross_entropy",
-                # "triplet_loss", "smooth_kld_and_triplet_loss"
-                # 'criterion': "triplet_loss",
-                # 'criterion': "smooth_kld",
-                'criterion': "smooth_kld_and_triplet_loss",
-                'label_smoothing': 0.1,
-                'margin': 0.2,
-                'mode': 'dot',
-                'neg_sampling': 'hard',
-                'neg_region': 0.05,
-                'alpha': 1.0
-            }
-        }
-    }
+    exp.model_type = 'tfmnmt'
+    exp.model_args.update(model_args)
+    exp.optim_args[1].update(dict(criterion='smooth_kld', warmup_steps=500,
+                                  weighing={'gamma': [0.0, 0.5]}))
 
-    exp = DummyExperiment("work.tmp.t2t", config=config, read_only=True,
-                          vocab_size=vocab_size)
-    exp.model_args = args
-    trainer = TransformerTrainer(exp=exp, warmup_steps=200, **config['optim']['args'])
-    decr = Decoder.new(exp, trainer.model)
-
+    trainer = TransformerTrainer(exp=exp, **exp.optim_args[1])
     assert 2 == Batch.bos_val
-    src = tensor([[4, 5, 6, 7, 8, 9, 10, 11, 12, 13, Batch.eos_val, Batch.pad_value],
-                  [13, 12, 11, 10, 9, 8, 7, 6, Batch.eos_val, Batch.pad_value, Batch.pad_value,
-                   Batch.pad_value]])
-    src_lens = tensor([src.size(1)] * src.size(0))
-
-    def check_pt_callback(**args):
-        res = decr.greedy_decode(src, src_lens, max_len=12)
-        for score, seq in res:
-            log.info(f'{score:.4f} :: {seq}')
-
-    batch_size = 50
-    steps = 500
-    check_point = 25
-    trainer.train(steps=steps, check_point=check_point, batch_size=batch_size,
-                  check_pt_callback=check_pt_callback)
+    batch_size = 256
+    steps = 2000
+    check_point = 200
+    trainer.train(steps=steps, check_point=check_point, batch_size=batch_size)
 
 
 if __name__ == '__main__':
