@@ -42,8 +42,8 @@ tester:
       - experiments/sample-data/sampl.test.en     # reference, unmodified -- not tokenized-
 trainer:
   init_args:
-    chunk_size: 1
-  batch_size: 120
+    chunk_size: 5
+  batch_size: 400
   check_point: 200
   keep_models: 10
   steps: 400

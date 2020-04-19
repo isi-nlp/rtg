@@ -6,6 +6,8 @@
 from abc import ABCMeta, abstractmethod
 from pathlib import Path
 from typing import List, Iterator, Union, Optional
+import collections as coll
+from tqdm import tqdm
 
 from sentencepiece import SentencePieceProcessor, SentencePieceTrainer
 
@@ -14,7 +16,6 @@ from rtg.utils import IO
 
 
 class Field(metaclass=ABCMeta):
-
     pad_tok, pad_idx = '<pad>', 0
     unk_tok, unk_idx = '<unk>', 1
     bos_tok, bos_idx = '<s>', 2
@@ -72,7 +73,8 @@ class Field(metaclass=ABCMeta):
 
 class SPField(SentencePieceProcessor, Field):
     """A wrapper class for sentence piece trainer and processor"""
-    #mask_tok, mask_idx = '<mask>', 5   # TODO: support <mask>
+
+    # mask_tok, mask_idx = '<mask>', 5   # TODO: support <mask>
 
     def __init__(self, path: str):
         super().__init__()
@@ -122,8 +124,8 @@ class SPField(SentencePieceProcessor, Field):
         model_prefix = model_path.replace('.model', '')
         files = ','.join(files)  # remove duplicates
         arg = f"--input={files} --vocab_size={vocab_size} --model_prefix={model_prefix}" \
-            f" --model_type={model_type} --pad_id={cls.pad_idx} --bos_id={cls.bos_idx}" \
-            f" --eos_id={cls.eos_idx} --unk_id={cls.unk_idx} --hard_vocab_limit=false"
+              f" --model_type={model_type} --pad_id={cls.pad_idx} --bos_id={cls.bos_idx}" \
+              f" --eos_id={cls.eos_idx} --unk_id={cls.unk_idx} --hard_vocab_limit=false"
         if char_coverage > 0:
             assert 0 < char_coverage <= 1
             arg += f" --character_coverage={char_coverage}"
@@ -190,7 +192,6 @@ class NLField(Field):
     def train(cls, model_type: str, vocab_size: int, model_path: str, files: List[str],
               no_split_toks: Optional[List[str]] = None, char_coverage: float = 0):
         """
-
         :param model_type: word, char, bpe
         :param vocab_size: vocabulary size
         :param model_path: where to store vocabulary model
@@ -208,41 +209,92 @@ class NLField(Field):
 
 
 class PretrainMatchField(Field):
-
     # this order is for fairseq's XML-R
 
+    """
     bos_tok, bos_idx = '<s>', 0
     pad_tok, pad_idx = '<pad>', 1
     eos_tok, eos_idx = '</s>', 2
     unk_tok, unk_idx = '<unk>', 3
     reserved_idxs = [pad_idx, unk_idx, bos_idx, eos_idx]
     reserved_toks = [pad_tok, unk_tok, bos_tok, eos_tok]
+    """
 
     def __init__(self, path: Union[str, Path]):
         with IO.reader(path) as rdr:
             data = yaml.load(rdr)
-        github, model_name = data['model_id'].split(':')
-        from torch.hub import load as load_model
-        hub_api = load_model(github, model_name)
+        hub_api = self.load_hub_model(data['model_id'])
         # these are for XML-R wiz RoBERTa from fairseq  ; generalize it for other models later
         self.bpe = hub_api.bpe
-        self.dicto = hub_api.task.dictionary
+
+        self.tok2idx = {tok:new_idx for tok, (new_idx, old_idx) in data['mapping'].items()}
+        self.idx2tok = list(sorted(self.tok2idx.keys(), key=self.tok2idx.get, reverse=False))
+        assert len(self.idx2tok) == len(self.tok2idx)
 
         for tok, idx in self.reserved():  # reserved are reserved
-            assert self.dicto.indices[tok] == idx
-            assert self.dicto.symbols[idx] == tok
+            assert self.tok2idx[tok] == idx
+            assert self.idx2tok[idx] == tok
+        self.new_idx2old_idx = {new_idx: old_idx for tok, (new_idx, old_idx) in data['mapping'].items()}
 
     @classmethod
-    def train(cls, model_type: str, vocab_size: int, model_path: Union[Path, str], *args, **kwargs):
-        # IDEA: shrink vocabulary to only include training data types
-        data = {'model_id': model_type}
+    def load_hub_model(cls, model_id):
+        github, model_name = model_id.split(':')
+        from torch.hub import load as load_model
+        hub_api = load_model(github, model_name)
+        return hub_api
+
+    @classmethod
+    def train(cls, model_type: str, vocab_size: int, model_path: Union[Path, str], files: List[str],
+              tok_coverage=0.9999, **kwargs):
+        # Note: char_coverage is abused as subword_coverage
+        hub_api = cls.load_hub_model(model_type)
+        bpe = hub_api.bpe
+        dicto = hub_api.task.dictionary
+
+        freqs = coll.Counter()
+        lines = IO.get_liness(*files)
+        for line in tqdm(lines, mininterval=10, dynamic_ncols=True, unit='line'):
+            freqs.update(bpe.encode(line).split())
+        total_toks = sum(freqs.values())
+        log.info(f"Found {len(freqs)} bpe types and {total_toks} toks")
+
+        freqs = list(sorted(freqs.items(), reverse=True, key=lambda x: x[1]))
+        vocabulary, oovs = [], []
+        cumulative = 0
+        for t, f in freqs:
+            if cumulative / total_toks <= tok_coverage:
+                vocabulary.append((t, f))
+                cumulative += f
+            else:
+                oovs.append((t, f))
+
+        oovs_str = ' '.join(f'{t}:{f}' for t, f in oovs)
+        log.warning(f'Excluded {len(oovs)} types as OOVs.\n:{oovs_str}')
+        log.warning(f'Included {len(vocabulary)} types as in vocabulary; '
+                    f'Coverage = {cumulative / total_toks:g}')
+        types, indices = [], {}
+        for typ, new_idx in cls.reserved():
+            assert len(types) == new_idx
+            types.append(typ)
+            old_idx = dicto.indices.get(typ, -1)
+            indices[typ] = [new_idx, old_idx]
+
+        for typ, freq in vocabulary:
+            # [new index, old index]
+            indices[typ] = [len(types), dicto.indices.get(typ, -1)]
+            types.append(typ)
+
+        data = {
+            'model_id': model_type,
+            'mapping': indices
+        }
         with IO.writer(model_path) as wrtr:
             yaml.dump(data, wrtr)
         return cls(model_path)
 
     def encode_as_ids(self, text: str, add_bos=False, add_eos=False) -> List[int]:
         pieces = self.tokenize(text)
-        ids = [self.dicto.indices.get(p, self.unk_idx) for p in pieces]
+        ids = [self.tok2idx.get(p, self.unk_idx) for p in pieces]
         if add_bos and ids[0] != self.bos_idx:
             ids.insert(0, self.bos_idx)
         if add_eos and ids[-1] != self.eos_idx:
@@ -257,7 +309,7 @@ class PretrainMatchField(Field):
                 pass
         if remove_pads:
             ids = [i for i in ids if i != self.pad_idx]
-        pieces = [self.dicto.symbols[i] for i in ids]
+        pieces = [self.idx2tok[i] for i in ids]
         return self.detokenize(pieces)
 
     def tokenize(self, text: str) -> List[str]:
@@ -267,4 +319,4 @@ class PretrainMatchField(Field):
         return self.bpe.decode(' '.join(tokens))
 
     def __len__(self):
-        return len(self.dicto)
+        return len(self.idx2tok)

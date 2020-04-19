@@ -8,6 +8,8 @@ import torch.nn as nn
 
 from rtg.module.tfmnmt import (TransformerNMT, EncoderLayer, DecoderLayer, Generator)
 from rtg import TranslationExperiment as Experiment, log
+from rtg.data.codec import PretrainMatchField
+from rtg.utils import get_my_args
 
 class RobertaGenerator(Generator):
     """
@@ -44,14 +46,14 @@ class RoBERTaMT(TransformerNMT):
         return 'xlmmt'
 
     @classmethod
-    def make_model(cls, model_id='pytorch/fairseq:xlmr.base', inner_args=None, init=True,
-                   exp: Experiment = None, src_vocab='not_used', tgt_vocab='not_used',
-                   **args):
+    def make_model(cls, src_vocab:int, tgt_vocab:int, model_id='pytorch/fairseq:xlmr.base',
+                   inner_args=None, init=True, exp: Experiment = None,
+                   **kwargs):
         """
         Helper: Construct a model from hyper parameters."
         :return: model, args
         """
-        assert not args, f'{args} not supported'
+        assert not kwargs, f'{kwargs} not supported'
         log.info(f"making mtfmnmt model: {model_id}")
         group, model_name = model_id.split(':')
         hub_api = torch.hub.load(group, model_name)
@@ -60,9 +62,9 @@ class RoBERTaMT(TransformerNMT):
         roberta.eval()
         ma = roberta.args
         inner_args = inner_args or {}
-        args = dict(
-            src_vocab=len(roberta.dictionary),  # rows in
-            tgt_vocab=len(roberta.dictionary),
+        inner_args = dict(
+            src_vocab=src_vocab,  # rows in
+            tgt_vocab=tgt_vocab,
             enc_layers=ma.encoder_layers,
             dec_layers=ma.encoder_layers,
             hid_size=ma.encoder_embed_dim,
@@ -74,12 +76,31 @@ class RoBERTaMT(TransformerNMT):
             activation=inner_args.get('activation', ma.activation_fn),
             tied_emb=inner_args.get('tied_emb', 'three-way'))
 
-        xlmmt, inner_args = super().make_model(**args, exp=exp)
-        if init:
-            xlmmt.init_from_roberta(roberta, init)
-        return xlmmt, dict(model_id=model_id, inner_args=inner_args, init=init)
+        assert isinstance(exp.tgt_vocab, PretrainMatchField)
+        assert isinstance(exp.src_vocab, PretrainMatchField)
+        tgt_mapping = exp.tgt_vocab.new_idx2old_idx
+        src_mapping = exp.src_vocab.new_idx2old_idx
+        assert len(src_mapping) == src_vocab
+        assert len(tgt_mapping) == tgt_vocab
 
-    def init_from_roberta(self, roberta: 'RobertaEncoder', init):
+        xlmmt, inner_args = super().make_model(**inner_args, exp=exp)
+        if init:
+            xlmmt.init_from_roberta(roberta, init, src_mapping=src_mapping,
+                                    tgt_mapping=tgt_mapping)
+        save_args = dict(model_id=model_id, inner_args=inner_args, init=init, src_vocab=src_vocab,
+                         tgt_vocab=tgt_vocab)
+        return xlmmt, save_args
+
+    @classmethod
+    def map_rows(cls, src, dest, mapping):
+        skips = 0
+        for dest_idx, src_idx in mapping.items():
+            if dest_idx < 0 or src_idx < 0:
+                skips += 1
+            dest[dest_idx] = src[src_idx]
+        log.info(f"Mapped rows. Total skips = {skips}")
+
+    def init_from_roberta(self, roberta: 'RobertaEncoder', init, src_mapping, tgt_mapping):
         # fairseq stuff; imports are not really needed. Placed here just in case for inspection
         """
         from fairseq.modules.transformer_sentence_encoder_layer import \
@@ -97,23 +118,26 @@ class RoBERTaMT(TransformerNMT):
         rob = roberta
         rob_enc = rob.sentence_encoder
         rob_embs = rob_enc.embed_tokens.weight
-
         if 'all' in init or 'src_in_emb' in init:
             log.info("init src_in_emb: YES")
-            self.src_embed[0].lut.weight.data.copy_(rob_embs.data)
+            #self.src_embed[0].lut.weight.data.copy_(rob_embs.data)
+            self.map_rows(rob_embs.data, self.src_embed[0].lut.weight.data, mapping=src_mapping)
         else:
             log.info("init src_in_emb: NO")
 
         if ('all' in init or 'tgt_in_emb' in init):
             log.info("init tgt_in_emb: YES")
-            self.tgt_embed[0].lut.weight.data.copy_(rob_embs.data)
+            #self.tgt_embed[0].lut.weight.data.copy_(rob_embs.data)
+            self.map_rows(rob_embs.data, self.tgt_embed[0].lut.weight.data, mapping=tgt_mapping)
         else:
             log.info("init tgt_in_emb: NO")
 
         if 'all' in init or 'tgt_out_emb' in init:
             log.info("init tgt_out_emb: YES")
-            self.generator.proj.weight.data.copy_(rob.lm_head.weight.data)
-            self.generator.proj.bias.data.copy_(rob.lm_head.bias.data)
+            self.map_rows(rob.lm_head.weight.data, self.generator.proj.weight.data, mapping=tgt_mapping)
+            self.map_rows(rob.lm_head.bias.data, self.generator.proj.bias.data, mapping=tgt_mapping)
+            #self.generator.proj.weight.data.copy_(rob.lm_head.weight.data)
+            #self.generator.proj.bias.data.copy_(rob.lm_head.bias.data)
         else:
             log.info("init tgt_out_emb: NO")
 
