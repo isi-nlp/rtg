@@ -98,8 +98,6 @@ class RoBERTaMT(TransformerNMT):
         rob_enc = rob.sentence_encoder
         rob_embs = rob_enc.embed_tokens.weight
 
-        log.info("Initialized SrcOutEmb with pretrained")
-        init = {'src_in_emb', 'tgt_in_emb', 'tgt_out_emb', ''}
         if 'all' in init or 'src_in_emb' in init:
             log.info("init src_in_emb: YES")
             self.src_embed[0].lut.weight.data.copy_(rob_embs.data)
