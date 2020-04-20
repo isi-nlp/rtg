@@ -5,7 +5,7 @@
 import torch
 import torch.nn as nn
 import rtg
-from rtg import log, TranslationExperiment as Experiment, device, BatchIterable
+from rtg import log, yaml, TranslationExperiment as Experiment, device, BatchIterable
 from rtg.module import NMTModel
 from rtg.utils import IO
 from rtg.module import criterion as criteria
@@ -170,7 +170,6 @@ class SteppedTrainer:
                  model_factory: Optional[Callable] = None,
                  optim: str = 'ADAM',
                  **optim_args):
-        self.start_step = 0
         self.last_step = -1
         self.exp = exp
         optim_state = None
@@ -184,8 +183,7 @@ class SteppedTrainer:
             exp.model_args = args
             last_model, self.last_step = self.exp.get_last_saved_model()
             if last_model:
-                self.start_step = self.last_step + 1
-                log.info(f"Resuming training from step:{self.start_step}, model={last_model}")
+                log.info(f"Resuming training from step:{self.last_step}, model={last_model}")
                 state = torch.load(last_model)
                 model_state = state['model_state'] if 'model_state' in state else state
                 if 'optim_state' in state:
@@ -236,6 +234,18 @@ class SteppedTrainer:
         self.model = self.model.to(device)
 
         self.criterion = self.create_criterion(optim_args['criterion'])
+
+    @property
+    def start_step(self):
+        _, step = self.exp.get_last_saved_model()
+        if self.exp._trained_flag.exists():
+            # noinspection PyBroadException
+            try:
+                step =  max(step, yaml.load(self.exp._trained_flag.read_text())['steps'])
+            except Exception as _:
+                pass
+        assert step >= 0
+        return step
 
     def create_criterion(self, criterion):
         log.info(f"Criterion = {criterion}")

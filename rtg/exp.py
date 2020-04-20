@@ -193,7 +193,7 @@ class BaseExperiment:
             step, train_score, valid_score = models[0].name.replace('.pkl', '').split('_')[-3:]
             return models[0], int(step)
         else:
-            return None, -1
+            return None, 0
 
     def get_best_known_model(self) -> Tuple[Optional[Path], int]:
         """Gets best Known model (best on lowest scores on training and validation sets)
