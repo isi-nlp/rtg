@@ -253,7 +253,7 @@ class PretrainMatchField(Field):
 
         freqs = coll.Counter()
         lines = IO.get_liness(*files)
-        for line in tqdm(lines, mininterval=10, dynamic_ncols=True, unit='line'):
+        for line in tqdm(lines, mininterval=2, dynamic_ncols=True, unit='line'):
             freqs.update(bpe.encode(line).split())
         total_toks = sum(freqs.values())
         log.info(f"Found {len(freqs)} bpe types and {total_toks} toks")
