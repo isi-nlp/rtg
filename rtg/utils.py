@@ -11,7 +11,6 @@ import os
 from datetime import datetime
 import atexit
 
-
 # Size of each element in tensor
 tensor_size = {
     'torch.Tensor': 4,
@@ -38,7 +37,7 @@ def log_tensor_sizes(writer=log.info, min_size=1024):
     def is_tensor(obj):
         if torch.is_tensor(obj):
             return True
-        try:    # some native objects raise exceptions
+        try:  # some native objects raise exceptions
             return hasattr(obj, 'data') and torch.is_tensor(obj.data)
         except:
             return False
@@ -46,7 +45,7 @@ def log_tensor_sizes(writer=log.info, min_size=1024):
     tensors = filter(is_tensor, gc.get_objects())
     stats = ((reduce(op.mul, obj.size()) if len(obj.size()) > 0 else 0,
               obj.type(), tuple(obj.size()), hex(id(obj))) for obj in tensors)
-    stats = ((n*tensor_size[typ], n, typ, *blah) for n, typ, *blah in stats)
+    stats = ((n * tensor_size[typ], n, typ, *blah) for n, typ, *blah in stats)
     stats = (x for x in stats if x[0] > min_size)
     sorted_stats = sorted(stats, key=lambda x: x[0])
 
@@ -82,8 +81,8 @@ def get_my_args(exclusions=None):
     :return: dictionary of {arg_name: argv_value} s
     """
     _, _, _, args = inspect.getargvalues(inspect.currentframe().f_back)
-    for excl in ['self', 'cls'] + (exclusions or []):
-        if excl in  args:
+    for excl in ['self', 'cls', '__class__'] + (exclusions or []):
+        if excl in args:
             del args[excl]
     return args
 
@@ -100,7 +99,7 @@ class IO:
 
     def __enter__(self):
 
-        if self.path.name.endswith(".gz"):   # gzip mode
+        if self.path.name.endswith(".gz"):  # gzip mode
             self.fd = gzip.open(self.path, self.mode, encoding=self.encoding, errors=self.errors)
         else:
             if 'b' in self.mode:  # binary mode doesnt take encoding or errors
@@ -136,7 +135,6 @@ class IO:
     def get_liness(cls, *paths, **kwargs):
         for path in paths:
             yield from cls.get_lines(path, **kwargs)
-
 
     @classmethod
     def write_lines(cls, path: Path, text):

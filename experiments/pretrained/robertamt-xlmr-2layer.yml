@@ -3,7 +3,8 @@ model_args:
   model_id: pytorch/fairseq:xlmr.base  # torch hub model id
   init: ['src_in_emb', 'tgt_in_emb', 'tgt_out_emb', 'enc_layers', 'dec_layers', 'generator_dense']
   #alternatively, init: ['all']   ; listed out all in the above to have finer control
-  # enc_layer_map and dec_layer_map are not set => use all 11 layers as encoder and decoder each
+  enc_layer_map: [0, 1] # First two layers are encoder
+  dec_layer_map: [10, 11]  # last two are decoder
 model_type: robertamt
 optim:
   args:

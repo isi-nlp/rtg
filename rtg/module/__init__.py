@@ -1,5 +1,6 @@
 from abc import ABCMeta, abstractmethod, ABC
 import torch.nn as nn
+from rtg import log
 
 
 class Model(nn.Module):
@@ -35,6 +36,10 @@ class Model(nn.Module):
     # FIXME: @abstractmethod
     def make_trainer(cls, *args, **kwargs):
         raise NotImplementedError
+
+    def maybe_init_from_parent(self, exp: 'Experiment'):
+        log.info("NOT initialising from parent model")
+        pass
 
 
 class NMTModel(Model, metaclass=ABCMeta):

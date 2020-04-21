@@ -229,8 +229,8 @@ class SteppedTrainer:
             from rtg.module.decoder import Decoder
             self.decoder = Decoder.new(self.exp, self.model)
 
-        if self.start_step == 0:
-            self.init_embeddings()
+        if self.start_step <= 1:
+            self.maybe_init_model()
         self.model = self.model.to(device)
 
         self.criterion = self.create_criterion(optim_args['criterion'])
@@ -277,7 +277,7 @@ class SteppedTrainer:
         else:
             raise Exception(f'criterion={criterion} is not supported')
 
-    def init_embeddings(self):
+    def maybe_init_model(self):
         def load_matrix(path: Path):
             return torch.load(path) if path.exists() else None
 
@@ -292,6 +292,7 @@ class SteppedTrainer:
             log.info("NOT Initializing pre-trained target embeddings")
         else:
             self.model.init_tgt_embedding(tgt_emb_mat)
+        self.model.maybe_init_from_parent(exp=self.exp)
 
     def show_samples(self, beam_size=3, num_hyp=3, max_len=30):
         """

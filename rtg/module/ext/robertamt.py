@@ -5,7 +5,7 @@
 
 import torch
 import torch.nn as nn
-
+from typing import List, Mapping
 from rtg.module.tfmnmt import (TransformerNMT, EncoderLayer, DecoderLayer, Generator)
 from rtg import TranslationExperiment as Experiment, log
 from rtg.data.codec import PretrainMatchField
@@ -35,60 +35,59 @@ class RobertaGenerator(Generator):
 
 class RoBERTaMT(TransformerNMT):
     GeneratorFactory = RobertaGenerator
+    model_type = 'robertamt'
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         assert isinstance(self.generator, RobertaGenerator)
         self.generator.activation = self.encoder.layers[0].feed_forward.activation
 
-    @property
-    def model_type(self):
-        return 'xlmmt'
-
     @classmethod
     def make_model(cls, src_vocab:int, tgt_vocab:int, model_id='pytorch/fairseq:xlmr.base',
                    inner_args=None, init=True, exp: Experiment = None,
-                   **kwargs):
+                   enc_layer_map=None, dec_layer_map=None):
         """
         Helper: Construct a model from hyper parameters."
         :return: model, args
         """
-        assert not kwargs, f'{kwargs} not supported'
-        log.info(f"making mtfmnmt model: {model_id}")
-        group, model_name = model_id.split(':')
-        hub_api = torch.hub.load(group, model_name)
-        # hub_api = torch.hub.load('pytorch/fairseq', 'xlmr.base.v0')
-        roberta: 'RobertaEncoder' = hub_api.model.decoder
-        roberta.eval()
-        ma = roberta.args
-        inner_args = inner_args or {}
-        inner_args = dict(
-            src_vocab=src_vocab,  # rows in
-            tgt_vocab=tgt_vocab,
-            enc_layers=ma.encoder_layers,
-            dec_layers=ma.encoder_layers,
-            hid_size=ma.encoder_embed_dim,
-            ff_size=ma.encoder_ffn_embed_dim,
-            n_heads=ma.encoder_attention_heads,
-            attn_bias=inner_args.get('attn_bias', True),
-            attn_dropout=inner_args.get('attn_dropout', ma.attention_dropout),
-            dropout=inner_args.get('dropout', ma.dropout),
-            activation=inner_args.get('activation', ma.activation_fn),
-            tied_emb=inner_args.get('tied_emb', 'three-way'))
+        save_args = get_my_args(exclusions=['exp'])
+        if not inner_args:  # extract from pretrained model the first time
+            log.info(f"making {cls.model_type} model from {model_id}")
+            group, model_name = model_id.split(':')
+            hub_api = torch.hub.load(group, model_name)
+            # hub_api = torch.hub.load('pytorch/fairseq', 'xlmr.base.v0')
+            roberta: 'RobertaEncoder' = hub_api.model.decoder
+            roberta.eval()
+            ma = roberta.args
+            n_layers_max = ma.encoder_layers
+            def validate_layer_idxs(layer_idxs):
+                if layer_idxs: # check list of integers and each idx is valid
+                    assert isinstance(layer_idxs, list) and isinstance(layer_idxs[0], int)
+                    assert all(0 <= idx < n_layers_max for idx in layer_idxs)
+                else: # default one to one copy
+                    layer_idxs = list(range(n_layers_max))
+                return layer_idxs
+            save_args['enc_layer_map'] = enc_layer_map = validate_layer_idxs(enc_layer_map)
+            save_args['dec_layer_map'] = dec_layer_map = validate_layer_idxs(dec_layer_map)
+
+            inner_args = dict(
+                src_vocab=src_vocab,  # rows in
+                tgt_vocab=tgt_vocab,
+                enc_layers=len(enc_layer_map),
+                dec_layers=len(dec_layer_map),
+                hid_size=ma.encoder_embed_dim,
+                ff_size=ma.encoder_ffn_embed_dim,
+                n_heads=ma.encoder_attention_heads,
+                attn_bias=True,
+                attn_dropout=ma.attention_dropout,
+                dropout=ma.dropout,
+                activation=ma.activation_fn,
+                tied_emb='three-way')
 
         assert isinstance(exp.tgt_vocab, PretrainMatchField)
         assert isinstance(exp.src_vocab, PretrainMatchField)
-        tgt_mapping = exp.tgt_vocab.new_idx2old_idx
-        src_mapping = exp.src_vocab.new_idx2old_idx
-        assert len(src_mapping) == src_vocab
-        assert len(tgt_mapping) == tgt_vocab
-
-        xlmmt, inner_args = super().make_model(**inner_args, exp=exp)
-        if init:
-            xlmmt.init_from_roberta(roberta, init, src_mapping=src_mapping,
-                                    tgt_mapping=tgt_mapping)
-        save_args = dict(model_id=model_id, inner_args=inner_args, init=init, src_vocab=src_vocab,
-                         tgt_vocab=tgt_vocab)
+        xlmmt, inner_args = super().make_model(exp=exp, **inner_args)
+        save_args['inner_args'] = inner_args
         return xlmmt, save_args
 
     @classmethod
@@ -100,15 +99,49 @@ class RoBERTaMT(TransformerNMT):
             dest[dest_idx] = src[src_idx]
         log.info(f"Mapped rows. Total skips = {skips}")
 
-    def init_from_roberta(self, roberta: 'RobertaEncoder', init, src_mapping, tgt_mapping):
-        # fairseq stuff; imports are not really needed. Placed here just in case for inspection
+    def maybe_init_from_parent(self, exp: Experiment):
+
+        tgt_emb_map = exp.tgt_vocab.new_idx2old_idx
+        src_emb_map = exp.src_vocab.new_idx2old_idx
+        args = exp.model_args
+        assert args['inner_args']['src_vocab'] == len(src_emb_map)
+        assert args['inner_args']['tgt_vocab'] == len(tgt_emb_map)
+        enc_layer_map = args['enc_layer_map']
+        dec_layer_map = args['dec_layer_map']
+        log.info(f"Initialising self of type {self.model_type} from {args['model_id']}")
+        group, model_name = args['model_id'].split(':')
+        hub_api = torch.hub.load(group, model_name)
+        # hub_api = torch.hub.load('pytorch/fairseq', 'xlmr.base.v0')
+        roberta: 'RobertaEncoder' = hub_api.model.decoder
+        self.init_from_roberta(roberta, args['init'],
+                               src_emb_map=src_emb_map, tgt_emb_map=tgt_emb_map,
+                               enc_layer_map=enc_layer_map, dec_layer_map=dec_layer_map)
+
+    def init_from_roberta(self, roberta: 'RobertaEncoder', init: List[str],
+                          src_emb_map: Mapping[int, int],
+                          tgt_emb_map: Mapping[int, int],
+                          enc_layer_map: List[int], dec_layer_map: List[int]):
         """
+
+        :param roberta:
+        :param init: List of component names to be initialized
+        :param src_emb_map: map[my_emb_idx <-- your_emb_idx] for source language
+        :param tgt_emb_map: map[my_emb_idx <-- your_emb_idx] for target language
+        :param enc_layer_map: List of layer indices of pretrained model
+                    from which the encoder weights be copied from
+        :param dec_layer_map: List of layer indices of pretrained model
+                    from which the decoder layer weights be copied from
+        :return:
+        """
+        # fairseq stuff; imports are not really needed. Placed here just in case for inspection
+
+        assert len(self.encoder.layers) == len(enc_layer_map)
+        assert len(self.decoder.layers) == len(dec_layer_map)
+
         from fairseq.modules.transformer_sentence_encoder_layer import \
             TransformerSentenceEncoderLayer
-        from fairseq.models.roberta import RobertaModel, RobertaEncoder, TransformerSentenceEncoder, \
-            RobertaLMHead
         from fairseq.modules.multihead_attention import MultiheadAttention as YourAttn
-        """
+
         pieces = {'all', 'src_in_emb', 'tgt_in_emb', 'tgt_out_emb', 'enc_layers', 'dec_layers',
                   'generator_dense'}
         for it in init:
@@ -120,22 +153,21 @@ class RoBERTaMT(TransformerNMT):
         rob_embs = rob_enc.embed_tokens.weight
         if 'all' in init or 'src_in_emb' in init:
             log.info("init src_in_emb: YES")
-            #self.src_embed[0].lut.weight.data.copy_(rob_embs.data)
-            self.map_rows(rob_embs.data, self.src_embed[0].lut.weight.data, mapping=src_mapping)
+            self.map_rows(rob_embs.data, self.src_embed[0].lut.weight.data, mapping=src_emb_map)
         else:
             log.info("init src_in_emb: NO")
 
         if ('all' in init or 'tgt_in_emb' in init):
             log.info("init tgt_in_emb: YES")
             #self.tgt_embed[0].lut.weight.data.copy_(rob_embs.data)
-            self.map_rows(rob_embs.data, self.tgt_embed[0].lut.weight.data, mapping=tgt_mapping)
+            self.map_rows(rob_embs.data, self.tgt_embed[0].lut.weight.data, mapping=tgt_emb_map)
         else:
             log.info("init tgt_in_emb: NO")
 
         if 'all' in init or 'tgt_out_emb' in init:
             log.info("init tgt_out_emb: YES")
-            self.map_rows(rob.lm_head.weight.data, self.generator.proj.weight.data, mapping=tgt_mapping)
-            self.map_rows(rob.lm_head.bias.data, self.generator.proj.bias.data, mapping=tgt_mapping)
+            self.map_rows(rob.lm_head.weight.data, self.generator.proj.weight.data, mapping=tgt_emb_map)
+            self.map_rows(rob.lm_head.bias.data, self.generator.proj.bias.data, mapping=tgt_emb_map)
             #self.generator.proj.weight.data.copy_(rob.lm_head.weight.data)
             #self.generator.proj.bias.data.copy_(rob.lm_head.bias.data)
         else:
@@ -169,8 +201,10 @@ class RoBERTaMT(TransformerNMT):
         # encoder
         if 'all' in init or 'enc_layers' in init:
             log.info("init enc_layers: YES")
-            assert len(self.encoder.layers) == len(rob_enc.layers)
-            for ur_layer, my_layer in zip(rob_enc.layers, self.encoder.layers):
+            for my_idx, ur_idx in enumerate(enc_layer_map):
+                log.info(f"Initialize self.encoder[{my_idx}] <-- pretrained.encoder[{ur_idx}]")
+                ur_layer = rob_enc.layers[ur_idx]
+                my_layer = self.encoder.layers[my_idx]
                 init_enc_layer(ur_layer, my_layer)
             copy_weights(rob.lm_head.layer_norm, self.encoder.norm)
         else:
@@ -178,9 +212,12 @@ class RoBERTaMT(TransformerNMT):
 
         if 'all' in init or 'dec_layers' in init:
             log.info("init dec_layers: YES")
-            for ur_layer, my_layer in zip(rob_enc.layers, self.decoder.layers):
+            for my_idx, ur_idx in enumerate(dec_layer_map):
+                log.info(f"Initialize self.decoder[{my_idx}] <-- pretrained.encoder[{ur_idx}]")
+                ur_layer = rob_enc.layers[ur_idx]
+                my_layer = self.decoder.layers[my_idx]
                 init_dec_layer(ur_layer, my_layer)
-            log.warning("decoder src_attn is initialized from encoder self_attn ")
+            log.warning("decoder src_attn is initialized from encoder's self_attn ")
             copy_weights(rob.lm_head.layer_norm, self.decoder.norm)
         else:
             log.info("init dec_layers: NO")

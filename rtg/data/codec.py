@@ -13,6 +13,7 @@ from sentencepiece import SentencePieceProcessor, SentencePieceTrainer
 
 from rtg import log, yaml
 from rtg.utils import IO
+from functools import lru_cache
 
 
 class Field(metaclass=ABCMeta):
@@ -269,9 +270,10 @@ class PretrainMatchField(Field):
                 oovs.append((t, f))
 
         oovs_str = ' '.join(f'{t}:{f}' for t, f in oovs)
-        log.warning(f'Excluded {len(oovs)} types as OOVs.\n:{oovs_str}')
-        log.warning(f'Included {len(vocabulary)} types as in vocabulary; '
+        log.info(f'Excluded {len(oovs)} types as OOVs.\n:{oovs_str}')
+        log.info(f'Included {len(vocabulary)} types as in vocabulary; '
                     f'Coverage = {cumulative / total_toks:g}')
+        # TODO: mapping should be list[int] with one on one map
         types, indices = [], {}
         for typ, new_idx in cls.reserved():
             assert len(types) == new_idx

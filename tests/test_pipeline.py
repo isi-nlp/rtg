@@ -50,9 +50,8 @@ def test_pipeline_transformer():
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="This is too slow on CPU")
-def test_xlmmt_init():
+def test_robertamt_full_init():
     tmp_dir = tempfile.mkdtemp()
-    #tmp_dir = 'xxxxyyyyzzz'
     config = load_conf('experiments/pretrained/robertamt-xlmr.yml')
     model_id = config['model_args']['model_id']
     print(f"Testing {model_id} --> {tmp_dir}")
@@ -64,4 +63,17 @@ def test_xlmmt_init():
     print(f"Cleaning up {tmp_dir}")
     shutil.rmtree(tmp_dir, ignore_errors=True)
 
-test_xlmmt_init()
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="This is too slow on CPU")
+def test_robertamt_2layer_init():
+    tmp_dir = tempfile.mkdtemp()
+    config = load_conf('experiments/pretrained/robertamt-xlmr-2layer.yml')
+    model_id = config['model_args']['model_id']
+    print(f"Testing {model_id} --> {tmp_dir}")
+    assert 'pretrainmatch' == config['prep'].get('codec_lib')
+    exp = Experiment(tmp_dir, config=config, read_only=False)
+    exp.config['trainer'].update(dict(steps=4, check_point=1))
+    Pipeline(exp).run(run_tests=False)
+    sanity_check_experiment(exp)
+    print(f"Cleaning up {tmp_dir}")
+    shutil.rmtree(tmp_dir, ignore_errors=True)
