@@ -17,7 +17,7 @@ from tqdm import tqdm
 
 from rtg import device, log, TranslationExperiment as Experiment
 from rtg.utils import get_my_args
-from rtg.dataprep import Batch, BatchIterable
+from rtg.data.dataset import BatchIterable
 from rtg.module import NMTModel
 from rtg.module.trainer import TrainerState, SteppedTrainer
 from rtg.module.criterion import Criterion
@@ -83,7 +83,8 @@ class Generator(nn.Module):
 class EncoderLayer(nn.Module):
     "Encoder is made up of self-attn and feed forward (defined below)"
 
-    def __init__(self, size, self_attn, feed_forward, dropout):
+    def __init__(self, size, self_attn: 'MultiHeadedAttention',
+                 feed_forward: 'PositionwiseFeedForward', dropout):
         super().__init__()
         self.self_attn = self_attn
         self.feed_forward = feed_forward
@@ -233,6 +234,12 @@ class TransformerNMT(AbstractTransformerNMT):
     """
     A standard Encoder-Decoder Transformer architecture.
     """
+    # Factories; looks a bit complicated, but very useful if child classes want to customize these.
+    GeneratorFactory = Generator
+    EncoderLayerFactory = EncoderLayer
+    DecoderLayerFactory = DecoderLayer
+    EncoderFactory = Encoder
+    DecoderFactory = Decoder
 
     def __init__(self, encoder: Encoder, decoder: Decoder,
                  src_embed, tgt_embed,
@@ -261,16 +268,16 @@ class TransformerNMT(AbstractTransformerNMT):
 
         if enc_layers == 0:
             log.warning("Zero encoder layers!")
-        encoder = Encoder(EncoderLayer(hid_size, c(attn), c(ff), dropout), enc_layers)
+        encoder = cls.EncoderFactory(cls.EncoderLayerFactory(hid_size, c(attn), c(ff), dropout), enc_layers)
 
         assert dec_layers > 0
-        decoder = Decoder(DecoderLayer(hid_size, c(attn), c(attn), c(ff), dropout), dec_layers)
+        decoder = cls.DecoderFactory(cls.DecoderLayerFactory(hid_size, c(attn), c(attn), c(ff), dropout), dec_layers)
 
         src_emb = nn.Sequential(Embeddings(hid_size, src_vocab),
                                 PositionalEncoding(hid_size, dropout))
         tgt_emb = nn.Sequential(Embeddings(hid_size, tgt_vocab),
                                 PositionalEncoding(hid_size, dropout))
-        generator = Generator(hid_size, tgt_vocab)
+        generator = cls.GeneratorFactory(hid_size, tgt_vocab)
 
         model = cls(encoder, decoder, src_emb, tgt_emb, generator)
 
@@ -279,6 +286,10 @@ class TransformerNMT(AbstractTransformerNMT):
 
         model.init_params()
         return model, args
+
+    @classmethod
+    def make_trainer(cls, *args, **kwargs):
+        return TransformerTrainer(*args, **kwargs)
 
 
 class SublayerConnection(nn.Module):
@@ -468,9 +479,8 @@ class ChunkedLossCompute(SimpleLossFunction):
             # grad network is cut here
             chunked_feats = _y_feats[:, i:i + chunk_size]
             chunked_dist = self.generator(chunked_feats, score=self.criterion.input_type)
-
-            chunked_dist = chunked_dist.contiguous().view(-1, chunked_dist.shape[
-                -1])  # B x C x V -> B.C x V
+            # B x C x V -> B.C x V
+            chunked_dist = chunked_dist.contiguous().view(-1, chunked_dist.shape[-1])
             chunked_ys = y_seqs[:, i:i + chunk_size].contiguous().view(-1)  # B x C -> B.C
             loss = self.criterion(chunked_dist, chunked_ys).sum() / normalizer
             total += loss.detach().item()
@@ -612,12 +622,12 @@ class TransformerTrainer(SteppedTrainer):
                     bos_step = x_seqs[:, :1]
                     x_seqs = x_seqs[:, 1:]
                 else:
-                    bos_step = torch.full((len(batch), 1), fill_value=Batch.bos_val,
+                    bos_step = torch.full((len(batch), 1), fill_value=batch.bos_val,
                                           dtype=torch.long, device=device)
 
-                x_mask = (x_seqs != batch.pad_value).unsqueeze(1)
+                x_mask = (x_seqs != batch.pad_val).unsqueeze(1)
                 y_seqs_with_bos = torch.cat([bos_step, batch.y_seqs], dim=1)
-                y_mask = Batch.make_target_mask(y_seqs_with_bos)
+                y_mask = batch.make_autoreg_mask(y_seqs_with_bos)
                 out = self.model(x_seqs, y_seqs_with_bos, x_mask, y_mask)
                 # [Batch x Time x D]
                 # skip the last time step (the one with EOS as input)
@@ -718,13 +728,13 @@ class TransformerTrainer(SteppedTrainer):
                     bos_step = x_seqs[:, :1]
                     x_seqs = x_seqs[:, 1:]
                 else:
-                    bos_step = torch.full((len(batch), 1), fill_value=Batch.bos_val,
+                    bos_step = torch.full((len(batch), 1), fill_value=batch.bos_val,
                                           dtype=torch.long, device=device)
 
                 # Prep masks
-                x_mask = (x_seqs != batch.pad_value).unsqueeze(1)
+                x_mask = (x_seqs != batch.pad_val).unsqueeze(1)
                 y_seqs_with_bos = torch.cat([bos_step, batch.y_seqs], dim=1)
-                y_mask = Batch.make_target_mask(y_seqs_with_bos)
+                y_mask = batch.make_autoreg_mask(y_seqs_with_bos)
 
                 # [Batch x Time x D]
                 out = self.model(x_seqs, y_seqs_with_bos, x_mask, y_mask)
@@ -812,7 +822,7 @@ def __test_model__():
                                   weighing={'gamma': [0.0, 0.5]}))
 
     trainer = TransformerTrainer(exp=exp, **exp.optim_args[1])
-    assert 2 == Batch.bos_val
+    assert 2 == exp.tgt_vocab.bos_idx
     batch_size = 256
     steps = 2000
     check_point = 200

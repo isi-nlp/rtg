@@ -1,22 +1,20 @@
 # NOTE: this is obsolete ; TG wrote this when he was learning to implement and train networks
 
-import torch
-import torch.nn as nn
 import torch.optim as optim
 import tqdm
 from tqdm import tqdm
 
 from rtg import TranslationExperiment as Experiment
-from rtg import device, log
+from rtg import log
 from rtg import my_tensor as tensor
-from rtg.dataprep import BatchIterable
+from rtg.data.dataset import BatchIterable
 
 import torch
 import torch.nn as nn
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 from rtg import device
-from rtg.dataprep import Batch
+from rtg.data.dataset import Batch, Field
 
 
 class LSTMEncoder(nn.Module):
@@ -24,7 +22,7 @@ class LSTMEncoder(nn.Module):
     Encoder module for encoding sequences
     """
 
-    def __init__(self, vocab_size, emb_dim=100, hid_dim=100, pad_idx=Batch.pad_value, dropout=0.4, last_step_only=True,
+    def __init__(self, vocab_size, emb_dim=100, hid_dim=100, pad_idx=Field.pad_idx, dropout=0.4, last_step_only=True,
                  num_layers=2, num_directions=2):
         """
         :param vocab_size: size of vocabulary i.e. maximum index in the input sequence
@@ -124,8 +122,10 @@ class Trainer:
     def train(self, num_epochs: int, batch_size: int, **args):
         log.info(f'Going to train for {num_epochs} epochs; batch_size={batch_size}')
 
-        train_data = BatchIterable(self.exp.train_file, batch_size=batch_size, in_mem=True)
-        val_data = BatchIterable(self.exp.valid_file, batch_size=batch_size, in_mem=True)
+        train_data = BatchIterable(self.exp.train_file, batch_size=batch_size, in_mem=True,
+                                   field=self.exp.tgt_vocab)
+        val_data = BatchIterable(self.exp.valid_file, batch_size=batch_size, in_mem=True,
+                                 field=self.exp.tgt_vocab)
         keep_models = args.get('keep_models', 4)
         if num_epochs <= self.start_epoch:
             raise Exception(f'The model was already trained to {self.start_epoch} epochs. '

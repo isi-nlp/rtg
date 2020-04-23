@@ -9,11 +9,10 @@ from dataclasses import dataclass, field
 import torch
 from torch import nn as nn
 
-from rtg import TranslationExperiment as Experiment
-from rtg import log, device, my_tensor as tensor, debug_mode
-from rtg.dataprep import PAD_TOK, BOS_TOK, EOS_TOK
+from rtg import TranslationExperiment as Experiment, debug_mode
+from rtg import log, device, my_tensor as tensor
 from rtg.module.generator import GeneratorFactory
-from rtg.dataprep import Field
+from rtg.data.dataset import Field
 from rtg.registry import factories, generators
 
 Hypothesis = Tuple[float, List[int]]
@@ -143,9 +142,6 @@ class DecoderBatch:
 
 
 class Decoder:
-    pad_val = PAD_TOK[1]
-    bos_val = BOS_TOK[1]
-    eos_val = EOS_TOK[1]
     default_beam_size = 5
 
     def __init__(self, model, gen_factory: Type[GeneratorFactory], exp: Experiment, gen_args=None,
@@ -155,11 +151,16 @@ class Decoder:
         self.gen_factory = gen_factory
         self.debug = debug
         self.gen_args = gen_args if gen_args is not None else {}
+        self.pad_val = exp.tgt_vocab.pad_idx
+        self.bos_val = exp.tgt_vocab.bos_idx
+        self.eos_val = exp.tgt_vocab.eos_idx
+
         self.dec_bos_cut = self.exp.config.get('trainer', {}).get('dec_bos_cut', False)
         (log.info if self.dec_bos_cut else log.debug)(f"dec_bos_cut={self.dec_bos_cut}")
 
     def generator(self, x_seqs, x_lens):
-        return self.gen_factory(self.model, x_seqs=x_seqs, x_lens=x_lens, **self.gen_args)
+        return self.gen_factory(self.model, field=self.exp.tgt_vocab,
+                                x_seqs=x_seqs, x_lens=x_lens, **self.gen_args)
 
     @staticmethod
     def average_states(model_paths: List[Path]):
@@ -170,6 +171,7 @@ class Decoder:
                 state_dict = next_state
                 key_set = set(state_dict.keys())
             else:
+                # noinspection PyUnboundLocalVariable
                 assert key_set == set(next_state.keys())
                 for key in key_set:     # Running average
                     state_dict[key] = (i*state_dict[key] + next_state[key]) / (i + 1)
@@ -353,7 +355,7 @@ class Decoder:
                 # we need to pick the top k beams from a single beam
                 # How? mask out all beams, except the first beam
                 beam_mask = torch.full((batch_size, beam_size, 1), fill_value=1, device=device,
-                                       dtype=torch.uint8)
+                                       dtype=torch.bool)
                 beam_mask[:, 0, :] = 0
                 log_prob.masked_fill_(mask=beam_mask, value=float('-inf'))
 
@@ -530,7 +532,7 @@ class Decoder:
 
                     print_state = True
                 elif line.startswith(":path"):
-                    self.gen_args['path'] = line.replace(':path', '').replace('=').strip()
+                    self.gen_args['path'] = line.replace(':path', '').replace('=', '').strip()
                     print_state = True
                 elif line.startswith(":models"):
                     for i, mod_path in enumerate(self.exp.list_models()):

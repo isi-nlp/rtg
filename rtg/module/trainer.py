@@ -229,8 +229,8 @@ class SteppedTrainer:
             from rtg.module.decoder import Decoder
             self.decoder = Decoder.new(self.exp, self.model)
 
-        if self.start_step == 0:
-            self.init_embeddings()
+        if self.start_step <= 1:
+            self.maybe_init_model()
         self.model = self.model.to(device)
 
         self.criterion = self.create_criterion(optim_args['criterion'])
@@ -259,23 +259,25 @@ class SteppedTrainer:
         neg_region = optim_args.get('neg_region', 0.05)
         alpha = optim_args.get('alpha', 1.0)
 
+        pad_idx = self.exp.tgt_vocab.pad_idx
         if criterion == 'smooth_kld':
-            return criteria.SmoothKLD(vocab_size=self.model.generator.vocab, smoothing=smoothing)
+            return criteria.SmoothKLD(vocab_size=self.model.generator.vocab, smoothing=smoothing,
+                                      pad_idx=pad_idx)
         elif criterion == 'cross_entropy':
             return criteria.CrossEntropy()
         elif criterion == 'binary_cross_entropy':
-            return criteria.BinaryCrossEntropy(smoothing=smoothing)
+            return criteria.BinaryCrossEntropy(smoothing=smoothing,pad_idx=pad_idx)
         elif criterion == 'triplet_loss':
             return criteria.TripletLoss(embedding=tgt_embedding, margin=margin, neg_region=neg_region,
-                                        mode=mode, neg_sampling=neg_sampling)
+                                        mode=mode, neg_sampling=neg_sampling, pad_idx=pad_idx)
         elif criterion == 'smooth_kld_and_triplet_loss':
-            return criteria.SmoothKLDAndTripletLoss(embedding=tgt_embedding, margin=margin, neg_region=neg_region,
-                                                    mode=mode, neg_sampling=neg_sampling,
-                                                    smoothing=smoothing, alpha=alpha)
+            return criteria.SmoothKLDAndTripletLoss(
+                embedding=tgt_embedding, margin=margin, neg_region=neg_region, mode=mode,
+                neg_sampling=neg_sampling, smoothing=smoothing, alpha=alpha, pad_idx=pad_idx)
         else:
             raise Exception(f'criterion={criterion} is not supported')
 
-    def init_embeddings(self):
+    def maybe_init_model(self):
         def load_matrix(path: Path):
             return torch.load(path) if path.exists() else None
 
@@ -290,6 +292,7 @@ class SteppedTrainer:
             log.info("NOT Initializing pre-trained target embeddings")
         else:
             self.model.init_tgt_embedding(tgt_emb_mat)
+        self.model.maybe_init_from_parent(exp=self.exp)
 
     def show_samples(self, beam_size=3, num_hyp=3, max_len=30):
         """

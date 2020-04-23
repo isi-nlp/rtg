@@ -8,8 +8,9 @@ import copy
 import torch
 from torch import nn
 import torch.nn.functional as F
-import rtg.dataprep as prep
-from rtg.dataprep import SqliteFile, LoopingIterable, TSVData, Example
+#import rtg.dataprep as prep
+from rtg.data.codec import Field
+from rtg.data.dataset import SqliteFile, LoopingIterable, TSVData, Example
 from rtg import device
 from rtg.module import Model
 from rtg.module.trainer import SteppedTrainer
@@ -27,9 +28,9 @@ class CBOW(Model):
     https://papers.nips.cc/paper/5021-distributed-representations-of-words-and-phrases-and-their-compositionality.pdf
     """
 
-    def __init__(self, emb_dim, vocab_size, dropout=0.1):
+    def __init__(self, emb_dim, vocab_size, pad_idx, dropout=0.1):
         super().__init__()
-        self.emb = nn.Embedding(vocab_size, emb_dim, padding_idx=prep.PAD_TOK_IDX)
+        self.emb = nn.Embedding(vocab_size, emb_dim, padding_idx=pad_idx)
         self.l1 = nn.Linear(emb_dim, emb_dim)
         self.l2 = nn.Linear(emb_dim, vocab_size)
         self.dropout = nn.Dropout(dropout)
@@ -60,10 +61,11 @@ class CBOW(Model):
         return nxt_word_lprobs
 
     @classmethod
-    def make_model(cls, emb_dim, vocab_size, exp=None):
-        model = cls(emb_dim, vocab_size)
+    def make_model(cls, emb_dim, vocab_size, exp):
+        model = cls(emb_dim, vocab_size, pad_idx=exp.tgt_vocab.pad_idx)
         model.init_params()
-        args = dict(emb_dim=emb_dim, vocab_size=vocab_size)
+
+        args = dict(emb_dim=emb_dim, vocab_size=vocab_size, )
         return model, args
 
     @classmethod
@@ -77,8 +79,10 @@ class CBOWBatchReader:
     batch_size: int
     ctx_size: int
     side: str
+    field: Field
     add_bos: bool = True
     add_eos: bool = True
+
 
     def __post_init__(self):
         assert self.side in {'src', 'tgt', 'src+tgt'}
@@ -94,10 +98,10 @@ class CBOWBatchReader:
         # left_ctx + word + right_ctx
         if self.add_eos or self.add_bos:
             seq = copy.copy(seq)
-            if self.add_bos and seq[0] != prep.BOS_TOK_IDX:
-                seq.insert(0, prep.BOS_TOK_IDX)
-            if self.add_eos and seq[-1] != prep.EOS_TOK_IDX:
-                seq.append(prep.EOS_TOK_IDX)
+            if self.add_bos and seq[0] != self.field.bos_idx:
+                seq.insert(0, self.field.bos_idx)
+            if self.add_eos and seq[-1] != self.field.eos_idx:
+                seq.append(self.field.eos_idx)
         full_window = self.ctx_size + self.ctx_size
         for i in range(len(seq) - full_window):
             word = seq[i + self.ctx_size]
@@ -130,7 +134,7 @@ class DataReader:
     side: str
 
     def get_training_data(self, batch_size, ctx_size, n_batches):
-        train_db = SqliteFile(self.exp.train_db, shuffle=True)
+        train_db = SqliteFile(self.exp.train_db)
         reader = CBOWBatchReader(train_db, batch_size=batch_size, ctx_size=ctx_size, side=self.side)
         return LoopingIterable(reader, batches=n_batches)
 

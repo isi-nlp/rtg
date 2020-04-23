@@ -4,7 +4,7 @@ from rtg.tool.log import Logger
 debug_mode = os.environ.get('NMT_DEBUG', False)
 log = Logger(console_level=logging.DEBUG if debug_mode else logging.INFO)
 
-__version__ = '0.3.0'
+__version__ = '0.3.1'
 
 import torch
 device_name = 'cuda:0' if torch.cuda.is_available() else 'cpu'
@@ -37,7 +37,7 @@ def profile(func, *args):
     return profiler(func, *args)
 
 
-from rtg.dataprep import BatchIterable, Batch
+from rtg.data.dataset import BatchIterable, Batch
 from rtg.exp import TranslationExperiment
 from rtg.module import tfmnmt, decoder
 from pathlib import Path

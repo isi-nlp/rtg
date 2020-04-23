@@ -9,8 +9,8 @@ import numpy as np
 import torch
 
 from rtg import log, yaml
-from rtg.dataprep import (TSVData, BatchIterable, LoopingIterable, SqliteFile)
-from rtg.dataprep import Field, SPField, NLField
+from rtg.data.dataset import (TSVData, BatchIterable, LoopingIterable, SqliteFile)
+from rtg.data.codec import Field, SPField, NLField, PretrainMatchField
 from rtg.utils import IO, line_count
 
 seeded = False
@@ -39,9 +39,11 @@ class BaseExperiment:
             config = load_conf(config)
         self.config = config if config else load_conf(self._config_file)
 
-        self.codec_name = self.config.get('prep', {}).get('codec_lib', 'sentpiece')
-        codec_libs = {'sentpiece': SPField, 'nlcodec': NLField}
-        assert self.codec_name in codec_libs # only these are supported
+        self.codec_name = self.config.get('prep', {}).get('codec_lib', 'sentpiece') # with default
+        codec_libs = {'sentpiece': SPField,
+                      'nlcodec': NLField,
+                      'pretrainmatch': PretrainMatchField}
+        assert self.codec_name in codec_libs, f'{self.codec_name} is not in {codec_libs.keys()}'
         log.info(f"codec lib = {self.codec_name}")
         self.Field = codec_libs[self.codec_name]
 
@@ -62,7 +64,7 @@ class BaseExperiment:
                 if not _dir.exists():
                     _dir.mkdir(parents=True)
 
-        assert self.config, 'Looks like config is emtpy or invalid'
+        assert self.config, 'Looks like the config is emtpy or invalid'
         self.maybe_seed()
 
         self.shared_field = self.Field(str(self._shared_field_file)) \
@@ -628,7 +630,8 @@ class TranslationExperiment(BaseExperiment):
         trainer = trainers[self.model_type](self, optim=name, model_factory=factories[self.model_type], **optim_args)
         if last_step < train_steps:  # regular training
             trainer.train(fine_tune=False, **run_args)
-            yaml.dump({'steps': train_steps}, stream=self._trained_flag)
+            if not self.read_only:
+                yaml.dump({'steps': train_steps}, stream=self._trained_flag)
         if finetune_steps: # Fine tuning
             log.info(f"Fine tuning upto {finetune_steps}")
             run_args['steps'] = finetune_steps
@@ -661,7 +664,7 @@ class TranslationExperiment(BaseExperiment):
             inp_file = self.finetune_file
         inp_file = IO.maybe_tmpfs(inp_file)
         train_data = BatchIterable(inp_file, batch_size=batch_size, sort_by=sort_by,
-                                   batch_first=batch_first, shuffle=shuffle,
+                                   batch_first=batch_first, shuffle=shuffle, field=self.tgt_vocab,
                                    **self._get_batch_args())
         if steps > 0:
             train_data = LoopingIterable(train_data, steps)
@@ -670,7 +673,7 @@ class TranslationExperiment(BaseExperiment):
     def get_val_data(self, batch_size: int, sort_desc=False, batch_first=True,
                      shuffle=False):
         return BatchIterable(self.valid_file, batch_size=batch_size, sort_desc=sort_desc,
-                             batch_first=batch_first, shuffle=shuffle,
+                             batch_first=batch_first, shuffle=shuffle, field=self.tgt_vocab,
                              **self._get_batch_args())
 
     def get_combo_data(self, batch_size: int, steps: int = 0, sort_desc=False, batch_first=True,
@@ -680,7 +683,7 @@ class TranslationExperiment(BaseExperiment):
             self._pre_process_parallel('combo_src', 'combo_tgt', self.combo_file)
         combo_file = IO.maybe_tmpfs(self.combo_file)
         data = BatchIterable(combo_file, batch_size=batch_size, sort_desc=sort_desc,
-                             batch_first=batch_first, shuffle=shuffle,
+                             field=self.tgt_vocab, batch_first=batch_first, shuffle=shuffle,
                              **self._get_batch_args())
         if steps > 0:
             data = LoopingIterable(data, steps)
@@ -730,9 +733,9 @@ class TranslationExperiment(BaseExperiment):
         }[(split, side)]
         assert inp_file.exists()
         # read this file
-
+        field = self.tgt_vocab if side == 'tgt' else self.src_field
         data = BatchIterable(inp_file, batch_size=batch_size, sort_desc=sort_desc,
-                             batch_first=batch_first, shuffle=shuffle,
+                             batch_first=batch_first, shuffle=shuffle, field=field,
                              **self._get_batch_args())
 
         if num_batches > 0:

@@ -4,10 +4,9 @@
 # Created: 1/31/19
 
 import torch
-from torch import nn
-from typing import Union, Callable, Optional
+from typing import Callable, Optional
 from rtg import log, device, my_tensor as tensor
-from rtg.dataprep import BOS_TOK_IDX, padded_sequence_mask
+from rtg.data.dataset import padded_sequence_mask
 
 import inspect
 from rtg.module.rnnmt import Embedder, Generator, SeqDecoder
@@ -62,7 +61,7 @@ class RnnLm(SeqDecoder, LanguageModel):
         seqs = batch.x_seqs
         max_seq_len = batch.max_x_len
 
-        prev_out = tensor([[BOS_TOK_IDX]] * batch_size, dtype=torch.long)
+        prev_out = tensor([[batch.bos_val]] * batch_size, dtype=torch.long)
         last_hidden = None
         outp_probs = torch.zeros((max_seq_len - 1, batch_size), device=device)
 

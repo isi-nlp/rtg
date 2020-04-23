@@ -1,0 +1,39 @@
+# Development:
+
+## Run Tests
+
+Test cases are done using the link:https://docs.pytest.org/en/latest/[`pytest'] framework.
+It can be installed using `pip install pytest`
+
+All tests should be run from the root dir of the project.
+
+
+1. Run all tests, with minimal outputs: `python -m pytest`
+2. Run all tests and also see STDOUT/STDERR `python -m pytest -s`
+3.  Run a specific test such as `python -m pytest  -s -k 'test_pipeline_transformer'`
+
+> TODO: add more tests to `tests` directory.
+
+IDE Setup:
+
+* link:https://www.jetbrains.com/help/pycharm/pytest.html[Configure Pytest as test framework in PyCharm]
+
+
+## Adding a new model
+
+1. Go to link:../rtg/module/[`rtg.module`] and create a new `.py` file
+2. Create a class say `MyModel` that extends either link:../rtg/module/__init__.py[`NMTModel` or `Model`]
+  . it should implement required methods including  `make_model(cls, ...)` and property `model_type`
+  . Note down the identifier that is returned in `model_type`; It should be unique
+  . refer to link:../rtg/module/tfmnmt.py[`tfmnmt`]
+3. register the `model_type`  in the link:../rtg/registry.py[`registry.py`]
+. `factories` used to create an instance of model. This would be unique to your model.
+. `trainers` used to decide what trainer to use.
+. `generators` used by decoder
+. If your model is similar to existing model and match most of its API, you should reuse one of those
+trainers and generators.
+
+> TODO: simplify this; use decorators to register directly from class
+
+
+
