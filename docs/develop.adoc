@@ -2,7 +2,7 @@
 
 ## Run Tests
 
-Test cases are done using the link:https://docs.pytest.org/en/latest/[`pytest'] framework.
+Test cases are done using the link:https://docs.pytest.org/en/latest/[`pytest`] framework.
 It can be installed using `pip install pytest`
 
 All tests should be run from the root dir of the project.
