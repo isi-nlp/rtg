@@ -1,4 +1,5 @@
 from abc import ABCMeta, abstractmethod, ABC
+import torch
 import torch.nn as nn
 from rtg import log
 
@@ -53,3 +54,15 @@ class NMTModel(Model, metaclass=ABCMeta):
     # FIXME: @abstractmethod
     def make_generator(cls, *args, **kwargs):
         raise NotImplementedError
+
+    def maybe_init_from_parent(self, exp: 'TranslationExperiment'):
+        if exp.parent_model_state.exists():
+            log.info("YES Initialising from a parent model")
+            device = next(self.parameters()).device  # device of self model
+            state = torch.load(exp.parent_model_state, map_location=device)
+            error = self.load_state_dict(state, strict=False)
+            log.info("YES Initialized from the parent model")
+            if error.missing_keys or error.unexpected_keys:
+                log.warning(f"Error keys: {error}")
+        else:
+            log.info("NOT initialising from parent model")
