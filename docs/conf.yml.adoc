@@ -128,7 +128,24 @@ trainer:
 This makes the trainer use `train_{src,tgt}` for 0 - 200k steps,  followed by `finetune_{src,tgt}`
 for 200k-300k steps. Note that `finetune_steps > steps` .
 
+## Parent-Child : using pretrained model as parent
 
+[source,yaml]
+----
+model_type: tfmnmt
+model_args:
+  # will be inherited from parent  ; see parent.mode.args: true
+parent:
+  experiment: <path/to/experiment/dir>
+  vocab:
+    shared: shared       # for reusing the shared vocab
+    #src: src            # for separate vocabs
+    #tgt: tgt
+  model:
+    args: true          # update/overwrite the model_args of child with the parent
+    ensemble: 5         # how many checkpoints of parent to ensemble, to obtain initial state
+
+----
 
 ## Sharing the data from other experiment
 
