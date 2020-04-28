@@ -653,6 +653,7 @@ class TranslationExperiment(BaseExperiment):
             del run_args['init_args']
         train_steps = run_args['steps']
         finetune_steps = run_args.pop('finetune_steps', None)
+        finetune_batch_size = run_args.pop('finetune_batch_size', run_args.get('batch_size'))
         if finetune_steps:
             assert type(finetune_steps) is int
             assert finetune_steps > train_steps, f'finetune_steps={finetune_steps} should be' \
@@ -680,8 +681,11 @@ class TranslationExperiment(BaseExperiment):
             if not self.read_only:
                 yaml.dump({'steps': train_steps}, stream=self._trained_flag)
         if finetune_steps:  # Fine tuning
-            log.info(f"Fine tuning upto {finetune_steps}")
+            log.info(f"Fine tuning upto {finetune_steps}, batch_size={finetune_batch_size}")
+            assert finetune_batch_size
             run_args['steps'] = finetune_steps
+            run_args['batch_size'] = finetune_batch_size
+
             trainer.train(fine_tune=True, **run_args)
             yaml.dump({'steps': finetune_steps}, stream=self._trained_flag)
 

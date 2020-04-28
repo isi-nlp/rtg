@@ -122,8 +122,11 @@ Step2, Inform the Trainer to continue training, edit the `trainer` block with `f
 [source,yaml]
 ----
 trainer:
-  steps: 200000   # how many steps to train
+  batch_size: 12000        # training batch size
+  steps: 200000           # how many steps to train
   finetune_steps: 300000 # fine tuning steps.
+  finetune_batch_size: 1024  # fine tuning batch_size; optional; default is training batach_size
+
 ----
 This makes the trainer use `train_{src,tgt}` for 0 - 200k steps,  followed by `finetune_{src,tgt}`
 for 200k-300k steps. Note that `finetune_steps > steps` .
