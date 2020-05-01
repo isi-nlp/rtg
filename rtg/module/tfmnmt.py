@@ -190,7 +190,7 @@ class AbstractTransformerNMT(NMTModel, ABC):
                  f" tgt_out: {id(self.generator.proj.weight.data)}")
         assert weights.shape == self.src_embed[0].lut.weight.shape
         self.src_embed[0].lut.weight.data.copy_(weights.data)
-        #self.generator.proj.weight = self.tgt_embed[0].lut.weight
+        # self.generator.proj.weight = self.tgt_embed[0].lut.weight
 
     def init_tgt_embedding(self, weights, input=True, output=True):
         log.info(f"Are embedding tied ? see object ids: "
@@ -223,11 +223,47 @@ class AbstractTransformerNMT(NMTModel, ABC):
             log.info(f"Tying embeddings: SrcInp == TgtInp")
             self.src_embed[0].lut.weight = self.tgt_embed[0].lut.weight
 
+    def get_trainable_params(self, include=None, exclude=None):
+        if not include and not exclude or include == 'all':
+            return super().get_trainable_params()
+        if exclude:
+            raise Exception("Exclude not supported yet. Please use include")
+            # TODO: implement it later when it is really really needed!
+        assert isinstance(include, list)
+        # a valid example for include
+        valid_include = [
+            'src_embed', 'tgt_embed', 'generator',
+            'encoder:0,1,2,3,4,5',  # encoder:layers
+            'decoder:0,1,2,3,4,5'  # decoder:layers
+        ]
+        param_groups = []
+        for sub_name in include:
+            if hasattr(self, sub_name):
+                log.info(f"Trainable parameters <-- {sub_name}")
+                param_groups.extend(getattr(self, sub_name).parameters())
+            elif sub_name.startswith('encoder:') or sub_name.startswith('decoder:'):
+                # subselect layers
+                sub_name, layers = sub_name.split(':')  # encoder;layers_idx
+
+                layers = [int(x) for x in layers.split(',')]
+                sub_module = dict(encoder=self.encoder, decoder=self.decoder)[sub_name]
+                for layer_idx in layers:
+                    log.info(f'Trainable parameters <-- {sub_name}[{layer_idx}] ')
+                    layer = sub_module.layers[layer_idx]
+                    param_groups.extend(layer.parameters())
+                if len(sub_module.layers) - 1 in layers:  # the last layer is trainable, then norm
+                    log.info(f'Trainable parameters <-- {sub_name}.norm')
+                    param_groups.extend(sub_module.norm.parameters())
+            else:
+                raise Exception(f'{sub_name} not supported')
+
+        return param_groups
+
     @classmethod
     def make_model(cls, src_vocab, tgt_vocab, enc_layers=6, dec_layers=6, hid_size=512,
                    ff_size=2048, n_heads=8, dropout=0.1, tied_emb='three-way', activation='relu',
                    exp: Experiment = None):
-        raise NotImplementedError
+        raise NotImplementedError()
 
 
 class TransformerNMT(AbstractTransformerNMT):
@@ -253,7 +289,8 @@ class TransformerNMT(AbstractTransformerNMT):
         return 'tfmnmt'
 
     @classmethod
-    def make_model(cls, src_vocab, tgt_vocab, enc_layers=6, dec_layers=6, hid_size=512, ff_size=2048,
+    def make_model(cls, src_vocab, tgt_vocab, enc_layers=6, dec_layers=6, hid_size=512,
+                   ff_size=2048,
                    n_heads=8, attn_bias=True, attn_dropout=0.1, dropout=0.2, activation='relu',
                    tied_emb='three-way', exp: Experiment = None):
         "Helper: Construct a model from hyper parameters."
@@ -268,10 +305,12 @@ class TransformerNMT(AbstractTransformerNMT):
 
         if enc_layers == 0:
             log.warning("Zero encoder layers!")
-        encoder = cls.EncoderFactory(cls.EncoderLayerFactory(hid_size, c(attn), c(ff), dropout), enc_layers)
+        encoder = cls.EncoderFactory(cls.EncoderLayerFactory(hid_size, c(attn), c(ff), dropout),
+                                     enc_layers)
 
         assert dec_layers > 0
-        decoder = cls.DecoderFactory(cls.DecoderLayerFactory(hid_size, c(attn), c(attn), c(ff), dropout), dec_layers)
+        decoder = cls.DecoderFactory(
+            cls.DecoderLayerFactory(hid_size, c(attn), c(attn), c(ff), dropout), dec_layers)
 
         src_emb = nn.Sequential(Embeddings(hid_size, src_vocab),
                                 PositionalEncoding(hid_size, dropout))
@@ -448,7 +487,8 @@ class SimpleLossFunction:
     opt: Optimizer
 
     def __call__(self, x_feats, y_seqs, normalizer, train_mode=True, take_step=True):
-        x_probs = self.generator(x_feats, score=self.criterion.input_type)  # B x T x D --> B x T x V
+        x_probs = self.generator(x_feats,
+                                 score=self.criterion.input_type)  # B x T x D --> B x T x V
 
         scores = x_probs.contiguous().view(-1, x_probs.size(-1))  # B x T x V --> B.T x V
         truth = y_seqs.contiguous().view(-1)  # B x T --> B.T
@@ -596,7 +636,8 @@ class TransformerTrainer(SteppedTrainer):
             log.warning("Multi GPU mode <<this feature is not well tested>>")
             self.model = nn.DataParallel(self.model, dim=0, device_ids=device_ids)
 
-            self.loss_func = MultiGPULossFunction(self.model, criterion=self.criterion, opt=self.opt,
+            self.loss_func = MultiGPULossFunction(self.model, criterion=self.criterion,
+                                                  opt=self.opt,
                                                   chunk_size=chunk_size, devices=device_ids)
         else:
             self.loss_func = ChunkedLossCompute(generator=generator, criterion=self.criterion,
@@ -743,10 +784,11 @@ class TransformerTrainer(SteppedTrainer):
                 out = out[:, :-1, :]
 
                 # Trigger optimizer step after gradient accumulation
-                opt_step = update_interval == (self.grad_accum_interval-1)
+                opt_step = update_interval == (self.grad_accum_interval - 1)
 
                 # assumption:  y_seqs has EOS, and not BOS
-                loss = self.loss_func(out, batch.y_seqs, num_toks, train_mode=True, take_step=opt_step)
+                loss = self.loss_func(out, batch.y_seqs, num_toks, train_mode=True,
+                                      take_step=opt_step)
 
                 # Log
                 unsaved_state = True

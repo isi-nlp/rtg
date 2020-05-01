@@ -199,7 +199,11 @@ class SteppedTrainer:
         self.model = self.model.to(device)
 
         inner_opt_args = {k: optim_args[k] for k in ['lr', 'betas', 'eps']}
-        inner_opt = Optims[optim].new(self.model.parameters(), **inner_opt_args )
+
+        trainable_params = self.exp.config['optim'].get('trainable', {})
+        trainable_params = self.model.get_trainable_params(include=trainable_params.get('include'),
+                                                           exclude=trainable_params.get('exclude'))
+        inner_opt = Optims[optim].new(trainable_params, **inner_opt_args )
         if optim_state:
             log.info("restoring optimizer state from checkpoint")
             try:
