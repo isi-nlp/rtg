@@ -66,3 +66,18 @@ class NMTModel(Model, metaclass=ABCMeta):
                 log.warning(f"Error keys: {error}")
         else:
             log.info("NOT initialising from parent model")
+
+    def get_trainable_params(self, include=None, exclude=None):
+        """
+        sub-selects parameters of the model that the optimizer can mess to reach an optima.
+        by default then include and exclude are None, it returns all parameters.
+        :param include:  only include these. Default is None
+        :param exclude:  exclude these. Default is None
+        :return:
+        """
+        if include or exclude:
+            raise NotImplementedError(f'Sub-selection of trainable params is not implemented for'
+                                      f' "{self.model_type}", please do get_trainable_params(...)')
+        else:
+            log.info("Treating all parameters as trainable parameters")
+            return list(self.parameters())   # default include all

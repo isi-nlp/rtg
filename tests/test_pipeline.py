@@ -81,9 +81,8 @@ def test_robertamt_2layer_init():
 
 
 def test_parent_child_pipeline():
-
     parent_dir = tempfile.mkdtemp()
-    #parent_dir = 'tmp-xyz-parent'
+    # parent_dir = 'tmp-xyz-parent'
 
     print(f"Making parent at {parent_dir}")
     exp = Experiment(parent_dir, config='experiments/transformer.test.yml', read_only=False)
@@ -106,7 +105,7 @@ def test_parent_child_pipeline():
     })
 
     child_dir = tempfile.mkdtemp()
-    #child_dir = 'tmp-xyz-child'
+    # child_dir = 'tmp-xyz-child'
     print(f"Making child at {child_dir}")
     exp = Experiment(child_dir, config=child_config, read_only=False)
     exp.config['trainer'].update(dict(steps=50, check_point=25))
@@ -117,3 +116,13 @@ def test_parent_child_pipeline():
     for dir in [parent_dir, child_dir]:
         print(f"Cleaning up {dir}")
         shutil.rmtree(dir, ignore_errors=True)
+
+
+def test_freeze_pipeline():
+    exp = Experiment('experiments/sample-exp', read_only=True)
+    exp.config['trainer'].update(dict(steps=50, check_point=25))
+    # enable these
+    trainable = {'include': ['src_embed', 'tgt_embed', 'generator', 'encoder:0', 'decoder:0,1']}
+    exp.config['optim']['trainable'] = trainable
+    pipe = Pipeline(exp)
+    pipe.run(run_tests=False)
