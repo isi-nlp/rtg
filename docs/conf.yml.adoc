@@ -150,11 +150,11 @@ parent:
 # ... rest of the config such as prep, trainer etc
 ----
 
-## Freezing a part of network
-Freezing a part of network (useful when the model weights are initialized from parent means the weights
-remain unmodified during the course of the training.
-WKT Optimizer is the one the modifies the parameters, therefore to freeze the weights implies
-excluding the weights from optimizer.
+## Freezing some parts of model
+Frozen weights associated to parts of network means the weights remain unmodified during the course of the training.
+It is a useful feature when the model weights are initialized from a well trained parent model.
+WKT Optimizer is the one that modifies model's parameters according to their gradients.
+Therefore, to freeze the weights implies excluding the weights from optimizer.
 Or alternatively, explicitly mention the parts of the model needs to be trained (i.e. updated by optimizer).
 
 Here is an example -- comment or remove the parts that you wish to freeze in the below 6 layer network.
@@ -173,6 +173,9 @@ optim:
     - 'decoder:0,1,2,3,4,5'  # the numbers are layer indices starting from 0
 ----
 TODO: add support for `exclude` logic ie. include everything else except the mentioned.
+
+This feature is supported only in `AbstractTransformerNMT` and all of its children.
+If you are adding a new `NMTModel` or customising this feature, please override `get_trainable_parameters(self, include, exclude)` function to support this feature.
 
 ## Sharing the data from other experiment
 
