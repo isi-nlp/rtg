@@ -9,8 +9,8 @@ import numpy as np
 import torch
 
 from rtg import log, yaml
-from rtg.dataprep import (TSVData, BatchIterable, LoopingIterable, SqliteFile)
-from rtg.dataprep import Field, SPField, NLField
+from rtg.data.dataset import (TSVData, BatchIterable, LoopingIterable, SqliteFile)
+from rtg.data.codec import Field, SPField, NLField, PretrainMatchField
 from rtg.utils import IO, line_count
 
 seeded = False
@@ -38,10 +38,11 @@ class BaseExperiment:
         if isinstance(config, str) or isinstance(config, Path):
             config = load_conf(config)
         self.config = config if config else load_conf(self._config_file)
-
-        self.codec_name = self.config.get('prep', {}).get('codec_lib', 'sentpiece')
-        codec_libs = {'sentpiece': SPField, 'nlcodec': NLField}
-        assert self.codec_name in codec_libs # only these are supported
+        self.codec_name = self.config.get('prep', {}).get('codec_lib', 'sentpiece')  # with default
+        codec_libs = {'sentpiece': SPField,
+                      'nlcodec': NLField,
+                      'pretrainmatch': PretrainMatchField}
+        assert self.codec_name in codec_libs, f'{self.codec_name} is not in {codec_libs.keys()}'
         log.info(f"codec lib = {self.codec_name}")
         self.Field = codec_libs[self.codec_name]
 
@@ -62,7 +63,7 @@ class BaseExperiment:
                 if not _dir.exists():
                     _dir.mkdir(parents=True)
 
-        assert self.config, 'Looks like config is emtpy or invalid'
+        assert self.config, 'Looks like the config is emtpy or invalid'
         self.maybe_seed()
 
         self.shared_field = self.Field(str(self._shared_field_file)) \
@@ -191,7 +192,7 @@ class BaseExperiment:
             step, train_score, valid_score = models[0].name.replace('.pkl', '').split('_')[-3:]
             return models[0], int(step)
         else:
-            return None, -1
+            return None, 0
 
     def get_best_known_model(self) -> Tuple[Optional[Path], int]:
         """Gets best Known model (best on lowest scores on training and validation sets)
@@ -278,6 +279,8 @@ class TranslationExperiment(BaseExperiment):
             self.mono_valid_src = self.data_dir / 'mono.valid.src.gz'
             self.mono_valid_tgt = self.data_dir / 'mono.valid.tgt.gz'
 
+        self.parent_model_state = self.data_dir / 'parent_model_state.pt'
+
     def reload_vocabs(self):
         self.src_field, self.tgt_field, self.shared_field = [
             self.Field(str(f)) if f.exists() else None for f in (
@@ -297,7 +300,7 @@ class TranslationExperiment(BaseExperiment):
         self.check_line_count('training', args['train_src'], args['train_tgt'])
         self.check_line_count('validation', args['valid_src'], args['valid_tgt'])
         xt_args = dict(no_split_toks=args.get('no_split_toks'),
-                      char_coverage=args.get('char_coverage', 0))
+                       char_coverage=args.get('char_coverage', 0))
         if args.get('shared_vocab'):  # shared vocab
             corpus = [args[key] for key in ['train_src', 'train_tgt', 'mono_src', 'mono_tgt']
                       if args.get(key)]
@@ -349,7 +352,7 @@ class TranslationExperiment(BaseExperiment):
             log.info(f"{vocab_file} exists. Skipping the {name} vocab creation")
             return self.Field(str(vocab_file))
         flat_uniq_corpus = set()  # remove dupes, flat the nested list or sets
-        for i in  corpus:
+        for i in corpus:
             if isinstance(i, set) or isinstance(i, list):
                 flat_uniq_corpus.update(i)
             else:
@@ -358,7 +361,7 @@ class TranslationExperiment(BaseExperiment):
         flat_uniq_corpus = list(flat_uniq_corpus)
         log.info(f"Going to build {name} vocab from files")
         return self.Field.train(model_type, vocab_size, str(vocab_file), flat_uniq_corpus,
-                           no_split_toks=no_split_toks, char_coverage=char_coverage)
+                                no_split_toks=no_split_toks, char_coverage=char_coverage)
 
     def pre_process_mono(self, args):
         xt_args = dict(no_split_toks=args.get('no_split_toks'),
@@ -544,11 +547,55 @@ class TranslationExperiment(BaseExperiment):
                 _write_dict(report, Path(str(outp) + '.report.txt'))
                 _write_emb_matrix(emb_matrix, str(outp))
 
+    def inherit_parent(self):
+        parent = self.config['parent']
+        parent_exp = TranslationExperiment(parent['experiment'], read_only=True)
+        log.info(f"Parent experiment: {parent_exp.work_dir}")
+        parent_exp.has_prepared()
+        vocab_sepc = parent.get('vocab')
+        if vocab_sepc:
+            log.info(f"Parent vocabs inheritance spec: {vocab_sepc}")
+            codec_lib = parent_exp.config['prep'].get('codec_lib')
+            if codec_lib:
+                self.config['prep']['codec_lib'] = codec_lib
+
+            def _locate_field_file(exp: TranslationExperiment, name, check_exists=False) -> Path :
+                switch = {'src': exp._src_field_file,
+                        'tgt': exp._tgt_field_file,
+                        'shared': exp._shared_field_file}
+                assert name in switch, f'{name} not allowed; valid options= {switch.keys()}'
+                file =  switch[name]
+                if check_exists:
+                    assert file.exists(), f'{file} doesnot exist; for {name} of {exp.work_dir}'
+                return file
+
+            for to_field, from_field in vocab_sepc.items():
+                from_field_file = _locate_field_file(parent_exp, from_field, check_exists=True)
+                to_field_file = _locate_field_file(self, to_field, check_exists=False)
+                IO.copy_file(from_field_file, to_field_file)
+            self.reload_vocabs()
+        else:
+            log.info("No vocabularies are inherited from parent")
+        model_sepc = parent.get('model')
+        if model_sepc:
+            log.info("Parent model inheritance spec")
+            if model_sepc.get('args'):
+                self.model_args = parent_exp.model_args
+            ensemble = model_sepc.get('ensemble', 1)
+            model_paths = parent_exp.list_models(sort='step', desc=True)[:ensemble]
+            log.info(f"Averaging {len(model_paths)} checkpoints of parent model: \n{model_paths}")
+            from rtg.module.decoder import Decoder
+            avg_state = Decoder.average_states(model_paths=model_paths)
+            log.info(f"Saving parent model's state to {self.parent_model_state}")
+            torch.save(avg_state, self.parent_model_state)
+
     def pre_process(self, args=None, force=False):
         if self.has_prepared() and not force:
             log.warning("Already prepared")
             return
         args = args if args else self.config['prep']
+        if 'parent' in self.config:
+            self.inherit_parent()
 
         if 'same_data' in args:
             data = Path(args['same_data']) / 'data'
@@ -606,10 +653,11 @@ class TranslationExperiment(BaseExperiment):
             del run_args['init_args']
         train_steps = run_args['steps']
         finetune_steps = run_args.pop('finetune_steps', None)
+        finetune_batch_size = run_args.pop('finetune_batch_size', run_args.get('batch_size'))
         if finetune_steps:
             assert type(finetune_steps) is int
             assert finetune_steps > train_steps, f'finetune_steps={finetune_steps} should be' \
-                f' greater than steps={train_steps}'
+                                                 f' greater than steps={train_steps}'
 
         _, last_step = self.get_last_saved_model()
         if self._trained_flag.exists():
@@ -620,21 +668,26 @@ class TranslationExperiment(BaseExperiment):
                 pass
 
         if last_step >= train_steps and (finetune_steps is None or last_step >= finetune_steps):
-            log.warning(f"Already trained upto {last_step}; Requested: train={train_steps}, finetune={finetune_steps} Skipped")
+            log.warning(
+                f"Already trained upto {last_step}; Requested: train={train_steps}, finetune={finetune_steps} Skipped")
             return
 
         from rtg.registry import trainers, factories
         name, optim_args = self.optim_args
-        trainer = trainers[self.model_type](self, optim=name, model_factory=factories[self.model_type], **optim_args)
+        trainer = trainers[self.model_type](self, optim=name,
+                                            model_factory=factories[self.model_type], **optim_args)
         if last_step < train_steps:  # regular training
             trainer.train(fine_tune=False, **run_args)
-            yaml.dump({'steps': train_steps}, stream=self._trained_flag)
-        if finetune_steps: # Fine tuning
-            log.info(f"Fine tuning upto {finetune_steps}")
+            if not self.read_only:
+                yaml.dump({'steps': train_steps}, stream=self._trained_flag)
+        if finetune_steps:  # Fine tuning
+            log.info(f"Fine tuning upto {finetune_steps}, batch_size={finetune_batch_size}")
+            assert finetune_batch_size
             run_args['steps'] = finetune_steps
+            run_args['batch_size'] = finetune_batch_size
+
             trainer.train(fine_tune=True, **run_args)
             yaml.dump({'steps': finetune_steps}, stream=self._trained_flag)
-
 
     @property
     def src_vocab(self) -> Field:
@@ -650,7 +703,8 @@ class TranslationExperiment(BaseExperiment):
                 [('src_len', 'max_src_len'), ('tgt_len', 'max_tgt_len'), ('truncate', 'truncate')]
                 if ik in prep_args}
 
-    def get_train_data(self, batch_size: int, steps: int = 0, sort_by='eq_len_rand_batch', batch_first=True,
+    def get_train_data(self, batch_size: int, steps: int = 0, sort_by='eq_len_rand_batch',
+                       batch_first=True,
                        shuffle=False, fine_tune=False):
         inp_file = self.train_db if self.train_db.exists() else self.train_file
         if fine_tune:
@@ -659,9 +713,9 @@ class TranslationExperiment(BaseExperiment):
                 self._pre_process_parallel('finetune_src', 'finetune_tgt', self.finetune_file)
             log.info("Using Fine tuning corpus instead of training corpus")
             inp_file = self.finetune_file
-
+        inp_file = IO.maybe_tmpfs(inp_file)
         train_data = BatchIterable(inp_file, batch_size=batch_size, sort_by=sort_by,
-                                   batch_first=batch_first, shuffle=shuffle,
+                                   batch_first=batch_first, shuffle=shuffle, field=self.tgt_vocab,
                                    **self._get_batch_args())
         if steps > 0:
             train_data = LoopingIterable(train_data, steps)
@@ -670,7 +724,7 @@ class TranslationExperiment(BaseExperiment):
     def get_val_data(self, batch_size: int, sort_desc=False, batch_first=True,
                      shuffle=False):
         return BatchIterable(self.valid_file, batch_size=batch_size, sort_desc=sort_desc,
-                             batch_first=batch_first, shuffle=shuffle,
+                             batch_first=batch_first, shuffle=shuffle, field=self.tgt_vocab,
                              **self._get_batch_args())
 
     def get_combo_data(self, batch_size: int, steps: int = 0, sort_desc=False, batch_first=True,
@@ -678,8 +732,9 @@ class TranslationExperiment(BaseExperiment):
         if not self.combo_file.exists():
             # user may have added fine tune file later
             self._pre_process_parallel('combo_src', 'combo_tgt', self.combo_file)
-        data = BatchIterable(self.combo_file, batch_size=batch_size, sort_desc=sort_desc,
-                             batch_first=batch_first, shuffle=shuffle,
+        combo_file = IO.maybe_tmpfs(self.combo_file)
+        data = BatchIterable(combo_file, batch_size=batch_size, sort_desc=sort_desc,
+                             field=self.tgt_vocab, batch_first=batch_first, shuffle=shuffle,
                              **self._get_batch_args())
         if steps > 0:
             data = LoopingIterable(data, steps)
@@ -729,9 +784,9 @@ class TranslationExperiment(BaseExperiment):
         }[(split, side)]
         assert inp_file.exists()
         # read this file
-
+        field = self.tgt_vocab if side == 'tgt' else self.src_field
         data = BatchIterable(inp_file, batch_size=batch_size, sort_desc=sort_desc,
-                             batch_first=batch_first, shuffle=shuffle,
+                             batch_first=batch_first, shuffle=shuffle, field=field,
                              **self._get_batch_args())
 
         if num_batches > 0:

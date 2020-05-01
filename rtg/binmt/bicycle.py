@@ -369,8 +369,9 @@ def __test_binmt_model__():
         for epoch in range(num_epoch):
             model.train()
             train_data = BatchIterable(vocab_size, batch_size, 50, seq_len=10, reverse=reverse,
-                                       batch_first=True)
-            val_data = BatchIterable(vocab_size, batch_size, 5, reverse=reverse, batch_first=True)
+                                       field=exp.tgt_vocab, batch_first=True)
+            val_data = BatchIterable(vocab_size, batch_size, 5, reverse=reverse, batch_first=True,
+                                     field=exp.tgt_vocab)
             train_loss = trainer._run_cycle(train_data, train_data, train_mode=True)
             val_loss = trainer._run_cycle(val_data, val_data, train_mode=False)
             log.info(

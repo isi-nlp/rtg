@@ -5,7 +5,7 @@
 import torch
 import torch.nn as nn
 import rtg
-from rtg import log, TranslationExperiment as Experiment, device, BatchIterable
+from rtg import log, yaml, TranslationExperiment as Experiment, device, BatchIterable
 from rtg.module import NMTModel
 from rtg.utils import IO
 from rtg.module import criterion as criteria
@@ -201,7 +201,6 @@ class SteppedTrainer:
                  model_factory: Optional[Callable] = None,
                  optim: str = 'ADAM',
                  **optim_args):
-        self.start_step = 0
         self.last_step = -1
         self.exp = exp
         optim_state = None
@@ -215,8 +214,7 @@ class SteppedTrainer:
             exp.model_args = args
             last_model, self.last_step = self.exp.get_last_saved_model()
             if last_model:
-                self.start_step = self.last_step + 1
-                log.info(f"Resuming training from step:{self.start_step}, model={last_model}")
+                log.info(f"Resuming training from step:{self.last_step}, model={last_model}")
                 state = torch.load(last_model)
                 model_state = state['model_state'] if 'model_state' in state else state
                 if 'optim_state' in state:
@@ -232,7 +230,11 @@ class SteppedTrainer:
         self.model = self.model.to(device)
 
         inner_opt_args = {k: optim_args[k] for k in ['lr', 'betas', 'eps', 'weight_decay', 'amsgrad']}
-        inner_opt = Optims[optim].new(self.model.parameters(), **inner_opt_args )
+
+        trainable_params = self.exp.config['optim'].get('trainable', {})
+        trainable_params = self.model.get_trainable_params(include=trainable_params.get('include'),
+                                                           exclude=trainable_params.get('exclude'))
+        inner_opt = Optims[optim].new(trainable_params, **inner_opt_args)
         if optim_state:
             log.info("restoring optimizer state from checkpoint")
             try:
@@ -262,11 +264,23 @@ class SteppedTrainer:
             from rtg.module.decoder import Decoder
             self.decoder = Decoder.new(self.exp, self.model)
 
-        if self.start_step == 0:
-            self.init_embeddings()
+        if self.start_step <= 1:
+            self.maybe_init_model()
         self.model = self.model.to(device)
 
         self.criterion = self.create_criterion(optim_args['criterion'])
+
+    @property
+    def start_step(self):
+        _, step = self.exp.get_last_saved_model()
+        if self.exp._trained_flag.exists():
+            # noinspection PyBroadException
+            try:
+                step =  max(step, yaml.load(self.exp._trained_flag.read_text())['steps'])
+            except Exception as _:
+                pass
+        assert step >= 0
+        return step
 
     def create_criterion(self, criterion):
         log.info(f"Criterion = {criterion}")
@@ -280,23 +294,25 @@ class SteppedTrainer:
         neg_region = optim_args.get('neg_region', 0.05)
         alpha = optim_args.get('alpha', 1.0)
 
+        pad_idx = self.exp.tgt_vocab.pad_idx
         if criterion == 'smooth_kld':
-            return criteria.SmoothKLD(vocab_size=self.model.generator.vocab, smoothing=smoothing)
+            return criteria.SmoothKLD(vocab_size=self.model.generator.vocab, smoothing=smoothing,
+                                      pad_idx=pad_idx)
         elif criterion == 'cross_entropy':
             return criteria.CrossEntropy()
         elif criterion == 'binary_cross_entropy':
-            return criteria.BinaryCrossEntropy(smoothing=smoothing)
+            return criteria.BinaryCrossEntropy(smoothing=smoothing,pad_idx=pad_idx)
         elif criterion == 'triplet_loss':
             return criteria.TripletLoss(embedding=tgt_embedding, margin=margin, neg_region=neg_region,
-                                        mode=mode, neg_sampling=neg_sampling)
+                                        mode=mode, neg_sampling=neg_sampling, pad_idx=pad_idx)
         elif criterion == 'smooth_kld_and_triplet_loss':
-            return criteria.SmoothKLDAndTripletLoss(embedding=tgt_embedding, margin=margin, neg_region=neg_region,
-                                                    mode=mode, neg_sampling=neg_sampling,
-                                                    smoothing=smoothing, alpha=alpha)
+            return criteria.SmoothKLDAndTripletLoss(
+                embedding=tgt_embedding, margin=margin, neg_region=neg_region, mode=mode,
+                neg_sampling=neg_sampling, smoothing=smoothing, alpha=alpha, pad_idx=pad_idx)
         else:
             raise Exception(f'criterion={criterion} is not supported')
 
-    def init_embeddings(self):
+    def maybe_init_model(self):
         def load_matrix(path: Path):
             return torch.load(path) if path.exists() else None
 
@@ -311,6 +327,7 @@ class SteppedTrainer:
             log.info("NOT Initializing pre-trained target embeddings")
         else:
             self.model.init_tgt_embedding(tgt_emb_mat)
+        self.model.maybe_init_from_parent(exp=self.exp)
 
     def show_samples(self, beam_size=3, num_hyp=3, max_len=30):
         """

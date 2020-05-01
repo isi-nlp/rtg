@@ -7,8 +7,9 @@ import torch
 from rtg import log
 import inspect
 import shutil
+import os
 from datetime import datetime
-
+import atexit
 
 # Size of each element in tensor
 tensor_size = {
@@ -36,7 +37,7 @@ def log_tensor_sizes(writer=log.info, min_size=1024):
     def is_tensor(obj):
         if torch.is_tensor(obj):
             return True
-        try:    # some native objects raise exceptions
+        try:  # some native objects raise exceptions
             return hasattr(obj, 'data') and torch.is_tensor(obj.data)
         except:
             return False
@@ -44,7 +45,7 @@ def log_tensor_sizes(writer=log.info, min_size=1024):
     tensors = filter(is_tensor, gc.get_objects())
     stats = ((reduce(op.mul, obj.size()) if len(obj.size()) > 0 else 0,
               obj.type(), tuple(obj.size()), hex(id(obj))) for obj in tensors)
-    stats = ((n*tensor_size[typ], n, typ, *blah) for n, typ, *blah in stats)
+    stats = ((n * tensor_size[typ], n, typ, *blah) for n, typ, *blah in stats)
     stats = (x for x in stats if x[0] > min_size)
     sorted_stats = sorted(stats, key=lambda x: x[0])
 
@@ -80,8 +81,8 @@ def get_my_args(exclusions=None):
     :return: dictionary of {arg_name: argv_value} s
     """
     _, _, _, args = inspect.getargvalues(inspect.currentframe().f_back)
-    for excl in ['self', 'cls'] + (exclusions or []):
-        if excl in  args:
+    for excl in ['self', 'cls', '__class__'] + (exclusions or []):
+        if excl in args:
             del args[excl]
     return args
 
@@ -98,7 +99,7 @@ class IO:
 
     def __enter__(self):
 
-        if self.path.name.endswith(".gz"):   # gzip mode
+        if self.path.name.endswith(".gz"):  # gzip mode
             self.fd = gzip.open(self.path, self.mode, encoding=self.encoding, errors=self.errors)
         else:
             if 'b' in self.mode:  # binary mode doesnt take encoding or errors
@@ -135,7 +136,6 @@ class IO:
         for path in paths:
             yield from cls.get_lines(path, **kwargs)
 
-
     @classmethod
     def write_lines(cls, path: Path, text):
         if isinstance(text, str):
@@ -146,11 +146,10 @@ class IO:
                 out.write('\n')
 
     @classmethod
-    def copy_file(cls, src: Path, dest: Path, text=False):
-        assert src.resolve() != dest.resolve()
+    def copy_file(cls, src: Path, dest: Path, follow_symlinks=True):
         log.info(f"Copy {src} → {dest}")
-        with IO.reader(src, text=text) as inp, IO.writer(dest, text=text) as out:
-            shutil.copyfileobj(inp, out)
+        assert src.resolve() != dest.resolve()
+        shutil.copy2(str(src), str(dest), follow_symlinks=follow_symlinks)
 
     @classmethod
     def maybe_backup(cls, file: Path):
@@ -159,3 +158,39 @@ class IO:
             dest = file.with_suffix(f'.{time}')
             log.info(f"Backup {file} → {dest}")
             file.rename(dest)
+
+    @classmethod
+    def safe_delete(cls, path: Path):
+        try:
+            if path.exists():
+                if path.is_file():
+                    log.info(f"Delete file {path}")
+                    path.unlink()
+                elif path.is_dir():
+                    log.info(f"Delete dir {path}")
+                    path.rmdir()
+                else:
+                    log.warning(f"Coould not delete {path}")
+        except:
+            log.exception(f"Error while clearning up {path}")
+
+    @classmethod
+    def maybe_tmpfs(cls, file: Path):
+        """
+        Optionally copies a file to tmpfs that maybe fast.
+        :param file: input file to be copied to
+        :return:  file that maybe on tmp fs
+        """
+        tmp_dir = os.environ.get('RTG_TMP')
+        if tmp_dir:
+            tmp_dir = Path(tmp_dir)
+            usr_dir = str(Path('~/').expanduser())
+            new_path = str(file.absolute()).replace(usr_dir, '').lstrip('/')
+            tmp_file = tmp_dir / new_path
+            tmp_file.parent.mkdir(parents=True, exist_ok=True)
+            if file.exists():
+                assert file.is_file()
+                cls.copy_file(file, tmp_file)
+            file = tmp_file
+            atexit.register(cls.safe_delete, tmp_file)
+        return file

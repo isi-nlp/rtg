@@ -8,7 +8,6 @@ from rtg import log, TranslationExperiment as Experiment
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
 from rtg.module.decoder import Decoder
-from rtg import RTG_PATH
 from rtg.utils import IO, line_count
 from dataclasses import dataclass
 import torch
@@ -127,7 +126,7 @@ class Pipeline:
 
     def tune_decoder_params(self, exp: Experiment, tune_src: str, tune_ref: str, batch_size: int,
                             trials: int = 10, lowercase=True,
-                            beam_size=[1, 4, 8], ensemble=[1, 5, 10], lp_alpha=[0.0, 0.4, 0.6],
+                            beam_size=(1, 4, 8), ensemble=(1, 5, 10), lp_alpha=(0.0, 0.4, 0.6),
                             suggested: List[Tuple[int, int, float]] = None,
                             **fixed_args):
         _, _, _, tune_args = inspect.getargvalues(inspect.currentframe())
@@ -273,13 +272,15 @@ class Pipeline:
                 err = test_dir / f'{name}.err'
                 err.write_text(str(e))
 
-    def run(self):
-        log.update_file_handler(str(self.exp.log_file))
+    def run(self, run_tests=True):
+        if not self.exp.read_only:
+            log.update_file_handler(str(self.exp.log_file))
         self.pre_checks()  # fail early, so TG can fix and restart
         self.exp.pre_process()
         self.exp.train()
-        with torch.no_grad():
-            self.run_tests()
+        if run_tests:
+            with torch.no_grad():
+                self.run_tests()
 
 
 def parse_args():
@@ -293,12 +294,18 @@ def parse_args():
 
     if args.gpu_only:
         assert torch.cuda.is_available(), "No GPU found... exiting"
+    if torch.cuda.is_available():
+        for i in range(torch.cuda.device_count()):
+            log.info(f'Cuda {i}: {torch.cuda.get_device_properties(i)}')
 
     conf_file: Path = args.conf if args.conf else args.exp / 'conf.yml'
-    assert conf_file.exists()
+    assert conf_file.exists(), f'NOT FOUND: {conf_file}'
     return Experiment(args.exp, config=conf_file)
+
+def main():
+    pipe = Pipeline(exp=parse_args())
+    pipe.run()
 
 
 if __name__ == '__main__':
-    pipe = Pipeline(exp=parse_args())
-    pipe.run()
+    main()

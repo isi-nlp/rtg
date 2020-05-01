@@ -22,6 +22,8 @@ from rtg.module.mtfmnmt import MTransformerNMT
 from rtg.module.ext.tfmextemb import TfmExtEmbNMT
 from rtg.module.hybridmt import HybridMT
 from rtg.emb.word2vec import CBOW
+from rtg.module.ext.robertamt import RoBERTaMT
+
 from rtg.module.generator import *
 
 trainers = {
@@ -38,7 +40,8 @@ trainers = {
     'mtfmnmt': MTransformerTrainer,
     'wv_cbow': CBOW.make_trainer,
     'tfmextembmt': TfmExtEmbNMT.make_trainer,
-    'hybridmt': HybridMT.make_trainer
+    'hybridmt': HybridMT.make_trainer,
+    'robertamt': RoBERTaMT.make_trainer
 }
 
 # model factories
@@ -56,7 +59,8 @@ factories = {
     'mtfmnmt': MTransformerNMT.make_model,
     'tfmextembmt': TfmExtEmbNMT.make_model,
     'hybridmt': HybridMT.make_model,
-    'wv_cbow': CBOW.make_model
+    'wv_cbow': CBOW.make_model,
+    'robertamt': RoBERTaMT.make_model
 }
 
 # Generator factories
@@ -75,5 +79,10 @@ generators = {
     'mtfmnmt': MTfmGenerator,
     'hybridmt': MTfmGenerator,
     'tfmextembmt': TfmExtEembGenerator,
+    'robertamt': T2TGenerator,
+
     'wv_cbow': CBOW.make_model  # FIXME: this is a place holder
 }
+
+
+#  TODO: simplify this; use decorators to register directly from class's code

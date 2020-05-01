@@ -1,0 +1,17 @@
+# Environment Variables
+
+## Using Fast and Temporary File System
+When shared compute grids with network file systems (NFS) are used, the disk IO can be too slow.
+It helps to move training data that is frequently read to a fast temporary file system.
+Placing training data on TMPFS can be a good thing to do in this situation.
+`export RTG_TMP` to the desired path such as `$TMPDIR` before starting rtg process.
+
+```bash
+export RTG_TMP=$TMPDIR
+```
+The RTG_TMP does NOT have to be unique to each directory. So you can use the same directory for all
+the experiments.
+
+Note: the model checkpoints dont use TMPDIR as of now. Since the checkpoints are
+taken once for every 1000 steps or so, it should be okay for now. But if it is a problem that needs to be addressed
+we shall revise this decision again.

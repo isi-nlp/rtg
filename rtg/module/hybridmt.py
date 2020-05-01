@@ -9,15 +9,13 @@ An Hybrid model where th encoder is Transformer and decoder is RNN
 
 import inspect
 import copy
-import math
 import torch
 import torch.nn as nn
 
 from rtg.module.tfmnmt import (Encoder, EncoderLayer, PositionwiseFeedForward, PositionalEncoding,
                                Generator, MultiHeadedAttention, Embeddings, TransformerNMT,
-                               TransformerTrainer, SublayerConnection, clones)
+                               TransformerTrainer)
 from rtg import TranslationExperiment as Experiment, log
-from rtg.dataprep import CLS_TOK_IDX as cls_idx, PAD_TOK_IDX as pad_idx
 
 
 class RnnDecoder(nn.Module):
@@ -146,7 +144,7 @@ class HybridMTTrainer(TransformerTrainer):
 
 
 def __test_model__():
-    from rtg.dummy import DummyExperiment
+    from rtg.data.dummy import DummyExperiment
     from rtg import Batch, my_tensor as tensor
 
     vocab_size = 24

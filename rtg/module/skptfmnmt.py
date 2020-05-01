@@ -119,7 +119,7 @@ class SKPTransformerTrainer(tfm.TransformerTrainer):
 
 
 def __test_model__():
-    from rtg.dummy import DummyExperiment
+    from rtg.data.dummy import DummyExperiment
     from rtg import Batch, my_tensor as tensor
 
     vocab_size = 24
