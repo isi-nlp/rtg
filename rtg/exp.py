@@ -235,7 +235,7 @@ class BaseExperiment:
         set optimizer args
         """
         name, args = optim_args
-        self.config['optim'] = {'name': name, 'args': args}
+        self.config['optim'].update({'name': name, 'args': args})
 
     @property
     def shared_vocab(self) -> Field:
