@@ -18,9 +18,9 @@ def test_finetune_pipeline_transformer():
                      finetune_src=prep['train_src'],
                      finetune_tgt=prep['train_tgt']))
     exp = Experiment(tmp_dir, config=config, read_only=False)
-    exp.config['trainer'].update(dict(steps=50, check_point=25, finetune_steps=100))
+    exp.config['trainer'].update(dict(steps=50, check_point=25, finetune_steps=100, batch_size=400))
     Pipeline(exp).run()
-    assert exp.train_file.exists()
+    assert exp.train_file.exists() or exp.train_db.exists()
     assert exp.finetune_file.exists()
     # TODO: add more assertions
 

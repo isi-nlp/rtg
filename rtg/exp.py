@@ -1,9 +1,10 @@
 import copy
 import os
 import random
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, Dict, List, Tuple, Union, Any
+import time
 
 import numpy as np
 import torch
@@ -42,6 +43,7 @@ class BaseExperiment:
         codec_libs = {'sentpiece': SPField,
                       'nlcodec': NLField,
                       'pretrainmatch': PretrainMatchField}
+        self.codec_supports_multiproc = self.codec_name in {'nlcodec'}
         assert self.codec_name in codec_libs, f'{self.codec_name} is not in {codec_libs.keys()}'
         log.info(f"codec lib = {self.codec_name}")
         self.Field = codec_libs[self.codec_name]
@@ -317,6 +319,7 @@ class TranslationExperiment(BaseExperiment):
                                               args['max_tgt_types'], corpus=tgt_corpus, **xt_args)
 
         train_file = self.train_db
+
         self._pre_process_parallel('train_src', 'train_tgt', out_file=train_file, args=args,
                                    line_check=False)
         self._pre_process_parallel('valid_src', 'valid_tgt', out_file=self.valid_file, args=args,
@@ -431,17 +434,21 @@ class TranslationExperiment(BaseExperiment):
             assert line_count(args[src_key]) == line_count(args[tgt_key]), \
                 f'{args[src_key]} and {args[tgt_key]} must have same number of lines'
         # create Piece IDs
-        parallel_recs = TSVData.read_raw_parallel_recs(
+        s_time = time.time()
+        reader_func = TSVData.read_raw_parallel_recs_parallel if self.codec_supports_multiproc \
+            else TSVData.read_raw_parallel_recs
+        parallel_recs = reader_func(
             args[src_key], args[tgt_key], args['truncate'], args['src_len'], args['tgt_len'],
             src_tokenizer=self.src_vocab.encode_as_ids, tgt_tokenizer=self.tgt_vocab.encode_as_ids)
         if out_file.name.endswith('.db'):
             SqliteFile.write(out_file, records=parallel_recs)
         else:
             TSVData.write_parallel_recs(parallel_recs, out_file)
-
+        e_time = time.time()
+        log.info(f"Time taken to process: {timedelta(seconds=(e_time - s_time))}")
         if args.get('text_files'):
             # Redo again as plain text files
-            parallel_recs = TSVData.read_raw_parallel_recs(
+            parallel_recs = reader_func(
                 args[src_key], args[tgt_key], args['truncate'], args['src_len'], args['tgt_len'],
                 src_tokenizer=self.src_vocab.tokenize, tgt_tokenizer=self.tgt_vocab.tokenize)
 
@@ -559,12 +566,12 @@ class TranslationExperiment(BaseExperiment):
             if codec_lib:
                 self.config['prep']['codec_lib'] = codec_lib
 
-            def _locate_field_file(exp: TranslationExperiment, name, check_exists=False) -> Path :
+            def _locate_field_file(exp: TranslationExperiment, name, check_exists=False) -> Path:
                 switch = {'src': exp._src_field_file,
-                        'tgt': exp._tgt_field_file,
-                        'shared': exp._shared_field_file}
+                          'tgt': exp._tgt_field_file,
+                          'shared': exp._shared_field_file}
                 assert name in switch, f'{name} not allowed; valid options= {switch.keys()}'
-                file =  switch[name]
+                file = switch[name]
                 if check_exists:
                     assert file.exists(), f'{file} doesnot exist; for {name} of {exp.work_dir}'
                 return file
