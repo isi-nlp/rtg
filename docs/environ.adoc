@@ -15,3 +15,16 @@ the experiments.
 Note: the model checkpoints dont use TMPDIR as of now. Since the checkpoints are
 taken once for every 1000 steps or so, it should be okay for now. But if it is a problem that needs to be addressed
 we shall revise this decision again.
+
+
+## Number of CPU Cores
+
+
+[source,bash]
+----
+export RTG_CPUS=10     #$SLURM_CPUS_ON_NODE
+export OMP_NUM_THREADS=$RTG_CPUS
+export MKL_NUM_THREADS=$RTG_CPUS
+----
+
+`RTG_CPUS` is used by `nlcodec` to parallelize training data encoding

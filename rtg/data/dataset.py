@@ -1,19 +1,18 @@
-import os
-from typing import List, Iterator, Tuple, Union, Optional, Iterable, Dict, Any
-import torch
-from rtg import log, my_tensor as tensor, device
-from rtg.utils import IO, line_count, get_my_args
 import math
-import random
-from collections import namedtuple
-from sentencepiece import SentencePieceProcessor, SentencePieceTrainer
-from pathlib import Path
-import sqlite3
+import os
 import pickle
+import random
+import sqlite3
+from collections import namedtuple
 from itertools import zip_longest
-from abc import ABCMeta, abstractmethod
-from rtg.data.codec import Field
+from pathlib import Path
+from typing import List, Iterator, Tuple, Union, Iterable, Dict, Any
+import multiprocessing as mp
+import torch
 
+from rtg import log, my_tensor as tensor, device, cpu_count
+from rtg.data.codec import Field
+from rtg.utils import IO, line_count, get_my_args
 
 RawRecord = Tuple[str, str]
 TokRawRecord = Tuple[List[str], List[str]]
@@ -121,11 +120,28 @@ class TSVData:
                                tgt_tokenizer) \
             -> Iterator[ParallelSeqRecord]:
         recs = TSVData.read_raw_parallel_lines(src_path, tgt_path)
+
         recs = ((src_tokenizer(x), tgt_tokenizer(y)) for x, y in recs)
         if truncate:
             recs = ((src[:src_len], tgt[:tgt_len]) for src, tgt in recs)
         else:  # Filter out longer sentences
             recs = ((src, tgt) for src, tgt in recs if len(src) <= src_len and len(tgt) <= tgt_len)
+        return recs
+
+    @staticmethod
+    def read_raw_parallel_recs_parallel(src_path: Union[str, Path], tgt_path: Union[str, Path],
+                                        truncate: bool, src_len: int, tgt_len: int, src_tokenizer,
+                                        tgt_tokenizer, cpu_count=cpu_count) \
+            -> Iterator[ParallelSeqRecord]:
+        """Uses multiprocess to process the dataset"""
+        # Read the data on a single thread
+        recs = TSVData.read_raw_parallel_lines(src_path, tgt_path)
+        log.info(f"Parallel processing the parallel data using {cpu_count} CPUs")
+
+        with mp.get_context("spawn").Pool(processes=cpu_count) as pool:
+            mapper_func = TokenizerTask([src_tokenizer, tgt_tokenizer], [src_len, tgt_len], truncate)
+            recs = pool.map(mapper_func, recs)
+            recs = (rec for rec in recs if rec)
         return recs
 
     @staticmethod
@@ -138,6 +154,24 @@ class TSVData:
                 recs = (rec for rec in recs if 0 < len(rec) <= max_len)
             yield from recs
 
+
+class TokenizerTask():
+    """Works with Parallel data"""
+    def __init__(self,  tokenizers: List, lengths: List[int], truncate: bool):
+        assert len(tokenizers) == len(lengths)
+        self.tokenizers = tokenizers
+        self.lengths = lengths
+        self.truncate = truncate
+
+    def __call__(self, record):
+        record = [tokr(col) for col, tokr in zip(record, self.tokenizers)]
+        if self.truncate:
+            record = [col[:max_len] for col, max_len in zip(record, self.lengths)]
+        else:
+            # filter out long sequences if any of the column is long
+            if any(len(col) > max_len for col, max_len in zip(record, self.lengths)):
+                record = None
+        return record
 
 class SqliteFile:
     TABLE_STATEMENT = """CREATE TABLE IF NOT EXISTS data (
@@ -241,6 +275,7 @@ class SqliteFile:
             IO.copy_file(maybe_tmp, path)
         log.info(f"stored {count} rows in {path}")
 
+
 def read_tsv(path: str):
     assert os.path.exists(path)
     with IO.reader(path) as f:
@@ -290,7 +325,7 @@ class Batch:
 
     def __init__(self, batch: List[Example], sort_dec=False, batch_first=True,
                  add_eos_x=True, add_eos_y=True, add_bos_x=False, add_bos_y=False,
-                 field: Field=None):
+                 field: Field = None):
         """
         :param batch: List fo Examples
         :param sort_dec: True if the examples be sorted as descending order of their source sequence lengths
@@ -361,7 +396,6 @@ class Batch:
             else:  # Should not have EOS
                 assert seq[-1] != self.eos_val
 
-
     def __len__(self):
         return self._len
 
@@ -376,7 +410,7 @@ class Batch:
         return self.make_autogres_mask_(tgt, self.pad_val)
 
     @staticmethod
-    def make_autogres_mask_(tgt, pad_val:int):
+    def make_autogres_mask_(tgt, pad_val: int):
         "Create a mask to hide padding and future words."
         tgt_mask = (tgt != pad_val).unsqueeze(1)
         tgt_mask = tgt_mask & subsequent_mask(tgt.size(-1)).type_as(tgt_mask.data)
@@ -405,7 +439,7 @@ class BatchIterable(Iterable[Batch]):
         if not isinstance(data_path, Path):
             data_path = Path(data_path)
         assert data_path.exists(), f'Invalid State: Training data doesnt exist;' \
-            f' Please remove _PREPARED and rerun.'
+                                   f' Please remove _PREPARED and rerun.'
         if data_path.name.endswith(".db"):
             self.data = SqliteFile(data_path, sort_by=sort_by, **kwargs)
         else:
