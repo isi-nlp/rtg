@@ -240,9 +240,11 @@ class SqliteFile:
                     continue
             yield Example(x, y)
 
-    def get_all(self, cols, sort):
-        assert cols and sort
-        qry = f"SELECT {', '.join(cols)} FROM data ORDER BY {sort}"
+    def get_all(self, cols, sort=None):
+        assert cols
+        qry = f"SELECT {', '.join(cols)} FROM data"
+        if sort:
+            qry += f' ORDER BY {sort}'
         return self.db.execute(qry)
 
     def get_all_ids(self, ids):
