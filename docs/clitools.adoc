@@ -277,3 +277,26 @@ Compute Out-of-Vocabulary(OOV) rate
                             Test file paths (default: [<_io.TextIOWrapper
                             name='<stdin>' mode='r' encoding='UTF-8'>])
 ----
+
+## Class imbalance, Sequence lengths
+Computes class Imbalance on training data and reports mean and median sequence lengths
+Get the stats reported in link:https://arxiv.org/abs/2004.02334[Gowda and May 's Neural Machine Translation with Imbalanced Classes]
+----
+$ python -m rtg.eval.imbalance -h
+usage: imbalance.py [-h] exp
+
+positional arguments:
+  exp         Path to experiment directory
+
+optional arguments:
+  -h, --help  show this help message and exit
+----
+
+Example:
+----
+$ python -m rtg.eval.imbalance runs/001-tfm
+Experiment: runs/001-tfm shared_vocab:True
+src types: 500 toks: 2,062,912 len_mean: 15.8686 len_median: 15.0 imbalance: 0.4409
+tgt types: 500 toks: 1,711,685 len_mean: 13.1668 len_median: 12.0 imbalance: 0.4632
+n_segs: 130,000
+----
