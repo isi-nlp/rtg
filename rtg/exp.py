@@ -711,8 +711,7 @@ class TranslationExperiment(BaseExperiment):
                 if ik in prep_args}
 
     def get_train_data(self, batch_size: int, steps: int = 0, sort_by='eq_len_rand_batch',
-                       batch_first=True,
-                       shuffle=False, fine_tune=False):
+                       batch_first=True, shuffle=False, fine_tune=False, keep_in_mem=False):
         inp_file = self.train_db if self.train_db.exists() else self.train_file
         if fine_tune:
             if not self.finetune_file.exists():
@@ -723,7 +722,7 @@ class TranslationExperiment(BaseExperiment):
         inp_file = IO.maybe_tmpfs(inp_file)
         train_data = BatchIterable(inp_file, batch_size=batch_size, sort_by=sort_by,
                                    batch_first=batch_first, shuffle=shuffle, field=self.tgt_vocab,
-                                   **self._get_batch_args())
+                                   keep_in_mem=keep_in_mem, **self._get_batch_args())
         if steps > 0:
             train_data = LoopingIterable(train_data, steps)
         return train_data
@@ -732,7 +731,7 @@ class TranslationExperiment(BaseExperiment):
                      shuffle=False):
         return BatchIterable(self.valid_file, batch_size=batch_size, sort_desc=sort_desc,
                              batch_first=batch_first, shuffle=shuffle, field=self.tgt_vocab,
-                             **self._get_batch_args())
+                             keep_in_mem=True, **self._get_batch_args())
 
     def get_combo_data(self, batch_size: int, steps: int = 0, sort_desc=False, batch_first=True,
                        shuffle=False):

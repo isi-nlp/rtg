@@ -706,9 +706,9 @@ class TransformerTrainer(SteppedTrainer):
 
     def train(self, steps: int, check_point: int, batch_size: int,
               check_pt_callback: Optional[Callable] = None, fine_tune=False, dec_bos_cut=False,
-              keep_models=10, sort_by='eq_len_rand_batch', log_interval: int = 10, **args):
+              keep_models=10, sort_by='eq_len_rand_batch', log_interval: int = 10,
+              keep_in_mem=False, **args):
         """
-
         :param steps: how many optimizer steps to train (also, means how many batches)
         :param check_point: after how many checkpoints to
         :param batch_size: how many target tokens in batch max ( = max_len * num_sentences)
@@ -716,6 +716,7 @@ class TransformerTrainer(SteppedTrainer):
         :param fine_tune: should the fine tune corpus be used instead of training corpus
         :param dec_bos_cut: copy the first time step of input as decoder's BOS
         :param keep_models: how many checkpts to keep
+        :param keep_in_mem: keep training data in memory
         :param args: any extra args
         :return:
         """
@@ -746,7 +747,8 @@ class TransformerTrainer(SteppedTrainer):
             raise Exception(f'The model was already trained to {self.start_step} steps. '
                             f'Please increase the steps or clear the existing models')
         train_data = self.exp.get_train_data(batch_size=batch_size, steps=batches - start_batch,
-                                             sort_by=sort_by, batch_first=True, fine_tune=fine_tune)
+                                             sort_by=sort_by, batch_first=True, fine_tune=fine_tune,
+                                             keep_in_mem=keep_in_mem)
         val_data = self.exp.get_val_data(batch_size, shuffle=False, batch_first=True,
                                          sort_desc=False)
 

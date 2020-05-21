@@ -79,7 +79,8 @@ trainer:
   batch_size: 4200   # not exceeding these many tokens (including paddings)
   check_point: 1000  # how often to checkpoint?
   keep_models: 10   # how many checkpoints to keep on disk (small enough to save disk, large enough for checkpt averaging
-  steps: 200000   # how many steps to train
+  steps: 200000      # how many steps to train
+  keep_in_mem: True   # keep training data in memory
 updated_at: '2019-03-09T21:15:33.707183'  # automatically updated by system
 seed: 12345  # fix the manual seed of pytorch + cuda + numpy + python_stdlib RNGs. Remove/comment this to disable
 ----

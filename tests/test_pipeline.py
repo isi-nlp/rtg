@@ -126,3 +126,9 @@ def test_freeze_pipeline():
     exp.config['optim']['trainable'] = trainable
     pipe = Pipeline(exp)
     pipe.run(run_tests=False)
+
+if __name__ == '__main__':
+    from multiprocessing import freeze_support
+    freeze_support()   # required for parallel nlcodec
+    #test_pipeline_transformer()
+    pass
