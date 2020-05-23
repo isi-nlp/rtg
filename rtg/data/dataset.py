@@ -338,7 +338,7 @@ class SqliteFile(Iterable[IdExample]):
     def __iter__(self) -> Iterator[IdExample]:
         for d in self.read_all():
             id, x, y = d['id'], d['x'], d.get('y')
-            if not x or not y:
+            if x is None or y is None or len(x) == 0 or len(y) == 0:
                 log.warning(f"Ignoring an empty record   x:{len(x)}    y:{len(y)}")
                 continue
             if len(x) > self.max_src_len or len(y) > self.max_tgt_len:
