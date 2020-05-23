@@ -76,13 +76,33 @@ tester:
 trainer:
   init_args:
     chunk_size: 10   # generation in chunks of time steps to reduce memory consumption
+    grad_accum: 1     # How many batches to accumulate gradients
   batch_size: 4200   # not exceeding these many tokens (including paddings)
   check_point: 1000  # how often to checkpoint?
   keep_models: 10   # how many checkpoints to keep on disk (small enough to save disk, large enough for checkpt averaging
-  steps: 200000      # how many steps to train
+  steps: 200000      # how many steps to train; if early_stop is enabled, this is max steps
   keep_in_mem: True   # keep training data in memory
 updated_at: '2019-03-09T21:15:33.707183'  # automatically updated by system
 seed: 12345  # fix the manual seed of pytorch + cuda + numpy + python_stdlib RNGs. Remove/comment this to disable
+----
+
+## Early stop
+
+Add the below piece of config to `trainer` to enable early stop on convergence.
+[source,yaml]
+----
+trainer:
+  ....           # other args
+  steps: 100000      # steps is treated as max steps
+  checkpoint: 1000   # validate every these many steps
+  early_stop:       # remove this block to disable
+    enabled: true   # or, alternatively flip this to disable;
+    by: loss        # stop by validation loss (default); TODO: add BLEU
+    patience: 5     # how many validations to wait, to be sure of stopping; each validation is per check_point steps
+    min_steps: 8000  # minimum steps to wait before test for early stop;
+    signi_round: 3   # significant in 'by' value, used as round(value, signi_round).
+                     # e.g. round(1/3, 3) = 0.333; round(100/3, 0) = 33; round(100/3, -1) = 30.0
+
 ----
 
 ## Optimizer
@@ -95,6 +115,7 @@ since weight decay is different in optimizers with variable step sizes.
 Note: When `inv_sqrt: false`, `lr` does nothing. When `inv_sqrt: true`, `constant` does nothing.
 
 An alternative optimizer may look like:
+[source,yaml]
 ----
 optim:
   name: ADAMW

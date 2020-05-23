@@ -26,7 +26,7 @@ Add the root of this repo to `PYTHONPATH` or install it via `pip --editable`
 ```bash
 git clone https://github.com/isi-nlp/rtg.git 
 cd rtg                # go to the code
-# use rtg-xt.git if you dont have access to rtg.git
+# use https://github.com/isi-nlp/rtg-xt.git if you dont have access to rtg.git
 
 conda env create -n rtg python=3.7.   # adds a conda env named rtg
 conda activate rtg  # activate it
@@ -45,11 +45,12 @@ Refer to `scripts/rtg-pipeline.sh` bash script and `examples/transformer.base.ym
 
 ```bash
 # use examples/transformer.base.yml config to setup an experiment at 001-tfm dir (TODO: edit paths in yml file)
-$ scripts/rtg-pipeline.sh -d 001-tfm -c examples/transformer.base.yml
-# or if you have rtg module in $PYTHONPATH
+
+# if you have rtg module in $PYTHONPATH (manula export or via pip install)
 $ python -m rtg.pipeline 001-tfm examples/transformer.base.yml
-# or if your have `rtg` command in $PATH 
-rtg pipeline 001-tfm examples/transformer.base.yml
+
+# or if your have `rtg-pipeline` command in $PATH (via pip install) 
+rtg-pipeline 001-tfm examples/transformer.base.yml
 ```
 
 The `001-tfm` directory that hosts an experiment looks like this:
@@ -88,7 +89,8 @@ The `001-tfm` directory that hosts an experiment looks like this:
 
 # Docs
 
-Refer to [docs](./docs) directory
+Refer to [docs](./docs) directory, and especially documentation on [conf.yml](./docs/conf.yml.adoc) 
+where the crucial information is.
 
 
 ---------
