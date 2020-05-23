@@ -684,17 +684,27 @@ class TranslationExperiment(BaseExperiment):
         trainer = trainers[self.model_type](self, optim=name,
                                             model_factory=factories[self.model_type], **optim_args)
         if last_step < train_steps:  # regular training
-            trainer.train(fine_tune=False, **run_args)
+            stopped = trainer.train(fine_tune=False, **run_args)
             if not self.read_only:
-                yaml.dump({'steps': train_steps}, stream=self._trained_flag)
+                status = dict(steps=train_steps, early_stopped=stopped, finetune=False)
+                try:
+                    status['earlier'] = yaml.load(self._trained_flag.read_text())
+                except Exception as _:
+                    pass
+                yaml.dump(status, stream=self._trained_flag)
         if finetune_steps:  # Fine tuning
             log.info(f"Fine tuning upto {finetune_steps}, batch_size={finetune_batch_size}")
             assert finetune_batch_size
             run_args['steps'] = finetune_steps
             run_args['batch_size'] = finetune_batch_size
 
-            trainer.train(fine_tune=True, **run_args)
-            yaml.dump({'steps': finetune_steps}, stream=self._trained_flag)
+            stopped = trainer.train(fine_tune=True, **run_args)
+            status = dict(steps=finetune_steps, early_stopped=stopped, finetune=True)
+            try:
+                status['earlier'] = yaml.load(self._trained_flag.read_text())
+            except Exception as _:
+                pass
+            yaml.dump(status, stream=self._trained_flag)
 
     @property
     def src_vocab(self) -> Field:

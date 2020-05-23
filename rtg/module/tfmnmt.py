@@ -19,7 +19,7 @@ from rtg import device, log, TranslationExperiment as Experiment
 from rtg.utils import get_my_args
 from rtg.data.dataset import BatchIterable
 from rtg.module import NMTModel
-from rtg.module.trainer import TrainerState, SteppedTrainer
+from rtg.module.trainer import TrainerState, SteppedTrainer, EarlyStopper
 from rtg.module.criterion import Criterion
 from torch.optim.optimizer import Optimizer
 from dataclasses import dataclass
@@ -707,7 +707,8 @@ class TransformerTrainer(SteppedTrainer):
     def train(self, steps: int, check_point: int, batch_size: int,
               check_pt_callback: Optional[Callable] = None, fine_tune=False, dec_bos_cut=False,
               keep_models=10, sort_by='eq_len_rand_batch', log_interval: int = 10,
-              keep_in_mem=False, **args):
+              keep_in_mem=False, early_stop=None, **args):
+
         """
         :param steps: how many optimizer steps to train (also, means how many batches)
         :param check_point: after how many checkpoints to
@@ -717,6 +718,7 @@ class TransformerTrainer(SteppedTrainer):
         :param dec_bos_cut: copy the first time step of input as decoder's BOS
         :param keep_models: how many checkpts to keep
         :param keep_in_mem: keep training data in memory
+        :param early_stop: {patience: N validations, by: loss, enabled: True}
         :param args: any extra args
         :return:
         """
@@ -757,6 +759,12 @@ class TransformerTrainer(SteppedTrainer):
         unsaved_state = False
         cuda_available = torch.cuda.is_available()
         update_interval = 0
+
+        stopper = None
+        early_stopped = False   # or converged
+        if early_stop:
+            stopper = EarlyStopper(cur_step=self.start_step, **early_stop)
+
         with tqdm(train_data, initial=start_batch, total=batches, unit='batch',
                   dynamic_ncols=True) as data_bar:
             for batch in data_bar:
@@ -786,12 +794,13 @@ class TransformerTrainer(SteppedTrainer):
                 out = out[:, :-1, :]
 
                 # Trigger optimizer step after gradient accumulation
-                opt_step = update_interval == (self.grad_accum_interval - 1)
+                take_step = update_interval == (self.grad_accum_interval - 1)
 
                 # assumption:  y_seqs has EOS, and not BOS
                 loss = self.loss_func(out, batch.y_seqs, num_toks, train_mode=True,
-                                      take_step=opt_step)
-
+                                      take_step=take_step)
+                if stopper and take_step:
+                    stopper.step()
                 # Log
                 unsaved_state = True
                 if self.opt.curr_step % log_interval == 0:
@@ -800,6 +809,7 @@ class TransformerTrainer(SteppedTrainer):
                                          self.opt.curr_step)
                     if log_resources and cuda_available:
                         self._log_resources(batch)
+
                 progress_msg, is_check_pt = train_state.step(num_toks, loss)
                 progress_msg += f', LR={self.opt.curr_lr:g}'
                 data_bar.set_postfix_str(progress_msg, refresh=False)
@@ -820,10 +830,15 @@ class TransformerTrainer(SteppedTrainer):
                     unsaved_state = False
                     gc.collect()
 
+                    if stopper:
+                        stopper.validation(val_loss)
+                        if stopper.is_stop():
+                            log.info(f"Stopping at {stopper.cur_step} because {stopper.by}"
+                                     f" didnt improve over {stopper.patience} checkpoints")
+                            early_stopped = True
+                            break
                 # Track gradient accumulation updates
-                update_interval += 1
-                if update_interval >= self.grad_accum_interval:
-                    update_interval = 0
+                update_interval = (update_interval + 1 ) % self.grad_accum_interval
 
         # End of training
         if unsaved_state:
@@ -831,6 +846,8 @@ class TransformerTrainer(SteppedTrainer):
             train_state.train_mode(False)
             val_loss = self.run_valid_epoch(val_data, dec_bos_cut=dec_bos_cut)
             self.make_check_point(train_loss, val_loss=val_loss, keep_models=keep_models)
+
+        return early_stopped
 
     def _log_resources(self, batch):
         self.tbd.add_scalars('resources_mem',

@@ -10,11 +10,14 @@ from typing import List, Iterator, Tuple, Union, Iterable, Dict, Any
 import multiprocessing as mp
 import torch
 from tqdm import tqdm
+import numpy as np
 
 from rtg import log, my_tensor as tensor, device, cpu_count
 from rtg.data.codec import Field
 from rtg.utils import IO, line_count, get_my_args, max_RSS
 
+
+Array = np.ndarray
 RawRecord = Tuple[str, str]
 TokRawRecord = Tuple[List[str], List[str]]
 MonoSeqRecord = List[Union[int, str]]
@@ -24,7 +27,7 @@ TokStream = Union[Iterator[Iterator[str]], Iterator[str]]
 """
 An object of this class holds an example in sequence to sequence dataset
 """
-Example = namedtuple('Example', ['x', 'y'])
+#Example = namedtuple('Example', ['x', 'y'])
 
 
 class IdExample:
@@ -33,9 +36,30 @@ class IdExample:
     """
 
     def __init__(self, x, y, id):
-        self.x = x
-        self.y = y
+        self.x: Array = x
+        self.y: Array = y
         self.id = id
+
+    def val_exists_at(self, side, pos: int, exist: bool, val:int):
+        assert side == 'x' or side == 'y'
+        assert pos == 0 or pos == -1
+        seq = self.x if side == 'x' else self.y
+        if exist:
+            if seq[pos] != val:
+                if pos == 0:
+                    seq = np.append(np.int32(val), seq)
+                else: # pos = -1
+                    seq = np.append(seq, np.int32(val))
+                # update
+                if side == 'x':
+                    self.x = seq
+                else:
+                    self.y = seq
+        else:  # should not have val at pos
+            assert seq[pos] != val
+
+    def eos_check(self, side, exist):
+        raise
 
     def __getitem__(self, key):
         if key == 'x_len':
@@ -90,7 +114,7 @@ class TSVData(Iterable[IdExample]):
     def __len__(self):
         return self._len
 
-    def __iter__(self) -> Iterator[Example]:
+    def __iter__(self) -> Iterator[IdExample]:
         if self.shuffle:
             if self.read_counter == 0:
                 log.info("shuffling the data...")
@@ -195,7 +219,6 @@ class TokenizerTask():
                 record = None
         return record
 
-
 class InMemoryData:
 
     def __init__(self, stream: Iterator[IdExample]):
@@ -241,12 +264,25 @@ class InMemoryData:
 
 
 class SqliteFile(Iterable[IdExample]):
-    TABLE_STATEMENT = """CREATE TABLE IF NOT EXISTS data (
+    """
+    Change log::
+    VERSION 0: (unset)
+        x_seq and y_seq were list of integers, picked using pickle.dumps
+        very inefficient
+    VERSION 1:
+        x_seq and y_seq were np.array(, dtyp=np.int32).tobytes()
+
+    """
+    CUR_VERSION = 1
+
+    TABLE_STATEMENT = f"""CREATE TABLE IF NOT EXISTS data (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         x BLOB NOT NULL,
         y BLOB,
         x_len INTEGER,
-        y_len INTEGER)"""
+        y_len INTEGER);"""
+    INDEX_X_LEN = "CREATE INDEX IF NOT EXISTS  idx_x_len ON data (x_len);"
+    INDEX_Y_LEN = "CREATE INDEX IF NOT EXISTS  idx_y_len ON data (y_len);"
 
     INSERT_STMT = "INSERT INTO data (x, y, x_len, y_len) VALUES (?, ?, ?, ?)"
     READ_RANDOM = "SELECT * from data ORDER BY RANDOM()"
@@ -275,6 +311,7 @@ class SqliteFile(Iterable[IdExample]):
         self.max_src_len, self.max_tgt_len = max_src_len, max_tgt_len
         self.truncate = truncate
         self.db = sqlite3.connect(str(path))
+        self.db_version = self.db.execute('PRAGMA user_version;').fetchone()[0]
 
         def dict_factory(cursor, row):  # map tuples to dictionary with column names
             d = {}
@@ -282,7 +319,11 @@ class SqliteFile(Iterable[IdExample]):
                 key = col[0]
                 val = row[idx]
                 if key in ('x', 'y') and val is not None:
-                    val = pickle.loads(val)  # unmarshall
+                    if self.db_version < 1:
+                        val = pickle.loads(val)  # unmarshall
+                        val = np.array(val, dtype=np.int32)
+                    else: # version 1 and above
+                        val = np.frombuffer(val, dtype=np.int32)
                 d[key] = val
             return d
 
@@ -328,11 +369,19 @@ class SqliteFile(Iterable[IdExample]):
         conn = sqlite3.connect(str(maybe_tmp))
         cur = conn.cursor()
         cur.execute(cls.TABLE_STATEMENT)
+        cur.execute(cls.INDEX_X_LEN)
+        cur.execute(cls.INDEX_Y_LEN)
+        cur.execute(f"PRAGMA user_version = {cls.CUR_VERSION};")
+
         count = 0
         for x_seq, y_seq in records:
-            # marshall variable length sequences to a json array
-            values = (pickle.dumps(x_seq),
-                      None if y_seq is None else pickle.dumps(y_seq),
+            # use numpy. its a lot efficient
+            if not isinstance(x_seq, np.ndarray):
+                x_seq = np.array(x_seq, dtype=np.int32)
+            if y_seq is not None and not isinstance(y_seq, np.ndarray):
+                y_seq = np.array(y_seq, dtype=np.int32)
+            values = (x_seq.tobytes(),
+                      None if y_seq is None else y_seq.tobytes(),
                       len(x_seq), len(y_seq) if y_seq is not None else -1)
             cur.execute(cls.INSERT_STMT, values)
             count += 1
@@ -391,7 +440,7 @@ class Batch:
     _x_attrs = ['x_len', 'x_seqs']
     _y_attrs = ['y_len', 'y_seqs']
 
-    def __init__(self, batch: List[Example], sort_dec=False, batch_first=True,
+    def __init__(self, batch: List[IdExample], sort_dec=False, batch_first=True,
                  add_eos_x=True, add_eos_y=True, add_bos_x=False, add_bos_y=False,
                  field: Field = None):
         """
@@ -441,7 +490,7 @@ class Batch:
             if not batch_first:  # transpose
                 self.y_seqs = self.y_seqs.t()
 
-    def bos_eos_check(self, batch: List[Example], side: str, bos: bool, eos: bool):
+    def bos_eos_check(self, batch: List[IdExample], side: str, bos: bool, eos: bool):
         """
         ensures and inserts (if needed) EOS and BOS tokens
         :param batch:
@@ -450,19 +499,9 @@ class Batch:
         :param eos: True if should have EOS, False if should not have EOS
         :return: None, all modifications are inplace of batch
         """
-        assert side in ('x', 'y')
         for ex in batch:
-            seq: List = ex.x if side == 'x' else ex.y
-            if bos:
-                if not seq[0] == self.bos_val:
-                    seq.insert(0, self.bos_val)
-            else:  # should not have BOS
-                assert seq[0] != self.bos_val
-            if eos:
-                if not seq[-1] == self.eos_val:
-                    seq.append(self.eos_val)
-            else:  # Should not have EOS
-                assert seq[-1] != self.eos_val
+            ex.val_exists_at(side, pos=0, exist=bos, val=self.bos_val)
+            ex.val_exists_at(side, pos=-1, exist=eos, val=self.eos_val)
 
     def __len__(self):
         return self._len

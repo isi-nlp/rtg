@@ -11,8 +11,8 @@ from rtg.utils import IO
 from rtg.module import criterion as criteria
 
 from abc import abstractmethod
-from typing import Optional, Callable
-from dataclasses import dataclass
+from typing import Optional, Callable, List
+from dataclasses import dataclass, field
 import time
 
 from torch import optim
@@ -52,8 +52,8 @@ class NoamOpt(Optimizer):
 
         self.inv_sqrt = inv_sqrt
         lr = optimizer.defaults['lr']
-        self.warmup_rate = lr/warmup
-        self.decay_factor = lr * warmup**0.5
+        self.warmup_rate = lr / warmup
+        self.decay_factor = lr * warmup ** 0.5
 
         self._rate = 0
         log.info(f"model_size={model_size}, factor={factor}, warmup={warmup}, step={step}, "
@@ -87,9 +87,10 @@ class NoamOpt(Optimizer):
             if step < self.warmup:
                 lr = self.warmup_rate * step
             else:
-                lr = self.decay_factor * step**(-0.5)
+                lr = self.decay_factor * step ** (-0.5)
         else:
-            lr = self.factor * self.model_size**(-0.5) * min(step**(-0.5), step * self.warmup**(-1.5))
+            lr = self.factor * self.model_size ** (-0.5) * min(step ** (-0.5),
+                                                               step * self.warmup ** (-1.5))
         return lr
 
     @staticmethod
@@ -150,10 +151,71 @@ class TrainerState:
     def progress_bar_msg(self):
         elapsed = time.time() - self.start
         return f'Loss:{self.running_loss():.4f},' \
-            f' {int(self.total_toks / elapsed)}toks/s'
+               f' {int(self.total_toks / elapsed)}toks/s'
 
     def is_check_point(self):
         return self.steps == self.check_point
+
+
+@dataclass
+class EarlyStopper:
+    """
+    A data model to track early stopping state
+    """
+    enabled: bool = True
+    by: str = 'loss'
+    patience: int = 15
+    min_steps: int = 0
+    cur_step: int = 0
+    signi_round = 4   # integer either positive or negative
+    # these many digits are significant round(100, -1) => 30.0  round(100, 1) => 33.3
+    measures: List[float] = field(default_factory=list)  # could be loss or accuracy
+
+    buf = 3  # take average of these many points; avoids weird dips and surges as stop
+    minimizing = True  # minimize loss, maximize accuracy
+
+    def __post_init__(self):
+        if self.enabled:
+            assert self.patience > 0, f'early_stop.patience > 0 ? given={self.patience}'
+            assert 1 <= self.buf <= self.patience
+            log.info(f"Early Stop Enabled;")
+
+        if self.by in {'loss'}:
+            self.minimizing = True
+        elif self.by in {'bleu', 'accuracy'}:
+            self.minimizing = False  # maximizing
+        else:
+            raise Exception(f'{self.by} is not supported')
+
+    def step(self):
+        self.cur_step += 1
+        return self.cur_step
+
+    def validation(self, val):
+        self.measures.append(val)
+
+    def is_stop(self):
+        if not self.enabled:
+            return False
+        if self.cur_step < self.min_steps:
+            # hasn't reached minimum steps; dont stop
+            return False
+        if len(self.measures) < (self.patience + self.buf + 1):
+            # hasn't accumulated enough data points, dont stop
+            return False
+
+        # The old value; with some buffer around to avoid weird dips and surges
+        old = (self.measures[-self.patience - self.buf: -self.patience])
+        old = sum(old) / len(old)  # mean
+        recent = self.measures[-self.patience:]  # the patience of seeing the post mark
+
+        if self.minimizing:
+            # older value is smaller than or same as best of recent => time to stop
+            should_stop = round(old, self.signi_round) <= round(min(recent), self.signi_round)
+        else:
+            # older value is bigger than or same as best of recent => time to stop
+            should_stop = round(old, self.signi_round) >= round(max(recent), self.signi_round)
+        return should_stop
 
 
 class NoOpSummaryWriter(SummaryWriter):
@@ -229,7 +291,8 @@ class SteppedTrainer:
 
         self.model = self.model.to(device)
 
-        inner_opt_args = {k: optim_args[k] for k in ['lr', 'betas', 'eps', 'weight_decay', 'amsgrad']}
+        inner_opt_args = {k: optim_args[k] for k in
+                          ['lr', 'betas', 'eps', 'weight_decay', 'amsgrad']}
 
         trainable_params = self.exp.config['optim'].get('trainable', {})
         trainable_params = self.model.get_trainable_params(include=trainable_params.get('include'),
@@ -253,7 +316,7 @@ class SteppedTrainer:
         if not self.exp.read_only:
             self.exp.persist_state()
         self.samples = None
-        if exp.samples_file.exists():
+        if exp.samples_file and exp.samples_file.exists():
             with IO.reader(exp.samples_file) as f:
                 self.samples = [line.strip().split('\t') for line in f]
                 log.info(f"Found {len(self.samples)} sample records")
@@ -276,7 +339,7 @@ class SteppedTrainer:
         if self.exp._trained_flag.exists():
             # noinspection PyBroadException
             try:
-                step =  max(step, yaml.load(self.exp._trained_flag.read_text())['steps'])
+                step = max(step, yaml.load(self.exp._trained_flag.read_text())['steps'])
             except Exception as _:
                 pass
         assert step >= 0
@@ -301,9 +364,10 @@ class SteppedTrainer:
         elif criterion == 'cross_entropy':
             return criteria.CrossEntropy()
         elif criterion == 'binary_cross_entropy':
-            return criteria.BinaryCrossEntropy(smoothing=smoothing,pad_idx=pad_idx)
+            return criteria.BinaryCrossEntropy(smoothing=smoothing, pad_idx=pad_idx)
         elif criterion == 'triplet_loss':
-            return criteria.TripletLoss(embedding=tgt_embedding, margin=margin, neg_region=neg_region,
+            return criteria.TripletLoss(embedding=tgt_embedding, margin=margin,
+                                        neg_region=neg_region,
                                         mode=mode, neg_sampling=neg_sampling, pad_idx=pad_idx)
         elif criterion == 'smooth_kld_and_triplet_loss':
             return criteria.SmoothKLDAndTripletLoss(
