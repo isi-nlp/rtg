@@ -167,7 +167,7 @@ class EarlyStopper:
     patience: int = 15
     min_steps: int = 0
     cur_step: int = 0
-    signi_round = 4   # integer either positive or negative
+    signi_round: int = 4   # integer either positive or negative
     # these many digits are significant round(100, -1) => 30.0  round(100, 1) => 33.3
     measures: List[float] = field(default_factory=list)  # could be loss or accuracy
 
