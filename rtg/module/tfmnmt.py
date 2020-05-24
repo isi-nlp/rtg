@@ -748,7 +748,6 @@ class TransformerTrainer(SteppedTrainer):
             data = {f'P{i+1}':p for i, p in enumerate(bleu.precisions)}
             data['bleu']=  bleu.score
             self.tbd.add_scalars('validn_greedytokbleu', data, self.opt.curr_step)
-            return bleu.score
         return score
 
     def overfit_batch(self, batch, max_iters=100, stop_loss=0.01):
