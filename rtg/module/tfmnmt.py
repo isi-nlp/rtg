@@ -742,9 +742,12 @@ class TransformerTrainer(SteppedTrainer):
 
         score = total_loss / num_batches
         if do_bleu:
-            # this is non standard BLEU: greedy decode, tokenized with whatever was used for training
+            # this is non standard BLEU: greedy(beam=1), tokenized with whatever was used for training
             bleu = corpus_bleu(hyps, [refs], tokenize='none', force=True)
             log.info(f'\n {bleu}')
+            data = {f'P{i+1}':p for i, p in enumerate(bleu.precisions)}
+            data['bleu']=  bleu.score
+            self.tbd.add_scalars('validn_greedytokbleu', data, self.opt.curr_step)
             return bleu.score
         return score
 

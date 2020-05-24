@@ -583,10 +583,14 @@ class BatchIterable(Iterable[Batch]):
                     src_raw, tgt_raw = raw_path[0], raw_path[1]
                     log.info(f"Reading raw from src:{src_raw} tgt:{tgt_raw}")
                     raw_data = list(TSVData.read_raw_parallel_lines(src_raw, tgt_raw))
-                    assert len(raw_data) == len(self.data)  # assumption: one-to-one via index
-                    for idx, (src, tgt) in enumerate(raw_data):
-                        self.data.data[idx].x_raw = src
-                        self.data.data[idx].y_raw = tgt
+                    if len(raw_data) == len(self.data):
+                        for idx, (src, tgt) in enumerate(raw_data):
+                            self.data.data[idx].x_raw = src
+                            self.data.data[idx].y_raw = tgt
+                    else:
+                        log.warning(f'Raw={len(raw_data)}, but bin={len(self.data)} segs '
+                            f'Try setting prep.truncate=true to truncate instead of skip of recs.')
+                        log.warning("This disables BLEU logging on validation")
                 log.info(f"saving in-memory to {in_mem_file}")
                 with in_mem_file.open('wb') as wrt:
                     pickle.dump(self.data, wrt)

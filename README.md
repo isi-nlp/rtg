@@ -50,7 +50,7 @@ Refer to `scripts/rtg-pipeline.sh` bash script and `examples/transformer.base.ym
 $ python -m rtg.pipeline 001-tfm examples/transformer.base.yml
 
 # or if your have `rtg-pipeline` command in $PATH (via pip install) 
-rtg-pipeline 001-tfm examples/transformer.base.yml
+rtg-pipe 001-tfm examples/transformer.base.yml
 ```
 
 The `001-tfm` directory that hosts an experiment looks like this:
