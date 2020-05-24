@@ -44,6 +44,7 @@ def test_pipeline_transformer():
         config['prep'].update({'codec_lib': codec_lib, 'char_coverage': 0.9995})
         exp = Experiment(tmp_dir, config=config, read_only=False)
         exp.config['trainer'].update(dict(steps=50, check_point=25))
+        exp.config['prep']['num_samples'] = 0
         Pipeline(exp).run(run_tests=False)
         sanity_check_experiment(exp)
         print(f"Cleaning up {tmp_dir}")

@@ -739,9 +739,14 @@ class TranslationExperiment(BaseExperiment):
 
     def get_val_data(self, batch_size: int, sort_desc=False, batch_first=True,
                      shuffle=False):
+        raw_path = None
+        prep = self.config.get('prep', {})
+        if 'valid_src' in prep and 'valid_tgt' in prep:
+            raw_path = prep['valid_src'], prep['valid_tgt']
+
         return BatchIterable(self.valid_file, batch_size=batch_size, sort_desc=sort_desc,
                              batch_first=batch_first, shuffle=shuffle, field=self.tgt_vocab,
-                             keep_in_mem=True, **self._get_batch_args())
+                             keep_in_mem=True, raw_path=raw_path, **self._get_batch_args())
 
     def get_combo_data(self, batch_size: int, steps: int = 0, sort_desc=False, batch_first=True,
                        shuffle=False):

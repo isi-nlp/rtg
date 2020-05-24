@@ -6,7 +6,7 @@ import sqlite3
 from collections import namedtuple
 from itertools import zip_longest
 from pathlib import Path
-from typing import List, Iterator, Tuple, Union, Iterable, Dict, Any
+from typing import List, Iterator, Tuple, Union, Iterable, Dict, Any, Optional
 import multiprocessing as mp
 import torch
 from tqdm import tqdm
@@ -39,6 +39,8 @@ class IdExample:
         self.x: Array = x
         self.y: Array = y
         self.id = id
+        self.x_raw: Optional[str] = None
+        self.y_raw: Optional[str] = None
 
     def val_exists_at(self, side, pos: int, exist: bool, val:int):
         assert side == 'x' or side == 'y'
@@ -474,6 +476,9 @@ class Batch:
         self.x_seqs = self.x_seqs.to(device)
         if not batch_first:  # transpose
             self.x_seqs = self.x_seqs.t()
+        self.x_raw = None
+        if batch[0].x_raw:
+            self.x_raw = [ex.x_raw for ex in batch]
 
         first_y = batch[0].y
         self.has_y = first_y is not None
@@ -489,6 +494,9 @@ class Batch:
             self.y_seqs = y_seqs.to(device)
             if not batch_first:  # transpose
                 self.y_seqs = self.y_seqs.t()
+            self.y_raw = None
+            if batch[0].y_raw:
+                self.y_raw = [ex.y_raw for ex in batch]
 
     def bos_eos_check(self, batch: List[IdExample], side: str, bos: bool, eos: bool):
         """
@@ -529,12 +537,14 @@ class BatchIterable(Iterable[Batch]):
     # This should have been called as Dataset
     def __init__(self, data_path: Union[str, Path], batch_size: int, field: Field,
                  sort_desc: bool = False, batch_first: bool = True, shuffle: bool = False,
-                 sort_by: str = None, keep_in_mem=False, **kwargs):
+                 sort_by: str = None, keep_in_mem=False, raw_path: Tuple[Path]=None, **kwargs):
         """
         Iterator for reading training data in batches
         :param data_path: path to TSV file
         :param batch_size: number of tokens on the target size per batch
-
+        :param raw_path: (src, tgt) paths for loading the sentences (optional); use it for validation
+               required: keep_mem=true, shuffle=False, sort_by=None
+        :param keep_in_mem: keep the dataset in-memory
         :param sort_desc: should the batch be sorted by src sequence len (useful for RNN api)
         """
         self.field = field
@@ -546,6 +556,7 @@ class BatchIterable(Iterable[Batch]):
         self.keep_in_mem = keep_in_mem
         if not isinstance(data_path, Path):
             data_path = Path(data_path)
+
         assert data_path.exists(), f'Invalid State: Training data doesnt exist;' \
                                    f' Please remove _PREPARED and rerun.'
         if data_path.name.endswith(".db"):
@@ -554,6 +565,12 @@ class BatchIterable(Iterable[Batch]):
             if sort_by:
                 raise Exception(f'sort_by={sort_by} not supported for TSV data')
             self.data = TSVData(data_path, shuffle=shuffle, longest_first=False, **kwargs)
+        if raw_path:  # for logging and validation BLEU
+            # Only narrower use case is supported
+            assert not shuffle
+            assert not sort_by
+            assert keep_in_mem
+            assert len(raw_path) == 2, 'both src and tgt should be given'
         if self.keep_in_mem:
             in_mem_file = data_path.with_suffix(".memdb.pkl")
             if in_mem_file.exists():
@@ -562,7 +579,15 @@ class BatchIterable(Iterable[Batch]):
                     self.data = pickle.load(rdr)
             else:
                 self.data = InMemoryData(self.data)
-                log.info(f"saving in memory to {in_mem_file}")
+                if raw_path:         # raw data for logging
+                    src_raw, tgt_raw = raw_path[0], raw_path[1]
+                    log.info(f"Reading raw from src:{src_raw} tgt:{tgt_raw}")
+                    raw_data = list(TSVData.read_raw_parallel_lines(src_raw, tgt_raw))
+                    assert len(raw_data) == len(self.data)  # assumption: one-to-one via index
+                    for idx, (src, tgt) in enumerate(raw_data):
+                        self.data.data[idx].x_raw = src
+                        self.data.data[idx].y_raw = tgt
+                log.info(f"saving in-memory to {in_mem_file}")
                 with in_mem_file.open('wb') as wrt:
                     pickle.dump(self.data, wrt)
         log.info(f'Batch Size = {batch_size} toks, sort_by={sort_by}')
@@ -595,7 +620,7 @@ class BatchIterable(Iterable[Batch]):
 
     def _make_eq_len_batch_ids(self):
         sort = 'y_len desc'
-        if isinstance(self.data, SqliteFile):  # only seqlite supports multiple sorts as of now
+        if isinstance(self.data, SqliteFile):  # only sqlite supports multiple sorts as of now
             sort += ', random() desc'
         rows = self.data.get_all(cols=['id', 'x_len', 'y_len'], sort=sort)
         stats = [(r['id'], r['x_len'], r['y_len']) for r in rows]
