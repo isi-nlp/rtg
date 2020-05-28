@@ -293,13 +293,15 @@ class SqliteFile(Iterable[IdExample]):
     @classmethod
     def make_query(cls, sort_by: str, len_rand: int):
         assert len_rand >= 1
-        template = "SELECT * from data ORDER BY %s + (RANDOM() %% %d) %s"
+        select_no_sort = 'SELECT * from data'
+        template = f"{select_no_sort} ORDER BY %s + (RANDOM() %% %d) %s"
         known_queries = dict(y_len_asc=template % ('y_len', len_rand, 'ASC'),
                              y_len_desc=template % ('y_len', len_rand, 'DESC'),
                              x_len_asc=template % ('x_len', len_rand, 'ASC'),
                              x_len_desc=template % ('x_len', len_rand, 'DESC'),
                              random=cls.READ_RANDOM,
                              eq_len_rand_batch=template % ('y_len', len_rand, 'DESC'))
+        known_queries[None] = known_queries['none'] = select_no_sort
         assert sort_by in known_queries, ('sort_by must be one of ' + str(known_queries.keys()))
         return known_queries[sort_by]
 
