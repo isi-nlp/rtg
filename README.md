@@ -28,7 +28,7 @@ git clone https://github.com/isi-nlp/rtg.git
 cd rtg                # go to the code
 # use rtg-xt.git if you dont have access to rtg.git
 
-conda env create -n rtg python=3.7.   # adds a conda env named rtg
+conda env create -n rtg python=3.7   # adds a conda env named rtg
 conda activate rtg  # activate it
 
 # install this as a local editable pip package
@@ -41,15 +41,20 @@ export PYTHONPATH=$PWD
 
 # Usage
 
-Refer to `scripts/rtg-pipeline.sh` bash script and `examples/transformer.base.yml` file
+Refer to `scripts/rtg-pipeline.sh` bash script and `examples/transformer.base.yml` file for specific examples.
+
+The pipeline takes source (`.src`) and target (`.tgt`) files. The sources are in one language and the targets in another. At a minimum, supply a training source, training target, validation source, and validation target. It is best to use `.tok` files for training. (`.tok` means tokenized.)
 
 ```bash
-# use examples/transformer.base.yml config to setup an experiment at 001-tfm dir (TODO: edit paths in yml file)
-$ scripts/rtg-pipeline.sh -d 001-tfm -c examples/transformer.base.yml
+# disable gpu use (force cpu)
+export CUDA_VISIBLE_DEVICES=
 # or if you have rtg module in $PYTHONPATH
-$ python -m rtg.pipeline 001-tfm examples/transformer.base.yml
+python -m rtg.pipeline experiments/sample-exp/
 # or if your have `rtg` command in $PATH 
-rtg pipeline 001-tfm examples/transformer.base.yml
+rtg pipeline experiments/sample-exp/
+# use examples/transformer.base.yml config to setup an experiment at 001-tfm dir (TODO: edit paths in yml file)
+# edit rtg-pipeline.sh if you don't want to force gpu
+scripts/rtg-pipeline.sh -d experiments/sample-exp/ -c experiments/sample-exp/conf.yml
 ```
 
 The `001-tfm` directory that hosts an experiment looks like this:
