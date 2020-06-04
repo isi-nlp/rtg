@@ -28,7 +28,7 @@ git clone https://github.com/isi-nlp/rtg.git
 cd rtg                # go to the code
 # use rtg-xt.git if you dont have access to rtg.git
 
-conda env create -n rtg python=3.7   # adds a conda env named rtg
+conda create -n rtg python=3.7   # adds a conda env named rtg
 conda activate rtg  # activate it
 
 # install this as a local editable pip package
@@ -45,16 +45,22 @@ Refer to `scripts/rtg-pipeline.sh` bash script and `examples/transformer.base.ym
 
 The pipeline takes source (`.src`) and target (`.tgt`) files. The sources are in one language and the targets in another. At a minimum, supply a training source, training target, validation source, and validation target. It is best to use `.tok` files for training. (`.tok` means tokenized.)
 
+Example of training and running a mdoel:
+
 ```bash
 # disable gpu use (force cpu)
 export CUDA_VISIBLE_DEVICES=
-# or if you have rtg module in $PYTHONPATH
+# call as python module
 python -m rtg.pipeline experiments/sample-exp/
-# or if your have `rtg` command in $PATH 
+# OR if you've added rtg to your $PATH
 rtg pipeline experiments/sample-exp/
-# use examples/transformer.base.yml config to setup an experiment at 001-tfm dir (TODO: edit paths in yml file)
+# OR you can call a shell scrupt
 # edit rtg-pipeline.sh if you don't want to force gpu
 scripts/rtg-pipeline.sh -d experiments/sample-exp/ -c experiments/sample-exp/conf.yml
+
+# Then to use the model to translate something:
+# (VERY poor translation due to small training data)
+echo "Chacun voit midi à sa porte." | python -m rtg.decode experiments/sample-exp/
 ```
 
 The `001-tfm` directory that hosts an experiment looks like this:
