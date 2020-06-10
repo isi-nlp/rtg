@@ -6,27 +6,73 @@ import sqlite3
 from collections import namedtuple
 from itertools import zip_longest
 from pathlib import Path
-from typing import List, Iterator, Tuple, Union, Iterable, Dict, Any
+from typing import List, Iterator, Tuple, Union, Iterable, Dict, Any, Optional
 import multiprocessing as mp
 import torch
+from tqdm import tqdm
+import numpy as np
 
 from rtg import log, my_tensor as tensor, device, cpu_count
 from rtg.data.codec import Field
-from rtg.utils import IO, line_count, get_my_args
+from rtg.utils import IO, line_count, get_my_args, max_RSS
 
+
+Array = np.ndarray
 RawRecord = Tuple[str, str]
 TokRawRecord = Tuple[List[str], List[str]]
 MonoSeqRecord = List[Union[int, str]]
 ParallelSeqRecord = Tuple[MonoSeqRecord, MonoSeqRecord]
 TokStream = Union[Iterator[Iterator[str]], Iterator[str]]
-Example = namedtuple('Example', ['x', 'y'])
 
 """
 An object of this class holds an example in sequence to sequence dataset
 """
+#Example = namedtuple('Example', ['x', 'y'])
 
 
-class TSVData:
+class IdExample:
+    """
+    Example (x, y) with id
+    """
+
+    def __init__(self, x, y, id):
+        self.x: Array = x
+        self.y: Array = y
+        self.id = id
+        self.x_raw: Optional[str] = None
+        self.y_raw: Optional[str] = None
+
+    def val_exists_at(self, side, pos: int, exist: bool, val:int):
+        assert side == 'x' or side == 'y'
+        assert pos == 0 or pos == -1
+        seq = self.x if side == 'x' else self.y
+        if exist:
+            if seq[pos] != val:
+                if pos == 0:
+                    seq = np.append(np.int32(val), seq)
+                else: # pos = -1
+                    seq = np.append(seq, np.int32(val))
+                # update
+                if side == 'x':
+                    self.x = seq
+                else:
+                    self.y = seq
+        else:  # should not have val at pos
+            assert seq[pos] != val
+
+    def eos_check(self, side, exist):
+        raise
+
+    def __getitem__(self, key):
+        if key == 'x_len':
+            return len(self.x)
+        elif key == 'y_len':
+            return len(self.y)
+        else:
+            return getattr(self, key)
+
+
+class TSVData(Iterable[IdExample]):
 
     def __init__(self, path: Union[str, Path], in_mem=False, shuffle=False, longest_first=True,
                  max_src_len: int = 512, max_tgt_len: int = 512, truncate: bool = False):
@@ -51,10 +97,10 @@ class TSVData:
     def _parse(line: str):
         return [int(t) for t in line.split()]
 
-    def read_all(self) -> Iterator[Example]:
+    def read_all(self) -> Iterator[IdExample]:
         with IO.reader(self.path) as lines:
             recs = (line.split('\t') for line in lines)
-            for rec in recs:
+            for idx, rec in enumerate(recs):
                 x = self._parse(rec[0].strip())
                 y = self._parse(rec[1].strip()) if len(rec) > 1 else None
                 if self.truncate:  # truncate long recs
@@ -65,12 +111,12 @@ class TSVData:
                 if not x or (y is not None and len(y) == 0):  # empty on one side
                     log.warning(f"Ignoring an empty record  x:{len(x)}    y:{len(y)}")
                     continue
-                yield Example(x, y)
+                yield IdExample(x, y, id=idx)
 
     def __len__(self):
         return self._len
 
-    def __iter__(self) -> Iterator[Example]:
+    def __iter__(self) -> Iterator[IdExample]:
         if self.shuffle:
             if self.read_counter == 0:
                 log.info("shuffling the data...")
@@ -139,7 +185,8 @@ class TSVData:
         log.info(f"Parallel processing the parallel data using {cpu_count} CPUs")
 
         with mp.get_context("spawn").Pool(processes=cpu_count) as pool:
-            mapper_func = TokenizerTask([src_tokenizer, tgt_tokenizer], [src_len, tgt_len], truncate)
+            mapper_func = TokenizerTask([src_tokenizer, tgt_tokenizer], [src_len, tgt_len],
+                                        truncate)
             recs = pool.map(mapper_func, recs)
             recs = (rec for rec in recs if rec)
         return recs
@@ -157,7 +204,8 @@ class TSVData:
 
 class TokenizerTask():
     """Works with Parallel data"""
-    def __init__(self,  tokenizers: List, lengths: List[int], truncate: bool):
+
+    def __init__(self, tokenizers: List, lengths: List[int], truncate: bool):
         assert len(tokenizers) == len(lengths)
         self.tokenizers = tokenizers
         self.lengths = lengths
@@ -173,13 +221,70 @@ class TokenizerTask():
                 record = None
         return record
 
-class SqliteFile:
-    TABLE_STATEMENT = """CREATE TABLE IF NOT EXISTS data (
+class InMemoryData:
+
+    def __init__(self, stream: Iterator[IdExample]):
+        self.data = []
+        self.ids: Dict[Any, int] = {}
+        log.info("Loading data to memory")
+
+        with tqdm(stream, mininterval=1, unit='recs') as data_bar:
+            for idx, rec in enumerate(data_bar):
+                assert isinstance(rec, IdExample)
+                assert rec.id not in self.ids, f'Record with id {id} is a duplicate record'
+                self.ids[rec.id] = len(self.data)
+                self.data.append(rec)
+
+                if idx % 1000 == 0:
+                    mem = max_RSS()[1]
+                    data_bar.set_postfix(mem=mem, refresh=False)
+        log.info(f"Total={len(self.data)} records; Total memory used={max_RSS()[1]}")
+        assert len(self.data) == len(self.ids)
+
+    def get_all(self, cols, sort):
+        assert cols
+        data = self.data
+        if sort:
+            sort_col, sort_order = sort.split()
+            assert sort_col in {'x_len', 'y_len'}
+            assert sort_order in {'asc', 'desc'}
+            reverse = sort_order == 'desc'
+            data = sorted(data, key=lambda x: x[sort_col], reverse=reverse)
+        recs = ({cn: ex[cn] for cn in cols} for ex in data)
+        return recs
+
+    def get_all_ids(self, ids):
+        idxs = (self.ids[id] for id in ids)
+        examples = (self.data[ix] for ix in idxs)
+        return examples
+
+    def __len__(self):
+        return len(self.data)
+
+    def __iter__(self) -> Iterator[IdExample]:
+        yield from self.data
+
+
+class SqliteFile(Iterable[IdExample]):
+    """
+    Change log::
+    VERSION 0: (unset)
+        x_seq and y_seq were list of integers, picked using pickle.dumps
+        very inefficient
+    VERSION 1:
+        x_seq and y_seq were np.array(, dtyp=np.int32).tobytes()
+
+    """
+    CUR_VERSION = 1
+
+    TABLE_STATEMENT = f"""CREATE TABLE IF NOT EXISTS data (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         x BLOB NOT NULL,
         y BLOB,
         x_len INTEGER,
-        y_len INTEGER)"""
+        y_len INTEGER);"""
+    INDEX_X_LEN = "CREATE INDEX IF NOT EXISTS  idx_x_len ON data (x_len);"
+    INDEX_Y_LEN = "CREATE INDEX IF NOT EXISTS  idx_y_len ON data (y_len);"
 
     INSERT_STMT = "INSERT INTO data (x, y, x_len, y_len) VALUES (?, ?, ?, ?)"
     READ_RANDOM = "SELECT * from data ORDER BY RANDOM()"
@@ -188,13 +293,15 @@ class SqliteFile:
     @classmethod
     def make_query(cls, sort_by: str, len_rand: int):
         assert len_rand >= 1
-        template = "SELECT * from data ORDER BY %s + (RANDOM() %% %d) %s"
+        select_no_sort = 'SELECT * from data'
+        template = f"{select_no_sort} ORDER BY %s + (RANDOM() %% %d) %s"
         known_queries = dict(y_len_asc=template % ('y_len', len_rand, 'ASC'),
                              y_len_desc=template % ('y_len', len_rand, 'DESC'),
                              x_len_asc=template % ('x_len', len_rand, 'ASC'),
                              x_len_desc=template % ('x_len', len_rand, 'DESC'),
                              random=cls.READ_RANDOM,
                              eq_len_rand_batch=template % ('y_len', len_rand, 'DESC'))
+        known_queries[None] = known_queries['none'] = select_no_sort
         assert sort_by in known_queries, ('sort_by must be one of ' + str(known_queries.keys()))
         return known_queries[sort_by]
 
@@ -208,6 +315,7 @@ class SqliteFile:
         self.max_src_len, self.max_tgt_len = max_src_len, max_tgt_len
         self.truncate = truncate
         self.db = sqlite3.connect(str(path))
+        self.db_version = self.db.execute('PRAGMA user_version;').fetchone()[0]
 
         def dict_factory(cursor, row):  # map tuples to dictionary with column names
             d = {}
@@ -215,7 +323,11 @@ class SqliteFile:
                 key = col[0]
                 val = row[idx]
                 if key in ('x', 'y') and val is not None:
-                    val = pickle.loads(val)  # unmarshall
+                    if self.db_version < 1:
+                        val = pickle.loads(val)  # unmarshall
+                        val = np.array(val, dtype=np.int32)
+                    else: # version 1 and above
+                        val = np.frombuffer(val, dtype=np.int32)
                 d[key] = val
             return d
 
@@ -227,10 +339,10 @@ class SqliteFile:
     def read_all(self) -> Iterator[Dict[str, Any]]:
         return self.db.execute(self.select_qry)
 
-    def __iter__(self) -> Iterator[Example]:
+    def __iter__(self) -> Iterator[IdExample]:
         for d in self.read_all():
-            x, y = d['x'], d.get('y')
-            if not x or not y:
+            id, x, y = d['id'], d['x'], d.get('y')
+            if x is None or y is None or len(x) == 0 or len(y) == 0:
                 log.warning(f"Ignoring an empty record   x:{len(x)}    y:{len(y)}")
                 continue
             if len(x) > self.max_src_len or len(y) > self.max_tgt_len:
@@ -238,7 +350,7 @@ class SqliteFile:
                     x, y = x[:self.max_src_len], y[:self.max_tgt_len]
                 else:  # skip this record
                     continue
-            yield Example(x, y)
+            yield IdExample(x=x, y=y, id=id)
 
     def get_all(self, cols, sort=None):
         assert cols
@@ -250,7 +362,8 @@ class SqliteFile:
     def get_all_ids(self, ids):
         ids_str = ",".join(map(str, ids))
         qry = f"SELECT * FROM  data WHERE id IN ({ids_str})"
-        return self.db.execute(qry)
+        recs = (IdExample(x=rec['x'], y=rec.get('y'), id=rec['id']) for rec in self.db.execute(qry))
+        return recs
 
     @classmethod
     def write(cls, path, records: Iterator[ParallelSeqRecord]):
@@ -262,11 +375,19 @@ class SqliteFile:
         conn = sqlite3.connect(str(maybe_tmp))
         cur = conn.cursor()
         cur.execute(cls.TABLE_STATEMENT)
+        cur.execute(cls.INDEX_X_LEN)
+        cur.execute(cls.INDEX_Y_LEN)
+        cur.execute(f"PRAGMA user_version = {cls.CUR_VERSION};")
+
         count = 0
         for x_seq, y_seq in records:
-            # marshall variable length sequences to a json array
-            values = (pickle.dumps(x_seq),
-                      None if y_seq is None else pickle.dumps(y_seq),
+            # use numpy. its a lot efficient
+            if not isinstance(x_seq, np.ndarray):
+                x_seq = np.array(x_seq, dtype=np.int32)
+            if y_seq is not None and not isinstance(y_seq, np.ndarray):
+                y_seq = np.array(y_seq, dtype=np.int32)
+            values = (x_seq.tobytes(),
+                      None if y_seq is None else y_seq.tobytes(),
                       len(x_seq), len(y_seq) if y_seq is not None else -1)
             cur.execute(cls.INSERT_STMT, values)
             count += 1
@@ -325,7 +446,7 @@ class Batch:
     _x_attrs = ['x_len', 'x_seqs']
     _y_attrs = ['y_len', 'y_seqs']
 
-    def __init__(self, batch: List[Example], sort_dec=False, batch_first=True,
+    def __init__(self, batch: List[IdExample], sort_dec=False, batch_first=True,
                  add_eos_x=True, add_eos_y=True, add_bos_x=False, add_bos_y=False,
                  field: Field = None):
         """
@@ -359,6 +480,9 @@ class Batch:
         self.x_seqs = self.x_seqs.to(device)
         if not batch_first:  # transpose
             self.x_seqs = self.x_seqs.t()
+        self.x_raw = None
+        if batch[0].x_raw:
+            self.x_raw = [ex.x_raw for ex in batch]
 
         first_y = batch[0].y
         self.has_y = first_y is not None
@@ -374,8 +498,11 @@ class Batch:
             self.y_seqs = y_seqs.to(device)
             if not batch_first:  # transpose
                 self.y_seqs = self.y_seqs.t()
+            self.y_raw = None
+            if batch[0].y_raw:
+                self.y_raw = [ex.y_raw for ex in batch]
 
-    def bos_eos_check(self, batch: List[Example], side: str, bos: bool, eos: bool):
+    def bos_eos_check(self, batch: List[IdExample], side: str, bos: bool, eos: bool):
         """
         ensures and inserts (if needed) EOS and BOS tokens
         :param batch:
@@ -384,19 +511,9 @@ class Batch:
         :param eos: True if should have EOS, False if should not have EOS
         :return: None, all modifications are inplace of batch
         """
-        assert side in ('x', 'y')
         for ex in batch:
-            seq: List = ex.x if side == 'x' else ex.y
-            if bos:
-                if not seq[0] == self.bos_val:
-                    seq.insert(0, self.bos_val)
-            else:  # should not have BOS
-                assert seq[0] != self.bos_val
-            if eos:
-                if not seq[-1] == self.eos_val:
-                    seq.append(self.eos_val)
-            else:  # Should not have EOS
-                assert seq[-1] != self.eos_val
+            ex.val_exists_at(side, pos=0, exist=bos, val=self.bos_val)
+            ex.val_exists_at(side, pos=-1, exist=eos, val=self.eos_val)
 
     def __len__(self):
         return self._len
@@ -424,12 +541,14 @@ class BatchIterable(Iterable[Batch]):
     # This should have been called as Dataset
     def __init__(self, data_path: Union[str, Path], batch_size: int, field: Field,
                  sort_desc: bool = False, batch_first: bool = True, shuffle: bool = False,
-                 sort_by: str = None, **kwargs):
+                 sort_by: str = None, keep_in_mem=False, raw_path: Tuple[Path]=None, **kwargs):
         """
         Iterator for reading training data in batches
         :param data_path: path to TSV file
         :param batch_size: number of tokens on the target size per batch
-
+        :param raw_path: (src, tgt) paths for loading the sentences (optional); use it for validation
+               required: keep_mem=true, shuffle=False, sort_by=None
+        :param keep_in_mem: keep the dataset in-memory
         :param sort_desc: should the batch be sorted by src sequence len (useful for RNN api)
         """
         self.field = field
@@ -438,8 +557,10 @@ class BatchIterable(Iterable[Batch]):
         self.batch_first = batch_first
         self.sort_by = sort_by
         self.data_path = data_path
+        self.keep_in_mem = keep_in_mem
         if not isinstance(data_path, Path):
             data_path = Path(data_path)
+
         assert data_path.exists(), f'Invalid State: Training data doesnt exist;' \
                                    f' Please remove _PREPARED and rerun.'
         if data_path.name.endswith(".db"):
@@ -448,6 +569,35 @@ class BatchIterable(Iterable[Batch]):
             if sort_by:
                 raise Exception(f'sort_by={sort_by} not supported for TSV data')
             self.data = TSVData(data_path, shuffle=shuffle, longest_first=False, **kwargs)
+        if raw_path:  # for logging and validation BLEU
+            # Only narrower use case is supported
+            assert not shuffle
+            assert not sort_by
+            assert keep_in_mem
+            assert len(raw_path) == 2, 'both src and tgt should be given'
+        if self.keep_in_mem:
+            in_mem_file = data_path.with_suffix(".memdb.pkl")
+            if in_mem_file.exists():
+                log.info(f"Loading from {in_mem_file}")
+                with in_mem_file.open('rb') as rdr:
+                    self.data = pickle.load(rdr)
+            else:
+                self.data = InMemoryData(self.data)
+                if raw_path:         # raw data for logging
+                    src_raw, tgt_raw = raw_path[0], raw_path[1]
+                    log.info(f"Reading raw from src:{src_raw} tgt:{tgt_raw}")
+                    raw_data = list(TSVData.read_raw_parallel_lines(src_raw, tgt_raw))
+                    if len(raw_data) == len(self.data):
+                        for idx, (src, tgt) in enumerate(raw_data):
+                            self.data.data[idx].x_raw = src
+                            self.data.data[idx].y_raw = tgt
+                    else:
+                        log.warning(f'Raw={len(raw_data)}, but bin={len(self.data)} segs '
+                            f'Try setting prep.truncate=true to truncate instead of skip of recs.')
+                        log.warning("This disables BLEU logging on validation")
+                log.info(f"saving in-memory to {in_mem_file}")
+                with in_mem_file.open('wb') as wrt:
+                    pickle.dump(self.data, wrt)
         log.info(f'Batch Size = {batch_size} toks, sort_by={sort_by}')
 
     def read_all(self):
@@ -477,7 +627,10 @@ class BatchIterable(Iterable[Batch]):
                         field=self.field)
 
     def _make_eq_len_batch_ids(self):
-        rows = self.data.get_all(cols=['id', 'x_len', 'y_len'], sort='y_len desc, random() desc')
+        sort = 'y_len desc'
+        if isinstance(self.data, SqliteFile):  # only sqlite supports multiple sorts as of now
+            sort += ', random() desc'
+        rows = self.data.get_all(cols=['id', 'x_len', 'y_len'], sort=sort)
         stats = [(r['id'], r['x_len'], r['y_len']) for r in rows]
         batches = []
         batch = []
@@ -512,7 +665,7 @@ class BatchIterable(Iterable[Batch]):
 
         for batch_ids in batches:
             batch = list(self.data.get_all_ids(batch_ids))
-            batch = [Example(r['x'], r.get('y')) for r in batch]
+            # batch = [Example(r['x'], r.get('y')) for r in batch]
             yield Batch(batch, sort_dec=self.sort_desc, batch_first=self.batch_first,
                         field=self.field)
 

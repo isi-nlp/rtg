@@ -3,5 +3,7 @@
 :toc:
 
 
+. link:conf.yml.adoc[RTG `conf.yml` file -- must read]
 . link:clitools.adoc[Command Line Tools and Usage]
-. link:conf.yml.adoc[RTG `conf.yml` file]
+. link:environ.adoc[RTG Environment variables]
+. link:develop.adoc[RTG Development]

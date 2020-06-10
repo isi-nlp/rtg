@@ -5,7 +5,7 @@ from rtg.tool.log import Logger
 debug_mode = os.environ.get('NMT_DEBUG', False)
 log = Logger(console_level=logging.DEBUG if debug_mode else logging.INFO)
 
-__version__ = '0.3.1'
+__version__ = '0.4.0'
 
 import torch
 import multiprocessing as mp

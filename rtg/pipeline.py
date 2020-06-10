@@ -59,6 +59,7 @@ class Pipeline:
     def moses_detokenize(self, inp: Path, out: Path, col=0, lang='en', post_op=None):
         log.info(f"detok : {inp} --> {out}")
         tok_lines = IO.get_lines(inp, col=col, line_mapper=lambda x: x.split())
+        # TODO: replace with sacremoses
         with MosesDetokenizer(lang=lang) as detok:
             detok_lines = (detok(tok_line) for tok_line in tok_lines)
             if post_op:
