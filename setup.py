@@ -34,7 +34,7 @@ setuptools.setup(
     install_requires=[
         'ruamel.yaml >= 0.16.10',
         'sacrebleu == 1.4.6',
-        'scipy == 1.2.1',
+        'scipy >= 1.4',
         'sentencepiece == 0.1.85',
         'tensorboard == 2.2.1',
         'tqdm == 4.45.0',

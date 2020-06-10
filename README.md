@@ -28,7 +28,7 @@ git clone https://github.com/isi-nlp/rtg.git
 cd rtg                # go to the code
 # use https://github.com/isi-nlp/rtg-xt.git if you dont have access to rtg.git
 
-conda env create -n rtg python=3.7.   # adds a conda env named rtg
+conda create -n rtg python=3.7   # adds a conda env named rtg
 conda activate rtg  # activate it
 
 # install this as a local editable pip package
@@ -41,16 +41,29 @@ export PYTHONPATH=$PWD
 
 # Usage
 
-Refer to `scripts/rtg-pipeline.sh` bash script and `examples/transformer.base.yml` file
+Refer to `scripts/rtg-pipeline.sh` bash script and `examples/transformer.base.yml` file for specific examples.
+
+The pipeline takes source (`.src`) and target (`.tgt`) files. The sources are in one language and the targets in another. At a minimum, supply a training source, training target, validation source, and validation target. It is best to use `.tok` files for training. (`.tok` means tokenized.)
+
+Example of training and running a mdoel:
 
 ```bash
-# use examples/transformer.base.yml config to setup an experiment at 001-tfm dir (TODO: edit paths in yml file)
 
-# if you have rtg module in $PYTHONPATH (manula export or via pip install)
-$ python -m rtg.pipeline 001-tfm examples/transformer.base.yml
+# disable gpu use (force cpu)
+export CUDA_VISIBLE_DEVICES=
+# call as python module
+python -m rtg.pipeline experiments/sample-exp/
+# OR if you've installed it using pip 
+rtg-pipe experiments/sample-exp/
+# OR you can call a shell scrupt
+# edit rtg-pipeline.sh if you don't want to force gpu
+scripts/rtg-pipeline.sh -d experiments/sample-exp/ -c experiments/sample-exp/conf.yml
+# Note: use examples/transformer.base.yml config to setup transformer base
 
-# or if your have `rtg-pipeline` command in $PATH (via pip install) 
-rtg-pipe 001-tfm examples/transformer.base.yml
+# Then to use the model to translate something:
+# (VERY poor translation due to small training data)
+echo "Chacun voit midi à sa porte." | python -m rtg.decode experiments/sample-exp/
+
 ```
 
 The `001-tfm` directory that hosts an experiment looks like this:
