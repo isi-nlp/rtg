@@ -1,4 +1,4 @@
-# Reader-Translator-Generator (RTG) CLI tools
+== Reader-Translator-Generator (RTG) CLI tools
 
 All the below CLI tools give you finer control to go step by step if you want to test only a part of the pipeline.
 For end usage of the RTG toolkit, the workflow should be as simple as:
@@ -7,7 +7,7 @@ For end usage of the RTG toolkit, the workflow should be as simple as:
 . Run the pipeline using `python -m rtg.pipeline`
 . Occasionally, to decode newer tests files that werent listed in conf.yml, use `pythin-m rtg.decode`
 
-### Summary:
+=== Summary:
 The following command line tools are added when `rtg` is installed using pip.
 
 .Table Summary of CLI tools
@@ -24,7 +24,7 @@ The following command line tools are added when `rtg` is installed using pip.
 |===
 
 
-## `rtg-pipe`:  Pipeline
+=== `rtg-pipe`:  Pipeline
 This is the  CLI interface that most likely use.
 
 ----
@@ -44,7 +44,7 @@ optional arguments:
 ----
 
 
-## `rtg-prep`:  Prepare an experiment
+=== `rtg-prep`:  Prepare an experiment
 ----
     $ python -m rtg.prep -h
     usage: rtg.prep [-h] work_dir [conf_file]
@@ -59,7 +59,7 @@ optional arguments:
       -h, --help  show this help message and exit
 ----
 
-## `rtg-train` : Train a Model
+=== `rtg-train` : Train a Model
 ----
     $ python -m rtg.train -h
     usage: rtg.train [-h] [-rs SEED] [-st STEPS] [-cp CHECK_POINT]
@@ -97,7 +97,7 @@ optional arguments:
                             (default: False)
 ----
 
-## `rtg-decode-pro` : Pro Decoder
+=== `rtg-decode-pro` : Pro Decoder
 
 Note: for simple use with defauls from conf.yml, use  `rtg-decode` or `python -m rtg.decode`.
 ----
@@ -156,7 +156,7 @@ Note: for simple use with defauls from conf.yml, use  `rtg-decode` or `python -m
                             None)
 ----
 
-## `rtg-syscomb` System Combiner
+=== `rtg-syscomb` System Combiner
 
 ----
     python -m rtg.syscomb -h
@@ -175,9 +175,9 @@ Note: for simple use with defauls from conf.yml, use  `rtg-decode` or `python -m
                             Training steps (default: 2000)
 ----
 
-## Other tools:
+== Other tools:
 
-### `rtg-export` Export
+=== `rtg-export` Export
 
 Export an experiment:
 
@@ -208,7 +208,7 @@ Export an experiment:
       --no-vocab            See --vocab (default: False)
 ----
 
-### Perplexity
+=== Perplexity
 
 Compute perplexity of a language model on a test set.
 
@@ -235,7 +235,7 @@ Compute perplexity of a language model on a test set.
                         (default: 1)
 ----
 
-### Line Bleu (aka BLEU+1)
+=== Line Bleu (aka BLEU+1)
 Computes Line BLEU
 
 ----
@@ -262,7 +262,7 @@ Computes Line BLEU
       -v, --verbose         verbose mode (default: False)
 ----
 
-### OOV
+=== OOV
 Compute Out-of-Vocabulary(OOV) rate
 
 ----
@@ -278,7 +278,7 @@ Compute Out-of-Vocabulary(OOV) rate
                             name='<stdin>' mode='r' encoding='UTF-8'>])
 ----
 
-## Class imbalance, Sequence lengths
+=== Class imbalance, Sequence lengths
 Computes class Imbalance on training data and reports mean and median sequence lengths
 Get the stats reported in link:https://arxiv.org/abs/2004.02334[Gowda and May 's Neural Machine Translation with Imbalanced Classes]
 ----

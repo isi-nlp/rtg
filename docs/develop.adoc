@@ -1,6 +1,6 @@
-# Development:
+== Development Environment:
 
-## Run Tests
+=== Run Tests
 
 Test cases are done using the link:https://docs.pytest.org/en/latest/[`pytest`] framework.
 It can be installed using `pip install pytest`
@@ -19,7 +19,7 @@ IDE Setup:
 * link:https://www.jetbrains.com/help/pycharm/pytest.html[Configure Pytest as test framework in PyCharm]
 
 
-## Adding a new model
+=== Adding a new model
 
 1. Go to link:../rtg/module/[`rtg.module`] and create a new `.py` file
 2. Create a class say `MyModel` that extends either link:../rtg/module/__init__.py[`NMTModel` or `Model`]

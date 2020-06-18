@@ -1,0 +1,117 @@
+== Overview
+
+https://isi-nlp.github.io/rtg[Reader-Translator-Generator (RTG)] is a Neural Machine Translation toolkit based on pytorch.
+
+=== Features
+* Reproducible experiments: one `conf.yml`  that has everything -- data paths, params, and
+   hyper params -- required to reproduce experiments.
+*  Pre-processing options: https://github.com/google/sentencepiece[sentencepiece] or https://github.com/isi-nlp/nlcodec[nlcodec] (or add your own)
+**  word/char/bpe etc types
+** shared vocabulary, separate vocabulary
+*** one-way, two-way, three-way tied embeddings
+* https://arxiv.org/abs/1706.03762[Transformer model from "Attention is all you need"]
+** Automatically detects and parallelizes across multi GPUs. (Note: All GPUs must be in the same node, though!)
+*** Lot of varieties of transformer: width varying, skip transformer etc configurable from YAML files
+*** https://papers.nips.cc/paper/5346-sequence-to-sequence-learning-with-neural-networks.pdf[RNN based Encoder-Decoder] with https://nlp.stanford.edu/pubs/emnlp15_attn.pdf[Attention]. (No longer use it, but it's there for experimentation)
+* Language Modeling: RNN, Transformer
+* And more ..
+** Easy and interpretable code (for those who read code as much as papers)
+** Object Orientated Design. (Not too many levels of functions and function factories like Tensor2Tensor)
+** Experiments and reproducibility are main focus. To control an experiment you edit an YAML file that is inside the experiment directory.
+** Where ever possible, prefer https://www.wikiwand.com/en/Convention_over_configuration[convention-over-configuation]. Have a look at this experiment directory for the `examples/transformer.test.yml`
+
+=== Setup
+Add the root of this repo to `PYTHONPATH` or install it via `pip --editable`
+
+There are two versions of code:
+
+* https://github.com/isi-nlp/rtg
+* https://github.com/isi-nlp/rtg-xt
+
+`rtg-xt` has same code as `rtg` and meant to be used by anyone, so you should definitely get started with it.
+`rtg` is internal with some unfinished/work-in progress ideas (maybe unpublished), with issues and pull-requests by members of USC ISI team.
+We sync both code bases often.
+If you like to collaborate with us and/or to get access to `rtg`, email https://isi.edu/~tg[TG] or https://isi.edu/~jonmay[JonMay].
+
+
+[Source,bash]
+----
+git clone https://github.com/isi-nlp/rtg.git
+cd rtg                # go to the code
+# use https://github.com/isi-nlp/rtg-xt.git if you dont have access to rtg.git
+
+conda create -n rtg python=3.7   # adds a conda env named rtg
+conda activate rtg  # activate it
+
+# install this as a local editable pip package
+pip install --editable .
+# The requirements are in setup.py; you may customize it if you wish
+
+# or add it to PYTHONPATH
+export PYTHONPATH=$PWD
+----
+
+=== Usage
+
+Refer to `scripts/rtg-pipeline.sh` bash script and `examples/transformer.base.yml` file for specific examples.
+
+The pipeline takes source (`.src`) and target (`.tgt`) files. The sources are in one language and the targets in another. At a minimum, supply a training source, training target, validation source, and validation target. It is best to use `.tok` files for training. (`.tok` means tokenized.)
+
+Example of training and running a mdoel:
+
+[source, bash]
+----
+# disable gpu use (force cpu)
+export CUDA_VISIBLE_DEVICES=
+# call as python module
+python -m rtg.pipeline experiments/sample-exp/
+
+# or use CLI tool installed by pip install
+rtg-pipe experiments/sample-exp/
+
+# or use shell script, edit it to your needs
+scripts/rtg-pipeline.sh -d experiments/sample-exp/ -c experiments/sample-exp/conf.yml
+
+# Then to use the model to translate something:
+# (VERY poor translation due to small training data)
+echo "Chacun voit midi à sa porte." | python -m rtg.decode experiments/sample-exp/
+----
+
+The `001-tfm` directory that hosts an experiment looks like this:
+----
+001-tfm
+├── _PREPARED    <-- Flag file indicating experiment is prepared
+├── _TRAINED     <-- Flag file indicating experiment is trained
+├── conf.yml     <-- Where all the params and hyper params are! You should look into this
+├── data
+│   ├── samples.tsv.gz          <-- samples to log after each check point during training
+│   ├── sentpiece.shared.model  <-- as the name says, sentence piece model, shared
+│   ├── sentpiece.shared.vocab  <-- as the name says
+│   ├── train.db                <-- all the prepared trainig data in a sqlite db
+│   └── valid.tsv.gz            <-- and the validation data
+├── githead       <-- whats was the git HEAD hash this experiment was started?
+├── job.sh.bak    <-- job script used to submit this to grid. Just in case
+├── models        <-- All checkpoints go inside this
+│   ├── model_400_5.265583_4.977106.pkl
+│   ├── model_800_4.478784_4.606745.pkl
+│   ├── ...
+│   └── scores.tsv <-- train and validation losses. incase you dont want to see tensorboard
+├── rtg.log   <-- the python logs are redirected here
+├── rtg.zip   <-- the source code used to run. just `export PYTHONPATH=rtg.zip` to
+├── scripts -> /Users/tg/work/me/rtg/scripts  <-- link to some perl scripts for detok+BLEU
+├── tensorboard    <-- Tensorboard stuff for visualizations
+│   ├── events.out.tfevents.1552850552.hackb0x2
+│   └── ....
+└── test_step2000_beam4_ens5   <-- Tests after the end of training, BLEU scores
+    ├── valid.ref -> /Users/tg/work/me/rtg/data/valid.ref
+    ├── valid.src -> /Users/tg/work/me/rtg/data/valid.src
+    ├── valid.out.tsv
+    ├── valid.out.tsv.detok.tc.bleu
+    └── valid.out.tsv.detok.lc.bleu
+----
+
+=== Credits / Thanks
+-  OpenNMT and the Harvard NLP team for http://nlp.seas.harvard.edu/2018/04/03/attention.html[Annotated transformer], I learned a lot from their work
+-  https://github.com/pytorch/fairseq[Fairseq] has taught and influenced some
+-  https://www.isi.edu/research_groups/nlg/people[My team at USC ISI] for everything else
+

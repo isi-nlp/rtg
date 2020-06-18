@@ -1,4 +1,4 @@
-# RTG *`conf.yml`* File
+== RTG *`conf.yml`* File
 
 The key component of RTG toolkit is a `conf.yml`. As the name says - it is a YAML file containing configuration
 for an experiment.
@@ -17,7 +17,7 @@ such as BPE/char/words, and vocabulary size.
 ** Suite - a set of source and reference file pairs, for computing BLEU scores
 
 
-## Minimal Yet Complete Config File:
+=== Minimal Yet Complete Config File:
 
 .conf.yml
 [source,yaml]
@@ -84,7 +84,7 @@ updated_at: '2019-03-09T21:15:33.707183'  # automatically updated by system
 seed: 12345  # fix the manual seed of pytorch + cuda + numpy + python_stdlib RNGs. Remove/comment this to disable
 ----
 
-## Optimizer
+=== Optimizer
 
 By default, we use the `ADAM` optimizer from
 link:https://arxiv.org/abs/1412.6980[Adam: A Method for Stochastic Optimization].
@@ -112,7 +112,7 @@ optim:
     weight_decay: 1e-3    # Use ADAMW if weight decay != 0
 ----
 
-## Fine Tuning
+=== Fine Tuning
 
 We define fine tuning as the act of  changing the training data at certain time step in the training process.
 To enable this feature, we need to do following.
@@ -142,7 +142,7 @@ trainer:
 This makes the trainer use `train_{src,tgt}` for 0 - 200k steps,  followed by `finetune_{src,tgt}`
 for 200k-300k steps. Note that `finetune_steps > steps` .
 
-## Parent-Child : using pretrained model as parent
+=== Parent-Child : using pretrained model as parent
 To initialize from another compatible model as parent, add `parent:` specification to conf.yml as shown below:
 [source,yaml]
 ----
@@ -161,7 +161,7 @@ parent:
 # ... rest of the config such as prep, trainer etc
 ----
 
-## Freezing some parts of model
+=== Freezing some parts of model
 Frozen weights associated to parts of network means the weights remain unmodified during the course of the training.
 It is a useful feature when the model weights are initialized from a well trained parent model.
 WKT Optimizer is the one that modifies model's parameters according to their gradients.
@@ -188,7 +188,7 @@ TODO: add support for `exclude` logic ie. include everything else except the men
 This feature is supported only in `AbstractTransformerNMT` and all of its children.
 If you are adding a new `NMTModel` or customising this feature, please override `get_trainable_parameters(self, include, exclude)` function to support this feature.
 
-## Sharing the data from other experiment
+=== Sharing the data from other experiment
 
 In the new experiment config, add `same_data` to reference parent experiment from which the data
 should be reused for training and validation. Note that this uses the same vocabulary as parent.
@@ -203,7 +203,7 @@ prep:
 
 ----
 
-## Vocabulary Preprocessing using Sentencepiece or NLCodec
+== Vocabulary Preprocessing using Sentencepiece or NLCodec
 
 link:https://github.com/google/sentencepiece[Google's sentencepiece] is an awesome lib for
 preprocessing the text datasets.
@@ -221,7 +221,7 @@ prep:
   codec_lib: nlcodec  # default is sentpiece
 ----
 
-### Vocabulary Types
+=== Vocabulary Types
 Both `sentpiece` or `nlcodec` support `pieces=` `bpe`, `char`, `word`.
 
 [source, yaml]
@@ -233,7 +233,7 @@ prep:
 ----
 As of now, only `sentpiece` supports `pieces=unigram`.
 
-### Character coverage
+=== Character coverage
 
 For `bpe` and `char` vocabulary types, a useful trick is to exclude low frequency character and mark them as `UNK's`.
 Usually expressed as percentage of character coverage in training corpus.
