@@ -457,11 +457,12 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <li><a href="#_rtg_conf_yml_file">2. RTG <strong><code>conf.yml</code></strong> File</a>
 <ul class="sectlevel2">
 <li><a href="#_minimal_yet_complete_config_file">2.1. Minimal Yet Complete Config File:</a></li>
-<li><a href="#_optimizer">2.2. Optimizer</a></li>
-<li><a href="#_fine_tuning">2.3. Fine Tuning</a></li>
-<li><a href="#_parent_child_using_pretrained_model_as_parent">2.4. Parent-Child : using pretrained model as parent</a></li>
-<li><a href="#_freezing_some_parts_of_model">2.5. Freezing some parts of model</a></li>
-<li><a href="#_sharing_the_data_from_other_experiment">2.6. Sharing the data from other experiment</a></li>
+<li><a href="#_early_stop">2.2. Early stop</a></li>
+<li><a href="#_optimizer">2.3. Optimizer</a></li>
+<li><a href="#_fine_tuning">2.4. Fine Tuning</a></li>
+<li><a href="#_parent_child_using_pretrained_model_as_parent">2.5. Parent-Child : using pretrained model as parent</a></li>
+<li><a href="#_freezing_some_parts_of_model">2.6. Freezing some parts of model</a></li>
+<li><a href="#_sharing_the_data_from_other_experiment">2.7. Sharing the data from other experiment</a></li>
 </ul>
 </li>
 <li><a href="#_vocabulary_preprocessing_using_sentencepiece_or_nlcodec">3. Vocabulary Preprocessing using Sentencepiece or NLCodec</a>
@@ -811,17 +812,40 @@ such as BPE/char/words, and vocabulary size.</p>
 <span style="color:#606">trainer</span>:
   <span style="color:#606">init_args</span>:
     <span style="color:#606">chunk_size</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">10</span></span>   <span style="color:#777"># generation in chunks of time steps to reduce memory consumption</span>
+    <span style="color:#606">grad_accum</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">1</span></span>     <span style="color:#777"># How many batches to accumulate gradients</span>
   <span style="color:#606">batch_size</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">4200</span></span>   <span style="color:#777"># not exceeding these many tokens (including paddings)</span>
   <span style="color:#606">check_point</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">1000</span></span>  <span style="color:#777"># how often to checkpoint?</span>
   <span style="color:#606">keep_models</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">10</span></span>   <span style="color:#777"># how many checkpoints to keep on disk (small enough to save disk, large enough for checkpt averaging</span>
-  <span style="color:#606">steps</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">200000</span></span>   <span style="color:#777"># how many steps to train</span>
+  <span style="color:#606">steps</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">200000</span></span>      <span style="color:#777"># how many steps to train; if early_stop is enabled, this is max steps</span>
+  <span style="color:#606">keep_in_mem</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">True</span></span>   <span style="color:#777"># keep training data in memory</span>
 <span style="color:#606">updated_at</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">'2019-03-09T21:15:33.707183'</span></span>  <span style="color:#777"># automatically updated by system</span>
 <span style="color:#606">seed</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">12345</span></span>  <span style="color:#777"># fix the manual seed of pytorch + cuda + numpy + python_stdlib RNGs. Remove/comment this to disable</span></code></pre>
 </div>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_optimizer">2.2. Optimizer</h3>
+<h3 id="_early_stop">2.2. Early stop</h3>
+<div class="paragraph">
+<p>Add the below piece of config to <code>trainer</code> to enable early stop on convergence.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="yaml"><span style="color:#606">trainer</span>:
+  <span style="color:#F00;background-color:#FAA">....           # other args</span>
+  <span style="color:#606">steps</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">100000</span></span>      <span style="color:#777"># steps is treated as max steps</span>
+  <span style="color:#606">checkpoint</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">1000</span></span>   <span style="color:#777"># validate every these many steps</span>
+  <span style="color:#606">early_stop</span>:       <span style="color:#777"># remove this block to disable</span>
+    <span style="color:#606">enabled</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">true</span></span>   <span style="color:#777"># or, alternatively flip this to disable;</span>
+    <span style="color:#606">by</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">loss</span></span>        <span style="color:#777"># stop by validation loss (default); TODO: add BLEU</span>
+    <span style="color:#606">patience</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">5</span></span>     <span style="color:#777"># how many validations to wait, to be sure of stopping; each validation is per check_point steps</span>
+    <span style="color:#606">min_steps</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">8000</span></span>  <span style="color:#777"># minimum steps to wait before test for early stop;</span>
+    <span style="color:#606">signi_round</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">3</span></span>   <span style="color:#777"># significant in 'by' value, used as round(value, signi_round).</span>
+                     <span style="color:#777"># e.g. round(1/3, 3) = 0.333; round(100/3, 0) = 33; round(100/3, -1) = 30.0</span></code></pre>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_optimizer">2.3. Optimizer</h3>
 <div class="paragraph">
 <p>By default, we use the <code>ADAM</code> optimizer from
 <a href="https://arxiv.org/abs/1412.6980">Adam: A Method for Stochastic Optimization</a>.
@@ -836,26 +860,26 @@ since weight decay is different in optimizers with variable step sizes.</p>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre>optim:
-  name: ADAMW
-  args:
-    criterion: smooth_kld_and_triplet_loss
-    betas:
-      - 0.9
-      - 0.98
-    eps: 1.0e-08
-    label_smoothing: 0.1
-    lr: 0.0005
-    warmup_steps: 4000
-    constant: 2           # Does nothing if inv_sqrt==True
-    inv_sqrt: true        # If truem lr should be under 0.005
-    amsgrad: true
-    weight_decay: 1e-3    # Use ADAMW if weight decay != 0</pre>
+<pre class="CodeRay highlight"><code data-lang="yaml"><span style="color:#606">optim</span>:
+  <span style="color:#606">name</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">ADAMW</span></span>
+  <span style="color:#606">args</span>:
+    <span style="color:#606">criterion</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">smooth_kld_and_triplet_loss</span></span>
+    <span style="color:#606">betas</span>:
+      - <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">0.9</span></span>
+      - <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">0.98</span></span>
+    <span style="color:#606">eps</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">1.0e-08</span></span>
+    <span style="color:#606">label_smoothing</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">0.1</span></span>
+    <span style="color:#606">lr</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">0.0005</span></span>
+    <span style="color:#606">warmup_steps</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">4000</span></span>
+    <span style="color:#606">constant</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">2</span></span>           <span style="color:#777"># Does nothing if inv_sqrt==True</span>
+    <span style="color:#606">inv_sqrt</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">true</span></span>        <span style="color:#777"># If truem lr should be under 0.005</span>
+    <span style="color:#606">amsgrad</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">true</span></span>
+    <span style="color:#606">weight_decay</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">1e-3</span></span>    <span style="color:#777"># Use ADAMW if weight decay != 0</span></code></pre>
 </div>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_fine_tuning">2.3. Fine Tuning</h3>
+<h3 id="_fine_tuning">2.4. Fine Tuning</h3>
 <div class="paragraph">
 <p>We define fine tuning as the act of  changing the training data at certain time step in the training process.
 To enable this feature, we need to do following.</p>
@@ -893,7 +917,7 @@ for 200k-300k steps. Note that <code>finetune_steps &gt; steps</code> .</p>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_parent_child_using_pretrained_model_as_parent">2.4. Parent-Child : using pretrained model as parent</h3>
+<h3 id="_parent_child_using_pretrained_model_as_parent">2.5. Parent-Child : using pretrained model as parent</h3>
 <div class="paragraph">
 <p>To initialize from another compatible model as parent, add <code>parent:</code> specification to conf.yml as shown below:</p>
 </div>
@@ -916,7 +940,7 @@ for 200k-300k steps. Note that <code>finetune_steps &gt; steps</code> .</p>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_freezing_some_parts_of_model">2.5. Freezing some parts of model</h3>
+<h3 id="_freezing_some_parts_of_model">2.6. Freezing some parts of model</h3>
 <div class="paragraph">
 <p>Frozen weights associated to parts of network means the weights remain unmodified during the course of the training.
 It is a useful feature when the model weights are initialized from a well trained parent model.
@@ -951,7 +975,7 @@ If you are adding a new <code>NMTModel</code> or customising this feature, pleas
 </div>
 </div>
 <div class="sect2">
-<h3 id="_sharing_the_data_from_other_experiment">2.6. Sharing the data from other experiment</h3>
+<h3 id="_sharing_the_data_from_other_experiment">2.7. Sharing the data from other experiment</h3>
 <div class="paragraph">
 <p>In the new experiment config, add <code>same_data</code> to reference parent experiment from which the data
 should be reused for training and validation. Note that this uses the same vocabulary as parent.
@@ -1584,7 +1608,7 @@ trainers and generators.</p>
 </div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2020-06-17 20:38:50 -0700
+Last updated 2020-06-17 20:45:41 -0700
 </div>
 </div>
 </body>
