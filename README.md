@@ -26,7 +26,7 @@ Add the root of this repo to `PYTHONPATH` or install it via `pip --editable`
 ```bash
 git clone https://github.com/isi-nlp/rtg.git 
 cd rtg                # go to the code
-# use rtg-xt.git if you dont have access to rtg.git
+# use https://github.com/isi-nlp/rtg-xt.git if you dont have access to rtg.git
 
 conda create -n rtg python=3.7   # adds a conda env named rtg
 conda activate rtg  # activate it
@@ -48,19 +48,22 @@ The pipeline takes source (`.src`) and target (`.tgt`) files. The sources are in
 Example of training and running a mdoel:
 
 ```bash
+
 # disable gpu use (force cpu)
 export CUDA_VISIBLE_DEVICES=
 # call as python module
 python -m rtg.pipeline experiments/sample-exp/
-# OR if you've added rtg to your $PATH
-rtg pipeline experiments/sample-exp/
+# OR if you've installed it using pip 
+rtg-pipe experiments/sample-exp/
 # OR you can call a shell scrupt
 # edit rtg-pipeline.sh if you don't want to force gpu
 scripts/rtg-pipeline.sh -d experiments/sample-exp/ -c experiments/sample-exp/conf.yml
+# Note: use examples/transformer.base.yml config to setup transformer base
 
 # Then to use the model to translate something:
 # (VERY poor translation due to small training data)
 echo "Chacun voit midi à sa porte." | python -m rtg.decode experiments/sample-exp/
+
 ```
 
 The `001-tfm` directory that hosts an experiment looks like this:
@@ -99,7 +102,8 @@ The `001-tfm` directory that hosts an experiment looks like this:
 
 # Docs
 
-Refer to [docs](./docs) directory
+Refer to [docs](./docs) directory, and especially documentation on [conf.yml](./docs/conf.yml.adoc) 
+where the crucial information is.
 
 
 ---------

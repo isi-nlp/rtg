@@ -10,7 +10,7 @@ from torch import nn
 import torch.nn.functional as F
 #import rtg.dataprep as prep
 from rtg.data.codec import Field
-from rtg.data.dataset import SqliteFile, LoopingIterable, TSVData, Example
+from rtg.data.dataset import SqliteFile, LoopingIterable, TSVData, IdExample
 from rtg import device
 from rtg.module import Model
 from rtg.module.trainer import SteppedTrainer
@@ -75,7 +75,7 @@ class CBOW(Model):
 
 @dataclass
 class CBOWBatchReader:
-    data: Iterable[Example]
+    data: Iterable[IdExample]
     batch_size: int
     ctx_size: int
     side: str
