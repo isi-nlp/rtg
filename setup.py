@@ -13,7 +13,7 @@ for line in Path('rtg/__init__.py').read_text().splitlines():
         __version__ = vpat.match(line)[1]
 
 print(f"Going to install rtg {__version__}")
-assert __version__, 'Coulnt find __version__ in __init__.py'
+assert __version__, 'Could not find __version__ in __init__.py'
 
 setuptools.setup(
     name='rtg',
@@ -22,7 +22,7 @@ setuptools.setup(
     author_email="tg@isi.edu",
     description="Reader Translator Generator(RTG), a Neural Machine Translator(NMT) toolkit based on Pytorch",
     long_description=long_description,
-    long_description_content_type="text/plain",
+    long_description_content_type='text/markdown',
     url="https://isi-nlp.github.io/rtg/",
     packages=setuptools.find_packages(),
     classifiers=[
@@ -32,6 +32,7 @@ setuptools.setup(
         'Intended Audience :: Science/Research',
         'Topic :: Scientific/Engineering :: Artificial Intelligence',
     ],
+    platforms=['any'],
     install_requires=[
         'ruamel.yaml >= 0.16.10',
         'sacrebleu >= 1.4.6',
