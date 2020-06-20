@@ -10,8 +10,12 @@ USC Information Sciences Institute
 
 
 include::intro.adoc[]
+
 include::conf.yml.adoc[]
+
 include::clitools.adoc[]
+
 include::environ.adoc[]
+
 include::develop.adoc[]
 
