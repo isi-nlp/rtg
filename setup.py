@@ -24,7 +24,7 @@ setuptools.setup(
     long_description=long_description,
     long_description_content_type="text/plain",
     url="https://isi-nlp.github.io/rtg/",
-    packages=['rtg'],
+    packages=setuptools.find_packages(),
     classifiers=[
         "Programming Language :: Python :: 3.7",
         "License :: OSI Approved :: Apache License",

@@ -607,7 +607,8 @@ hyper params&#8201;&#8212;&#8201;required to reproduce experiments.</p>
 </ul>
 </div>
 <div class="paragraph">
-<p><code>rtg-xt</code> has same code as <code>rtg</code> and meant to be used by anyone, so you should definitely get started with it.
+<p>Both <code>rtg-xt</code> and <code>rtg</code> has same code on master branch.
+<code>rtg-xt</code> has stable code base and meant to be used by anyone, so you should definitely get started with it.
 <code>rtg</code> is internal with some unfinished/work-in progress ideas (maybe unpublished), with issues and pull-requests by members of USC ISI team.
 We sync both code bases often.
 If you like to collaborate with us and/or to get access to <code>rtg</code>, email <a href="https://isi.edu/~tg">TG</a> or <a href="https://isi.edu/~jonmay">JonMay</a>.</p>
@@ -643,15 +644,15 @@ export PYTHONPATH=$PWD</pre>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="bash"># disable gpu use (force cpu)
-export CUDA_VISIBLE_DEVICES=
-# call as python module
+<pre class="CodeRay highlight"><code data-lang="bash"># if you wish to disable gpu, unset
+# export CUDA_VISIBLE_DEVICES=
+
 python -m rtg.pipeline experiments/sample-exp/
 
 # or use CLI tool installed by pip install
 rtg-pipe experiments/sample-exp/
 
-# or use shell script, edit it to your needs
+# or use shell script, edit it to your needs, to submit to Slurm/SGE
 scripts/rtg-pipeline.sh -d experiments/sample-exp/ -c experiments/sample-exp/conf.yml
 
 # Then to use the model to translate something:

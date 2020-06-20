@@ -28,7 +28,8 @@ There are two versions of code:
 * https://github.com/isi-nlp/rtg
 * https://github.com/isi-nlp/rtg-xt
 
-`rtg-xt` has same code as `rtg` and meant to be used by anyone, so you should definitely get started with it.
+Both `rtg-xt` and `rtg` has same code on master branch.
+`rtg-xt` has stable code base and meant to be used by anyone, so you should definitely get started with it.
 `rtg` is internal with some unfinished/work-in progress ideas (maybe unpublished), with issues and pull-requests by members of USC ISI team.
 We sync both code bases often.
 If you like to collaborate with us and/or to get access to `rtg`, email https://isi.edu/~tg[TG] or https://isi.edu/~jonmay[JonMay].
@@ -51,6 +52,7 @@ pip install --editable .
 export PYTHONPATH=$PWD
 ----
 
+
 === Usage
 
 Refer to `scripts/rtg-pipeline.sh` bash script and `examples/transformer.base.yml` file for specific examples.
@@ -61,15 +63,15 @@ Example of training and running a mdoel:
 
 [source, bash]
 ----
-# disable gpu use (force cpu)
-export CUDA_VISIBLE_DEVICES=
-# call as python module
+# if you wish to disable gpu, unset
+# export CUDA_VISIBLE_DEVICES=
+
 python -m rtg.pipeline experiments/sample-exp/
 
 # or use CLI tool installed by pip install
 rtg-pipe experiments/sample-exp/
 
-# or use shell script, edit it to your needs
+# or use shell script, edit it to your needs, to submit to Slurm/SGE
 scripts/rtg-pipeline.sh -d experiments/sample-exp/ -c experiments/sample-exp/conf.yml
 
 # Then to use the model to translate something:

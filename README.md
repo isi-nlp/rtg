@@ -1,6 +1,7 @@
 # Reader-Translator-Generator (RTG)  
 
 Reader-Translator-Generator (RTG) is a Neural Machine Translation toolkit based on pytorch. 
+Refer to https://isi-nlp.github.io/rtg/ for the docs.   
 
 ## Features
 - Reproducible experiments: one `conf.yml`  that has everything -- data paths, params, and
@@ -33,8 +34,7 @@ conda activate rtg  # activate it
 
 # install this as a local editable pip package
 pip install --editable .   
-# The requirements are in setup.py
-
+# All requirements are in setup.py
 ```
 
 # Usage
@@ -96,15 +96,9 @@ The `001-tfm` directory that hosts an experiment looks like this:
 
 ```
 
-# Docs
-
-Refer to [docs](./docs) directory, and especially documentation on [conf.yml](./docs/conf.yml.adoc) 
-where the crucial information is.
-
-
 ---------
 ### Authors:
-[See Here](https://github.com/thammegowda/rtg/graphs/contributors)
+[See Here](https://github.com/isi-nlp/rtg-xt/graphs/contributors)
 
 
 ### Credits / Thanks
