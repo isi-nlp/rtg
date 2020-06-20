@@ -5,7 +5,7 @@
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="generator" content="Asciidoctor 2.0.10">
-<meta name="author" content="USC Information Sciences Institute">
+<meta name="author" content="USC Information Sciences Institute Natural Language Group">
 <title>Reader-Translator-Generator (RTG)</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Open+Sans:300,300italic,400,400italic,600,600italic%7CNoto+Serif:400,400italic,700,700italic%7CDroid+Sans+Mono:400,700">
 <style>
@@ -441,7 +441,7 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <div id="header">
 <h1>Reader-Translator-Generator (RTG)</h1>
 <div class="details">
-<span id="author" class="author">USC Information Sciences Institute</span><br>
+<span id="author" class="author">USC Information Sciences Institute Natural Language Group</span><br>
 </div>
 <div id="toc" class="toc">
 <div id="toctitle">Table of Contents</div>
@@ -454,7 +454,7 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <li><a href="#_credits_thanks">1.4. Credits / Thanks</a></li>
 </ul>
 </li>
-<li><a href="#_rtg_conf_yml_file">2. RTG <strong><code>conf.yml</code></strong> File</a>
+<li><a href="#conf">2. RTG <strong><code>conf.yml</code></strong> File</a>
 <ul class="sectlevel2">
 <li><a href="#_minimal_yet_complete_config_file">2.1. Minimal Yet Complete Config File:</a></li>
 <li><a href="#_early_stop">2.2. Early stop</a></li>
@@ -471,32 +471,38 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <li><a href="#_character_coverage">3.2. Character coverage</a></li>
 </ul>
 </li>
-<li><a href="#_reader_translator_generator_rtg_cli_tools">4. Reader-Translator-Generator (RTG) CLI tools</a>
+<li><a href="#rtg-cli">4. RTG CLI</a>
 <ul class="sectlevel2">
 <li><a href="#_summary">4.1. Summary:</a></li>
 <li><a href="#_rtg_pipe_pipeline">4.2. <code>rtg-pipe</code>:  Pipeline</a></li>
 <li><a href="#_rtg_prep_prepare_an_experiment">4.3. <code>rtg-prep</code>:  Prepare an experiment</a></li>
 <li><a href="#_rtg_train_train_a_model">4.4. <code>rtg-train</code> : Train a Model</a></li>
-<li><a href="#_rtg_decode_pro_pro_decoder">4.5. <code>rtg-decode-pro</code> : Pro Decoder</a></li>
-<li><a href="#_rtg_syscomb_system_combiner">4.6. <code>rtg-syscomb</code> System Combiner</a></li>
+<li><a href="#_rtg_decode_decoder">4.5. <code>rtg-decode</code>: Decoder</a></li>
+<li><a href="#_rtg_decode_pro_pro_decoder">4.6. <code>rtg-decode-pro</code>: Pro Decoder</a></li>
+<li><a href="#_rtg_fork_fork_an_experiment">4.7. <code>rtg-fork</code>: Fork an experiment</a></li>
+<li><a href="#_rtg_export_export">4.8. <code>rtg-export</code> Export</a></li>
 </ul>
 </li>
 <li><a href="#_other_tools">5. Other tools:</a>
 <ul class="sectlevel2">
-<li><a href="#_rtg_export_export">5.1. <code>rtg-export</code> Export</a></li>
+<li><a href="#_rtg_syscomb_system_combiner">5.1. <code>rtg-syscomb</code> System Combiner</a></li>
 <li><a href="#_perplexity">5.2. Perplexity</a></li>
 <li><a href="#_line_bleu_aka_bleu1">5.3. Line Bleu (aka BLEU+1)</a></li>
 <li><a href="#_oov">5.4. OOV</a></li>
 <li><a href="#_class_imbalance_sequence_lengths">5.5. Class imbalance, Sequence lengths</a></li>
 </ul>
 </li>
-<li><a href="#_environment_variables">6. Environment Variables</a>
+<li><a href="#env-vars">6. Environment Variables</a>
 <ul class="sectlevel2">
 <li><a href="#_gpus">6.1. GPUs</a></li>
 <li><a href="#_using_fast_and_temporary_file_system">6.2. Using Fast and Temporary File System</a></li>
 <li><a href="#_number_of_cpu_cores">6.3. Number of CPU Cores</a></li>
-<li><a href="#_run_tests">6.4. Run Tests</a></li>
-<li><a href="#_adding_a_new_model">6.5. Adding a new model</a></li>
+</ul>
+</li>
+<li><a href="#dev-env">7. Development Environment:</a>
+<ul class="sectlevel2">
+<li><a href="#_run_tests">7.1. Run Tests</a></li>
+<li><a href="#_adding_a_new_model">7.2. Adding a new model</a></li>
 </ul>
 </li>
 </ul>
@@ -708,8 +714,8 @@ echo &quot;Chacun voit midi à sa porte.&quot; | python -m rtg.decode experiment
 </div>
 </div>
 </div>
-<div class="sect1">
-<h2 id="_rtg_conf_yml_file">2. RTG <strong><code>conf.yml</code></strong> File</h2>
+<div class="sect1 yml">
+<h2 id="conf">2. RTG <strong><code>conf.yml</code></strong> File</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>The key component of RTG toolkit is a <code>conf.yml</code>. As the name says - it is a YAML file containing configuration
@@ -1049,7 +1055,7 @@ Here is how to set this for eg to 99.99% i.e. 0.9999 in <code>nlcodec</code></p>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_reader_translator_generator_rtg_cli_tools">4. Reader-Translator-Generator (RTG) CLI tools</h2>
+<h2 id="rtg-cli">4. RTG CLI</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>All the below CLI tools give you finer control to go step by step if you want to test only a part of the pipeline.
@@ -1202,7 +1208,42 @@ optional arguments:
 </div>
 </div>
 <div class="sect2">
-<h3 id="_rtg_decode_pro_pro_decoder">4.5. <code>rtg-decode-pro</code> : Pro Decoder</h3>
+<h3 id="_rtg_decode_decoder">4.5. <code>rtg-decode</code>: Decoder</h3>
+<div class="listingblock">
+<div class="content">
+<pre>usage: rtg.decode [-h] [-if [INPUT [INPUT ...]]] [-of [OUTPUT [OUTPUT ...]]]
+                  [-sc] [-b BATCH_SIZE] [-msl MAX_SRC_LEN] [-nb]
+                  exp_dir
+
+Decode using NMT model
+
+positional arguments:
+  exp_dir               Experiment directory
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -if [INPUT [INPUT ...]], --input [INPUT [INPUT ...]]
+                        Input file path. default is STDIN (default:
+                        [&lt;_io.TextIOWrapper name='&lt;stdin&gt;' encoding='utf-8'&gt;])
+  -of [OUTPUT [OUTPUT ...]], --output [OUTPUT [OUTPUT ...]]
+                        Output File path. default is STDOUT (default:
+                        [&lt;_io.TextIOWrapper name='&lt;stdout&gt;'
+                        encoding='utf-8'&gt;])
+  -sc, --skip-check     Skip Checking whether the experiment dir is prepared
+                        and trained (default: False)
+  -b BATCH_SIZE, --batch-size BATCH_SIZE
+                        batch size for 1 beam. effective_batch =
+                        batch_size/beam_size (default: None)
+  -msl MAX_SRC_LEN, --max-src-len MAX_SRC_LEN
+                        max source len; longer seqs will be truncated
+                        (default: None)
+  -nb, --no-buffer      Processes one line per batch followed by flush output
+                        (default: False)</pre>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_rtg_decode_pro_pro_decoder">4.6. <code>rtg-decode-pro</code>: Pro Decoder</h3>
 <div class="paragraph">
 <p>Note: for simple use with defauls from conf.yml, use  <code>rtg-decode</code> or <code>python -m rtg.decode</code>.</p>
 </div>
@@ -1265,33 +1306,34 @@ optional arguments:
 </div>
 </div>
 <div class="sect2">
-<h3 id="_rtg_syscomb_system_combiner">4.6. <code>rtg-syscomb</code> System Combiner</h3>
+<h3 id="_rtg_fork_fork_an_experiment">4.7. <code>rtg-fork</code>: Fork an experiment</h3>
 <div class="listingblock">
 <div class="content">
-<pre>    python -m rtg.syscomb -h
-    usage: __main__.py [-h] [-b BATCH_SIZE] [-s STEPS]
-                       experiment models [models ...]
+<pre>usage: rtg-fork [-h] [--conf | --no-conf] [--data | --no-data]
+                [--vocab | --no-vocab] [--code | --no-code]
+                EXP_DIR TO_DIR
 
-    positional arguments:
-      experiment            Path to experiment directory
-      models                Path to models
+fork an experiment.
 
-    optional arguments:
-      -h, --help            show this help message and exit
-      -b BATCH_SIZE, --batch-size BATCH_SIZE
-                            Batch size (default: 128)
-      -s STEPS, --steps STEPS
-                            Training steps (default: 2000)</pre>
+positional arguments:
+  EXP_DIR     From experiment. Should be valid experiment dir
+  TO_DIR      To experiment. This will be created.
+
+optional arguments:
+  -h, --help  show this help message and exit
+  --conf      Copy config: from/conf.yml → to/conf.yml (default: True)
+  --no-conf   Negation of --conf (default: False)
+  --data      Link data dir . This includes vocab. (default: True)
+  --no-data   Negation of --data (default: False)
+  --vocab     copy vocabularies. dont use it with --data (default: False)
+  --no-vocab  Negation of --vocab (default: True)
+  --code      copy source code. (default: True)
+  --no-code   Negation of --code (default: False)</pre>
 </div>
 </div>
 </div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_other_tools">5. Other tools:</h2>
-<div class="sectionbody">
 <div class="sect2">
-<h3 id="_rtg_export_export">5.1. <code>rtg-export</code> Export</h3>
+<h3 id="_rtg_export_export">4.8. <code>rtg-export</code> Export</h3>
 <div class="paragraph">
 <p>Export an experiment:</p>
 </div>
@@ -1321,6 +1363,32 @@ optional arguments:
       --vocab               Copy vocabulary files (such as sentence piece models)
                             (default: True)
       --no-vocab            See --vocab (default: False)</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_other_tools">5. Other tools:</h2>
+<div class="sectionbody">
+<div class="sect2">
+<h3 id="_rtg_syscomb_system_combiner">5.1. <code>rtg-syscomb</code> System Combiner</h3>
+<div class="listingblock">
+<div class="content">
+<pre>    python -m rtg.syscomb -h
+    usage: __main__.py [-h] [-b BATCH_SIZE] [-s STEPS]
+                       experiment models [models ...]
+
+    positional arguments:
+      experiment            Path to experiment directory
+      models                Path to models
+
+    optional arguments:
+      -h, --help            show this help message and exit
+      -b BATCH_SIZE, --batch-size BATCH_SIZE
+                            Batch size (default: 128)
+      -s STEPS, --steps STEPS
+                            Training steps (default: 2000)</pre>
 </div>
 </div>
 </div>
@@ -1439,7 +1507,7 @@ n_segs: 130,000</pre>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_environment_variables">6. Environment Variables</h2>
+<h2 id="env-vars">6. Environment Variables</h2>
 <div class="sectionbody">
 <div class="sect2">
 <h3 id="_gpus">6.1. GPUs</h3>
@@ -1506,12 +1574,16 @@ export MKL_NUM_THREADS=$RTG_CPUS</code></pre>
 </div>
 </div>
 <div class="paragraph">
-<p><code>RTG_CPUS</code> is used by <code>nlcodec</code> to parallelize training data encoding
-== Development Environment:</p>
+<p><code>RTG_CPUS</code> is used by <code>nlcodec</code> to parallelize training data encoding</p>
 </div>
 </div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="dev-env">7. Development Environment:</h2>
+<div class="sectionbody">
 <div class="sect2">
-<h3 id="_run_tests">6.4. Run Tests</h3>
+<h3 id="_run_tests">7.1. Run Tests</h3>
 <div class="paragraph">
 <p>Test cases are done using the <a href="https://docs.pytest.org/en/latest/"><code>pytest</code></a> framework.
 It can be installed using <code>pip install pytest</code></p>
@@ -1551,7 +1623,7 @@ It can be installed using <code>pip install pytest</code></p>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_adding_a_new_model">6.5. Adding a new model</h3>
+<h3 id="_adding_a_new_model">7.2. Adding a new model</h3>
 <div class="olist arabic">
 <ol class="arabic">
 <li>
@@ -1608,7 +1680,7 @@ trainers and generators.</p>
 </div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2020-06-17 20:45:41 -0700
+Last updated 2020-06-20 13:06:30 -0700
 </div>
 </div>
 </body>

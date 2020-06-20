@@ -1,4 +1,5 @@
-== Reader-Translator-Generator (RTG) CLI tools
+[#rtg-cli]
+== RTG CLI
 
 All the below CLI tools give you finer control to go step by step if you want to test only a part of the pipeline.
 For end usage of the RTG toolkit, the workflow should be as simple as:
@@ -96,8 +97,40 @@ optional arguments:
       -ft, --fine-tune      Use fine tune corpus instead of train corpus.
                             (default: False)
 ----
+=== `rtg-decode`: Decoder
 
-=== `rtg-decode-pro` : Pro Decoder
+----
+usage: rtg.decode [-h] [-if [INPUT [INPUT ...]]] [-of [OUTPUT [OUTPUT ...]]]
+                  [-sc] [-b BATCH_SIZE] [-msl MAX_SRC_LEN] [-nb]
+                  exp_dir
+
+Decode using NMT model
+
+positional arguments:
+  exp_dir               Experiment directory
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -if [INPUT [INPUT ...]], --input [INPUT [INPUT ...]]
+                        Input file path. default is STDIN (default:
+                        [<_io.TextIOWrapper name='<stdin>' encoding='utf-8'>])
+  -of [OUTPUT [OUTPUT ...]], --output [OUTPUT [OUTPUT ...]]
+                        Output File path. default is STDOUT (default:
+                        [<_io.TextIOWrapper name='<stdout>'
+                        encoding='utf-8'>])
+  -sc, --skip-check     Skip Checking whether the experiment dir is prepared
+                        and trained (default: False)
+  -b BATCH_SIZE, --batch-size BATCH_SIZE
+                        batch size for 1 beam. effective_batch =
+                        batch_size/beam_size (default: None)
+  -msl MAX_SRC_LEN, --max-src-len MAX_SRC_LEN
+                        max source len; longer seqs will be truncated
+                        (default: None)
+  -nb, --no-buffer      Processes one line per batch followed by flush output
+                        (default: False)
+----
+
+=== `rtg-decode-pro`: Pro Decoder
 
 Note: for simple use with defauls from conf.yml, use  `rtg-decode` or `python -m rtg.decode`.
 ----
@@ -156,26 +189,29 @@ Note: for simple use with defauls from conf.yml, use  `rtg-decode` or `python -m
                             None)
 ----
 
-=== `rtg-syscomb` System Combiner
-
+=== `rtg-fork`: Fork an experiment
 ----
-    python -m rtg.syscomb -h
-    usage: __main__.py [-h] [-b BATCH_SIZE] [-s STEPS]
-                       experiment models [models ...]
+usage: rtg-fork [-h] [--conf | --no-conf] [--data | --no-data]
+                [--vocab | --no-vocab] [--code | --no-code]
+                EXP_DIR TO_DIR
 
-    positional arguments:
-      experiment            Path to experiment directory
-      models                Path to models
+fork an experiment.
 
-    optional arguments:
-      -h, --help            show this help message and exit
-      -b BATCH_SIZE, --batch-size BATCH_SIZE
-                            Batch size (default: 128)
-      -s STEPS, --steps STEPS
-                            Training steps (default: 2000)
+positional arguments:
+  EXP_DIR     From experiment. Should be valid experiment dir
+  TO_DIR      To experiment. This will be created.
+
+optional arguments:
+  -h, --help  show this help message and exit
+  --conf      Copy config: from/conf.yml → to/conf.yml (default: True)
+  --no-conf   Negation of --conf (default: False)
+  --data      Link data dir . This includes vocab. (default: True)
+  --no-data   Negation of --data (default: False)
+  --vocab     copy vocabularies. dont use it with --data (default: False)
+  --no-vocab  Negation of --vocab (default: True)
+  --code      copy source code. (default: True)
+  --no-code   Negation of --code (default: False)
 ----
-
-== Other tools:
 
 === `rtg-export` Export
 
@@ -207,6 +243,29 @@ Export an experiment:
                             (default: True)
       --no-vocab            See --vocab (default: False)
 ----
+
+== Other tools:
+
+
+=== `rtg-syscomb` System Combiner
+
+----
+    python -m rtg.syscomb -h
+    usage: __main__.py [-h] [-b BATCH_SIZE] [-s STEPS]
+                       experiment models [models ...]
+
+    positional arguments:
+      experiment            Path to experiment directory
+      models                Path to models
+
+    optional arguments:
+      -h, --help            show this help message and exit
+      -b BATCH_SIZE, --batch-size BATCH_SIZE
+                            Batch size (default: 128)
+      -s STEPS, --steps STEPS
+                            Training steps (default: 2000)
+----
+
 
 === Perplexity
 

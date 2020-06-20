@@ -18,13 +18,12 @@ assert __version__, 'Coulnt find __version__ in __init__.py'
 setuptools.setup(
     name='rtg',
     version=__version__,
-    scripts=['bin/rtg'],
     author="Thamme Gowda",
     author_email="tg@isi.edu",
-    description="Reader Translator Generator ( RTG), a Neural Machine Translator toolkit ",
+    description="Reader Translator Generator(RTG), a Neural Machine Translator(NMT) toolkit based on Pytorch",
     long_description=long_description,
     long_description_content_type="text/plain",
-    url="https://github.com/isi-nlp/rtg",
+    url="https://isi-nlp.github.io/rtg/",
     packages=['rtg'],
     classifiers=[
         "Programming Language :: Python :: 3.7",
@@ -33,14 +32,14 @@ setuptools.setup(
     ],
     install_requires=[
         'ruamel.yaml >= 0.16.10',
-        'sacrebleu == 1.4.6',
+        'sacrebleu >= 1.4.6',
         'scipy >= 1.4',
-        'sentencepiece == 0.1.85',
-        'tensorboard == 2.2.1',
-        'tqdm == 4.45.0',
+        'sentencepiece >= 0.1.85',
+        'tensorboard >= 2.2.1',
+        'tqdm >= 4.45.0',
         'mosestokenizer >= 1.0.0',
-        'nlcodec >= 0.2.0',
-        'torch == 1.4'
+        'nlcodec >= 0.2.2',
+        'torch >= 1.4'
     ],
     python_requires='>=3.7',
     entry_points={

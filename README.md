@@ -24,9 +24,9 @@ Reader-Translator-Generator (RTG) is a Neural Machine Translation toolkit based 
 Add the root of this repo to `PYTHONPATH` or install it via `pip --editable`
 
 ```bash
-git clone https://github.com/isi-nlp/rtg.git 
+git clone https://github.com/isi-nlp/rtg-xt.git # use rtg.git if you have access
 cd rtg                # go to the code
-# use https://github.com/isi-nlp/rtg-xt.git if you dont have access to rtg.git
+
 
 conda create -n rtg python=3.7   # adds a conda env named rtg
 conda activate rtg  # activate it
@@ -35,8 +35,6 @@ conda activate rtg  # activate it
 pip install --editable .   
 # The requirements are in setup.py
 
-# or add it to PYTHONPATH 
-export PYTHONPATH=$PWD 
 ```
 
 # Usage
@@ -52,17 +50,15 @@ Example of training and running a mdoel:
 # disable gpu use (force cpu)
 export CUDA_VISIBLE_DEVICES=
 # call as python module
-python -m rtg.pipeline experiments/sample-exp/
-# OR if you've installed it using pip 
 rtg-pipe experiments/sample-exp/
-# OR you can call a shell scrupt
-# edit rtg-pipeline.sh if you don't want to force gpu
+
+# OR, you can call a shell scrupt to submit job to slurm/SGE
 scripts/rtg-pipeline.sh -d experiments/sample-exp/ -c experiments/sample-exp/conf.yml
 # Note: use examples/transformer.base.yml config to setup transformer base
 
 # Then to use the model to translate something:
 # (VERY poor translation due to small training data)
-echo "Chacun voit midi à sa porte." | python -m rtg.decode experiments/sample-exp/
+echo "Chacun voit midi à sa porte." | rtg-decode experiments/sample-exp/
 
 ```
 

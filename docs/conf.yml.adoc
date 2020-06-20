@@ -1,3 +1,4 @@
+[#conf.yml]
 == RTG *`conf.yml`* File
 
 The key component of RTG toolkit is a `conf.yml`. As the name says - it is a YAML file containing configuration

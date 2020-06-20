@@ -1,3 +1,4 @@
+[#env-vars]
 == Environment Variables
 
 === GPUs
