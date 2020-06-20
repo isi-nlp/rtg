@@ -27,8 +27,10 @@ setuptools.setup(
     packages=setuptools.find_packages(),
     classifiers=[
         "Programming Language :: Python :: 3.7",
-        "License :: OSI Approved :: Apache License",
+        'License :: OSI Approved :: Apache Software License',
         "Operating System :: OS Independent",
+        'Intended Audience :: Science/Research',
+        'Topic :: Scientific/Engineering :: Artificial Intelligence',
     ],
     install_requires=[
         'ruamel.yaml >= 0.16.10',
