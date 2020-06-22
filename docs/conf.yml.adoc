@@ -17,7 +17,7 @@ such as BPE/char/words, and vocabulary size.
 ** Decoder - the Beam decoder parameters, maybe overwritten by Tuner
 ** Suite - a set of source and reference file pairs, for computing BLEU scores
 
-
+[#conf-minimal]
 === Minimal Yet Complete Config File:
 
 .conf.yml
@@ -87,6 +87,7 @@ updated_at: '2019-03-09T21:15:33.707183'  # automatically updated by system
 seed: 12345  # fix the manual seed of pytorch + cuda + numpy + python_stdlib RNGs. Remove/comment this to disable
 ----
 
+[#conf-early-stop]
 === Early stop
 Add the below piece of config to `trainer` to enable early stop on convergence.
 [source,yaml]
@@ -105,6 +106,7 @@ trainer:
 
 ----
 
+[#conf-optim]
 === Optimizer
 
 By default, we use the `ADAM` optimizer from
@@ -134,6 +136,7 @@ optim:
     weight_decay: 1e-3    # Use ADAMW if weight decay != 0
 ----
 
+[#conf-finetune]
 === Fine Tuning
 
 We define fine tuning as the act of  changing the training data at certain time step in the training process.
@@ -164,6 +167,7 @@ trainer:
 This makes the trainer use `train_{src,tgt}` for 0 - 200k steps,  followed by `finetune_{src,tgt}`
 for 200k-300k steps. Note that `finetune_steps > steps` .
 
+[#conf-parent-child]
 === Parent-Child : using pretrained model as parent
 To initialize from another compatible model as parent, add `parent:` specification to conf.yml as shown below:
 [source,yaml]
@@ -183,6 +187,7 @@ parent:
 # ... rest of the config such as prep, trainer etc
 ----
 
+[#conf-freeze-wt]
 === Freezing some parts of model
 Frozen weights associated to parts of network means the weights remain unmodified during the course of the training.
 It is a useful feature when the model weights are initialized from a well trained parent model.
@@ -210,12 +215,16 @@ TODO: add support for `exclude` logic ie. include everything else except the men
 This feature is supported only in `AbstractTransformerNMT` and all of its children.
 If you are adding a new `NMTModel` or customising this feature, please override `get_trainable_parameters(self, include, exclude)` function to support this feature.
 
+[#conf-share-data]
 === Sharing the data from other experiment
 
 In the new experiment config, add `same_data` to reference parent experiment from which the data
 should be reused for training and validation. Note that this uses the same vocabulary as parent.
 The child experiment creates a symbolic link to parent experiments data (instead of copying,
 to reduce the disk space).
+
+Alternatively, you may use `rtg-fork --data` to fork an experiment with same data,
+where the forked experiment will have symbolic link to parent's data.
 
 [source,yaml]
 ----
@@ -225,6 +234,7 @@ prep:
 
 ----
 
+[#conf-vocab]
 == Vocabulary Preprocessing using Sentencepiece or NLCodec
 
 link:https://github.com/google/sentencepiece[Google's sentencepiece] is an awesome lib for
@@ -269,4 +279,55 @@ prep:
   pieces: bpe         # other options: char, word
   char_coverage: 0.9999         # other options: char, word
 ----
+
+
+[#avoid-oom]
+== Avoiding Out-of-Memory
+
+Out-of-memory is pretty common, and we have worked out ways to avoid that situation as much as possible.
+
+=== Trainer Memory
+Let's visualize the total memory required memory for training a model in the order of a 5D tensor: `[Layers x ModelDim x Batch x SequenceLength x Vocabulary]`
+
+- Number of layers are often fixed. [There is something we can do (see Google's Reformer) , but it is beyond our scope at the moment.]
+- Model dim is often fixed. We dont do anything fancy here.
+- Vocabulary size is often fixed too. We dont do anything fancy here.
+If you can use smaller target vocabulary, it greatly reduces memory consumption.
+Sometimes, especially when training data is less, https://arxiv.org/abs/2004.02334[using smaller target vocabulary  such as 8K is actually best thing to do!]
+
+
+So, we are left with `Batch x SequenceLength` as two dims that we can manipulate.
+
+For *SequenceLength*, set `trainer.init_args.chunk_size` to a smaller value to break down whole sequence into smaller chunks.
+This operation does not affect gradients, but affects training time. Smaller chunk_size => less memory, but it also means more chunks => more time.
+Also note that the `prep.src_len` and `prep.tgt_len` allows you to decide maximum length of source and target sequences.
+When combined that with `prep.truncate=True`, all longer sequences will be truncated, or `prep.truncate=False` causes the longer sequences to be dropped.
+
+Regarding *Batch*, there are some things you can do.
+
+1. If you have GPUs with larger memory, use them. For example, V100 with 32GB is much better than 1080 Ti with 11GB.
+2. If you have larger GPU, but you have many smaller GPUs, use many them by setting `CUDA_VISIBLE_DEVICES` variable to comma separated list of GPU IDs.
+  The built in `DataParallel` module divides batches into multiple GPUs => reduces total memory needed on each GPU.
+3. If you dont have multiple GPUs, use `trainer.init_args.grad_accum`.  eg. if you set `grad_accum=2`, the effective `batch_size` is `2 * batch_size`.
+
+
+In summary, to make best out of your GPUs, adjust `trainer.init_args.chunk_size`, `trainer.init_args.grad_accum`, and `trainer.batch_size`.
+I suggest using `gpustat -i 0.5`, look at the GPU RAM usage and see if you need to increase or decrease some parameters.
+
+Regarding the CPU RAM, we usually need as much as a single GPU RAM.
+But if you have a plenty of it, please enable `trainer.keep_in_mem=True` to reduce disk IO.
+This `keep_in_mem` parameter informs the trainer to load training data once and hold it in CPU RAM during the course of training.
+
+
+=== Decoder Memory
+
+Since beam decoder is used, let's visualize `[Batch x Beams x Vocabulary x SequenceLength]`
+
+- `tester.decoder.beam_size` : Number of beams to be used. You may reduce it, e.g. beam_size=4 if often a good value.
+- `tester.decoder.batch_size` for 1 beam. internally, it calculates, effective = batch_size/beam_size
+- `tester.decoder.max_len` is a relative length. It decides how long the target sequence can grow in relation to source length. For example, max_len=50 => len(src) + 50
+
+`rtg-decode` has `--max-src-len` argument which can be used to hard limit the max length of source sentences.
+`--max-src-len` can be degrade test performance since it drops out words.
+Right thing to do for long sequences will be to split long sentences in input and merge the outputs after decoding.
 
