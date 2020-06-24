@@ -21,6 +21,10 @@ Refer to https://isi-nlp.github.io/rtg/ for the docs.
   + Experiments and reproducibility are main focus. To control an experiment you edit an YAML file that is inside the experiment directory.
   + Where ever possible, prefer [convention-over-configuation](https://www.wikiwand.com/en/Convention_over_configuration). Have a look at this experiment directory for the [examples/transformer.test.yml](examples/transformer.test.yml);
 
+### Quick Start
+
+Use this Google Colab Notebook for learning *how to train your NMT model with RTG*: https://colab.research.google.com/drive/198KbkUcCGXJXnWiM7IyEiO1Mq2hdVq8T?usp=sharing
+
 ### Setup
 Add the root of this repo to `PYTHONPATH` or install it via `pip --editable`
 

@@ -20,6 +20,12 @@ https://isi-nlp.github.io/rtg[Reader-Translator-Generator (RTG)] is a Neural Mac
 ** Experiments and reproducibility are main focus. To control an experiment you edit an YAML file that is inside the experiment directory.
 ** Where ever possible, prefer https://www.wikiwand.com/en/Convention_over_configuration[convention-over-configuation]. Have a look at this experiment directory for the `examples/transformer.test.yml`
 
+[#colab-example]
+=== Quick Start using Google Colab
+
+Use this Google Colab notebook for learning __how to train your NMT model with RTG__: https://colab.research.google.com/drive/198KbkUcCGXJXnWiM7IyEiO1Mq2hdVq8T?usp=sharing
+
+
 === Setup
 Add the root of this repo to `PYTHONPATH` or install it via `pip --editable`
 

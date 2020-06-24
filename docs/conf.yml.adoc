@@ -287,9 +287,8 @@ prep:
 Out-of-memory is pretty common, and we have worked out ways to avoid that situation as much as possible.
 
 === Trainer Memory
-Let's visualize the total memory required memory for training a model in the order of a 5D tensor: `[Layers x ModelDim x Batch x SequenceLength x Vocabulary]`
+Let's visualize the total required memory for training a model in the order of a 4D tensor: `[ ModelDim x Batch x SequenceLength x Vocabulary]`
 
-- Number of layers are often fixed. [There is something we can do (see Google's Reformer) , but it is beyond our scope at the moment.]
 - Model dim is often fixed. We dont do anything fancy here.
 - Vocabulary size is often fixed too. We dont do anything fancy here.
 If you can use smaller target vocabulary, it greatly reduces memory consumption.
@@ -306,7 +305,7 @@ When combined that with `prep.truncate=True`, all longer sequences will be trunc
 Regarding *Batch*, there are some things you can do.
 
 1. If you have GPUs with larger memory, use them. For example, V100 with 32GB is much better than 1080 Ti with 11GB.
-2. If you have larger GPU, but you have many smaller GPUs, use many them by setting `CUDA_VISIBLE_DEVICES` variable to comma separated list of GPU IDs.
+2. If you dont have larger GPU, but you have many smaller GPUs, use many them by setting `CUDA_VISIBLE_DEVICES` variable to comma separated list of GPU IDs.
   The built in `DataParallel` module divides batches into multiple GPUs => reduces total memory needed on each GPU.
 3. If you dont have multiple GPUs, use `trainer.init_args.grad_accum`.  eg. if you set `grad_accum=2`, the effective `batch_size` is `2 * batch_size`.
 
@@ -321,7 +320,7 @@ This `keep_in_mem` parameter informs the trainer to load training data once and 
 
 === Decoder Memory
 
-Since beam decoder is used, let's visualize `[Batch x Beams x Vocabulary x SequenceLength]`
+Since beam decoder is used, let's visualize memory as `[Batch x Beams x Vocabulary x SequenceLength]`
 
 - `tester.decoder.beam_size` : Number of beams to be used. You may reduce it, e.g. beam_size=4 if often a good value.
 - `tester.decoder.batch_size` for 1 beam. internally, it calculates, effective = batch_size/beam_size
