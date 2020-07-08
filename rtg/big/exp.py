@@ -147,7 +147,7 @@ class SparkDataset(Iterable[Batch]):
         self.batch_size = batch_size
         self.batch_first = batch_first
         self.sort_by = sort_by
-        self.data = data
+        self.data = data.cache()  # cached
         self._n_rows = self.data.count()
         self.buffer_size = buffer_size
         self.max_src_len = max_src_len
