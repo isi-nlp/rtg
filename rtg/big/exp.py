@@ -8,6 +8,7 @@ from rtg import cpu_count, log
 import time
 from datetime import timedelta
 import math
+import pyspark
 from pyspark.sql.types import StructType, StructField, LongType
 import pyspark.sql.functions as SF
 from pyspark.sql import SparkSession, DataFrame
@@ -147,8 +148,9 @@ class SparkDataset(Iterable[Batch]):
         self.batch_size = batch_size
         self.batch_first = batch_first
         self.sort_by = sort_by
-        self.data = data.cache()  # cached
-        self._n_rows = self.data.count()
+
+        self.data = data.persist(pyspark.StorageLevel.MEMORY_AND_DISK)  # .cache()
+        self._n_rows = self.data.select('id').count()
         self.buffer_size = buffer_size
         self.max_src_len = max_src_len
         self.max_tgt_len = max_tgt_len
