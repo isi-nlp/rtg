@@ -299,8 +299,13 @@ class TranslationExperiment(BaseExperiment):
 
     def pre_process_parallel(self, args: Dict[str, Any]):
         # check if files are parallel
-        self.check_line_count('training', args['train_src'], args['train_tgt'])
         self.check_line_count('validation', args['valid_src'], args['valid_tgt'])
+        if 'spark' in self.config:
+            log.warning(f"Spark backend detected: line count on training data is skipped")
+        else:
+            log.warning(f"Going to count lines. If this is a big dataset, it will take long time")
+            self.check_line_count('training', args['train_src'], args['train_tgt'])
+
         xt_args = dict(no_split_toks=args.get('no_split_toks'),
                        char_coverage=args.get('char_coverage', 0))
         if args.get('shared_vocab'):  # shared vocab
