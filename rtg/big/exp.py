@@ -210,7 +210,7 @@ class SparkDataset(Iterable[Batch]):
     # This should have been called as Dataset
     def __init__(self, data: DataFrame, batch_size: int, field: Field,
                  sort_desc: bool = False, batch_first: bool = True,
-                 sort_by: str = None, buffer_size=20_000, shuffle=True,
+                 sort_by: str = None, buffer_size=20_000, shuffle=True, device=cpu_device,
                  max_src_len: int = 512, max_tgt_len: int = 512, truncate: bool = False):
         """
         :param data: Dataframe
@@ -241,6 +241,7 @@ class SparkDataset(Iterable[Batch]):
         self.max_tgt_len = max_tgt_len
         self.truncate = truncate
         self.shuffle = shuffle
+        self.device = device
         log.info(f'Batch Size = {batch_size} toks, sort_by={sort_by}; total_rows={self._n_rows}')
 
     def make_batches(self, data, raise_incomplete=False) -> Iterator[Batch]:
@@ -266,7 +267,7 @@ class SparkDataset(Iterable[Batch]):
                                     f' with a seq of x_len:{len(ex.x)} y_len:{len(ex.y)}')
                 # yield the current batch
                 yield Batch(batch, sort_dec=self.sort_desc, batch_first=self.batch_first,
-                            field=self.field)
+                            field=self.field, device=self.device)
                 batch = [ex]  # new batch
                 max_len = this_len
         if batch:
@@ -275,7 +276,7 @@ class SparkDataset(Iterable[Batch]):
             else:
                 log.debug(f"\nLast batch, size={len(batch)}")
                 yield Batch(batch, sort_dec=self.sort_desc, batch_first=self.batch_first,
-                            field=self.field)
+                            field=self.field, device=self.device)
         # else all items are consumed
 
     def read_all(self, data):
