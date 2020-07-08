@@ -9,6 +9,7 @@ from multiprocessing import Process, Queue
 from pathlib import Path
 from typing import List, Dict, Optional, Any, Union, Tuple, Iterator, Iterable
 
+import pyspark
 import pyspark.sql.functions as SF
 from pyspark.sql import SparkSession, DataFrame
 from pyspark.sql.types import StructType, StructField, LongType
@@ -227,8 +228,9 @@ class SparkDataset(Iterable[Batch]):
         self.batch_size = batch_size
         self.batch_first = batch_first
         self.sort_by = sort_by
-        self.data = data.cache()  # cached
-        self._n_rows = self.data.count()
+
+        self.data = data.persist(pyspark.StorageLevel.MEMORY_AND_DISK)  # .cache()
+        self._n_rows = self.data.select('id').count()
         self.buffer_size = buffer_size
         self.max_src_len = max_src_len
         self.max_tgt_len = max_tgt_len
