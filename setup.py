@@ -4,7 +4,6 @@ import re
 
 long_description = Path('README.md').read_text(encoding='utf-8', errors='ignore')
 
-
 vpat = re.compile(r"""__version__\s*=\s*['"]([^'"]*)['"]""")
 __version__ = None
 for line in Path('rtg/__init__.py').read_text().splitlines():
@@ -36,14 +35,17 @@ setuptools.setup(
     install_requires=[
         'ruamel.yaml >= 0.16.10',
         'sacrebleu >= 1.4.6',
-        'scipy >= 1.4',
         'sentencepiece >= 0.1.85',
         'tensorboard >= 2.2.1',
         'tqdm >= 4.45.0',
         'mosestokenizer >= 1.0.0',
-        'nlcodec >= 0.2.2',
+        'nlcodec >= 0.2.3',
         'torch >= 1.4'
     ],
+    extra_requires={
+        'big': ['pyspark >= 3.0'],
+        'extras': ['scipy >= 1.4']
+    },
     python_requires='>=3.7',
     entry_points={
         'console_scripts': [

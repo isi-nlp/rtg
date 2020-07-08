@@ -3,6 +3,8 @@
 import argparse
 from argparse import ArgumentDefaultsHelpFormatter as ArgFormatter
 from rtg import TranslationExperiment as Experiment, log
+from rtg.exp import load_conf
+from pathlib import Path
 
 
 def parse_args():
@@ -36,7 +38,20 @@ def main():
         random.seed(seed)
         torch.manual_seed(seed)
 
-    exp = Experiment(args.pop('work_dir'))
+    work_dir = Path(args.pop('work_dir'))
+    is_big = load_conf(work_dir / 'conf.yml').get('spark', {})
+
+    if is_big:
+        log.info("Big experiment model enabled; This would enable to use spark backend")
+        try:
+            import pyspark
+        except:
+            log.warning("unable to import pyspark. Please do 'pip install pyspark' and run again")
+            raise
+        from rtg.big.exp import BigTranslationExperiment
+        exp = BigTranslationExperiment(work_dir=work_dir)
+    else:
+        exp = Experiment(work_dir=work_dir)
     assert exp.has_prepared(), f'Experiment dir {exp.work_dir} is not ready to train. ' \
                                f'Please run "prep" sub task'
     exp.train(args)

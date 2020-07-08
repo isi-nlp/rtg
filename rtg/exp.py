@@ -732,7 +732,7 @@ class TranslationExperiment(BaseExperiment):
         inp_file = IO.maybe_tmpfs(inp_file)
         train_data = BatchIterable(inp_file, batch_size=batch_size, sort_by=sort_by,
                                    batch_first=batch_first, shuffle=shuffle, field=self.tgt_vocab,
-                                   keep_in_mem=keep_in_mem, **self._get_batch_args())
+                                    **self._get_batch_args())
         if steps > 0:
             train_data = LoopingIterable(train_data, steps)
         return train_data

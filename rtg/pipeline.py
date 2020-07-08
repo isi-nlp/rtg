@@ -5,6 +5,7 @@
 
 import argparse
 from rtg import log, TranslationExperiment as Experiment
+from rtg.exp import load_conf
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
 from rtg.module.decoder import Decoder
@@ -301,7 +302,21 @@ def parse_args():
 
     conf_file: Path = args.conf if args.conf else args.exp / 'conf.yml'
     assert conf_file.exists(), f'NOT FOUND: {conf_file}'
-    return Experiment(args.exp, config=conf_file)
+    is_big = load_conf(conf_file).get('spark', {})
+
+    if is_big:
+        log.info("Big experiment model enabled; This would enable to use spark backend")
+        try:
+            import pyspark
+        except:
+            log.warning("unable to import pyspark. Please do 'pip install pyspark' and run again")
+            raise
+        from rtg.big.exp import BigTranslationExperiment
+        exp = BigTranslationExperiment(args.exp, config=conf_file)
+    else:
+        exp = Experiment(args.exp, config=conf_file)
+
+    return exp
 
 def main():
     pipe = Pipeline(exp=parse_args())
