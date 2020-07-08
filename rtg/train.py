@@ -42,7 +42,7 @@ def main():
     is_big = load_conf(work_dir / 'conf.yml').get('spark', {})
 
     if is_big:
-        log.info("Big experiment model enabled; This would enable to use spark backend")
+        log.info("Big experiment mode enabled; checking pyspark backend")
         try:
             import pyspark
         except:
