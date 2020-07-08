@@ -2,19 +2,37 @@
 #
 # Author: Thamme Gowda [tg (at) isi (dot) edu] 
 # Created: 7/7/20
-from typing import List, Dict, Optional, Any, Union, Tuple, Iterator, Iterable
-from pathlib import Path
-from rtg import cpu_count, log
+import math
 import time
 from datetime import timedelta
-import math
+from multiprocessing import Process, Queue
+from pathlib import Path
+from typing import List, Dict, Optional, Any, Union, Tuple, Iterator, Iterable
+
 import pyspark
-from pyspark.sql.types import StructType, StructField, LongType
 import pyspark.sql.functions as SF
 from pyspark.sql import SparkSession, DataFrame
+from pyspark.sql.types import StructType, StructField, LongType
 
-from rtg.exp import TranslationExperiment, Field, LoopingIterable
+from rtg import cpu_count, log
 from rtg.data.dataset import Batch, IdExample
+from rtg.exp import TranslationExperiment, Field
+
+
+def get_spark_session(config: Dict[str, str]) -> SparkSession:
+    """
+    :param config: dict of key:value pairs for spark
+    :return:
+    """
+    log.info("Creating or restoring a spark session")
+    builder = SparkSession.builder
+    for k, v in config.items():
+        log.info(f"{k}={v}")
+        builder = builder.config(k, v)
+    spark = builder.getOrCreate()
+    ui_url = spark.sparkContext.uiWebUrl
+    log.info(f"You may access spark web UI at: {ui_url}")
+    return spark
 
 
 class BigTranslationExperiment(TranslationExperiment):
@@ -35,7 +53,7 @@ class BigTranslationExperiment(TranslationExperiment):
 
     def __getstate__(self):
         state = self.__dict__.copy()
-        del state["_spark"] # Don't pickle _spark
+        del state["_spark"]  # Don't pickle _spark
         return state
 
     def __setstate__(self, state):
@@ -44,26 +62,19 @@ class BigTranslationExperiment(TranslationExperiment):
 
     def spark_session(self):
         if not self._spark:
-            log.info("Creating spark session")
-            builder = SparkSession.builder
-            for k, v in self.config['spark'].items():
-                log.info(f"{k}={v}")
-                builder = builder.config(k, v)
-            self._spark = builder.getOrCreate()
-            ui_url = self._spark.sparkContext.uiWebUrl
-            log.info(f"You may access spark web UI at: {ui_url}")
+            self._spark = get_spark_session(self.config['spark'])
         return self._spark
 
     def _pre_process_parallel(self, src_key: str, tgt_key: str, out_file: Path,
                               args: Optional[Dict[str, Any]] = None, line_check=False):
         """
-                Pre process records of a parallel corpus
-                :param args: all arguments for 'prep' task
-                :param src_key: key that contains source sequences
-                :param tgt_key: key that contains target sequences
-                :param out_file: path to store processed TSV data (compresses if name ends with .gz)
-                :return:
-                """
+        Pre process records of a parallel corpus
+        :param args: all arguments for 'prep' task
+        :param src_key: key that contains source sequences
+        :param tgt_key: key that contains target sequences
+        :param out_file: path to store processed TSV data (compresses if name ends with .gz)
+        :return:
+        """
         if not out_file.name.endswith(".parquet"):
             if 'train' in out_file.name:
                 log.warning(f"set  .parquet extension to enable spark")
@@ -108,30 +119,86 @@ class BigTranslationExperiment(TranslationExperiment):
                                 spark=spark)
 
     def get_train_data(self, batch_size: int, steps: int = 0, sort_by='eq_len_rand_batch',
-                   batch_first=True, shuffle=False, fine_tune=False, keep_in_mem=False):
-        inp_file: Path = self.train_file
+                       batch_first=True, shuffle=False, fine_tune=False, keep_in_mem=False):
+        data_file: Path = self.train_file
         if fine_tune:
             if not self.finetune_file.exists():
                 # user may have added fine tune file later
                 self._pre_process_parallel('finetune_src', 'finetune_tgt', self.finetune_file)
             log.info("Using Fine tuning corpus instead of training corpus")
-            inp_file = self.finetune_file
-        assert inp_file.name.endswith(".parquet")
+            data_file = self.finetune_file
+        assert data_file.name.endswith(".parquet")
         assert not keep_in_mem, 'keep in memory not supported for big experiments'
-        #inp_file = IO.maybe_tmpfs(inp_file)
-        spark: SparkSession = self.spark_session()
-        train_df = spark.read.parquet(str(inp_file))
-        train_data = SparkDataset(train_df, batch_size=batch_size, sort_by=sort_by,
-                                   batch_first=batch_first, shuffle=shuffle,
-                                   field=self.tgt_vocab, **self._get_batch_args())
-        if steps > 0:
-            train_data = LoopingIterable(train_data, steps)
-        return train_data
+        # data_file = IO.maybe_tmpfs(data_file)
+
+        # Read data on a separate process
+        # all these args should be easily pickle-able
+        max_q_size = 10 ** 4
+        queue = Queue(max_q_size)
+        batching_args = dict(batch_size=batch_size, sort_by=sort_by,
+                             batch_first=batch_first, shuffle=shuffle,
+                             field=self.tgt_vocab, buffer_size=max_q_size)
+        batching_args.update(self._get_batch_args())
+
+        prod_args = dict(queue=queue, total=steps, spark_conf=self.config['spark'],
+                         data_path=data_file, batching_args=batching_args)
+        prod_proc = Process(target=producer, kwargs=prod_args)
+        prod_proc.daemon = True  # according to docs, all daemon children be killed when parent exits
+        prod_proc.start()
+        log.info(f"Started a separate process to read dataset: PID: {prod_proc.pid}")
+
+        def consumer(queue):
+            while True:
+                item = queue.get()
+                if item == 'ERROR':
+                    raise Exception("Data producer failed with some error. Check logs")
+                if item == 'DONE':
+                    break
+                yield item
+
+        # prod_proc.join()  # the consumer() waits for 'DONE' message that is analogous to join()
+        return consumer(queue)
+
+
+def producer(queue: Queue, total: int, spark_conf: Dict, data_path: Union[str, Path],
+             batching_args: Dict):
+    """
+
+    :param queue: queue for communicating data
+    :param total: how many batches to read. Keeps looping if total > data; or aborts if data < steps
+    :param spark_conf: spark configuration to create or restore session on a new process
+    :param data_path:  path to dataset
+    :param batching_args: args to `SparkDataset`
+    :return:
+    """
+    try:
+        assert total > 0
+        spark = get_spark_session(spark_conf)
+        if not isinstance(data_path, str):
+            data_path = str(data_path)
+        data = spark.read.parquet(data_path)
+        dataset = SparkDataset(data, **batching_args)
+        count = 0
+        epochs = 0
+        while count < total:
+            epochs += 1
+            for batch in dataset:
+                queue.put(batch, block=True)
+                count += 1
+                if count >= total:
+                    break
+        log.info(f"Production ending; steps={count} epochs={epochs} ")
+        queue.put('DONE')  # All good
+    except:
+        queue.put('ERROR')  # communicate to child so it can decide to die
+        raise  # and die
+
 
 class IncompleteBatchException(Exception):
 
     def __init__(self, batch: List):
         self.batch = batch
+
 
 class SparkDataset(Iterable[Batch]):
 
@@ -140,7 +207,20 @@ class SparkDataset(Iterable[Batch]):
                  sort_desc: bool = False, batch_first: bool = True,
                  sort_by: str = None, buffer_size=20_000, shuffle=True,
                  max_src_len: int = 512, max_tgt_len: int = 512, truncate: bool = False):
-
+        """
+        :param data: Dataframe
+        :param batch_size: batch size in tokens
+        :param field: an instance of Field, to access <bos> <eos> <pad> indexes
+        :param sort_desc: sort mini batch by descending order of length (for RNNs)
+        :param batch_first:  batch is the first dimension
+        :param sort_by:supported:  None or eq_len_rand_batch .
+        :param buffer_size: buffer size if sort_by=eq_len_rand_batch
+        :param shuffle: shuffle datasets between epochs
+        :param max_src_len:
+        :param max_tgt_len:
+        :param truncate: True => truncate src and tgt sequences by  max_src_len and max_tgt_len .
+            False => drop sequence if either  len(src) > max_src_len or len(tgt) > max_tgt_len
+        """
         assert isinstance(data, DataFrame), 'data must be of type pyspark.sql.DataFrame'
         self.n_epoch = 0
         self.field = field
@@ -203,7 +283,7 @@ class SparkDataset(Iterable[Batch]):
                 if self.truncate:
                     ex.x = ex.x[:self.max_src_len]
                     ex.y = ex.y[:self.max_tgt_len]
-                else: # skip
+                else:  # skip
                     continue
             yield IdExample(x=ex.x, y=ex.y, id=ex.id)
 
@@ -264,7 +344,8 @@ class SparkDataset(Iterable[Batch]):
         tok_rdd = (raw_df.rdd
                    .filter(lambda r: r.x and r.y)  # exclude None
                    .map(lambda r: (r.idx, src_tokenizer(r.x), tgt_tokenizer(r.y)))
-                   .filter(lambda r: len(r[1]) and len(r[2]))  # exclude empty, if tokenizer created any
+                   .filter(lambda r: len(r[1]) and len(r[2]))
+                   # exclude empty, if tokenizer created any
                    )
         if truncate:
             tok_rdd = tok_rdd.map(lambda r: (r[0], r[1][:src_len], r[2][:tgt_len]))
@@ -276,7 +357,7 @@ class SparkDataset(Iterable[Batch]):
         if not isinstance(a_row[1], list):
             # looks like np NDArray or torch tensor
             tok_rdd = tok_rdd.map(lambda r: (r[0], r[1].tolist(), r[2].tolist()))
-        tok_rdd.map(lambda r: (r[0], ))
+        tok_rdd.map(lambda r: (r[0],))
         df = tok_rdd.toDF(['id', 'x', 'y'])
         return df
 
