@@ -5,7 +5,7 @@
 import math
 import time
 from datetime import timedelta
-from multiprocessing import Process, Queue
+from torch.multiprocessing import set_start_method, Process, Queue
 from pathlib import Path
 from typing import List, Dict, Optional, Any, Union, Tuple, Iterator, Iterable
 
@@ -17,6 +17,11 @@ from pyspark.sql.types import StructType, StructField, LongType
 from rtg import cpu_count, log
 from rtg.data.dataset import Batch, IdExample
 from rtg.exp import TranslationExperiment, Field
+
+try:
+    set_start_method('spawn')
+except RuntimeError:
+    pass
 
 
 def get_spark_session(config: Dict[str, str]) -> SparkSession:
