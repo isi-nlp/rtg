@@ -3,7 +3,6 @@ import os
 import pickle
 import random
 import sqlite3
-from collections import namedtuple
 from itertools import zip_longest
 from pathlib import Path
 from typing import List, Iterator, Tuple, Union, Iterable, Dict, Any, Optional
@@ -12,7 +11,7 @@ import torch
 from tqdm import tqdm
 import numpy as np
 
-from rtg import log, my_tensor as tensor, device, cpu_count
+from rtg import log, my_tensor as tensor, device, cpu_count, cpu_device
 from rtg.data.codec import Field
 from rtg.utils import IO, line_count, get_my_args, max_RSS
 
@@ -409,7 +408,7 @@ def tokenize(strs: List[str]) -> List[List[str]]:
     return [s.split() for s in strs]
 
 
-def subsequent_mask(size):
+def subsequent_mask(size, device=device):
     """
     Mask out subsequent positions. upper diagonal elements should be zero
     :param size:
@@ -423,7 +422,7 @@ def subsequent_mask(size):
     return mask
 
 
-def padded_sequence_mask(lengths, max_len=None):
+def padded_sequence_mask(lengths, max_len=None, device=device):
     """
     :param lengths: a sequence of lenghts
     :param max_len: pad upto this length
@@ -448,7 +447,7 @@ class Batch:
 
     def __init__(self, batch: List[IdExample], sort_dec=False, batch_first=True,
                  add_eos_x=True, add_eos_y=True, add_bos_x=False, add_bos_y=False,
-                 field: Field = None):
+                 field: Field = None, device=cpu_device):
         """
         :param batch: List fo Examples
         :param sort_dec: True if the examples be sorted as descending order of their source sequence lengths
@@ -541,7 +540,8 @@ class BatchIterable(Iterable[Batch]):
     # This should have been called as Dataset
     def __init__(self, data_path: Union[str, Path], batch_size: int, field: Field,
                  sort_desc: bool = False, batch_first: bool = True, shuffle: bool = False,
-                 sort_by: str = None, keep_in_mem=False, raw_path: Tuple[Path]=None, **kwargs):
+                 sort_by: str = None, keep_in_mem=False, raw_path: Tuple[Path]=None,
+                 device=cpu_device, **kwargs):
         """
         Iterator for reading training data in batches
         :param data_path: path to TSV file
@@ -558,6 +558,7 @@ class BatchIterable(Iterable[Batch]):
         self.sort_by = sort_by
         self.data_path = data_path
         self.keep_in_mem = keep_in_mem
+        self.device = device
         if not isinstance(data_path, Path):
             data_path = Path(data_path)
 
@@ -618,13 +619,13 @@ class BatchIterable(Iterable[Batch]):
                                     f' with a seq of x_len:{len(ex.x)} y_len:{len(ex.y)}')
                 # yield the current batch
                 yield Batch(batch, sort_dec=self.sort_desc, batch_first=self.batch_first,
-                            field=self.field)
+                            field=self.field, device=self.device)
                 batch = [ex]  # new batch
                 max_len = this_len
         if batch:
             log.debug(f"\nLast batch, size={len(batch)}")
             yield Batch(batch, sort_dec=self.sort_desc, batch_first=self.batch_first,
-                        field=self.field)
+                        field=self.field, device=self.device)
 
     def _make_eq_len_batch_ids(self):
         sort = 'y_len desc'
@@ -667,7 +668,7 @@ class BatchIterable(Iterable[Batch]):
             batch = list(self.data.get_all_ids(batch_ids))
             # batch = [Example(r['x'], r.get('y')) for r in batch]
             yield Batch(batch, sort_dec=self.sort_desc, batch_first=self.batch_first,
-                        field=self.field)
+                        field=self.field, device=self.device)
 
     def __iter__(self) -> Iterator[Batch]:
         if self.sort_by == 'eq_len_rand_batch':
