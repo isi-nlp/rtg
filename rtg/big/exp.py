@@ -17,6 +17,7 @@ from pyspark.sql.types import StructType, StructField, LongType
 from rtg import cpu_count, log, cpu_device
 from rtg.data.dataset import Batch, IdExample, LoopingIterable
 from rtg.exp import TranslationExperiment, Field
+import numpy as np
 
 try:
     set_start_method('spawn')
@@ -299,13 +300,14 @@ class SparkDataset(Iterable[Batch]):
     def to_local(self, data: DataFrame):
         # Note: this is anti-pattern in spark. figure out how to do without localIterator
         for ex in data.rdd.toLocalIterator():
-            if len(ex.x) > self.max_src_len or len(ex.y) > self.max_tgt_len:
+            id, x, y = ex.id, ex.x, ex.y
+            if len(x) > self.max_src_len or len(y) > self.max_tgt_len:
                 if self.truncate:
-                    ex.x = ex.x[:self.max_src_len]
-                    ex.y = ex.y[:self.max_tgt_len]
+                    x = x[:self.max_src_len]
+                    y = y[:self.max_tgt_len]
                 else:  # skip
                     continue
-            yield IdExample(x=ex.x, y=ex.y, id=ex.id)
+            yield IdExample(x=np.array(x, dtype=np.int32), y=np.array(y, dtype=np.int32), id=ex.id)
 
     def make_eq_len_ran_batches(self, data_shuf, buffer_size=None):
         # every pass introduces some randomness
