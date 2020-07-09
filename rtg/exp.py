@@ -32,7 +32,8 @@ class BaseExperiment:
         log.info(f"Initializing an experiment. Directory = {work_dir}")
         self.read_only = read_only
         self.work_dir = work_dir
-        self.log_file = work_dir / 'rtg.log'
+        self.log_dir = work_dir / 'logs'
+        self.log_file = self.log_dir / 'rtg.log'
         self.data_dir = work_dir / 'data'
         self.model_dir = work_dir / 'models'
         self._config_file = work_dir / 'conf.yml'
@@ -61,7 +62,7 @@ class BaseExperiment:
         self.samples_file = self.data_dir / 'samples.tsv.gz'
 
         if not read_only:
-            for _dir in [self.model_dir, self.data_dir]:
+            for _dir in [self.model_dir, self.data_dir, self.log_dir]:
                 if not _dir.exists():
                     _dir.mkdir(parents=True)
 
