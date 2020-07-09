@@ -277,7 +277,7 @@ class SteppedTrainer:
             last_model, self.last_step = self.exp.get_last_saved_model()
             if last_model:
                 log.info(f"Resuming training from step:{self.last_step}, model={last_model}")
-                state = torch.load(last_model)
+                state = torch.load(last_model, map_location=device)  
                 model_state = state['model_state'] if 'model_state' in state else state
                 if 'optim_state' in state:
                     optim_state = state['optim_state']
@@ -289,6 +289,9 @@ class SteppedTrainer:
         for k, v in self.default_optim_args.items():
             optim_args[k] = optim_args.get(k, v)
 
+        self.n_gpus = torch.cuda.device_count()
+        self.device_ids = list(range(self.n_gpus))
+        
         self.model = self.model.to(device)
 
         inner_opt_args = {k: optim_args[k] for k in
@@ -301,7 +304,7 @@ class SteppedTrainer:
         if optim_state:
             log.info("restoring optimizer state from checkpoint")
             try:
-                inner_opt.load_state_dict(optim_state)
+                inner_opt.load_state_dict(optim_state)  
             except Exception:
                 log.exception("Unable to restore optimizer, skipping it.")
         self.opt = NoamOpt(self.model.model_dim, optim_args['constant'], optim_args['warmup_steps'],

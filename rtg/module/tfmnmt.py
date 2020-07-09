@@ -578,7 +578,7 @@ class MultiGPULossFunction(ChunkedLossCompute):
         # disconnect y_feats nodes from rest of graph
         _y_feats = y_feats.data.clone().detach()
         _y_feats.requires_grad = True  # even though detached, we still need grads here
-
+        out_device = y_feats.device
         # naming: sct = Scattered  chk = Chunked
         # Scatter is horizontal split (i.e. along batch) ; Chunk is vertical split (ie. along time)
         # Scatter is handled by pytorch's dataparallel utils
@@ -626,7 +626,7 @@ class MultiGPULossFunction(ChunkedLossCompute):
             chk_sct_loss = nn.parallel.parallel_apply(sct_criteria, args_pair)
 
             # update total loss
-            chk_losses = nn.parallel.gather(chk_sct_loss, target_device=self.out_device)
+            chk_losses = nn.parallel.gather(chk_sct_loss, target_device=out_device)
             chk_loss = chk_losses.sum() / normalizer
             total_loss += chk_loss.item()
 
@@ -659,7 +659,6 @@ class TransformerTrainer(SteppedTrainer):
                  **optim_args):
         super().__init__(exp, model, model_factory=model_factory, optim=optim, **optim_args)
         generator = self.model.generator
-        self.n_gpus = torch.cuda.device_count()
         trainer_args = self.exp.config.get('trainer', {}).get('init_args', {})
         chunk_size = trainer_args.get('chunk_size', 10)
         self.grad_accum_interval = trainer_args.get('grad_accum', 1)
@@ -670,14 +669,12 @@ class TransformerTrainer(SteppedTrainer):
                  f"{os.environ.get('CUDA_VISIBLE_DEVICES')}")
 
         if self.n_gpus > 1:  # Multi GPU mode
-            device_ids = list(range(self.n_gpus))
-            log.warning("Multi GPU mode <<this feature is not well tested>>")
-            self.model = nn.DataParallel(self.model, dim=0, device_ids=device_ids)
-
+            self.model = nn.DataParallel(self.model, dim=0, device_ids=self.device_ids)
             self.loss_func = MultiGPULossFunction(self.model, criterion=self.criterion,
                                                   opt=self.opt,
-                                                  chunk_size=chunk_size, devices=device_ids)
+                                                  chunk_size=chunk_size, devices=self.device_ids)
         else:
+            self.model = self.model.to(device)
             self.loss_func = ChunkedLossCompute(generator=generator, criterion=self.criterion,
                                                 opt=self.opt, chunk_size=chunk_size)
 
@@ -697,7 +694,8 @@ class TransformerTrainer(SteppedTrainer):
                   unit='batch', dynamic_ncols=True) as data_bar:
             # TODO: BLEU1
             for i, batch in enumerate(data_bar):
-                batch = batch.to(device)
+                if self.n_gpus <= 1:
+                    batch = batch.to(device)
                 num_toks = batch.y_toks
                 x_seqs = batch.x_seqs
                 if do_bleu and not bool(batch.y_raw):
@@ -711,7 +709,7 @@ class TransformerTrainer(SteppedTrainer):
                     x_seqs = x_seqs[:, 1:]
                 else:
                     bos_step = torch.full((len(batch), 1), fill_value=batch.bos_val,
-                                          dtype=torch.long, device=device)
+                                          dtype=torch.long, device=batch.y_seqs.device)
 
 
                 x_mask = (x_seqs != batch.pad_val).unsqueeze(1)
@@ -739,6 +737,7 @@ class TransformerTrainer(SteppedTrainer):
                     f'Loss:{loss:.4f}, {int(num_toks / elapsed)}toks/s', refresh=False)
 
                 start = time.time()
+                
 
         score = total_loss / num_batches
         if do_bleu:
@@ -835,8 +834,9 @@ class TransformerTrainer(SteppedTrainer):
                 if update_interval == 0:
                     self.model.zero_grad()
 
-                # Prep batch
-                batch = batch.to(device)
+                #  if not dataparallel, then move
+                if self.n_gpus <= 1:
+                    batch = batch.to(device)
                 num_toks = batch.y_toks
                 x_seqs = batch.x_seqs
                 if dec_bos_cut:
@@ -844,7 +844,7 @@ class TransformerTrainer(SteppedTrainer):
                     x_seqs = x_seqs[:, 1:]
                 else:
                     bos_step = torch.full((len(batch), 1), fill_value=batch.bos_val,
-                                          dtype=torch.long, device=device)
+                                          dtype=torch.long, device=batch.y_seqs.device)
 
                 # Prep masks
                 x_mask = (x_seqs != batch.pad_val).unsqueeze(1)

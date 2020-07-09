@@ -11,7 +11,7 @@ import torch
 from tqdm import tqdm
 import numpy as np
 
-from rtg import log, my_tensor as tensor, device, cpu_count, cpu_device
+from rtg import log, device, cpu_count, cpu_device
 from rtg.data.codec import Field
 from rtg.utils import IO, line_count, get_my_args, max_RSS
 
@@ -181,6 +181,7 @@ class TSVData(Iterable[IdExample]):
         """Uses multiprocess to process the dataset"""
         # Read the data on a single thread
         recs = TSVData.read_raw_parallel_lines(src_path, tgt_path)
+        cpu_count = min(cpu_count, 6)  # too many is bad for disk
         log.info(f"Parallel processing the parallel data using {cpu_count} CPUs")
 
         with mp.get_context("spawn").Pool(processes=cpu_count) as pool:
@@ -467,15 +468,15 @@ class Batch:
         if sort_dec:
             batch = sorted(batch, key=lambda _: len(_.x), reverse=True)
         self._len = len(batch)
-        self.x_len = tensor([len(e.x) for e in batch])
+        self.x_len = torch.tensor([len(e.x) for e in batch], device=device)
         self.x_toks = self.x_len.sum().float().item()
         self.max_x_len = self.x_len.max()
 
         # create x_seqs on CPU RAM and move to GPU at once
         self.x_seqs = torch.full(size=(self._len, self.max_x_len), fill_value=self.pad_val,
-                                 dtype=torch.long)
+                                 dtype=torch.long, device=device)
         for i, ex in enumerate(batch):
-            self.x_seqs[i, :len(ex.x)] = torch.tensor(ex.x, dtype=torch.long)
+            self.x_seqs[i, :len(ex.x)] = torch.tensor(ex.x, dtype=torch.long, device=device)
         self.x_seqs = self.x_seqs.to(device)
         if not batch_first:  # transpose
             self.x_seqs = self.x_seqs.t()
@@ -487,11 +488,11 @@ class Batch:
         self.has_y = first_y is not None
         if self.has_y:
             self.bos_eos_check(batch, 'y', add_bos_y, add_eos_y)
-            self.y_len = tensor([len(e.y) for e in batch])
+            self.y_len = torch.tensor([len(e.y) for e in batch], device=device)
             self.y_toks = self.y_len.sum().float().item()
             self.max_y_len = self.y_len.max().item()
             y_seqs = torch.full(size=(self._len, self.max_y_len), fill_value=self.pad_val,
-                                dtype=torch.long)
+                                dtype=torch.long, device=device)
             for i, ex in enumerate(batch):
                 y_seqs[i, :len(ex.y)] = torch.tensor(ex.y, dtype=torch.long)
             self.y_seqs = y_seqs.to(device)

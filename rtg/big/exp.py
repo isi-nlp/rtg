@@ -14,8 +14,8 @@ import pyspark.sql.functions as SF
 from pyspark.sql import SparkSession, DataFrame
 from pyspark.sql.types import StructType, StructField, LongType
 
-from rtg import cpu_count, log
-from rtg.data.dataset import Batch, IdExample
+from rtg import cpu_count, log, cpu_device
+from rtg.data.dataset import Batch, IdExample, LoopingIterable
 from rtg.exp import TranslationExperiment, Field
 
 try:
@@ -99,7 +99,8 @@ class BigTranslationExperiment(TranslationExperiment):
             spark, args[src_key], args[tgt_key], args['truncate'], args['src_len'], args['tgt_len'],
             src_tokenizer=self.src_vocab.encode_as_ids, tgt_tokenizer=self.tgt_vocab.encode_as_ids)
         log.warning(f"Storing data at {out_file}")
-        df.write.parquet(str(out_file))
+        n_parts = 100
+        df.repartition(n_parts).write.parquet(str(out_file))
         e_time = time.time()
         log.info(f"Time taken to process: {timedelta(seconds=(e_time - s_time))}")
 
@@ -125,26 +126,29 @@ class BigTranslationExperiment(TranslationExperiment):
 
     def get_train_data(self, batch_size: int, steps: int = 0, sort_by='eq_len_rand_batch',
                        batch_first=True, shuffle=False, fine_tune=False, keep_in_mem=False):
-        data_file: Path = self.train_file
+        data_path: Path = self.train_file
         if fine_tune:
             if not self.finetune_file.exists():
                 # user may have added fine tune file later
                 self._pre_process_parallel('finetune_src', 'finetune_tgt', self.finetune_file)
             log.info("Using Fine tuning corpus instead of training corpus")
-            data_file = self.finetune_file
-        assert data_file.name.endswith(".parquet")
-        assert not keep_in_mem, 'keep in memory not supported for big experiments'
+            data_path = self.finetune_file
+        assert data_path.name.endswith(".parquet")
+        if keep_in_mem:
+            log.warning('keep in memory not supported for big experiments; ignored')
+            keep_in_mem = False
         # data_file = IO.maybe_tmpfs(data_file)
 
         # Read data on a separate process
         # all these args should be easily pickle-able
         max_q_size = 10 ** 4
-        queue = Queue(max_q_size)
+        #queue = Queue(max_q_size)
         batching_args = dict(batch_size=batch_size, sort_by=sort_by,
                              batch_first=batch_first, shuffle=shuffle,
                              field=self.tgt_vocab, buffer_size=max_q_size)
         batching_args.update(self._get_batch_args())
-
+        
+        """ #Note: this code works on some env (like OSX) and fails on some like RHEL on PPC64LE
         prod_args = dict(queue=queue, total=steps, spark_conf=self.config['spark'],
                          data_path=data_file, batching_args=batching_args)
         prod_proc = Process(target=producer, kwargs=prod_args)
@@ -163,7 +167,16 @@ class BigTranslationExperiment(TranslationExperiment):
 
         # prod_proc.join()  # the consumer() waits for 'DONE' message that is analogous to join()
         return consumer(queue)
+        """
 
+        # multiprocessing is a mess in python. My code didnt run on RHEL 7.5 with PPC64LE CPUs
+        # I give up now going back to same process
+        log.info(f"Reading data from {data_path}")
+        dataframe = self.spark_session().read.parquet(str(data_path))
+        data = SparkDataset(dataframe, **batching_args)
+        if steps > 0:
+            data = LoopingIterable(data, steps)
+        return data
 
 def producer(queue: Queue, total: int, spark_conf: Dict, data_path: Union[str, Path],
              batching_args: Dict):
@@ -181,6 +194,7 @@ def producer(queue: Queue, total: int, spark_conf: Dict, data_path: Union[str, P
         spark = get_spark_session(spark_conf)
         if not isinstance(data_path, str):
             data_path = str(data_path)
+        log.info(f"Loading parquet file from  {data_path}")
         data = spark.read.parquet(data_path)
         dataset = SparkDataset(data, **batching_args)
         count = 0
@@ -235,7 +249,7 @@ class SparkDataset(Iterable[Batch]):
         self.sort_by = sort_by
 
         self.data = data.persist(pyspark.StorageLevel.MEMORY_AND_DISK)  # .cache()
-        self._n_rows = self.data.select('id').count()
+        self._n_rows = -1 # self.data.select('id').count()
         self.buffer_size = buffer_size
         self.max_src_len = max_src_len
         self.max_tgt_len = max_tgt_len
@@ -293,9 +307,8 @@ class SparkDataset(Iterable[Batch]):
                     continue
             yield IdExample(x=ex.x, y=ex.y, id=ex.id)
 
-    def make_eq_len_ran_batches(self, buffer_size=None):
+    def make_eq_len_ran_batches(self, data_shuf, buffer_size=None):
         # every pass introduces some randomness
-        data_shuf = self.data.orderBy(SF.rand())
         buffer_size = buffer_size or self.buffer_size
         assert buffer_size > 0
         buffer = []
@@ -326,7 +339,12 @@ class SparkDataset(Iterable[Batch]):
     def __iter__(self) -> Iterator[Batch]:
         self.n_epoch += 1
         if self.sort_by == 'eq_len_rand_batch':
-            yield from self.make_eq_len_ran_batches()
+            if self.n_epoch > 1:
+                data_shuf = self.data.orderBy(SF.rand())
+            else:
+                log.info("data is not shuffling for the first epoch")
+                data_shuf = self.data
+            yield from self.make_eq_len_ran_batches(data_shuf)
         else:
             data = self.data
             if self.shuffle:
