@@ -21,6 +21,7 @@ from torch.utils.tensorboard import SummaryWriter
 from enum import Enum
 import inspect
 from pathlib import Path
+from rtg.distrib import DistribTorch
 
 
 class NoamOpt(Optimizer):
@@ -291,15 +292,21 @@ class SteppedTrainer:
 
         self.n_gpus = torch.cuda.device_count()
         self.device_ids = list(range(self.n_gpus))
-        
-        self.model = self.model.to(device)
+
+        self.core_model = self.model.to(device)
+        self.model = DistribTorch.instance().maybe_distributed(self.core_model)
 
         inner_opt_args = {k: optim_args[k] for k in
                           ['lr', 'betas', 'eps', 'weight_decay', 'amsgrad']}
 
         trainable_params = self.exp.config['optim'].get('trainable', {})
-        trainable_params = self.model.get_trainable_params(include=trainable_params.get('include'),
+        if trainable_params:
+            if self.core_model is not self.model: # model is wrapped in DP or DistributedDP
+                log.warning(f">> Using more than 1 GPU with 'trainable' params is NOT tested")
+            trainable_params = self.core_model.get_trainable_params(include=trainable_params.get('include'),
                                                            exclude=trainable_params.get('exclude'))
+        else:
+            trainable_params = self.model.parameters()
         inner_opt = Optims[optim].new(trainable_params, **inner_opt_args)
         if optim_state:
             log.info("restoring optimizer state from checkpoint")
@@ -307,7 +314,7 @@ class SteppedTrainer:
                 inner_opt.load_state_dict(optim_state)  
             except Exception:
                 log.exception("Unable to restore optimizer, skipping it.")
-        self.opt = NoamOpt(self.model.model_dim, optim_args['constant'], optim_args['warmup_steps'],
+        self.opt = NoamOpt(self.core_model.model_dim, optim_args['constant'], optim_args['warmup_steps'],
                            inner_opt, step=self.start_step, inv_sqrt=optim_args['inv_sqrt'])
 
         if self.exp.read_only:
@@ -328,11 +335,10 @@ class SteppedTrainer:
                         self.tbd.add_text(f"sample/{samp_num}", " || ".join(sample), 0)
 
             from rtg.module.decoder import Decoder
-            self.decoder = Decoder.new(self.exp, self.model)
+            self.decoder = Decoder.new(self.exp, self.core_model)
 
         if self.start_step <= 1:
             self.maybe_init_model()
-        self.model = self.model.to(device)
 
         self.criterion = self.create_criterion(optim_args['criterion'])
 
@@ -353,7 +359,7 @@ class SteppedTrainer:
 
         optim_args = self.exp.optim_args[1]
         smoothing = optim_args.get('label_smoothing', 0.0)
-        tgt_embedding = self.model.tgt_embed[0].lut
+        tgt_embedding = self.core_model.tgt_embed[0].lut
         margin = optim_args.get('margin', 0.0)
         mode = optim_args.get('mode', 'dot')
         neg_sampling = optim_args.get('neg_sampling', 'random')
@@ -362,7 +368,7 @@ class SteppedTrainer:
 
         pad_idx = self.exp.tgt_vocab.pad_idx
         if criterion == 'smooth_kld':
-            return criteria.SmoothKLD(vocab_size=self.model.generator.vocab, smoothing=smoothing,
+            return criteria.SmoothKLD(vocab_size=self.core_model.generator.vocab, smoothing=smoothing,
                                       pad_idx=pad_idx)
         elif criterion == 'cross_entropy':
             return criteria.CrossEntropy()
@@ -387,14 +393,14 @@ class SteppedTrainer:
         if src_emb_mat is None:
             log.info("NOT initializing pre-trained source embedding")
         else:
-            self.model.init_src_embedding(src_emb_mat)
+            self.core_model.init_src_embedding(src_emb_mat)
 
         tgt_emb_mat = load_matrix(self.exp.emb_tgt_file)
         if tgt_emb_mat is None:
             log.info("NOT Initializing pre-trained target embeddings")
         else:
-            self.model.init_tgt_embedding(tgt_emb_mat)
-        self.model.maybe_init_from_parent(exp=self.exp)
+            self.core_model.init_tgt_embedding(tgt_emb_mat)
+        self.core_model.maybe_init_from_parent(exp=self.exp)
 
     def show_samples(self, beam_size=3, num_hyp=3, max_len=30):
         """
@@ -443,7 +449,8 @@ class SteppedTrainer:
                                    global_step=step_num, tag=f'Target embeddings')
 
         # Unwrap model state from DataParallel and persist
-        model = (self.model.module if isinstance(self.model, nn.DataParallel) else self.model)
+        wrappers = (nn.DataParallel, nn.parallel.distributed.DistributedDataParallel)
+        model = (self.model.module if isinstance(self.model, wrappers) else self.model)
         state = {
             'model_state': model.state_dict(),
             'optim_state': self.opt.optimizer.state_dict(),

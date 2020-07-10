@@ -20,6 +20,7 @@ import inspect
 import copy
 import json
 import subprocess
+from rtg.distrib import DistribTorch
 
 
 @dataclass
@@ -275,11 +276,21 @@ class Pipeline:
                 err.write_text(str(e))
 
     def run(self, run_tests=True):
+        distr = DistribTorch.instance()
         if not self.exp.read_only:
+            #if not distr.is_main:
+            #    log.clear_console() # console handler
+
             log.update_file_handler(str(self.exp.log_file))
         self.pre_checks()  # fail early, so TG can fix and restart
-        self.exp.pre_process()
+
+
+        if distr.global_rank == 0:
+            # preprocess on only one node, rank 0
+            self.exp.pre_process()
+        # train on all
         self.exp.train()
+        distr.barrier()
         if run_tests:
             with torch.no_grad():
                 self.run_tests()
@@ -292,6 +303,13 @@ def parse_args():
                         help="Config File. By default <work_dir>/conf.yml is used")
     parser.add_argument("-G", "--gpu-only", action="store_true", default=False,
                         help="Crash if no GPU is available")
+
+    # multi-gpu / multi-node
+    parser.add_argument("--local_rank", "--local-rank", type=int, default=-1,
+                        help="Multi-GPU - Local rank")
+    parser.add_argument("--master-port", type=int, default=-1,
+                        help="Master port (for multi-node SLURM jobs)")
+
     args = parser.parse_args()
 
     if args.gpu_only:
@@ -308,6 +326,7 @@ def parse_args():
         log.info("Big experiment mode enabled; checking pyspark backend")
         try:
             import pyspark
+            log.info("pyspark is available")
         except:
             log.warning("unable to import pyspark. Please do 'pip install pyspark' and run again")
             raise

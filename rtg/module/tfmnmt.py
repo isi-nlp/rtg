@@ -24,6 +24,7 @@ from rtg.module.criterion import Criterion
 from torch.optim.optimizer import Optimizer
 from dataclasses import dataclass
 from sacrebleu import corpus_bleu
+from rtg.distrib import DistribTorch
 
 
 def clones(module, N):
@@ -658,25 +659,36 @@ class TransformerTrainer(SteppedTrainer):
                  model_factory=TransformerNMT.make_model,
                  **optim_args):
         super().__init__(exp, model, model_factory=model_factory, optim=optim, **optim_args)
-        generator = self.model.generator
         trainer_args = self.exp.config.get('trainer', {}).get('init_args', {})
-        chunk_size = trainer_args.get('chunk_size', 10)
+        chunk_size = trainer_args.get('chunk_size', -1)
         self.grad_accum_interval = trainer_args.get('grad_accum', 1)
         assert self.grad_accum_interval > 0
 
-        log.info(f"Going to use {self.n_gpus} GPUs; "
-                 f" Chunk_size={chunk_size} CUDA_VISIBLE_DEVICES="
-                 f"{os.environ.get('CUDA_VISIBLE_DEVICES')}")
-
         if self.n_gpus > 1:  # Multi GPU mode
+            raise Exception("<<Multi GPU per process>> Recommended: many processes with 1 GPU each")
+            log.info(f"Going to use {self.n_gpus} GPUs; "
+                     f" Chunk_size={chunk_size} CUDA_VISIBLE_DEVICES="
+                     f"{os.environ.get('CUDA_VISIBLE_DEVICES')}")
+            """
             self.model = nn.DataParallel(self.model, dim=0, device_ids=self.device_ids)
             self.loss_func = MultiGPULossFunction(self.model, criterion=self.criterion,
                                                   opt=self.opt,
                                                   chunk_size=chunk_size, devices=self.device_ids)
         else:
-            self.model = self.model.to(device)
+            """
+        generator = self.core_model.generator
+        if not chunk_size or chunk_size < 1:
+            self.loss_func = SimpleLossFunction(generator=generator, criterion=self.criterion,
+                                                opt=self.opt)
+        else:
+            log.info(f"Using Chunked Loss Generator. chunk_size={chunk_size}")
+            if DistribTorch.instance().is_distributed:
+                raise Exception("Chunked Loss is not supported with DDP. Your options are:"
+                                "\n1. set trainer.init_args.chunk_size = 0 to disable it"
+                                "\n2. dont use distributed data parallel. run this on one 1 proc"
+                                "\n3. make chunk + DDP work together and remove this check")
             self.loss_func = ChunkedLossCompute(generator=generator, criterion=self.criterion,
-                                                opt=self.opt, chunk_size=chunk_size)
+                                                    opt=self.opt, chunk_size=chunk_size)
 
     def run_valid_epoch(self, data_iter: BatchIterable, dec_bos_cut=False, do_bleu=True):
         """
@@ -689,7 +701,8 @@ class TransformerTrainer(SteppedTrainer):
         total_loss = 0.0
         num_batches = 0
         hyps, refs = [], []   # BLEU
-
+        model = self.core_model
+        assert not model.training
         with tqdm(data_iter, total=data_iter.num_batches,
                   unit='batch', dynamic_ncols=True) as data_bar:
             # TODO: BLEU1
@@ -711,16 +724,15 @@ class TransformerTrainer(SteppedTrainer):
                     bos_step = torch.full((len(batch), 1), fill_value=batch.bos_val,
                                           dtype=torch.long, device=batch.y_seqs.device)
 
-
                 x_mask = (x_seqs != batch.pad_val).unsqueeze(1)
                 y_seqs_with_bos = torch.cat([bos_step, batch.y_seqs], dim=1)
                 y_mask = batch.make_autoreg_mask(y_seqs_with_bos)
-                out = self.model(x_seqs, y_seqs_with_bos, x_mask, y_mask)
+                out = model(x_seqs, y_seqs_with_bos, x_mask, y_mask)
+
                 # [Batch x Time x D]
                 # skip the last time step (the one with EOS as input)
                 out = out[:, :-1, :]
                 # assumption:  y_seqs has EOS, and not BOS
-
                 loss = self.loss_func(out, batch.y_seqs, num_toks, False, get_out=do_bleu)
                 if do_bleu:
                     loss, outs = loss
@@ -808,13 +820,16 @@ class TransformerTrainer(SteppedTrainer):
             batch_size *= self.n_gpus
             log.info(f"# GPUs = {self.n_gpus}, batch_size is set to {batch_size}")
         """
+        distr = DistribTorch.instance()
         if batches <= start_batch:
             raise Exception(f'The model was already trained to {self.start_step} steps. '
                             f'Please increase the steps or clear the existing models')
         train_data = self.exp.get_train_data(batch_size=batch_size, steps=batches - start_batch,
                                              sort_by=sort_by, batch_first=True, fine_tune=fine_tune,
                                              keep_in_mem=keep_in_mem)
-        val_data = self.exp.get_val_data(batch_size, shuffle=False, batch_first=True,
+        val_data = None
+        if distr.is_main:
+            val_data = self.exp.get_val_data(batch_size, shuffle=False, batch_first=True,
                                          sort_desc=False)
 
         train_state = TrainerState(self.model, check_point=check_point)
@@ -828,8 +843,9 @@ class TransformerTrainer(SteppedTrainer):
         if early_stop:
             stopper = EarlyStopper(cur_step=self.start_step, **early_stop)
 
+
         with tqdm(train_data, initial=start_batch, total=batches, unit='batch',
-                  dynamic_ncols=True) as data_bar:
+                  dynamic_ncols=True, disable=not distr.is_main) as data_bar:
             for batch in data_bar:
                 if update_interval == 0:
                     self.model.zero_grad()
@@ -882,35 +898,40 @@ class TransformerTrainer(SteppedTrainer):
                 # Save checkpoint
                 if is_check_pt:
                     train_loss = train_state.reset()
-                    train_state.train_mode(False)
-                    val_loss = self.run_valid_epoch(val_data, dec_bos_cut=dec_bos_cut)
-                    self.make_check_point(train_loss, val_loss=val_loss, keep_models=keep_models,
-                                          log_embedding=log_embedding)
-                    if check_pt_callback:
-                        check_pt_callback(model=self.model,
-                                          step=self.opt.curr_step,
-                                          train_loss=train_loss)
-                    train_state.train_mode(True)
+                    log.info(f"Chkpt Train loss={train_loss}; Runs validation? {distr.is_main}")
+                    if distr.is_main:
+                        train_state.train_mode(False)
+                        with torch.no_grad():
+                            val_loss = self.run_valid_epoch(val_data, dec_bos_cut=dec_bos_cut)
+                            self.make_check_point(train_loss, val_loss=val_loss, keep_models=keep_models,
+                                                  log_embedding=log_embedding)
+                            if check_pt_callback:
+                                check_pt_callback(model=self.model,
+                                                  step=self.opt.curr_step,
+                                                  train_loss=train_loss)
+                        train_state.train_mode(True)
+
+                        if stopper:
+                            stopper.validation(val_loss)
+                            if stopper.is_stop():
+                                log.info(f"Stopping at {stopper.cur_step} because {stopper.by}"
+                                         f" didnt improve over {stopper.patience} checkpoints")
+                                early_stopped = True
+                                break
                     unsaved_state = False
                     gc.collect()
-
-                    if stopper:
-                        stopper.validation(val_loss)
-                        if stopper.is_stop():
-                            log.info(f"Stopping at {stopper.cur_step} because {stopper.by}"
-                                     f" didnt improve over {stopper.patience} checkpoints")
-                            early_stopped = True
-                            break
+                    distr.barrier()
                 # Track gradient accumulation updates
                 update_interval = (update_interval + 1 ) % self.grad_accum_interval
 
         # End of training
-        if unsaved_state:
+        if unsaved_state and distr.is_main:
             train_loss = train_state.reset()
             train_state.train_mode(False)
             val_loss = self.run_valid_epoch(val_data, dec_bos_cut=dec_bos_cut)
             self.make_check_point(train_loss, val_loss=val_loss, keep_models=keep_models)
 
+        distr.barrier()
         return early_stopped
 
     def _log_resources(self, batch):

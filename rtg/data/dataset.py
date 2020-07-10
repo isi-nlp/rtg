@@ -13,7 +13,7 @@ import numpy as np
 
 from rtg import log, device, cpu_count, cpu_device
 from rtg.data.codec import Field
-from rtg.utils import IO, line_count, get_my_args, max_RSS
+from rtg.utils import IO, line_count, get_my_args, max_RSS, maybe_compress
 
 
 Array = np.ndarray
@@ -633,11 +633,12 @@ class BatchIterable(Iterable[Batch]):
         if isinstance(self.data, SqliteFile):  # only sqlite supports multiple sorts as of now
             sort += ', random() desc'
         rows = self.data.get_all(cols=['id', 'x_len', 'y_len'], sort=sort)
-        stats = [(r['id'], r['x_len'], r['y_len']) for r in rows]
         batches = []
         batch = []
         max_len = 0
-        for id, x_len, y_len in stats:
+
+        for row in rows:
+            id, x_len, y_len = row['id'], row['x_len'], row['y_len']
             if min(x_len, y_len) == 0:
                 log.warn("Skipping a record, either source or target is empty")
                 continue
@@ -650,11 +651,11 @@ class BatchIterable(Iterable[Batch]):
                 if this_len > self.batch_size:
                     raise Exception(f'Unable to make a batch of {self.batch_size} toks'
                                     f' with a seq of x_len:{x_len} y_len:{y_len}')
-                batches.append(batch)
+                batches.append(maybe_compress(batch))
                 batch = [id]  # new batch
                 max_len = this_len
         if batch:
-            batches.append(batch)
+            batches.append(maybe_compress(batch))
         return batches
 
     def make_eq_len_ran_batches(self):
