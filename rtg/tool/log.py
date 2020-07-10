@@ -21,6 +21,7 @@ class Logger(logging.Logger):
         # create console handler with a higher log level
         self.file = file
         self.fh = None
+        self.ch = None
         self.setup_handlers()
 
     def update_file_handler(self, file, log_level=logging.DEBUG):
@@ -39,18 +40,25 @@ class Logger(logging.Logger):
 
     def setup_handlers(self):
         # create console handler with a higher log level
-        ch = logging.StreamHandler()
-        ch.setLevel(self.console_level)
-        ch.setFormatter(self.formatter)
-        self.addHandler(ch)
+
+        self.ch = logging.StreamHandler()
+        self.ch.setLevel(self.console_level)
+        self.ch.setFormatter(self.formatter)
+        self.addHandler(self.ch)
 
         if self.file:
             self.update_file_handler(self.file, self.file_level)
+
+    def clear_console(self):
+        if self.ch and self.ch in self.handlers:
+            self.handlers.remove(self.ch)
+            self.ch = None
 
     def __getstate__(self):
         state = self.__dict__.copy()
         state['handlers'] = []     # empty this list, dont pickle
         del state["fh"]            # Don't pickle fh
+        del state["ch"]            # Don't pickle ch
         return state
 
     def __setstate__(self, state):
