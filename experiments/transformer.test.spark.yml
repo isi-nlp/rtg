@@ -37,10 +37,10 @@ prep:
   mono_tgt: []
 
 spark: # add this block to enable spark backend
-  # double quote the keys containing dot
-  "spark.master": local[3]
-  "spark.app.name": RTG NMT on Spark
-  "spark.driver.memory": 6g
+  spark.master: local[3]
+  spark.app.name: RTG NMT on Spark
+  spark.driver.memory: 6g
+  spark.serializer: org.apache.spark.serializer.KryoSerializer    # more efficient
   #key1: value1    # any other spark configs you want to control
   len_sort_size: 20000  # keep these recs in memory for making equal length batches
 tester:

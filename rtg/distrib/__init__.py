@@ -68,7 +68,7 @@ class DistribTorch:
 
     @property
     def is_main(self) -> bool:
-        return self.global_rank == 0
+        return self.global_rank <= 0
 
     def barrier(self):
         if self.is_distributed:

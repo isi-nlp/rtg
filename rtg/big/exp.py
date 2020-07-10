@@ -52,10 +52,10 @@ class BigTranslationExperiment(TranslationExperiment):
         self.finetune_file = self.data_dir / "finetune.parquet"
         self._spark = None
         assert 'spark' in self.config, 'refer to docs for enabling spark backend'
-        spark_conf = self.config['spark']
-        if 'spark.master' not in spark_conf:
-            spark_conf['spark.master'] = f'local[{cpu_count}]'
-        self.len_sort_size = spark_conf.get('len_sort_size', 20_000)
+        self.spark_conf = self.config['spark']
+        if 'spark.master' not in self.spark_conf:
+            self.spark_conf['spark.master'] = f'local[{cpu_count}]'
+        self.len_sort_size = self.spark_conf.get('len_sort_size', 20_000)
 
     def __getstate__(self):
         state = self.__dict__.copy()
@@ -69,11 +69,13 @@ class BigTranslationExperiment(TranslationExperiment):
     def spark_session(self):
         if not self._spark:
             self._spark = get_spark_session(self.config['spark'])
+
             def close_spark(sp):
                 try:
                     sp.stop()
                 except:
                     pass
+
             atexit.register(close_spark, self._spark)
         return self._spark
 
@@ -149,12 +151,13 @@ class BigTranslationExperiment(TranslationExperiment):
         # Read data on a separate process
         # all these args should be easily pickle-able
         max_q_size = 10 ** 4
-        #queue = Queue(max_q_size)
+        # queue = Queue(max_q_size)
         batching_args = dict(batch_size=batch_size, sort_by=sort_by,
                              batch_first=batch_first, shuffle=shuffle,
-                             field=self.tgt_vocab, buffer_size=max_q_size)
+                             field=self.tgt_vocab, buffer_size=max_q_size,
+                             skip_first_shuffle=self.spark_conf.get('skip_first_shuffle', False))
         batching_args.update(self._get_batch_args())
-        
+
         """ #Note: this code works on some env (like OSX) and fails on some like RHEL on PPC64LE
         prod_args = dict(queue=queue, total=steps, spark_conf=self.config['spark'],
                          data_path=data_file, batching_args=batching_args)
@@ -184,6 +187,7 @@ class BigTranslationExperiment(TranslationExperiment):
         if steps > 0:
             data = LoopingIterable(data, steps)
         return data
+
 
 def producer(queue: Queue, total: int, spark_conf: Dict, data_path: Union[str, Path],
              batching_args: Dict):
@@ -232,7 +236,8 @@ class SparkDataset(Iterable[Batch]):
     def __init__(self, data: DataFrame, batch_size: int, field: Field,
                  sort_desc: bool = False, batch_first: bool = True,
                  sort_by: str = None, buffer_size=20_000, shuffle=True, device=cpu_device,
-                 max_src_len: int = 512, max_tgt_len: int = 512, truncate: bool = False):
+                 max_src_len: int = 512, max_tgt_len: int = 512, truncate: bool = False,
+                 skip_first_shuffle=False):
         """
         :param data: Dataframe
         :param batch_size: batch size in tokens
@@ -246,6 +251,10 @@ class SparkDataset(Iterable[Batch]):
         :param max_tgt_len:
         :param truncate: True => truncate src and tgt sequences by  max_src_len and max_tgt_len .
             False => drop sequence if either  len(src) > max_src_len or len(tgt) > max_tgt_len
+        :param skip_first_shuffle: set True to start without shuffling first.
+            this is useful if the dataset is too big (shuffling takes long time),
+             and you want to get some batches to training see if the program crashes due to
+             OOM or some other bugs
         """
         assert isinstance(data, DataFrame), 'data must be of type pyspark.sql.DataFrame'
         self.n_epoch = 0
@@ -256,12 +265,13 @@ class SparkDataset(Iterable[Batch]):
         self.sort_by = sort_by
 
         self.data = data.persist(pyspark.StorageLevel.MEMORY_AND_DISK)  # .cache()
-        self._n_rows = -1 # self.data.select('id').count()
+        self._n_rows = -1  # self.data.select('id').count()
         self.buffer_size = buffer_size
         self.max_src_len = max_src_len
         self.max_tgt_len = max_tgt_len
         self.truncate = truncate
         self.shuffle = shuffle
+        self.skip_first_shuffle = skip_first_shuffle
         self.device = device
         log.info(f'Batch Size = {batch_size} toks, sort_by={sort_by}; total_rows={self._n_rows}')
 
@@ -346,7 +356,7 @@ class SparkDataset(Iterable[Batch]):
     def __iter__(self) -> Iterator[Batch]:
         self.n_epoch += 1
         if self.sort_by == 'eq_len_rand_batch':
-            if self.n_epoch > 1:
+            if self.n_epoch > 1 or not self.skip_first_shuffle:
                 data_shuf = self.data.orderBy(SF.rand())
             else:
                 log.info("data is not shuffling for the first epoch")
@@ -355,7 +365,10 @@ class SparkDataset(Iterable[Batch]):
         else:
             data = self.data
             if self.shuffle:
-                data = data.orderBy(SF.rand())
+                if self.skip_first_shuffle and self.n_epoch == 1:
+                    log.info("data is not shuffling for the first epoch")
+                else:
+                    data = data.orderBy(SF.rand())
             yield from self.read_all(data)
         log.info(f"===Epoch {self.n_epoch} completed===")
 
