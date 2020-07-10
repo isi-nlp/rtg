@@ -4,7 +4,7 @@ import os
 import subprocess
 import sys
 from argparse import ArgumentParser, REMAINDER, ArgumentDefaultsHelpFormatter as HelpFormatter
-from typing import List
+from typing import List, Tuple
 
 import torch
 
@@ -110,15 +110,15 @@ def main():
     cmd.append(args.training_script)
     cmd.extend(args.training_script_args)
 
-    processes: List[subprocess.Popen] = []
+    processes = []
     for local_rank in range(0, args.procs_per_node):
         my_env = cur_env.copy()
         # each process's rank
         dist_rank = args.procs_per_node * args.node_rank + local_rank
         my_env["RANK"] = str(dist_rank)
         if args.gpus_per_proc > 0:
-            device_ids = ','.join(range(local_rank * args.gpus_per_proc,
-                                        (local_rank + 1) * args.gpus_per_proc))
+            dev_ids = range(local_rank * args.gpus_per_proc, (local_rank + 1) * args.gpus_per_proc)
+            device_ids = ','.join(str(i) for i in dev_ids)
             my_env["CUDA_VISIBLE_DEVICES"] = device_ids
 
         # spawn the processes
