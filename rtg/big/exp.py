@@ -8,6 +8,7 @@ from datetime import timedelta
 from torch.multiprocessing import set_start_method, Process, Queue
 from pathlib import Path
 from typing import List, Dict, Optional, Any, Union, Tuple, Iterator, Iterable
+import atexit
 
 import pyspark
 import pyspark.sql.functions as SF
@@ -69,6 +70,12 @@ class BigTranslationExperiment(TranslationExperiment):
     def spark_session(self):
         if not self._spark:
             self._spark = get_spark_session(self.config['spark'])
+            def close_spark(sp):
+                try:
+                    sp.stop()
+                except:
+                    pass
+            atexit.register(close_spark, self._spark)
         return self._spark
 
     def _pre_process_parallel(self, src_key: str, tgt_key: str, out_file: Path,
