@@ -13,6 +13,8 @@ import atexit
 from typing import Tuple
 import resource
 import sys
+import numpy as np
+
 
 # Size of each element in tensor
 tensor_size = {
@@ -215,3 +217,14 @@ def max_RSS(who=resource.RUSAGE_SELF) -> Tuple[int, str]:
         h_mem /= 10 ** 3  # kilo to mega
         unit = 'MB'
     return mem, f'{int(h_mem)}{unit}'
+
+
+def maybe_compress(arr, frugal=False):
+    # python list wastes a lot of memory: references to each item, and int is 28 bytes
+    if isinstance(arr[0], int):
+        return np.array(arr, dtype=np.int32 if frugal else np.int64)
+    elif isinstance(arr[0], float):
+        return np.array(arr, dtype=np.float32 if frugal else np.float64)
+    else:
+        # fall back to basic list of python
+        return np.array(arr, dtype=object)
