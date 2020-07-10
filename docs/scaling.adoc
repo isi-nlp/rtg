@@ -38,3 +38,27 @@ Watch out the spark logs for any warning messages.
 Also, the log message provides the Spark web UI address when spark session is initialized.
 
 WARNING: The spark distributed mode is not tested. (But it might work out of the box  if `"spark.master"` is correctly set)
+
+
+=== Postgres backend for dataset
+
+To draw IID examples to training process, the dataset backend needs fast random access to examples.
+Spark RDDs/Dataframes are not meant for random access, so we need something of a database that builds ahead-of-time index rows.
+
+We already have sqlite3 for that reason, however, Sqlite3 doesnt scale well to
+
+Postgres can be easily installed on many platforms (including PPC64) using conda.
+Sudo/root is not needed to setup. The instructions are as follows:
+
+[source,bash]
+----
+# install
+conda install -c anaconda postgresql
+
+# setup db dir under <myexp>;  for simplicity, each expe gets own PostgresDB
+pg_ctl init -D <myexp>/pg-data -U rtg
+
+pg_ctl start -D <myexp>/data-pg
+----
+
+WARNING:  this is incomplete
