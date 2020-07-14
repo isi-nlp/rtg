@@ -828,7 +828,7 @@ class TransformerTrainer(SteppedTrainer):
                                              sort_by=sort_by, batch_first=True, fine_tune=fine_tune,
                                              keep_in_mem=keep_in_mem)
         val_data = None
-        if distr.is_main:
+        if distr.is_global_main:
             val_data = self.exp.get_val_data(batch_size, shuffle=False, batch_first=True,
                                          sort_desc=False)
 
@@ -845,7 +845,7 @@ class TransformerTrainer(SteppedTrainer):
 
 
         with tqdm(train_data, initial=start_batch, total=batches, unit='batch',
-                  dynamic_ncols=True, disable=not distr.is_main) as data_bar:
+                  dynamic_ncols=True, disable=not distr.is_global_main) as data_bar:
             for batch in data_bar:
                 if update_interval == 0:
                     self.model.zero_grad()
@@ -898,8 +898,8 @@ class TransformerTrainer(SteppedTrainer):
                 # Save checkpoint
                 if is_check_pt:
                     train_loss = train_state.reset()
-                    log.info(f"Chkpt Train loss={train_loss}; Runs validation? {distr.is_main}")
-                    if distr.is_main:
+                    log.info(f"Chkpt Train loss={train_loss}; Runs validation? {distr.is_global_main}")
+                    if distr.is_global_main:
                         train_state.train_mode(False)
                         with torch.no_grad():
                             val_loss = self.run_valid_epoch(val_data, dec_bos_cut=dec_bos_cut)
@@ -925,7 +925,7 @@ class TransformerTrainer(SteppedTrainer):
                 update_interval = (update_interval + 1 ) % self.grad_accum_interval
 
         # End of training
-        if unsaved_state and distr.is_main:
+        if unsaved_state and distr.is_global_main:
             train_loss = train_state.reset()
             train_state.train_mode(False)
             val_loss = self.run_valid_epoch(val_data, dec_bos_cut=dec_bos_cut)
