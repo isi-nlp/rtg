@@ -15,9 +15,10 @@ The following command line tools are added when `rtg` is installed using pip.
 | Command        | Purpose
 | rtg-pipe       | Run rtg-prep, rtg-train and test case evaluation
 | rtg-decode     | Decode new source files using the values set in `conf.yml`
-| rtg-decode-pro | Decode new source files using the values that you supply from CLI args
 | rtg-export     | Export an experiment
 | rtg-fork       | Fork an experiment with/without same conf, code, data, vocabularies etc
+| rtg-serve      | Serve an RTG model over HTTP API using  Flask server
+| rtg-decode-pro | Decode new source files using the values that you supply from CLI args
 | rtg-prep       | Prepare an experiment. You should be using `rtg-pipe`
 | rtg-train      | Train a model. You should be using `rtg-pipe`
 | rtg-syscomb    | System combination. Dont bother about it for now.
