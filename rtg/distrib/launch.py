@@ -116,6 +116,7 @@ def main():
         # each process's rank
         dist_rank = args.procs_per_node * args.node_rank + local_rank
         my_env["RANK"] = str(dist_rank)
+        my_env["LOCAL_RANK"] = str(local_rank)
         if args.gpus_per_proc > 0:
             dev_ids = range(local_rank * args.gpus_per_proc, (local_rank + 1) * args.gpus_per_proc)
             device_ids = ','.join(str(i) for i in dev_ids)
