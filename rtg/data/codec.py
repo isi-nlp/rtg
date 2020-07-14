@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 #
-# Author: Thamme Gowda [tg (at) isi (dot) edu] 
+# Author: Thamme Gowda [tg (at) isi (dot) edu]
 # Created: 4/18/20
 
 from abc import ABCMeta, abstractmethod
@@ -8,12 +8,14 @@ from pathlib import Path
 from typing import List, Iterator, Union, Optional
 import collections as coll
 from tqdm import tqdm
-
+import numpy as np
 from sentencepiece import SentencePieceProcessor, SentencePieceTrainer
 
 from rtg import log, yaml
 from rtg.utils import IO
 from functools import lru_cache
+
+Array = np.ndarray
 
 
 class Field(metaclass=ABCMeta):
@@ -30,7 +32,7 @@ class Field(metaclass=ABCMeta):
         return list(zip(cls.reserved_toks, cls.reserved_idxs))
 
     @abstractmethod
-    def encode_as_ids(self, text, add_bos, add_eos):
+    def encode_as_ids(self, text, add_bos, add_eos) -> Array:
         pass
 
     @abstractmethod
@@ -81,13 +83,13 @@ class SPField(SentencePieceProcessor, Field):
         super().__init__()
         assert self.load(path)
 
-    def encode_as_ids(self, text: str, add_bos=False, add_eos=False) -> List[int]:
+    def encode_as_ids(self, text: str, add_bos=False, add_eos=False) -> Array:
         ids = super(SPField, self).encode_as_ids(text)
         if add_bos and ids[0] != self.bos_idx:
             ids.insert(0, self.bos_idx)
         if add_eos and ids[-1] != self.eos_idx:
             ids.append(self.eos_idx)
-        return ids
+        return np.array(ids, dtype=np.int32)
 
     def decode_ids(self, ids: List[int], trunc_eos=False) -> str:
         """
@@ -162,13 +164,13 @@ class NLField(Field):
             # Todo swap it with nlcodec.Reserved
             assert self.vocab[idx].name == tok
 
-    def encode_as_ids(self, text: str, add_bos=False, add_eos=False) -> List[int]:
+    def encode_as_ids(self, text: str, add_bos=False, add_eos=False) -> Array:
         ids = self.codec.encode(text)
         if add_bos and ids[0] != self.bos_idx:
             ids.insert(0, self.bos_idx)
         if add_eos and ids[-1] != self.eos_idx:
             ids.append(self.eos_idx)
-        return ids
+        return np.array(ids, dtype=np.int32)
 
     def decode_ids(self, ids: List[int], trunc_eos=False, remove_pads=True) -> str:
         if trunc_eos:
@@ -294,14 +296,14 @@ class PretrainMatchField(Field):
             yaml.dump(data, wrtr)
         return cls(model_path)
 
-    def encode_as_ids(self, text: str, add_bos=False, add_eos=False) -> List[int]:
+    def encode_as_ids(self, text: str, add_bos=False, add_eos=False) -> Array:
         pieces = self.tokenize(text)
         ids = [self.tok2idx.get(p, self.unk_idx) for p in pieces]
         if add_bos and ids[0] != self.bos_idx:
             ids.insert(0, self.bos_idx)
         if add_eos and ids[-1] != self.eos_idx:
             ids.append(self.eos_idx)
-        return ids
+        return np.array(ids, dtype=np.int32)
 
     def decode_ids(self, ids: List[int], trunc_eos=False, remove_pads=True) -> str:
         if trunc_eos:

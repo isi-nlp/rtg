@@ -30,7 +30,7 @@ prep:
   tgt_len: 128
   train_src: data/train.src
   train_tgt: data/train.tgt
-  truncate: false
+  truncate: true
   valid_src: data/valid.src
   valid_tgt: data/valid.tgt
   mono_src: []

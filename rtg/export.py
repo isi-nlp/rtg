@@ -71,9 +71,10 @@ def add_boolean(parser, name, help, dest=None, default=True):
 
 def parse_args():
     p = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    p.add_argument('source', type=Path, help='Path to experiment (source)')
-    p.add_argument('target', type=Path, help='Path to destination where the export should be')
-    p.add_argument('-en', '--ensemble', type=int, default=5,
+    p.add_argument('source', metavar='DIR', type=Path, help='Path to experiment (source)')
+    p.add_argument('target', metavar='DIR', type=Path,
+                   help='Path to destination where the export should be')
+    p.add_argument('-en', '--ensemble', metavar='N', type=int, default=5,
                    help='Maximum number of checkpoints to average and export. -en=1 to get just 1.')
     p.add_argument('-nm', '--name', required=True,
                    help='Name for the exported model.'

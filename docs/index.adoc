@@ -1,7 +1,21 @@
 = Reader-Translator-Generator (RTG)
-
+USC Information Sciences Institute  Natural Language Group
+:doctype: book
+:encoding: utf-8
+:lang: en
 :toc:
+:toclevels: 3
+:sectnums:
+:sectnumlevels: 4
 
 
-. link:clitools.adoc[Command Line Tools and Usage]
-. link:conf.yml.adoc[RTG `conf.yml` file]
+include::intro.adoc[]
+
+include::conf.yml.adoc[]
+
+include::clitools.adoc[]
+
+include::environ.adoc[]
+
+include::develop.adoc[]
+

@@ -59,6 +59,7 @@ class Pipeline:
     def moses_detokenize(self, inp: Path, out: Path, col=0, lang='en', post_op=None):
         log.info(f"detok : {inp} --> {out}")
         tok_lines = IO.get_lines(inp, col=col, line_mapper=lambda x: x.split())
+        # TODO: replace with sacremoses
         with MosesDetokenizer(lang=lang) as detok:
             detok_lines = (detok(tok_line) for tok_line in tok_lines)
             if post_op:
@@ -284,9 +285,9 @@ class Pipeline:
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(prog="rtg.prep", description="prepare NMT experiment")
-    parser.add_argument("exp", help="Working directory of experiment", type=Path)
-    parser.add_argument("conf", type=Path, nargs='?',
+    parser = argparse.ArgumentParser(prog="rtg-pipe", description="RTG Pipeline CLI")
+    parser.add_argument("exp", metavar='EXP_DIR', help="Working directory of experiment", type=Path)
+    parser.add_argument("conf", metavar='conf.yml', type=Path, nargs='?',
                         help="Config File. By default <work_dir>/conf.yml is used")
     parser.add_argument("-G", "--gpu-only", action="store_true", default=False,
                         help="Crash if no GPU is available")

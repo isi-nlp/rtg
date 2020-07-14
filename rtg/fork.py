@@ -56,8 +56,10 @@ def add_on_off_conf(parser, name:str, help, dest=None, default=True):
 def main():
     p = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter,
                                 description="fork an experiment.")
-    p.add_argument('from_exp', type=Path, help="From experiment. Should be valid experiment dir")
-    p.add_argument('to_exp', type=Path, help="To experiment. This will be created.")
+    p.add_argument('from_exp', metavar='EXP_DIR', type=Path,
+                   help="From experiment. Should be valid experiment dir")
+    p.add_argument('to_exp',  metavar='TO_DIR', type=Path,
+                   help="To experiment. This will be created.")
     add_on_off_conf(p, 'conf', help='Copy config: from/conf.yml → to/conf.yml', default=True)
     add_on_off_conf(p, 'data', help='Link data dir . This includes vocab.', default=True)
     add_on_off_conf(p, 'vocab', help='copy vocabularies. dont use it with --data', default=False)

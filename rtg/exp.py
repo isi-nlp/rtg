@@ -684,17 +684,27 @@ class TranslationExperiment(BaseExperiment):
         trainer = trainers[self.model_type](self, optim=name,
                                             model_factory=factories[self.model_type], **optim_args)
         if last_step < train_steps:  # regular training
-            trainer.train(fine_tune=False, **run_args)
+            stopped = trainer.train(fine_tune=False, **run_args)
             if not self.read_only:
-                yaml.dump({'steps': train_steps}, stream=self._trained_flag)
+                status = dict(steps=train_steps, early_stopped=stopped, finetune=False)
+                try:
+                    status['earlier'] = yaml.load(self._trained_flag.read_text())
+                except Exception as _:
+                    pass
+                yaml.dump(status, stream=self._trained_flag)
         if finetune_steps:  # Fine tuning
             log.info(f"Fine tuning upto {finetune_steps}, batch_size={finetune_batch_size}")
             assert finetune_batch_size
             run_args['steps'] = finetune_steps
             run_args['batch_size'] = finetune_batch_size
 
-            trainer.train(fine_tune=True, **run_args)
-            yaml.dump({'steps': finetune_steps}, stream=self._trained_flag)
+            stopped = trainer.train(fine_tune=True, **run_args)
+            status = dict(steps=finetune_steps, early_stopped=stopped, finetune=True)
+            try:
+                status['earlier'] = yaml.load(self._trained_flag.read_text())
+            except Exception as _:
+                pass
+            yaml.dump(status, stream=self._trained_flag)
 
     @property
     def src_vocab(self) -> Field:
@@ -711,8 +721,7 @@ class TranslationExperiment(BaseExperiment):
                 if ik in prep_args}
 
     def get_train_data(self, batch_size: int, steps: int = 0, sort_by='eq_len_rand_batch',
-                       batch_first=True,
-                       shuffle=False, fine_tune=False):
+                       batch_first=True, shuffle=False, fine_tune=False, keep_in_mem=False):
         inp_file = self.train_db if self.train_db.exists() else self.train_file
         if fine_tune:
             if not self.finetune_file.exists():
@@ -723,16 +732,21 @@ class TranslationExperiment(BaseExperiment):
         inp_file = IO.maybe_tmpfs(inp_file)
         train_data = BatchIterable(inp_file, batch_size=batch_size, sort_by=sort_by,
                                    batch_first=batch_first, shuffle=shuffle, field=self.tgt_vocab,
-                                   **self._get_batch_args())
+                                   keep_in_mem=keep_in_mem, **self._get_batch_args())
         if steps > 0:
             train_data = LoopingIterable(train_data, steps)
         return train_data
 
     def get_val_data(self, batch_size: int, sort_desc=False, batch_first=True,
                      shuffle=False):
+        raw_path = None
+        prep = self.config.get('prep', {})
+        if 'valid_src' in prep and 'valid_tgt' in prep:
+            raw_path = prep['valid_src'], prep['valid_tgt']
+
         return BatchIterable(self.valid_file, batch_size=batch_size, sort_desc=sort_desc,
                              batch_first=batch_first, shuffle=shuffle, field=self.tgt_vocab,
-                             **self._get_batch_args())
+                             keep_in_mem=True, raw_path=raw_path, **self._get_batch_args())
 
     def get_combo_data(self, batch_size: int, steps: int = 0, sort_desc=False, batch_first=True,
                        shuffle=False):

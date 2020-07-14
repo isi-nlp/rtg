@@ -1,6 +1,7 @@
 # Reader-Translator-Generator (RTG)  
 
 Reader-Translator-Generator (RTG) is a Neural Machine Translation toolkit based on pytorch. 
+Refer to https://isi-nlp.github.io/rtg/ for the docs.   
 
 ## Features
 - Reproducible experiments: one `conf.yml`  that has everything -- data paths, params, and
@@ -20,36 +21,49 @@ Reader-Translator-Generator (RTG) is a Neural Machine Translation toolkit based 
   + Experiments and reproducibility are main focus. To control an experiment you edit an YAML file that is inside the experiment directory.
   + Where ever possible, prefer [convention-over-configuation](https://www.wikiwand.com/en/Convention_over_configuration). Have a look at this experiment directory for the [examples/transformer.test.yml](examples/transformer.test.yml);
 
+### Quick Start
+
+Use this Google Colab Notebook for learning *how to train your NMT model with RTG*: https://colab.research.google.com/drive/198KbkUcCGXJXnWiM7IyEiO1Mq2hdVq8T?usp=sharing
+
 ### Setup
 Add the root of this repo to `PYTHONPATH` or install it via `pip --editable`
 
 ```bash
-git clone https://github.com/isi-nlp/rtg.git 
+git clone https://github.com/isi-nlp/rtg-xt.git # use rtg.git if you have access
 cd rtg                # go to the code
-# use rtg-xt.git if you dont have access to rtg.git
 
-conda env create -n rtg python=3.7.   # adds a conda env named rtg
+
+conda create -n rtg python=3.7   # adds a conda env named rtg
 conda activate rtg  # activate it
 
 # install this as a local editable pip package
 pip install --editable .   
-# The requirements are in setup.py
-
-# or add it to PYTHONPATH 
-export PYTHONPATH=$PWD 
+# All requirements are in setup.py
 ```
 
 # Usage
 
-Refer to `scripts/rtg-pipeline.sh` bash script and `examples/transformer.base.yml` file
+Refer to `scripts/rtg-pipeline.sh` bash script and `examples/transformer.base.yml` file for specific examples.
+
+The pipeline takes source (`.src`) and target (`.tgt`) files. The sources are in one language and the targets in another. At a minimum, supply a training source, training target, validation source, and validation target. It is best to use `.tok` files for training. (`.tok` means tokenized.)
+
+Example of training and running a mdoel:
 
 ```bash
-# use examples/transformer.base.yml config to setup an experiment at 001-tfm dir (TODO: edit paths in yml file)
-$ scripts/rtg-pipeline.sh -d 001-tfm -c examples/transformer.base.yml
-# or if you have rtg module in $PYTHONPATH
-$ python -m rtg.pipeline 001-tfm examples/transformer.base.yml
-# or if your have `rtg` command in $PATH 
-rtg pipeline 001-tfm examples/transformer.base.yml
+
+# disable gpu use (force cpu)
+export CUDA_VISIBLE_DEVICES=
+# call as python module
+rtg-pipe experiments/sample-exp/
+
+# OR, you can call a shell scrupt to submit job to slurm/SGE
+scripts/rtg-pipeline.sh -d experiments/sample-exp/ -c experiments/sample-exp/conf.yml
+# Note: use examples/transformer.base.yml config to setup transformer base
+
+# Then to use the model to translate something:
+# (VERY poor translation due to small training data)
+echo "Chacun voit midi à sa porte." | rtg-decode experiments/sample-exp/
+
 ```
 
 The `001-tfm` directory that hosts an experiment looks like this:
@@ -86,14 +100,9 @@ The `001-tfm` directory that hosts an experiment looks like this:
 
 ```
 
-# Docs
-
-Refer to [docs](./docs) directory
-
-
 ---------
 ### Authors:
-[See Here](https://github.com/thammegowda/rtg/graphs/contributors)
+[See Here](https://github.com/isi-nlp/rtg-xt/graphs/contributors)
 
 
 ### Credits / Thanks

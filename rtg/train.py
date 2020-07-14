@@ -9,14 +9,14 @@ def parse_args():
     parser = argparse.ArgumentParser(prog="rtg.train", description="Train NMT model",
                                      formatter_class=ArgFormatter)
     parser.add_argument("work_dir", help="Working directory", type=str)
-    parser.add_argument("-rs", "--seed", help="Seed for random number generator. Set it to zero "
+    parser.add_argument("-rs", "--seed",  help="Seed for random number generator. Set it to zero "
                                               "to not touch this part.", type=int, default=0)
-    parser.add_argument("-st", "--steps", help="Total steps", type=int, default=128000)
-    parser.add_argument("-cp", "--check-point", help="Store model after every --check-point steps",
-                        type=int, default=1000)
-    parser.add_argument("-km", "--keep-models", type=int, default=10,
+    parser.add_argument("-st", "--steps", metavar='N', help="Total steps", type=int, default=128000)
+    parser.add_argument("-cp", "--check-point",  metavar='N',
+                        help="Store model after every --check-point steps", type=int, default=1000)
+    parser.add_argument("-km", "--keep-models",  metavar='N', type=int, default=10,
                         help="Number of checkpoints to keep.")
-    parser.add_argument("-bs", "--batch-size",
+    parser.add_argument("-bs", "--batch-size",  metavar='N',
                         help="Mini batch size (# tokens on target side) of training and validation."
                              " A token can be subword piece.",
                         type=int, default=2048)
