@@ -18,6 +18,8 @@ from pyspark.sql.types import StructType, StructField, LongType
 from rtg import cpu_count, log, cpu_device
 from rtg.data.dataset import Batch, IdExample, LoopingIterable
 from rtg.exp import TranslationExperiment, Field
+from rtg.big.postgres import PostgresServer
+from rtg.distrib import DistribTorch
 
 try:
     set_start_method('spawn')
@@ -47,15 +49,17 @@ class BigTranslationExperiment(TranslationExperiment):
                  config: Union[str, Path, Optional[Dict[str, Any]]] = None):
         super().__init__(work_dir=work_dir, read_only=read_only, config=config)
         assert self.codec_name == 'nlcodec', 'only nlcodec is supported for big experiments'
-        self.train_file = self.data_dir / "train.parquet"
-        self.train_db = self.data_dir / "train.parquet"
-        self.finetune_file = self.data_dir / "finetune.parquet"
+        self.train_file = self.train_db = self.data_dir / "train.pgdb"
+        self.finetune_file = self.data_dir / "finetune.pgdb"
         self._spark = None
         assert 'spark' in self.config, 'refer to docs for enabling spark backend'
         self.spark_conf = self.config['spark']
         if 'spark.master' not in self.spark_conf:
             self.spark_conf['spark.master'] = f'local[{cpu_count}]'
         self.len_sort_size = self.spark_conf.get('len_sort_size', 20_000)
+
+        self.pgdb = PostgresServer(db_dir = self.data_dir/'postgres-db', log_dir=self.log_dir)
+
 
     def __getstate__(self):
         state = self.__dict__.copy()
@@ -89,9 +93,9 @@ class BigTranslationExperiment(TranslationExperiment):
         :param out_file: path to store processed TSV data (compresses if name ends with .gz)
         :return:
         """
-        if not out_file.name.endswith(".parquet"):
+        if not out_file.name.endswith(".pgdb"):
             if 'train' in out_file.name:
-                log.warning(f"set  .parquet extension to enable spark")
+                log.warning(f"set  .pgdb extension to enable spark")
             return super()._pre_process_parallel(
                 src_key=src_key, tgt_key=tgt_key, out_file=out_file, args=args,
                 line_check=line_check)
@@ -108,8 +112,10 @@ class BigTranslationExperiment(TranslationExperiment):
             spark, args[src_key], args[tgt_key], args['truncate'], args['src_len'], args['tgt_len'],
             src_tokenizer=self.src_vocab.encode_as_ids, tgt_tokenizer=self.tgt_vocab.encode_as_ids)
         log.warning(f"Storing data at {out_file}")
-        n_parts = 100
-        df.repartition(n_parts).write.parquet(str(out_file))
+        #n_parts = 100
+        #df.repartition(n_parts).write.parquet(str(out_file))
+        table_name = out_file.name.replace(".pgdb", "")
+        self.pgdb.write_df(df, table_name)
         e_time = time.time()
         log.info(f"Time taken to process: {timedelta(seconds=(e_time - s_time))}")
 
@@ -135,7 +141,8 @@ class BigTranslationExperiment(TranslationExperiment):
 
     def get_train_data(self, batch_size: int, steps: int = 0, sort_by='eq_len_rand_batch',
                        batch_first=True, shuffle=False, fine_tune=False, keep_in_mem=False):
-        data_path: Path = self.train_file
+        table_name = 'finetune' if fine_tune else 'train'
+
         if fine_tune:
             if not self.finetune_file.exists():
                 # user may have added fine tune file later

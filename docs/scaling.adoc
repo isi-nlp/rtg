@@ -54,11 +54,34 @@ Sudo/root is not needed to setup. The instructions are as follows:
 ----
 # install
 conda install -c anaconda postgresql
-
-# setup db dir under <myexp>;  for simplicity, each expe gets own PostgresDB
-pg_ctl init -D <myexp>/pg-data -U rtg
-
-pg_ctl start -D <myexp>/data-pg
 ----
 
-WARNING:  this is incomplete
+
+Internally, RTG code, launches a database using these commands
+
+NOTE: These are just an FYI, and you DO NOT need to run these, unless something broke and you are trying to fix it.
+[source,bash]
+----
+$ port=5432
+$ db_dir=${exp_dir}/data/pgdb
+$ dbname=rtg
+$ log_file=${exp_dir}/logs/${HOSTNAME}.${port}.log
+
+$ initdb -D ${db_dir}  # initialize
+$ pg_ctl start -o "-F -p ${port}" -D ${db_dir}  -l ${log_file}  # start
+$ createuser -p {port} -s ${superuser},  # at least one superuser is needed
+$ createdb -p {port} {dbname}  # create db
+----
+
+To stop a service (or just force kill a process, postgres can recover ;) ).
+
+[source,bash]
+----
+$ port=5432
+$ db_dir=${exp_dir}/data/pgdb
+$ pg_ctl stop -o "-F -p ${port}" -D ${db_dir}
+----
+
+WARNING:  If you are running multiple experiments on same machine at same time,
+then obviously they compete to bind the same default port of `5432`.
+So, you need to configure a separate port for each experiment.

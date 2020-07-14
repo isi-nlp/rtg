@@ -35,6 +35,13 @@ prep:
   valid_tgt: experiments/sample-data/sampl.valid.en.tok
   mono_src: []
   mono_tgt: []
+datastore:
+  postgres:
+    connection:
+      url: jdbc:postgresql:localhost
+      dbtable: rtg.train
+      #user: username
+      #password: password
 
 spark: # add this block to enable spark backend
   spark.master: local[3]
