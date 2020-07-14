@@ -12,19 +12,21 @@ from torch import nn
 
 from rtg import log
 
+get_env = os.environ.get
 
 @dataclass()
 class DistribTorch:
 
     host_name: str = socket.gethostname()
     pid: int = os.getpid()
-    global_rank: int = int(os.environ.get('RANK', '-1'))
-    world_size: int = int(os.environ.get('WORLD_SIZE', '-1'))
-    master_addr: str = os.environ.get('MASTER_ADDR', '')
-    master_port: int = int(os.environ.get('MASTER_PORT', '-1'))
+    global_rank: int = int(get_env('RANK', '-1'))
+    local_rank: int = int(get_env('LOCAL_RANK', '-1'))
+    world_size: int = int(get_env('WORLD_SIZE', '-1'))
+    master_addr: str = get_env('MASTER_ADDR', '')
+    master_port: int = int(get_env('MASTER_PORT', '-1'))
 
     gpu_count: int = torch.cuda.device_count()
-    visible_devices: str = os.environ.get('CUDA_VISIBLE_DEVICES', '')
+    visible_devices: str = get_env('CUDA_VISIBLE_DEVICES', '')
 
     _is_backend_ready = False
     # singleton instance; lazy initialization
@@ -33,6 +35,7 @@ class DistribTorch:
     def setup(self):
         if self.world_size > 1:
             assert self.global_rank >= 0
+            assert self.local_rank >= 0
             assert self.master_addr
             assert self.master_port > 1024
             backend = 'nccl' if self.gpu_count > 0 else 'gloo'
@@ -67,8 +70,12 @@ class DistribTorch:
         return self.world_size > 1
 
     @property
-    def is_main(self) -> bool:
+    def is_global_main(self) -> bool:
         return self.global_rank <= 0
+
+    @property
+    def is_local_main(self) -> bool:
+        return self.local_rank <= 0
 
     def barrier(self):
         if self.is_distributed:
