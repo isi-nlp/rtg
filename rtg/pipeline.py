@@ -102,9 +102,10 @@ class Pipeline:
                                  lowercase=lowercase)
         # this should be part of new sacrebleu  release (i sent a PR ;)
         bleu_str = f'BLEU = {bleu.score:.2f} {"/".join(f"{p:.1f}" for p in bleu.precisions)}' \
-            f' (BP = {bleu.bp:.3f} ratio = {(bleu.sys_len / bleu.ref_len):.3f}' \
-            f' hyp_len = {bleu.sys_len:d} ref_len={bleu.ref_len:d})'
-        bleu_file = detok_hyp.with_name(detok_hyp.name + ('.lc' if lowercase else '.oc') + '.sacrebleu')
+                   f' (BP = {bleu.bp:.3f} ratio = {(bleu.sys_len / bleu.ref_len):.3f}' \
+                   f' hyp_len = {bleu.sys_len:d} ref_len={bleu.ref_len:d})'
+        bleu_file = detok_hyp.with_name(
+            detok_hyp.name + ('.lc' if lowercase else '.oc') + '.sacrebleu')
         log.info(f'BLEU {detok_hyp} : {bleu_str}')
         IO.write_lines(bleu_file, bleu_str)
         return bleu.score
@@ -268,8 +269,8 @@ class Pipeline:
                 out_file.parent.mkdir(parents=True, exist_ok=True)
 
                 self.decode_eval_file(decoder, src_link, out_file, ref_link,
-                                              batch_size=eff_batch_size, beam_size=beam_size,
-                                              lp_alpha=lp_alpha, max_len=max_len)
+                                      batch_size=eff_batch_size, beam_size=beam_size,
+                                      lp_alpha=lp_alpha, max_len=max_len)
             except Exception as e:
                 log.exception(f"Something went wrong with '{name}' test")
                 err = test_dir / f'{name}.err'
@@ -278,22 +279,21 @@ class Pipeline:
     def run(self, run_tests=True):
         distr = DistribTorch.instance()
         if not self.exp.read_only:
-            #if not distr.is_main:
+            # if not distr.is_main:
             #    log.clear_console() # console handler
 
             log.update_file_handler(str(self.exp.log_file))
         self.pre_checks()  # fail early, so TG can fix and restart
 
-
-        if distr.global_rank == 0:
-            # preprocess on only one node, rank 0
+        if distr.is_global_main:
             self.exp.pre_process()
         # train on all
         self.exp.train()
         distr.barrier()
         if run_tests:
-            with torch.no_grad():
-                self.run_tests()
+            if distr.is_global_main:
+                with torch.no_grad():
+                    self.run_tests()
 
 
 def parse_args():
@@ -336,6 +336,7 @@ def parse_args():
         exp = Experiment(args.exp, config=conf_file)
 
     return exp
+
 
 def main():
     pipe = Pipeline(exp=parse_args())
