@@ -490,7 +490,7 @@ class SimpleLossFunction:
     criterion: Criterion
     opt: Optimizer
 
-    def __call__(self, x_feats, y_seqs, normalizer, train_mode=True, take_step=True, get_out=False):
+    def __call__(self, x_feats, y_seqs, normalizer, train_mode=True, take_step=True, get_out=False, use_amp=False):
         # B x T x D --> B x T x V
         x_probs = self.generator(x_feats, score=self.criterion.input_type)
         scores = x_probs.contiguous().view(-1, x_probs.size(-1))  # B x T x V --> B.T x V
@@ -498,8 +498,11 @@ class SimpleLossFunction:
         loss = self.criterion(scores, truth).sum() / normalizer
 
         if train_mode:  # don't do this for validation set
-            with amp.scale_loss(loss, self.opt.optimizer) as scaled_loss:
-                scaled_loss.backward()
+            if use_amp:
+                with amp.scale_loss(loss, self.opt.optimizer) as scaled_loss:
+                    scaled_loss.backward()
+            else:
+                loss.backward()
             if take_step:
                 self.opt.step()
                 self.opt.zero_grad()
@@ -514,7 +517,7 @@ class ChunkedLossCompute(SimpleLossFunction):
     chunk_size: int = 10
 
     def __call__(self, y_feats, y_seqs, normalizer: Union[int, float],
-                 train_mode=True, chunk_size=None, take_step=True, get_out=False):
+                 train_mode=True, chunk_size=None, take_step=True, get_out=False, use_amp=False):
         """
 
         :param y_feats:
@@ -546,8 +549,11 @@ class ChunkedLossCompute(SimpleLossFunction):
             loss = self.criterion(chunked_dist, chunked_ys).sum() / normalizer
             total += loss.detach().item()
             if train_mode:
-                with amp.scale_loss(loss, self.opt.optimizer) as scaled_loss:
-                    scaled_loss.backward()
+                if use_amp:
+                    with amp.scale_loss(loss, self.opt.optimizer) as scaled_loss:
+                        scaled_loss.backward()
+                else:
+                    loss.backward()
         if train_mode:
             out_grad = _y_feats.grad.data
             y_feats.backward(gradient=out_grad)
@@ -877,7 +883,7 @@ class TransformerTrainer(SteppedTrainer):
 
                 # assumption:  y_seqs has EOS, and not BOS
                 loss = self.loss_func(out, batch.y_seqs, num_toks, train_mode=True,
-                                      take_step=take_step)
+                                      take_step=take_step, use_amp=self.use_amp)
                 if stopper and take_step:
                     stopper.step()
                 # Log
