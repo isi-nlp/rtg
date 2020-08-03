@@ -4,21 +4,24 @@ When dealing with big datasets, the traditional tools such as multiprocessing an
 In such scenario, https://spark.apache.org/[PySpark] is a useful backend to use.
 When pyspark is enabled
 
-* https://parquet.apache.org/[Parquet] storage is used instead of https://www.sqlite.org/index.html[SQLite3] to store the training dataset.
-* PySpark is used to
- ** compute term frequencies which help speed up BPE learning
- ** shuffle dataset for every epoch.
+PySpark is used to
+
+* compute term frequencies which help speed up BPE learning
+* encode data with BPE
+* store data in https://isi-nlp.github.io/nlcodec/#_database[NLCodec MultipartDb  ]
+
 
 To enable pyspark backend
 
 1. Install pyspark; eg: `pip install pyspark >= 3.0.0`.  Make sure you have a JVM/JDK that is compatible for pyspark.
 2. For data preparation, only `codec_lib: nlcodec` supports pyspark backend as of now. If you are using `sentencepiece`, switch to `nlcodec`
-3. Add the block to the top level of `conf.yml`.  See `experiments/transformer.test.spark.yaml` for a full example.
+3. Add the `spark` block to the top level of `conf.yml`.  See `experiments/spark-bigdataprep.html` for a full example.
 
 [source,yaml]
 ----
 prep:
-   codec_lib: nlcodec    # only nlcodec is supports pyspark backend
+   codec_lib: nlcodec    # only nlcodec supports pyspark backend
+   max_part_size: 1000000  # part size (num of recs); divides the training data into multiple parts
    ... # other args
 spark: # add this block to enable spark backend
   # double quote the keys containing dot
@@ -26,7 +29,7 @@ spark: # add this block to enable spark backend
   "spark.app.name": RTG NMT on Spark  # Name for the App
   "spark.driver.memory": 6g
   #key1: value1    # any other spark configs you want to control
-  len_sort_size: 20000  # keep these recs in memory for making equal length batches
+
 ----
 
 You may use `local[*]` to use all CPUs however, it is important to note that:
@@ -37,51 +40,86 @@ You may use `local[*]` to use all CPUs however, it is important to note that:
 Watch out the spark logs for any warning messages.
 Also, the log message provides the Spark web UI address when spark session is initialized.
 
-WARNING: The spark distributed mode is not tested. (But it might work out of the box  if `"spark.master"` is correctly set)
+WARNING: The multi-node spark distributed mode is not tested. (But it might work out of the box  if `"spark.master"` is correctly set)
 
 
-=== Postgres backend for dataset
+[#ddp]
+== Distributed Data Parallel (DDP)
 
-To draw IID examples to training process, the dataset backend needs fast random access to examples.
-Spark RDDs/Dataframes are not meant for random access, so we need something of a database that builds ahead-of-time index rows.
+NOTE: This is a new feature to RTG and not all edge cases are tested.
 
-We already have sqlite3 for that reason, however, Sqlite3 doesnt scale well to
-
-Postgres can be easily installed on many platforms (including PPC64) using conda.
-Sudo/root is not needed to setup. The instructions are as follows:
+`rtg.distrib.launch` simplifies the use of `torch.distributed.launch` as follows:
 
 [source,bash]
 ----
-# install
-conda install -c anaconda postgresql
+$ python -m rtg.distrib.launch -h
+usage: launch.py [-h] [-N NODES] [-r NODE_RANK] [-P PROCS_PER_NODE]
+                 [-G GPUS_PER_PROC] [--master-addr MASTER_ADDR]
+                 [--master-port MASTER_PORT] [-m | --no_python]
+                 training_script ...
+
+PyTorch distributed training launch helper utilty that will spawn up multiple
+distributed processes
+
+positional arguments:
+  training_script       The full path to the single GPU training
+                        program/script to be launched in parallel, followed by
+                        all the arguments for the training script
+  training_script_args
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -N NODES, --nodes NODES
+                        The number of nodes to use for distributed training
+                        (default: 1)
+  -r NODE_RANK, --node-rank NODE_RANK
+                        The rank of the node for multi-node distributed
+                        training (default: 0)
+  -P PROCS_PER_NODE, --procs-per-node PROCS_PER_NODE
+                        The number of processes to launch on each node with
+                        one gpu each, for GPU training, this is recommended to
+                        be set to the number of GPUs in your system so that
+                        each process can be bound to a single GPU. (default:
+                        1)
+  -G GPUS_PER_PROC, --gpus-per-proc GPUS_PER_PROC
+                        Number of GPUs to assign to each process. (default: 0)
+  --master-addr MASTER_ADDR
+                        Master node (rank 0)'s address, should be either the
+                        IP address or the hostname of node 0, for single node
+                        multi-proc training, the --master_addr can simply be
+                        127.0.0.1 (default: 127.0.0.1)
+  --master-port MASTER_PORT
+                        Master node (rank 0)'s free port that needs to be used
+                        for communciation during distributed training
+                        (default: 29500)
+  -m, --module          Changes each process to interpret the launch script as
+                        a python module, executing with the same behavior
+                        as'python -m'. (default: False)
+  --no_python           Do not prepend the training script with "python" -
+                        just exec it directly. Useful when the script is not a
+                        Python script. (default: False)
+
 ----
 
+**Examples**
 
-Internally, RTG code, launches a database using these commands
-
-NOTE: These are just an FYI, and you DO NOT need to run these, unless something broke and you are trying to fix it.
+. Run on two CPU processes `-P 2` on single node `-N 1` (for testing, no GPUS `-G 0`)
++
+----
+python -m rtg.distrib.launch -N 1 -P 2 -G 0 -m rtg.pipeline  runs/005-tfm-nldb
+----
+. Run on on single node, two processes, one GPU per process: `-N 1 -P 2 -G 1`
+. Run on on two node, two processes each, one GPU per process: `-N 2 -P 2 -G 1`.
++
 [source,bash]
 ----
-$ port=5432
-$ db_dir=${exp_dir}/data/pgdb
-$ dbname=rtg
-$ log_file=${exp_dir}/logs/${HOSTNAME}.${port}.log
-
-$ initdb -D ${db_dir}  # initialize
-$ pg_ctl start -o "-F -p ${port}" -D ${db_dir}  -l ${log_file}  # start
-$ createuser -p {port} -s ${superuser},  # at least one superuser is needed
-$ createdb -p {port} {dbname}  # create db
+# on first node: rank 0
+python -m rtg.distrib.launch -N 2 -r 0 -P 2 -G 1 -m rtg.pipeline runs/005-tfm-nldb -G
+# on second node: rank 1
+python -m rtg.distrib.launch -N 2 -r 1 -P 2 -G 1 -m rtg.pipeline  runs/005-tfm-nldb -G
 ----
 
-To stop a service (or just force kill a process, postgres can recover ;) ).
+WARNING:
 
-[source,bash]
-----
-$ port=5432
-$ db_dir=${exp_dir}/data/pgdb
-$ pg_ctl stop -o "-F -p ${port}" -D ${db_dir}
-----
-
-WARNING:  If you are running multiple experiments on same machine at same time,
-then obviously they compete to bind the same default port of `5432`.
-So, you need to configure a separate port for each experiment.
+1. ChunkedLossCumpute doesnt work with DDP on GPUs; please disable it by `trainer.init_args.args.chunk_size=0`
+2. Don't ever use `-G 2` or more, instead use more `-P`
