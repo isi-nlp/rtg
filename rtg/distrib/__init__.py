@@ -43,6 +43,7 @@ class DistribTorch:
             log.info(f"Initializing PyTorch distributed with '{backend}' backend:\n {self}")
             torch.distributed.init_process_group(init_method='env://', backend=backend)
             self._is_backend_ready = True
+        return self
 
     def close(self):
         if self._is_backend_ready:
@@ -56,7 +57,7 @@ class DistribTorch:
         :return: gets singleton instance of class, lazily initialized
         """
         if not cls._instance:
-            cls._instance = cls()
+            cls._instance = cls().setup()
         return cls._instance
 
     def maybe_distributed(self, module: nn.Module):
@@ -64,7 +65,7 @@ class DistribTorch:
             if not self._is_backend_ready:
                 self.setup()
             return nn.parallel.DistributedDataParallel(module, broadcast_buffers=True)
-        return module # dont wrap
+        return module    # dont wrap
 
     @property
     def is_distributed(self):

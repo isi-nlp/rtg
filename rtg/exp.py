@@ -441,8 +441,7 @@ class TranslationExperiment(BaseExperiment):
                 f'{args[src_key]} and {args[tgt_key]} must have same number of lines'
         # create Piece IDs
         s_time = time.time()
-        reader_func = TSVData.read_raw_parallel_recs_parallel if self.codec_supports_multiproc \
-            else TSVData.read_raw_parallel_recs
+        reader_func = TSVData.read_raw_parallel_recs
         parallel_recs = reader_func(
             args[src_key], args[tgt_key], args['truncate'], args['src_len'], args['tgt_len'],
             src_tokenizer=self.src_vocab.encode_as_ids, tgt_tokenizer=self.tgt_vocab.encode_as_ids)
@@ -766,6 +765,10 @@ class TranslationExperiment(BaseExperiment):
         if steps > 0:
             data = LoopingIterable(data, steps)
         return data
+
+    def reload(self):
+        exp = type(self)(self.work_dir, read_only=self.read_only)
+        self.__dict__ = exp.__dict__
 
     def copy_vocabs(self, other):
         """

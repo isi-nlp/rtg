@@ -22,6 +22,8 @@ import json
 import subprocess
 from rtg.distrib import DistribTorch
 
+distrib = DistribTorch.instance()
+
 
 @dataclass
 class Pipeline:
@@ -277,21 +279,22 @@ class Pipeline:
                 err.write_text(str(e))
 
     def run(self, run_tests=True):
-        distr = DistribTorch.instance()
         if not self.exp.read_only:
             # if not distr.is_main:
             #    log.clear_console() # console handler
-
             log.update_file_handler(str(self.exp.log_file))
         self.pre_checks()  # fail early, so TG can fix and restart
 
-        if distr.is_global_main:
+        if distrib.is_global_main:
             self.exp.pre_process()
+        distrib.barrier()
+        if not distrib.is_global_main:
+            self.exp.reload()  # with updated config and vocabs from global_main
         # train on all
         self.exp.train()
-        distr.barrier()
+        distrib.barrier()
         if run_tests:
-            if distr.is_global_main:
+            if distrib.is_global_main:
                 with torch.no_grad():
                     self.run_tests()
 
@@ -320,8 +323,8 @@ def parse_args():
 
     conf_file: Path = args.conf if args.conf else args.exp / 'conf.yml'
     assert conf_file.exists(), f'NOT FOUND: {conf_file}'
+    ExpFactory = Experiment
     is_big = load_conf(conf_file).get('spark', {})
-
     if is_big:
         log.info("Big experiment mode enabled; checking pyspark backend")
         try:
@@ -331,10 +334,11 @@ def parse_args():
             log.warning("unable to import pyspark. Please do 'pip install pyspark' and run again")
             raise
         from rtg.big.exp import BigTranslationExperiment
-        exp = BigTranslationExperiment(args.exp, config=conf_file)
-    else:
-        exp = Experiment(args.exp, config=conf_file)
+        ExpFactory = BigTranslationExperiment
 
+    read_only = not distrib.is_global_main # only main can modify experiment
+    exp = ExpFactory(args.exp, config=conf_file, read_only=read_only)
+    distrib.barrier()
     return exp
 
 

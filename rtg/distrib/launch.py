@@ -64,8 +64,9 @@ def parse_args():
     parser.add_argument('training_script_args', nargs=REMAINDER)
     return parser.parse_args()
 
-def main():
-    args = parse_args()
+
+def main(args=None):
+    args = args or parse_args()
 
     # world size in terms of number of processes
     dist_world_size = args.nodes * args.procs_per_node
@@ -93,7 +94,7 @@ def main():
               f'\n\tprocs-per-node * gpus-per-proc = {args.procs_per_node} * {args.gpus_per_proc}'
 
         raise Exception(msg)
-    if avail_gpus > 0 and assum_gpus <= 0:
+    if avail_gpus > 0 >= assum_gpus:
         print("WARNING: GPUs are available but the --gpus-per-proc is not set.", file=sys.stderr)
 
     with_python = not args.no_python

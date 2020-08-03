@@ -665,7 +665,7 @@ class TransformerTrainer(SteppedTrainer):
         assert self.grad_accum_interval > 0
 
         if self.n_gpus > 1:  # Multi GPU mode
-            raise Exception("<<Multi GPU per process>> Recommended: many processes with 1 GPU each")
+            raise Exception(f"Please use: python -m rtg.distrib.launch -G {self.n_gpus} ")
             log.info(f"Going to use {self.n_gpus} GPUs; "
                      f" Chunk_size={chunk_size} CUDA_VISIBLE_DEVICES="
                      f"{os.environ.get('CUDA_VISIBLE_DEVICES')}")
@@ -815,11 +815,6 @@ class TransformerTrainer(SteppedTrainer):
                  f' batch_size={batch_size} toks; sort_by={sort_by};'
                  f' check point size:{check_point}; fine_tune={fine_tune};'
                  f' dec_bos_cut={dec_bos_cut}')
-        """
-        if self.n_gpus > 1:
-            batch_size *= self.n_gpus
-            log.info(f"# GPUs = {self.n_gpus}, batch_size is set to {batch_size}")
-        """
         distr = DistribTorch.instance()
         if batches <= start_batch:
             raise Exception(f'The model was already trained to {self.start_step} steps. '
@@ -842,7 +837,6 @@ class TransformerTrainer(SteppedTrainer):
         early_stopped = False   # or converged
         if early_stop:
             stopper = EarlyStopper(cur_step=self.start_step, **early_stop)
-
 
         with tqdm(train_data, initial=start_batch, total=batches, unit='batch',
                   dynamic_ncols=True, disable=not distr.is_global_main) as data_bar:

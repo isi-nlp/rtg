@@ -14,16 +14,10 @@ from nlcodec.utils import log_resources
 from pyspark import RDD
 from pyspark.sql import SparkSession, DataFrame
 from pyspark.sql.types import StructType, StructField, LongType
-from torch.multiprocessing import set_start_method
 
 from rtg import cpu_count, log
 from rtg.data.dataset import Batch, LoopingIterable
 from rtg.exp import TranslationExperiment, Field
-
-try:
-    set_start_method('spawn')
-except RuntimeError:
-    pass
 
 
 def get_spark_session(config: Dict[str, str]) -> SparkSession:

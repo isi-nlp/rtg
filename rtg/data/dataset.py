@@ -6,12 +6,11 @@ import sqlite3
 from itertools import zip_longest
 from pathlib import Path
 from typing import List, Iterator, Tuple, Union, Iterable, Dict, Any, Optional
-import multiprocessing as mp
 import torch
 from tqdm import tqdm
 import numpy as np
 
-from rtg import log, device, cpu_count, cpu_device
+from rtg import log, device, cpu_device
 from rtg.data.codec import Field
 from rtg.utils import IO, line_count, get_my_args, max_RSS, maybe_compress
 
@@ -23,16 +22,9 @@ MonoSeqRecord = List[Union[int, str]]
 ParallelSeqRecord = Tuple[MonoSeqRecord, MonoSeqRecord]
 TokStream = Union[Iterator[Iterator[str]], Iterator[str]]
 
-"""
-An object of this class holds an example in sequence to sequence dataset
-"""
-#Example = namedtuple('Example', ['x', 'y'])
-
 
 class IdExample:
-    """
-    Example (x, y) with id
-    """
+    __slots__ = 'x', 'y', 'id', 'x_raw', 'y_raw', 'x_len', 'y_len'
 
     def __init__(self, x, y, id):
         self.x: Array = x
@@ -171,24 +163,6 @@ class TSVData(Iterable[IdExample]):
             recs = ((src[:src_len], tgt[:tgt_len]) for src, tgt in recs)
         else:  # Filter out longer sentences
             recs = ((src, tgt) for src, tgt in recs if len(src) <= src_len and len(tgt) <= tgt_len)
-        return recs
-
-    @staticmethod
-    def read_raw_parallel_recs_parallel(src_path: Union[str, Path], tgt_path: Union[str, Path],
-                                        truncate: bool, src_len: int, tgt_len: int, src_tokenizer,
-                                        tgt_tokenizer, cpu_count=cpu_count) \
-            -> Iterator[ParallelSeqRecord]:
-        """Uses multiprocess to process the dataset"""
-        # Read the data on a single thread
-        recs = TSVData.read_raw_parallel_lines(src_path, tgt_path)
-        cpu_count = min(cpu_count, 6)  # too many is bad for disk
-        log.info(f"Parallel processing the parallel data using {cpu_count} CPUs")
-
-        with mp.get_context("spawn").Pool(processes=cpu_count) as pool:
-            mapper_func = TokenizerTask([src_tokenizer, tgt_tokenizer], [src_len, tgt_len],
-                                        truncate)
-            recs = pool.map(mapper_func, recs)
-            recs = (rec for rec in recs if rec)
         return recs
 
     @staticmethod
