@@ -13,6 +13,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
+from apex import amp
 from tqdm import tqdm
 
 from rtg import device, log, TranslationExperiment as Experiment
@@ -378,7 +379,8 @@ def attention(query, key, value, mask=None, dropout=None):
         # Now, if you got this, take a moment to thank http://nlp.seas.harvard.edu/rush.html
         # for devising this concise code. I needed a lot of time to understand how this code works!
         #
-        scores = scores.masked_fill(mask == 0, -1e9)
+        #scores = scores.masked_fill(mask == 0, -1e9)
+        scores = scores.masked_fill(mask == 0, -2^15) # float 16
     p_attn = F.softmax(scores, dim=-1)  # [BatchSize x Heads x Time=SeqLen x SeqLen ]
     if dropout is not None:
         p_attn = dropout(p_attn)
@@ -496,7 +498,8 @@ class SimpleLossFunction:
         loss = self.criterion(scores, truth).sum() / normalizer
 
         if train_mode:  # don't do this for validation set
-            loss.backward()
+            with amp.scale_loss(loss, self.opt.optimizer) as scaled_loss:
+                scaled_loss.backward()
             if take_step:
                 self.opt.step()
                 self.opt.zero_grad()
@@ -543,7 +546,8 @@ class ChunkedLossCompute(SimpleLossFunction):
             loss = self.criterion(chunked_dist, chunked_ys).sum() / normalizer
             total += loss.detach().item()
             if train_mode:
-                loss.backward()
+                with amp.scale_loss(loss, self.opt.optimizer) as scaled_loss:
+                    scaled_loss.backward()
         if train_mode:
             out_grad = _y_feats.grad.data
             y_feats.backward(gradient=out_grad)
@@ -676,6 +680,7 @@ class TransformerTrainer(SteppedTrainer):
                                                   chunk_size=chunk_size, devices=self.device_ids)
         else:
             """
+
         generator = self.core_model.generator
         if not chunk_size or chunk_size < 1:
             self.loss_func = SimpleLossFunction(generator=generator, criterion=self.criterion,

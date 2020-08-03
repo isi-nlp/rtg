@@ -12,6 +12,7 @@ from torch import nn
 
 from rtg import log
 
+
 get_env = os.environ.get
 
 
@@ -60,11 +61,14 @@ class DistribTorch:
             cls._instance = cls().setup()
         return cls._instance
 
-    def maybe_distributed(self, module: nn.Module):
+    def maybe_distributed(self, module: nn.Module, use_apex=False):
         if self.world_size > 1:
             if not self._is_backend_ready:
                 self.setup()
-            return nn.parallel.DistributedDataParallel(module, broadcast_buffers=True)
+            if use_apex:
+                return apex.parallel.DistributedDataParallel(module)
+            else:
+                return torch.nn.parallel.DistributedDataParallel(module)
         return module    # dont wrap
 
     @property
