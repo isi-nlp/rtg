@@ -285,7 +285,7 @@ class Pipeline:
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(prog="rtg.prep", description="prepare NMT experiment")
+    parser = argparse.ArgumentParser(prog="rtg-pipe", description="RTG Pipeline CLI")
     parser.add_argument("exp", metavar='EXP_DIR', help="Working directory of experiment", type=Path)
     parser.add_argument("conf", metavar='conf.yml', type=Path, nargs='?',
                         help="Config File. By default <work_dir>/conf.yml is used")

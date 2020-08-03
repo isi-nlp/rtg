@@ -44,6 +44,9 @@ setuptools.setup(
         'nlcodec >= 0.2.2',
         'torch >= 1.4'
     ],
+    extra_requires={
+        'serve': ['flask >= 1.1.2'],
+    },
     python_requires='>=3.7',
     entry_points={
         'console_scripts': [
@@ -54,6 +57,7 @@ setuptools.setup(
             'rtg-prep=rtg.prep:main',
             'rtg-train=rtg.train:main',
             'rtg-fork=rtg.fork:main',
+            'rtg-serve=rtg.serve:main',
             'rtg-syscomb=rtg.syscomb.__main__:main',
         ],
     }
