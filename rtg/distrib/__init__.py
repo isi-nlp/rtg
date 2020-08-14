@@ -29,10 +29,13 @@ class DistribTorch:
 
     gpu_count: int = torch.cuda.device_count()
     visible_devices: str = get_env('CUDA_VISIBLE_DEVICES', '')
+    fp16 = get_env('USE_FP16', 'false').lower() in {'yes', 'true', 'y', 't'}
+    _amp = None
+    _apex = None
 
     _is_backend_ready = False
     # singleton instance; lazy initialization
-    _instance: ClassVar['DistribTorch'] =  None
+    _instance: ClassVar['DistribTorch'] = None
 
     def setup(self):
         if self.world_size > 1:
@@ -44,6 +47,11 @@ class DistribTorch:
             log.info(f"Initializing PyTorch distributed with '{backend}' backend:\n {self}")
             torch.distributed.init_process_group(init_method='env://', backend=backend)
             self._is_backend_ready = True
+        if self.use_amp:   # conditional import
+            import apex
+            from apex import amp
+            self._amp = amp
+            self._apex = apex
         return self
 
     def close(self):
@@ -61,12 +69,12 @@ class DistribTorch:
             cls._instance = cls().setup()
         return cls._instance
 
-    def maybe_distributed(self, module: nn.Module, use_apex=False):
+    def maybe_distributed(self, module: nn.Module):
         if self.world_size > 1:
             if not self._is_backend_ready:
                 self.setup()
-            if use_apex:
-                return apex.parallel.DistributedDataParallel(module)
+            if self.use_amp:
+                return self._apex.parallel.DistributedDataParallel(module)
             else:
                 return torch.nn.parallel.DistributedDataParallel(module)
         return module    # dont wrap
@@ -87,3 +95,10 @@ class DistribTorch:
         if self.is_distributed:
             torch.distributed.barrier()
         # else we dont need it
+
+    def backward(self, loss, opt):
+        if self.use_amp:
+            with self._amp.scale_loss(loss, opt) as scaled_loss:
+                scaled_loss.backward()
+        else:
+            loss.backward()

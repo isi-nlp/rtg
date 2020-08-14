@@ -297,15 +297,10 @@ class SteppedTrainer:
         self.n_gpus = torch.cuda.device_count()
         self.device_ids = list(range(self.n_gpus))
 
-
         inner_opt_args = {k: optim_args[k] for k in
                           ['lr', 'betas', 'eps', 'weight_decay', 'amsgrad']}
-
-        trainer_args = self.exp.config.get('trainer', {}).get('init_args', {})
-        opt_level = trainer_args.get('opt_level', None)
-        self.use_amp = opt_level is not None        
-        self.core_model = self.model.to(device)
-        self.model = DistribTorch.instance().maybe_distributed(self.core_model, use_apex=self.use_amp)
+        dtorch = DistribTorch.instance()
+        self.model = dtorch.maybe_distributed(self.core_model)
         
         trainable_params = self.exp.config['optim'].get('trainable', {})
         if trainable_params:
@@ -318,9 +313,11 @@ class SteppedTrainer:
 
         inner_opt = Optims[optim].new(trainable_params, **inner_opt_args)
 
-        if opt_level:
+        if dtorch.use_amp:
+            opt_level = 'O1'
             log.info(f"Float precision opt_level: {opt_level}; see https://nvidia.github.io/apex/amp.html#opt-levels")
-            self.core_model, inner_opt = amp.initialize(self.core_model, inner_opt, opt_level=opt_level)
+            self.core_model, inner_opt = amp.initialize(self.core_model, inner_opt,
+                                                        opt_level=opt_level)
             if amp_state:
                 amp.load_state_dict(amp_state)
 

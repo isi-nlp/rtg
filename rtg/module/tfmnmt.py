@@ -13,7 +13,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
-from apex import amp
 from tqdm import tqdm
 
 from rtg import device, log, TranslationExperiment as Experiment
@@ -26,6 +25,8 @@ from torch.optim.optimizer import Optimizer
 from dataclasses import dataclass
 from sacrebleu import corpus_bleu
 from rtg.distrib import DistribTorch
+
+dtorch = DistribTorch.instance()
 
 
 def clones(module, N):
@@ -498,11 +499,7 @@ class SimpleLossFunction:
         loss = self.criterion(scores, truth).sum() / normalizer
 
         if train_mode:  # don't do this for validation set
-            if use_amp:
-                with amp.scale_loss(loss, self.opt.optimizer) as scaled_loss:
-                    scaled_loss.backward()
-            else:
-                loss.backward()
+            dtorch.backward(loss, self.opt.optimizer)
             if take_step:
                 self.opt.step()
                 self.opt.zero_grad()
@@ -549,11 +546,7 @@ class ChunkedLossCompute(SimpleLossFunction):
             loss = self.criterion(chunked_dist, chunked_ys).sum() / normalizer
             total += loss.detach().item()
             if train_mode:
-                if use_amp:
-                    with amp.scale_loss(loss, self.opt.optimizer) as scaled_loss:
-                        scaled_loss.backward()
-                else:
-                    loss.backward()
+                dtorch.backward(loss, self.opt.optmizer)
         if train_mode:
             out_grad = _y_feats.grad.data
             y_feats.backward(gradient=out_grad)
@@ -675,17 +668,8 @@ class TransformerTrainer(SteppedTrainer):
         assert self.grad_accum_interval > 0
 
         if self.n_gpus > 1:  # Multi GPU mode
-            raise Exception(f"Please use: python -m rtg.distrib.launch -G {self.n_gpus} ")
-            log.info(f"Going to use {self.n_gpus} GPUs; "
-                     f" Chunk_size={chunk_size} CUDA_VISIBLE_DEVICES="
-                     f"{os.environ.get('CUDA_VISIBLE_DEVICES')}")
-            """
-            self.model = nn.DataParallel(self.model, dim=0, device_ids=self.device_ids)
-            self.loss_func = MultiGPULossFunction(self.model, criterion=self.criterion,
-                                                  opt=self.opt,
-                                                  chunk_size=chunk_size, devices=self.device_ids)
-        else:
-            """
+            raise Exception(f"Please use: python -m rtg.distrib.launch -G {self.n_gpus} \n "
+                            f" or set single GPU by: export CUDA_VISIBLE_DEVICES=0 ")
 
         generator = self.core_model.generator
         if not chunk_size or chunk_size < 1:
@@ -760,7 +744,6 @@ class TransformerTrainer(SteppedTrainer):
                     f'Loss:{loss:.4f}, {int(num_toks / elapsed)}toks/s', refresh=False)
 
                 start = time.time()
-                
 
         score = total_loss / num_batches
         if do_bleu:

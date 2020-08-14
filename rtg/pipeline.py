@@ -22,7 +22,7 @@ import json
 import subprocess
 from rtg.distrib import DistribTorch
 
-distrib = DistribTorch.instance()
+dtorch = DistribTorch.instance()
 
 
 @dataclass
@@ -285,16 +285,16 @@ class Pipeline:
             log.update_file_handler(str(self.exp.log_file))
         self.pre_checks()  # fail early, so TG can fix and restart
 
-        if distrib.is_global_main:
+        if dtorch.is_global_main:
             self.exp.pre_process()
-        distrib.barrier()
-        if not distrib.is_global_main:
+        dtorch.barrier()
+        if not dtorch.is_global_main:
             self.exp.reload()  # with updated config and vocabs from global_main
         # train on all
         self.exp.train()
-        distrib.barrier()
+        dtorch.barrier()
         if run_tests:
-            if distrib.is_global_main:
+            if dtorch.is_global_main:
                 with torch.no_grad():
                     self.run_tests()
 
@@ -306,6 +306,8 @@ def parse_args():
                         help="Config File. By default <work_dir>/conf.yml is used")
     parser.add_argument("-G", "--gpu-only", action="store_true", default=False,
                         help="Crash if no GPU is available")
+    parser.add_argument("-fp16", "--fp16", action="store_true", default=False,
+                        help="Float 16")
 
     # multi-gpu / multi-node
     parser.add_argument("--local_rank", "--local-rank", type=int, default=-1,
@@ -314,6 +316,9 @@ def parse_args():
                         help="Master port (for multi-node SLURM jobs)")
 
     args = parser.parse_args()
+    if args.fp16:
+        assert torch.cuda.is_available(), "GPU required for fp16... exiting."
+        dtorch.fp16 = True
 
     if args.gpu_only:
         assert torch.cuda.is_available(), "No GPU found... exiting"
@@ -336,9 +341,9 @@ def parse_args():
         from rtg.big.exp import BigTranslationExperiment
         ExpFactory = BigTranslationExperiment
 
-    read_only = not distrib.is_global_main # only main can modify experiment
+    read_only = not dtorch.is_global_main # only main can modify experiment
     exp = ExpFactory(args.exp, config=conf_file, read_only=read_only)
-    distrib.barrier()
+    dtorch.barrier()
     return exp
 
 
