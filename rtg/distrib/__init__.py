@@ -38,6 +38,7 @@ class DistribTorch:
     _instance: ClassVar['DistribTorch'] = None
 
     def setup(self):
+        log.info("DistribTorch setup()")
         if self.world_size > 1:
             assert self.global_rank >= 0
             assert self.local_rank >= 0
@@ -47,13 +48,19 @@ class DistribTorch:
             log.info(f"Initializing PyTorch distributed with '{backend}' backend:\n {self}")
             torch.distributed.init_process_group(init_method='env://', backend=backend)
             self._is_backend_ready = True
-        if self.fp16:   # conditional import
-            import apex
-            from apex import amp
-            self._amp = amp
-            self._apex = apex
         return self
 
+    def enable_fp16(self):
+        if not self.fp16:   # conditional import
+            import apex as apex
+            from apex import amp as amp
+            self._amp = amp
+            self._apex = apex
+            log.info("apex and amp are available; fp16 enabled")
+            self.fp16 = True
+        else:
+            log.warning(" fp16 is already enabled")
+            
     def close(self):
         if self._is_backend_ready:
             log.warning("destroying distributed backend")
@@ -66,7 +73,7 @@ class DistribTorch:
         :return: gets singleton instance of class, lazily initialized
         """
         if not cls._instance:
-            cls._instance = cls().setup()
+            cls._instance = cls()
         return cls._instance
 
     def maybe_distributed(self, module: nn.Module):
@@ -96,9 +103,9 @@ class DistribTorch:
             torch.distributed.barrier()
         # else we dont need it
 
-    def backward(self, loss, opt):
+    def backward(self, loss, opt=None):
         if self.fp16:
-            with self._amp.scale_loss(loss, opt) as scaled_loss:
+            with self._amp.scale_loss(loss, opt.optimizer) as scaled_loss:
                 scaled_loss.backward()
         else:
             loss.backward()

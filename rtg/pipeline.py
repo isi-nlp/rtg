@@ -314,11 +314,11 @@ def parse_args():
                         help="Multi-GPU - Local rank")
     parser.add_argument("--master-port", type=int, default=-1,
                         help="Master port (for multi-node SLURM jobs)")
-
+    dtorch.setup()
     args = parser.parse_args()
     if args.fp16:
         assert torch.cuda.is_available(), "GPU required for fp16... exiting."
-        dtorch.fp16 = True
+        dtorch.enable_fp16()
 
     if args.gpu_only:
         assert torch.cuda.is_available(), "No GPU found... exiting"

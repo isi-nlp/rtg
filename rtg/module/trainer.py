@@ -22,7 +22,10 @@ from enum import Enum
 import inspect
 from pathlib import Path
 from rtg.distrib import DistribTorch
-from apex import amp
+
+
+dtorch = DistribTorch.instance()
+
 
 
 class NoamOpt(Optimizer):
@@ -299,12 +302,13 @@ class SteppedTrainer:
 
         inner_opt_args = {k: optim_args[k] for k in
                           ['lr', 'betas', 'eps', 'weight_decay', 'amsgrad']}
-        dtorch = DistribTorch.instance()
-        self.model = dtorch.maybe_distributed(self.core_model)
+
+        self.core_model = self.model.to(device)
+
         
         trainable_params = self.exp.config['optim'].get('trainable', {})
         if trainable_params:
-            if self.core_model is not self.model: # model is wrapped in DP or DistributedDP
+            if drtorch.is_distributed: # model is wrapped in DP or DistributedDP
                 log.warning(f">> Using more than 1 GPU with 'trainable' params is NOT tested")
             trainable_params = self.core_model.get_trainable_params(include=trainable_params.get('include'),
                                                            exclude=trainable_params.get('exclude'))
@@ -313,14 +317,15 @@ class SteppedTrainer:
 
         inner_opt = Optims[optim].new(trainable_params, **inner_opt_args)
 
-        if dtorch.use_amp:
+        if dtorch.fp16:
             opt_level = 'O1'
             log.info(f"Float precision opt_level: {opt_level}; see https://nvidia.github.io/apex/amp.html#opt-levels")
-            self.core_model, inner_opt = amp.initialize(self.core_model, inner_opt,
+            self.core_model, inner_opt = dtorch._amp.initialize(self.core_model, inner_opt,
                                                         opt_level=opt_level)
             if amp_state:
-                amp.load_state_dict(amp_state)
+                dtorch._amp.load_state_dict(amp_state)
 
+        self.model = dtorch.maybe_distributed(self.core_model)
         
         if optim_state:
             log.info("restoring optimizer state from checkpoint")
@@ -476,8 +481,9 @@ class SteppedTrainer:
             'model_type': self.exp.model_type,
             'model_args': self.exp.model_args,
         }
-        if self.use_amp:
-            state['amp_state'] = amp.state_dict()
+        
+        if dtorch.fp16:
+            state['amp_state'] = dtorch._amp.state_dict()
 
         self.exp.store_model(step_num, state, train_score=train_loss,
                              val_score=val_loss, keep=keep_models)

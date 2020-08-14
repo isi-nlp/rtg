@@ -107,7 +107,7 @@ class BigTranslationExperiment(TranslationExperiment):
                                         flat_uniq_corpus, no_split_toks=no_split_toks,
                                         char_coverage=char_coverage, spark=spark)
 
-    def get_train_data(self, batch_size: int, steps: int = 0, sort_by='eq_len_rand_batch',
+    def get_train_data(self, batch_size: Tuple[int, int], steps: int = 0, sort_by='eq_len_rand_batch',
                        batch_first=True, shuffle=False, fine_tune=False, keep_in_mem=False):
         data_path = self.train_file
         if fine_tune:
@@ -122,7 +122,7 @@ class BigTranslationExperiment(TranslationExperiment):
         vocab = self.tgt_vocab
         batch_meta = NBatchMeta(pad_idx=vocab.pad_idx, bos_idx=vocab.bos_idx, eos_idx=vocab.eos_idx,
                                 add_bos_x=False, add_bos_y=False, add_eos_x=True, add_eos_y=True)
-
+        
         batches = NBatchIterable(data_path=data_path, batch_size=batch_size, sort_by=sort_by,
                                  batch_first=batch_first, batch_meta=batch_meta,
                                  keep_in_mem=keep_in_mem)
