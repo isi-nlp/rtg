@@ -47,7 +47,7 @@ class DistribTorch:
             log.info(f"Initializing PyTorch distributed with '{backend}' backend:\n {self}")
             torch.distributed.init_process_group(init_method='env://', backend=backend)
             self._is_backend_ready = True
-        if self.use_amp:   # conditional import
+        if self.fp16:   # conditional import
             import apex
             from apex import amp
             self._amp = amp
@@ -73,7 +73,7 @@ class DistribTorch:
         if self.world_size > 1:
             if not self._is_backend_ready:
                 self.setup()
-            if self.use_amp:
+            if self.fp16:
                 return self._apex.parallel.DistributedDataParallel(module)
             else:
                 return torch.nn.parallel.DistributedDataParallel(module)
@@ -97,7 +97,7 @@ class DistribTorch:
         # else we dont need it
 
     def backward(self, loss, opt):
-        if self.use_amp:
+        if self.fp16:
             with self._amp.scale_loss(loss, opt) as scaled_loss:
                 scaled_loss.backward()
         else:
