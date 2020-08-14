@@ -45,6 +45,7 @@ setuptools.setup(
     extra_requires={
         'big': ['pyspark >= 3.0'],
         'extras': ['scipy >= 1.4']
+        'serve': ['flask >= 1.1.2'],
     },
     python_requires='>=3.7',
     entry_points={
@@ -56,6 +57,7 @@ setuptools.setup(
             'rtg-prep=rtg.prep:main',
             'rtg-train=rtg.train:main',
             'rtg-fork=rtg.fork:main',
+            'rtg-serve=rtg.serve:main',
             'rtg-syscomb=rtg.syscomb.__main__:main',
         ],
     }

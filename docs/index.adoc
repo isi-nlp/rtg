@@ -23,5 +23,7 @@ include::scaling.adoc[]
 
 include::environ.adoc[]
 
+include::serve.adoc[]
+
 include::develop.adoc[]
 
