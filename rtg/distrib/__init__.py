@@ -29,6 +29,7 @@ class DistribTorch:
 
     gpu_count: int = torch.cuda.device_count()
     visible_devices: str = get_env('CUDA_VISIBLE_DEVICES', '')
+    max_norm = 10
     fp16 = get_env('USE_FP16', 'false').lower() in {'yes', 'true', 'y', 't'}
     _amp = None
     _apex = None
@@ -104,8 +105,12 @@ class DistribTorch:
         # else we dont need it
 
     def backward(self, loss, opt=None):
+        if torch.isnan(loss):
+            log.warning('loss is nan; backward() skipped')
+            return
         if self.fp16:
             with self._amp.scale_loss(loss, opt.optimizer) as scaled_loss:
                 scaled_loss.backward()
+            torch.nn.utils.clip_grad_norm_(self._amp.master_params(opt.optimizer), self.max_norm)
         else:
             loss.backward()
