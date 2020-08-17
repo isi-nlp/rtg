@@ -1,6 +1,6 @@
 == Overview
 
-https://isi-nlp.github.io/rtg[Reader-Translator-Generator (RTG)] is a Neural Machine Translation toolkit based on pytorch.
+https://isi-nlp.github.io/rtg-xt[Reader-Translator-Generator (RTG)] is a Neural Machine Translation toolkit based on pytorch.
 
 === Features
 * Reproducible experiments: one `conf.yml`  that has everything -- data paths, params, and
@@ -27,14 +27,22 @@ Use this Google Colab notebook for learning __how to train your NMT model with R
 
 
 === Setup
+
+`rtg` has been published to PyPi at https://pypi.org/project/rtg/.
+
+----
+pip install rtg
+----
+
+==== Development:
 Add the root of this repo to `PYTHONPATH` or install it via `pip --editable`
 
 There are two versions of code:
 
-* https://github.com/isi-nlp/rtg
 * https://github.com/isi-nlp/rtg-xt
+* https://github.com/isi-nlp/rtg
 
-Both `rtg-xt` and `rtg` has same code on master branch.
+Both `rtg-xt` and `rtg` has same code on the master branch.
 `rtg-xt` has stable code base and meant to be used by anyone, so you should definitely get started with it.
 `rtg` is internal with some unfinished/work-in progress ideas (maybe unpublished), with issues and pull-requests by members of USC ISI team.
 We sync both code bases often.
@@ -43,19 +51,17 @@ If you like to collaborate with us and/or to get access to `rtg`, email https://
 
 [Source,bash]
 ----
-git clone https://github.com/isi-nlp/rtg.git
+git clone https://github.com/isi-nlp/rtg-xt.git
+# use https://github.com/isi-nlp/rtg.git if you have access to rtg.git
 cd rtg                # go to the code
-# use https://github.com/isi-nlp/rtg-xt.git if you dont have access to rtg.git
 
-conda create -n rtg python=3.7   # adds a conda env named rtg
-conda activate rtg  # activate it
+conda create -n rtg python=3.7   # creates a conda env named rtg
+conda activate rtg       # activate it
 
-# install this as a local editable pip package
 pip install --editable .
 # The requirements are in setup.py; you may customize it if you wish
 
-# or add it to PYTHONPATH
-export PYTHONPATH=$PWD
+export PYTHONPATH=$PWD # or add it to PYTHONPATH
 ----
 
 
