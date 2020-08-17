@@ -468,8 +468,7 @@ class SteppedTrainer:
                                    global_step=step_num, tag=f'Target embeddings')
 
         # Unwrap model state from DataParallel and persist
-        wrappers = (nn.DataParallel, nn.parallel.distributed.DistributedDataParallel)
-        model = (self.model.module if isinstance(self.model, wrappers) else self.model)
+        model = (self.model.module if hasattr(self.model, 'module') else self.model)
         state = {
             'model_state': model.state_dict(),
             'optim_state': self.opt.optimizer.state_dict(),
