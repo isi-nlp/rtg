@@ -381,7 +381,8 @@ def attention(query, key, value, mask=None, dropout=None):
         # for devising this concise code. I needed a lot of time to understand how this code works!
         #
         #scores = scores.masked_fill(mask == 0, -1e9)
-        scores = scores.masked_fill(mask == 0, -2^15) # float 16
+        low_val = -2**15 if dtorch.fp16 else -1e9
+        scores = scores.masked_fill(mask == 0, low_val)
     p_attn = F.softmax(scores, dim=-1)  # [BatchSize x Heads x Time=SeqLen x SeqLen ]
     if dropout is not None:
         p_attn = dropout(p_attn)
