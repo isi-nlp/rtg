@@ -26,6 +26,8 @@ from dataclasses import dataclass
 from sacrebleu import corpus_bleu
 from rtg.distrib import DistribTorch
 
+dtorch = DistribTorch.instance()
+
 
 def clones(module, N):
     "Produce N identical layers."
@@ -378,7 +380,9 @@ def attention(query, key, value, mask=None, dropout=None):
         # Now, if you got this, take a moment to thank http://nlp.seas.harvard.edu/rush.html
         # for devising this concise code. I needed a lot of time to understand how this code works!
         #
-        scores = scores.masked_fill(mask == 0, -1e9)
+        #scores = scores.masked_fill(mask == 0, -1e9)
+        low_val = -2**15 if dtorch.fp16 else -1e9
+        scores = scores.masked_fill(mask == 0, low_val)
     p_attn = F.softmax(scores, dim=-1)  # [BatchSize x Heads x Time=SeqLen x SeqLen ]
     if dropout is not None:
         p_attn = dropout(p_attn)
@@ -496,7 +500,7 @@ class SimpleLossFunction:
         loss = self.criterion(scores, truth).sum() / normalizer
 
         if train_mode:  # don't do this for validation set
-            loss.backward()
+            dtorch.backward(loss, self.opt)
             if take_step:
                 self.opt.step()
                 self.opt.zero_grad()
@@ -543,7 +547,7 @@ class ChunkedLossCompute(SimpleLossFunction):
             loss = self.criterion(chunked_dist, chunked_ys).sum() / normalizer
             total += loss.detach().item()
             if train_mode:
-                loss.backward()
+                dtorch.backward(loss, self.opt)
         if train_mode:
             out_grad = _y_feats.grad.data
             y_feats.backward(gradient=out_grad)
@@ -665,17 +669,9 @@ class TransformerTrainer(SteppedTrainer):
         assert self.grad_accum_interval > 0
 
         if self.n_gpus > 1:  # Multi GPU mode
-            raise Exception(f"Please use: python -m rtg.distrib.launch -G {self.n_gpus} ")
-            log.info(f"Going to use {self.n_gpus} GPUs; "
-                     f" Chunk_size={chunk_size} CUDA_VISIBLE_DEVICES="
-                     f"{os.environ.get('CUDA_VISIBLE_DEVICES')}")
-            """
-            self.model = nn.DataParallel(self.model, dim=0, device_ids=self.device_ids)
-            self.loss_func = MultiGPULossFunction(self.model, criterion=self.criterion,
-                                                  opt=self.opt,
-                                                  chunk_size=chunk_size, devices=self.device_ids)
-        else:
-            """
+            raise Exception(f"Please use: python -m rtg.distrib.launch -G {self.n_gpus} \n "
+                            f" or set single GPU by: export CUDA_VISIBLE_DEVICES=0 ")
+
         generator = self.core_model.generator
         if not chunk_size or chunk_size < 1:
             self.loss_func = SimpleLossFunction(generator=generator, criterion=self.criterion,
@@ -749,7 +745,6 @@ class TransformerTrainer(SteppedTrainer):
                     f'Loss:{loss:.4f}, {int(num_toks / elapsed)}toks/s', refresh=False)
 
                 start = time.time()
-                
 
         score = total_loss / num_batches
         if do_bleu:
@@ -806,7 +801,10 @@ class TransformerTrainer(SteppedTrainer):
         batches = steps * self.grad_accum_interval
         start_batch = self.start_step * self.grad_accum_interval
         check_point = check_point * self.grad_accum_interval
-
+        if isinstance(batch_size, int):
+            max_toks, max_sents = batch_size, float('inf')
+        else:
+            max_toks, max_sents = batch_size
         if args:
             # no extra args. let user know if an extra arg is passed
             raise Exception(f" Found extra args: {args}")
@@ -815,16 +813,17 @@ class TransformerTrainer(SteppedTrainer):
                  f' batch_size={batch_size} toks; sort_by={sort_by};'
                  f' check point size:{check_point}; fine_tune={fine_tune};'
                  f' dec_bos_cut={dec_bos_cut}')
+
         distr = DistribTorch.instance()
         if batches <= start_batch:
             raise Exception(f'The model was already trained to {self.start_step} steps. '
                             f'Please increase the steps or clear the existing models')
-        train_data = self.exp.get_train_data(batch_size=batch_size, steps=batches - start_batch,
+        train_data = self.exp.get_train_data(batch_size=(max_toks, max_sents), steps=batches - start_batch,
                                              sort_by=sort_by, batch_first=True, fine_tune=fine_tune,
                                              keep_in_mem=keep_in_mem)
         val_data = None
         if distr.is_global_main:
-            val_data = self.exp.get_val_data(batch_size, shuffle=False, batch_first=True,
+            val_data = self.exp.get_val_data(batch_size=max_toks, shuffle=False, batch_first=True,
                                          sort_desc=False)
 
         train_state = TrainerState(self.model, check_point=check_point)

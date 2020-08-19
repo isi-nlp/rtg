@@ -13,15 +13,19 @@ USC Information Sciences Institute  Natural Language Group
 :docinfo2:
 
 
-include::intro.adoc[]
+include::00-intro.adoc[]
 
-include::conf.yml.adoc[]
+include::10-conf.yml.adoc[]
 
-include::clitools.adoc[]
+include::20-clitools.adoc[]
 
-include::scaling.adoc[]
+include::30-environ.adoc[]
 
-include::environ.adoc[]
+include::40-train-pro.adoc[]
 
-include::develop.adoc[]
+include::45-scaling.adoc[]
+
+include::50-serve.adoc[]
+
+include::60-develop.adoc[]
 

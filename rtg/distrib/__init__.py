@@ -12,6 +12,7 @@ from torch import nn
 
 from rtg import log
 
+
 get_env = os.environ.get
 
 
@@ -28,12 +29,17 @@ class DistribTorch:
 
     gpu_count: int = torch.cuda.device_count()
     visible_devices: str = get_env('CUDA_VISIBLE_DEVICES', '')
+    max_norm = 10
+    fp16 = get_env('USE_FP16', 'false').lower() in {'yes', 'true', 'y', 't'}
+    _amp = None
+    _apex = None
 
     _is_backend_ready = False
     # singleton instance; lazy initialization
-    _instance: ClassVar['DistribTorch'] =  None
+    _instance: ClassVar['DistribTorch'] = None
 
     def setup(self):
+        log.info("DistribTorch setup()")
         if self.world_size > 1:
             assert self.global_rank >= 0
             assert self.local_rank >= 0
@@ -45,6 +51,17 @@ class DistribTorch:
             self._is_backend_ready = True
         return self
 
+    def enable_fp16(self):
+        if not self.fp16:   # conditional import
+            import apex as apex
+            from apex import amp as amp
+            self._amp = amp
+            self._apex = apex
+            log.info("apex and amp are available; fp16 enabled")
+            self.fp16 = True
+        else:
+            log.warning(" fp16 is already enabled")
+            
     def close(self):
         if self._is_backend_ready:
             log.warning("destroying distributed backend")
@@ -57,14 +74,17 @@ class DistribTorch:
         :return: gets singleton instance of class, lazily initialized
         """
         if not cls._instance:
-            cls._instance = cls().setup()
+            cls._instance = cls()
         return cls._instance
 
     def maybe_distributed(self, module: nn.Module):
         if self.world_size > 1:
             if not self._is_backend_ready:
                 self.setup()
-            return nn.parallel.DistributedDataParallel(module, broadcast_buffers=True)
+            if self.fp16:
+                return self._apex.parallel.DistributedDataParallel(module)
+            else:
+                return torch.nn.parallel.DistributedDataParallel(module)
         return module    # dont wrap
 
     @property
@@ -83,3 +103,14 @@ class DistribTorch:
         if self.is_distributed:
             torch.distributed.barrier()
         # else we dont need it
+
+    def backward(self, loss, opt=None):
+        if torch.isnan(loss):
+            log.warning('loss is nan; backward() skipped')
+            return
+        if self.fp16:
+            with self._amp.scale_loss(loss, opt.optimizer) as scaled_loss:
+                scaled_loss.backward()
+            torch.nn.utils.clip_grad_norm_(self._amp.master_params(opt.optimizer), self.max_norm)
+        else:
+            loss.backward()

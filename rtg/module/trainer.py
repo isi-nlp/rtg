@@ -24,6 +24,10 @@ from pathlib import Path
 from rtg.distrib import DistribTorch
 
 
+dtorch = DistribTorch.instance()
+
+
+
 class NoamOpt(Optimizer):
     """
     Optimizer wrapper that implements learning rate as a function of step.
@@ -267,6 +271,7 @@ class SteppedTrainer:
         self.last_step = -1
         self.exp = exp
         optim_state = None
+        amp_state = None
         if model:
             self.model = model
         else:
@@ -282,6 +287,8 @@ class SteppedTrainer:
                 model_state = state['model_state'] if 'model_state' in state else state
                 if 'optim_state' in state:
                     optim_state = state['optim_state']
+                if 'amp_state' in state:
+                    amp_state = state['amp_state']
                 self.model.load_state_dict(model_state)
             else:
                 log.info("No earlier check point found. Looks like this is a fresh start")
@@ -293,21 +300,33 @@ class SteppedTrainer:
         self.n_gpus = torch.cuda.device_count()
         self.device_ids = list(range(self.n_gpus))
 
-        self.core_model = self.model.to(device)
-        self.model = DistribTorch.instance().maybe_distributed(self.core_model)
-
         inner_opt_args = {k: optim_args[k] for k in
                           ['lr', 'betas', 'eps', 'weight_decay', 'amsgrad']}
 
+        self.core_model = self.model.to(device)
+
+        
         trainable_params = self.exp.config['optim'].get('trainable', {})
         if trainable_params:
-            if self.core_model is not self.model: # model is wrapped in DP or DistributedDP
+            if drtorch.is_distributed: # model is wrapped in DP or DistributedDP
                 log.warning(f">> Using more than 1 GPU with 'trainable' params is NOT tested")
             trainable_params = self.core_model.get_trainable_params(include=trainable_params.get('include'),
                                                            exclude=trainable_params.get('exclude'))
         else:
             trainable_params = self.model.parameters()
+
         inner_opt = Optims[optim].new(trainable_params, **inner_opt_args)
+
+        if dtorch.fp16:
+            opt_level = 'O1'
+            log.info(f"Float precision opt_level: {opt_level}; see https://nvidia.github.io/apex/amp.html#opt-levels")
+            self.core_model, inner_opt = dtorch._amp.initialize(self.core_model, inner_opt,
+                                                        opt_level=opt_level)
+            if amp_state:
+                dtorch._amp.load_state_dict(amp_state)
+
+        self.model = dtorch.maybe_distributed(self.core_model)
+        
         if optim_state:
             log.info("restoring optimizer state from checkpoint")
             try:
@@ -449,8 +468,7 @@ class SteppedTrainer:
                                    global_step=step_num, tag=f'Target embeddings')
 
         # Unwrap model state from DataParallel and persist
-        wrappers = (nn.DataParallel, nn.parallel.distributed.DistributedDataParallel)
-        model = (self.model.module if isinstance(self.model, wrappers) else self.model)
+        model = (self.model.module if hasattr(self.model, 'module') else self.model)
         state = {
             'model_state': model.state_dict(),
             'optim_state': self.opt.optimizer.state_dict(),
@@ -462,6 +480,9 @@ class SteppedTrainer:
             'model_type': self.exp.model_type,
             'model_args': self.exp.model_args,
         }
+        
+        if dtorch.fp16:
+            state['amp_state'] = dtorch._amp.state_dict()
 
         self.exp.store_model(step_num, state, train_score=train_loss,
                              val_score=val_loss, keep=keep_models)
