@@ -665,7 +665,7 @@ class TransformerTrainer(SteppedTrainer):
         assert self.grad_accum_interval > 0
 
         if self.n_gpus > 1:  # Multi GPU mode
-            raise Exception("<<Multi GPU per process>> Recommended: many processes with 1 GPU each")
+            raise Exception(f"Please use: python -m rtg.distrib.launch -G {self.n_gpus} ")
             log.info(f"Going to use {self.n_gpus} GPUs; "
                      f" Chunk_size={chunk_size} CUDA_VISIBLE_DEVICES="
                      f"{os.environ.get('CUDA_VISIBLE_DEVICES')}")
@@ -815,11 +815,6 @@ class TransformerTrainer(SteppedTrainer):
                  f' batch_size={batch_size} toks; sort_by={sort_by};'
                  f' check point size:{check_point}; fine_tune={fine_tune};'
                  f' dec_bos_cut={dec_bos_cut}')
-        """
-        if self.n_gpus > 1:
-            batch_size *= self.n_gpus
-            log.info(f"# GPUs = {self.n_gpus}, batch_size is set to {batch_size}")
-        """
         distr = DistribTorch.instance()
         if batches <= start_batch:
             raise Exception(f'The model was already trained to {self.start_step} steps. '
@@ -828,7 +823,7 @@ class TransformerTrainer(SteppedTrainer):
                                              sort_by=sort_by, batch_first=True, fine_tune=fine_tune,
                                              keep_in_mem=keep_in_mem)
         val_data = None
-        if distr.is_main:
+        if distr.is_global_main:
             val_data = self.exp.get_val_data(batch_size, shuffle=False, batch_first=True,
                                          sort_desc=False)
 
@@ -843,9 +838,8 @@ class TransformerTrainer(SteppedTrainer):
         if early_stop:
             stopper = EarlyStopper(cur_step=self.start_step, **early_stop)
 
-
         with tqdm(train_data, initial=start_batch, total=batches, unit='batch',
-                  dynamic_ncols=True, disable=not distr.is_main) as data_bar:
+                  dynamic_ncols=True, disable=not distr.is_global_main) as data_bar:
             for batch in data_bar:
                 if update_interval == 0:
                     self.model.zero_grad()
@@ -898,8 +892,8 @@ class TransformerTrainer(SteppedTrainer):
                 # Save checkpoint
                 if is_check_pt:
                     train_loss = train_state.reset()
-                    log.info(f"Chkpt Train loss={train_loss}; Runs validation? {distr.is_main}")
-                    if distr.is_main:
+                    log.info(f"Chkpt Train loss={train_loss}; Runs validation? {distr.is_global_main}")
+                    if distr.is_global_main:
                         train_state.train_mode(False)
                         with torch.no_grad():
                             val_loss = self.run_valid_epoch(val_data, dec_bos_cut=dec_bos_cut)
@@ -925,7 +919,7 @@ class TransformerTrainer(SteppedTrainer):
                 update_interval = (update_interval + 1 ) % self.grad_accum_interval
 
         # End of training
-        if unsaved_state and distr.is_main:
+        if unsaved_state and distr.is_global_main:
             train_loss = train_state.reset()
             train_state.train_mode(False)
             val_loss = self.run_valid_epoch(val_data, dec_bos_cut=dec_bos_cut)
