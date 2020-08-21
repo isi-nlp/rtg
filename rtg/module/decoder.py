@@ -346,7 +346,7 @@ class Decoder:
             if actives.sum() == 0:  # all sequences Ended
                 break
             # [Batch x Beams x Vocab] <-- [Batch x Beams x Time]
-            flat_ys = ys.view(batch_size * beam_size, -1)
+            flat_ys = ys.contiguous().view(batch_size * beam_size, -1)
             log_prob = gen.generate_next(flat_ys)  # ys upto current time step
             log_prob = log_prob.view(batch_size, beam_size, -1)
 
