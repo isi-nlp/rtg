@@ -18,6 +18,7 @@ from pyspark.sql.types import StructType, StructField, LongType
 from rtg import cpu_count, log
 from rtg.data.dataset import Batch, LoopingIterable
 from rtg.exp import TranslationExperiment, Field
+import numpy as np
 
 
 def get_spark_session(config: Dict[str, str]) -> SparkSession:
@@ -124,8 +125,7 @@ class BigTranslationExperiment(TranslationExperiment):
                                 add_bos_x=False, add_bos_y=False, add_eos_x=True, add_eos_y=True)
         
         batches = NBatchIterable(data_path=data_path, batch_size=batch_size, sort_by=sort_by,
-                                 batch_first=batch_first, batch_meta=batch_meta,
-                                 keep_in_mem=keep_in_mem)
+                                 batch_first=batch_first, batch_meta=batch_meta)
 
         data = TLoopingIterable(batches, steps)
         return data

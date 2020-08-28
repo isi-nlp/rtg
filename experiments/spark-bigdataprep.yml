@@ -42,13 +42,14 @@ prep:
   valid_tgt: experiments/sample-data/sampl.valid.en.tok
   mono_src: []
   mono_tgt: []
-  max_part_size: 100     # maximum recs in each part of db; TODO: set it to 1_000_000 or more
+  max_part_size: 500_000   # maximum recs in each part of db; TODO: set it to 1_000_000 or more
 
 spark: # add this block to enable spark backend
   spark.master: local[2]  # TODO: change this; give more CPUs
   spark.app.name: RTG NMT on Spark
   spark.driver.memory: 3g  #TODO: change this; give more RAM
   spark.serializer: org.apache.spark.serializer.KryoSerializer
+  #spark.local.dir:
   #key1: value1    # any other spark configs you want to control
 tester:
   decoder:

@@ -47,5 +47,4 @@ export OMP_NUM_THREADS=$RTG_CPUS
 export MKL_NUM_THREADS=$RTG_CPUS
 ----
 
-`RTG_CPUS` is used by `nlcodec` to parallelize training data encoding.
-For larger datasets, see "Scaling to Big Datasets Using PySpark" section.
+For scaling to large datasets, see link:#scaling-big["Scaling to Big Datasets Using PySpark"] section.

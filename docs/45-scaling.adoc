@@ -1,0 +1,44 @@
+[#scaling-big]
+== Scaling to Big Datasets Using PySpark
+
+When dealing with big datasets, the traditional tools such as multiprocessing and SQLite3 simply aren't enogh.
+In such scenario, https://spark.apache.org/[PySpark] is a useful backend to use.
+When pyspark is enabled
+
+PySpark is used to
+
+* compute term frequencies which help speed up BPE learning
+* encode data with BPE
+* store data in https://isi-nlp.github.io/nlcodec/#_database[NLCodec MultipartDb  ]
+
+
+To enable pyspark backend
+
+1. Install pyspark; eg: `pip install pyspark >= 3.0.0`.  Make sure you have a JVM/JDK that is compatible for pyspark.
+2. For data preparation, only `codec_lib: nlcodec` supports pyspark backend as of now. If you are using `sentencepiece`, switch to `nlcodec`
+3. Add the `spark` block to the top level of `conf.yml`.  See `experiments/spark-bigdataprep.html` for a full example.
+
+[source,yaml]
+----
+prep:
+   codec_lib: nlcodec    # only nlcodec supports pyspark backend
+   max_part_size: 1000000  # part size (num of recs); divides the training data into multiple parts
+   ... # other args
+spark: # add this block to enable spark backend
+  # double quote the keys containing dot
+  "spark.master": local[3]           # set it to local[*] to use all local CPUs
+  "spark.app.name": RTG NMT on Spark  # Name for the App
+  "spark.driver.memory": 6g
+  #key1: value1    # any other spark configs you want to control
+
+----
+
+You may use `local[*]` to use all CPUs however, it is important to note that:
+
+1. If you have too many CPU cores (say 32 or more), the disk/storage may have too much pressure and the overall performance could degrade.
+2. Remember to exclude some CPUs out from spark for other work load, such as for pytorch. In the above example I used `local[3]` because I had only 4 CPUs in total and excluded one from spark.
+
+Watch out the spark logs for any warning messages.
+Also, the log message provides the Spark web UI address when spark session is initialized.
+
+WARNING: The multi-node spark distributed mode is not tested. (But it might work out of the box  if `"spark.master"` is correctly set)

@@ -78,7 +78,7 @@ def main(args=None):
     cur_env["WORLD_SIZE"] = str(dist_world_size)
 
     if 'OMP_NUM_THREADS' not in os.environ and args.procs_per_node > 1:
-        cur_env["OMP_NUM_THREADS"] = str(1)
+        cur_env["OMP_NUM_THREADS"] = str(2)
         print("*****************************************\n"
               "Setting OMP_NUM_THREADS environment variable for each process to be"
               f" {cur_env['OMP_NUM_THREADS']} in default, to avoid your system being overloaded, "

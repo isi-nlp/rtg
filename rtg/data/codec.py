@@ -9,9 +9,9 @@ from typing import List, Iterator, Union, Optional
 import collections as coll
 from tqdm import tqdm
 import numpy as np
+from rtg import log, yaml
 from sentencepiece import SentencePieceProcessor, SentencePieceTrainer
 
-from rtg import log, yaml
 from rtg.utils import IO
 from functools import lru_cache
 
