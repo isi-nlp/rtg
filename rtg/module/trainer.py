@@ -231,7 +231,9 @@ class NoOpSummaryWriter(SummaryWriter):
     """
 
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+        #super().__init__(*args, **kwargs)
+        # super will create dirs, which we dont want
+        pass
 
     def add_text(self, *args, **kwargs):
         pass
@@ -339,7 +341,7 @@ class SteppedTrainer:
         if self.exp.read_only:
             self.tbd = NoOpSummaryWriter()
         else:
-            self.tbd = SummaryWriter(log_dir=str(exp.work_dir / 'tensorboard'))
+            self.tbd = SummaryWriter(log_dir=str(exp.work_dir / 'tensorboard' ))
 
         self.exp.optim_args = optim, optim_args
         if not self.exp.read_only:
