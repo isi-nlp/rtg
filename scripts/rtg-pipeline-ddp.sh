@@ -27,7 +27,6 @@ export MKL_NUM_THREADS=$RTG_CPUS
 CONDA_ENV=rtg     # empty means don't activate environment
 source ~/.bashrc
 
-                                                                                                                                                     [0/1983]
 usage() {
     echo "Usage: $0  <exp/dir>"
     exit 1;
