@@ -513,7 +513,7 @@ class Batch:
 class BatchIterable(Iterable[Batch]):
 
     # This should have been called as Dataset
-    def __init__(self, data_path: Union[str, Path], batch_size: int, field: Field,
+    def __init__(self, data_path: Union[str, Path], batch_size:Union[int, Tuple[int,int]], field: Field,
                  sort_desc: bool = False, batch_first: bool = True, shuffle: bool = False,
                  sort_by: str = None, keep_in_mem=False, raw_path: Tuple[Path]=None,
                  device=cpu_device, **kwargs):
@@ -528,7 +528,11 @@ class BatchIterable(Iterable[Batch]):
         """
         self.field = field
         self.sort_desc = sort_desc
-        self.batch_size = batch_size
+        
+        if isinstance(batch_size, int):
+            self.max_toks, self.max_sents = batch_size, batch_size
+        else:
+            self.max_toks, self.max_sents = batch_size
         self.batch_first = batch_first
         self.sort_by = sort_by
         self.data_path = data_path
@@ -585,12 +589,12 @@ class BatchIterable(Iterable[Batch]):
                 continue
 
             this_len = max(len(ex.x), len(ex.y))
-            if (len(batch) + 1) * max(max_len, this_len) <= self.batch_size:
+            if len(batch) < self.max_sents and (len(batch) + 1) * max(max_len, this_len) <= self.max_toks:
                 batch.append(ex)  # this one can go in
                 max_len = max(max_len, this_len)
             else:
-                if this_len > self.batch_size:
-                    raise Exception(f'Unable to make a batch of {self.batch_size} toks'
+                if this_len > self.max_toks:
+                    raise Exception(f'Unable to make a batch of {self.max_toks} toks'
                                     f' with a seq of x_len:{len(ex.x)} y_len:{len(ex.y)}')
                 # yield the current batch
                 yield Batch(batch, sort_dec=self.sort_desc, batch_first=self.batch_first,
@@ -618,12 +622,12 @@ class BatchIterable(Iterable[Batch]):
                 continue
 
             this_len = max(x_len, y_len)
-            if (len(batch) + 1) * max(max_len, this_len) <= self.batch_size:
+            if len(batch) < self.max_sents and (len(batch) + 1) * max(max_len, this_len) <= self.max_toks:
                 batch.append(id)  # this one can go in
                 max_len = max(max_len, this_len)
             else:
-                if this_len > self.batch_size:
-                    raise Exception(f'Unable to make a batch of {self.batch_size} toks'
+                if this_len > self.max_toks:
+                    raise Exception(f'Unable to make a batch of {self.max_toks} toks'
                                     f' with a seq of x_len:{x_len} y_len:{y_len}')
                 batches.append(maybe_compress(batch))
                 batch = [id]  # new batch
@@ -658,7 +662,7 @@ class BatchIterable(Iterable[Batch]):
 
     @property
     def num_batches(self) -> int:
-        return int(math.ceil(len(self.data) / self.batch_size))
+        return int(math.ceil(len(self.data) / self.max_toks))
 
 
 class LoopingIterable(Iterable[Batch]):
