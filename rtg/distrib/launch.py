@@ -127,13 +127,22 @@ def main(args=None):
         process = subprocess.Popen(cmd, env=my_env)
         processes.append((cmd, process))
 
+    timeout = 10
+    alive = [True] * len(processes)
     try:
-        for i, (cmd, process) in enumerate(processes):
-            process.wait()
-            if process.returncode != 0:
-                raise subprocess.CalledProcessError(returncode=process.returncode, cmd=cmd)
+        while sum(alive) > 0:
+            for i, (cmd, process) in enumerate(processes):
+                try:
+                    process.wait(timeout=timeout)
+                    alive[i] = False
+                    if process.returncode != 0:
+                        # TODO: communicate to all nodes
+                        raise subprocess.CalledProcessError(returncode=process.returncode, cmd=cmd)
+                except subprocess.TimeoutExpired:
+                    pass  # that's okay! skip this and check on next process
     finally:
-        teardown([proc for cmd, proc in processes])
+        # kill all living processes
+        teardown([proc for is_alive, (cmd, proc) in zip(alive, processes) if is_alive])
 
 
 def teardown(procs: List[subprocess.Popen]):
