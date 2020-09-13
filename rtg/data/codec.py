@@ -9,9 +9,9 @@ from typing import List, Iterator, Union, Optional
 import collections as coll
 from tqdm import tqdm
 import numpy as np
+from rtg import log, yaml
 from sentencepiece import SentencePieceProcessor, SentencePieceTrainer
 
-from rtg import log, yaml
 from rtg.utils import IO
 from functools import lru_cache
 
@@ -193,7 +193,8 @@ class NLField(Field):
 
     @classmethod
     def train(cls, model_type: str, vocab_size: int, model_path: str, files: List[str],
-              no_split_toks: Optional[List[str]] = None, char_coverage: float = 0):
+              no_split_toks: Optional[List[str]] = None, char_coverage: float = 0,
+              dedup=True, spark=None):
         """
         :param model_type: word, char, bpe
         :param vocab_size: vocabulary size
@@ -203,13 +204,28 @@ class NLField(Field):
         :param char_coverage: character coverage (0, 1]. value <= 0 => default coverage
         :return:
         """
-        from nlcodec import learn_vocab
-        inp = IO.get_liness(*files)
         assert not no_split_toks, 'not supported in nlcodec yet'
+        from nlcodec import learn_vocab, term_freq
         kwargs = dict(char_coverage=char_coverage) if char_coverage > 0 else {}
+        if not spark:
+            inp = IO.get_liness(*files)
+        else:
+            # extract and store frequencies to this file
+            stats_file = model_path  + '.termfreqs'
+            if not Path(stats_file).exists():
+                log.info("Extracting term frequencies... ")
+                paths = [f if isinstance(f, Path) else Path(f) for f in files]
+                wfs, chfs, n_lines = term_freq.word_counts(paths=paths, dedup=dedup, spark=spark)
+                log.info(f"Lines = {n_lines:,}, Word Types: {len(wfs):,} Char Types:{len(chfs):,}")
+                stats = chfs if model_type == 'char' else wfs
+                log.info(f"Writing frequencies to {stats_file}")
+                with IO.writer(stats_file) as out:
+                    term_freq.write_stats(stats=stats, out=out, line_count=n_lines)
+                kwargs['term_freqs'] = True
+            inp = IO.get_lines(stats_file, delim='\n')
+
         learn_vocab(inp=inp, level=model_type, model=model_path, vocab_size=vocab_size, **kwargs)
         return cls(model_path)
-
 
 class PretrainMatchField(Field):
     # this order is for fairseq's XML-R

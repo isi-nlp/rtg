@@ -7,17 +7,25 @@ USC Information Sciences Institute  Natural Language Group
 :toclevels: 3
 :sectnums:
 :sectnumlevels: 4
+:data-uri:
+:toc: left
+//injects google analytics to <head>
+:docinfo2:
 
 
-include::intro.adoc[]
+include::00-intro.adoc[]
 
-include::conf.yml.adoc[]
+include::10-conf.yml.adoc[]
 
-include::clitools.adoc[]
+include::20-clitools.adoc[]
 
-include::environ.adoc[]
+include::30-environ.adoc[]
 
-include::serve.adoc[]
+include::40-train-pro.adoc[]
 
-include::develop.adoc[]
+include::45-scaling.adoc[]
+
+include::50-serve.adoc[]
+
+include::60-develop.adoc[]
 

@@ -24,6 +24,9 @@ from rtg.module.criterion import Criterion
 from torch.optim.optimizer import Optimizer
 from dataclasses import dataclass
 from sacrebleu import corpus_bleu
+from rtg.distrib import DistribTorch
+
+dtorch = DistribTorch.instance()
 
 
 def clones(module, N):
@@ -377,7 +380,9 @@ def attention(query, key, value, mask=None, dropout=None):
         # Now, if you got this, take a moment to thank http://nlp.seas.harvard.edu/rush.html
         # for devising this concise code. I needed a lot of time to understand how this code works!
         #
-        scores = scores.masked_fill(mask == 0, -1e9)
+        #scores = scores.masked_fill(mask == 0, -1e9)
+        low_val = -2**15 if dtorch.fp16 else -1e9
+        scores = scores.masked_fill(mask == 0, low_val)
     p_attn = F.softmax(scores, dim=-1)  # [BatchSize x Heads x Time=SeqLen x SeqLen ]
     if dropout is not None:
         p_attn = dropout(p_attn)
@@ -495,7 +500,7 @@ class SimpleLossFunction:
         loss = self.criterion(scores, truth).sum() / normalizer
 
         if train_mode:  # don't do this for validation set
-            loss.backward()
+            dtorch.backward(loss, self.opt)
             if take_step:
                 self.opt.step()
                 self.opt.zero_grad()
@@ -542,7 +547,7 @@ class ChunkedLossCompute(SimpleLossFunction):
             loss = self.criterion(chunked_dist, chunked_ys).sum() / normalizer
             total += loss.detach().item()
             if train_mode:
-                loss.backward()
+                dtorch.backward(loss, self.opt)
         if train_mode:
             out_grad = _y_feats.grad.data
             y_feats.backward(gradient=out_grad)
@@ -578,7 +583,7 @@ class MultiGPULossFunction(ChunkedLossCompute):
         # disconnect y_feats nodes from rest of graph
         _y_feats = y_feats.data.clone().detach()
         _y_feats.requires_grad = True  # even though detached, we still need grads here
-
+        out_device = y_feats.device
         # naming: sct = Scattered  chk = Chunked
         # Scatter is horizontal split (i.e. along batch) ; Chunk is vertical split (ie. along time)
         # Scatter is handled by pytorch's dataparallel utils
@@ -626,7 +631,7 @@ class MultiGPULossFunction(ChunkedLossCompute):
             chk_sct_loss = nn.parallel.parallel_apply(sct_criteria, args_pair)
 
             # update total loss
-            chk_losses = nn.parallel.gather(chk_sct_loss, target_device=self.out_device)
+            chk_losses = nn.parallel.gather(chk_sct_loss, target_device=out_device)
             chk_loss = chk_losses.sum() / normalizer
             total_loss += chk_loss.item()
 
@@ -658,28 +663,28 @@ class TransformerTrainer(SteppedTrainer):
                  model_factory=TransformerNMT.make_model,
                  **optim_args):
         super().__init__(exp, model, model_factory=model_factory, optim=optim, **optim_args)
-        generator = self.model.generator
-        self.n_gpus = torch.cuda.device_count()
         trainer_args = self.exp.config.get('trainer', {}).get('init_args', {})
-        chunk_size = trainer_args.get('chunk_size', 10)
+        chunk_size = trainer_args.get('chunk_size', -1)
         self.grad_accum_interval = trainer_args.get('grad_accum', 1)
         assert self.grad_accum_interval > 0
 
-        log.info(f"Going to use {self.n_gpus} GPUs; "
-                 f" Chunk_size={chunk_size} CUDA_VISIBLE_DEVICES="
-                 f"{os.environ.get('CUDA_VISIBLE_DEVICES')}")
-
         if self.n_gpus > 1:  # Multi GPU mode
-            device_ids = list(range(self.n_gpus))
-            log.warning("Multi GPU mode <<this feature is not well tested>>")
-            self.model = nn.DataParallel(self.model, dim=0, device_ids=device_ids)
+            raise Exception(f"Please use: python -m rtg.distrib.launch -G {self.n_gpus} \n "
+                            f" or set single GPU by: export CUDA_VISIBLE_DEVICES=0 ")
 
-            self.loss_func = MultiGPULossFunction(self.model, criterion=self.criterion,
-                                                  opt=self.opt,
-                                                  chunk_size=chunk_size, devices=device_ids)
+        generator = self.core_model.generator
+        if not chunk_size or chunk_size < 1:
+            self.loss_func = SimpleLossFunction(generator=generator, criterion=self.criterion,
+                                                opt=self.opt)
         else:
+            log.info(f"Using Chunked Loss Generator. chunk_size={chunk_size}")
+            if DistribTorch.instance().is_distributed:
+                raise Exception("Chunked Loss is not supported with DDP. Your options are:"
+                                "\n1. set trainer.init_args.chunk_size = 0 to disable it"
+                                "\n2. dont use distributed data parallel. run this on one 1 proc"
+                                "\n3. make chunk + DDP work together and remove this check")
             self.loss_func = ChunkedLossCompute(generator=generator, criterion=self.criterion,
-                                                opt=self.opt, chunk_size=chunk_size)
+                                                    opt=self.opt, chunk_size=chunk_size)
 
     def run_valid_epoch(self, data_iter: BatchIterable, dec_bos_cut=False, do_bleu=True):
         """
@@ -692,12 +697,14 @@ class TransformerTrainer(SteppedTrainer):
         total_loss = 0.0
         num_batches = 0
         hyps, refs = [], []   # BLEU
-
+        model = self.core_model
+        assert not model.training
         with tqdm(data_iter, total=data_iter.num_batches,
                   unit='batch', dynamic_ncols=True) as data_bar:
             # TODO: BLEU1
             for i, batch in enumerate(data_bar):
-                batch = batch.to(device)
+                if self.n_gpus <= 1:
+                    batch = batch.to(device)
                 num_toks = batch.y_toks
                 x_seqs = batch.x_seqs
                 if do_bleu and not bool(batch.y_raw):
@@ -711,18 +718,17 @@ class TransformerTrainer(SteppedTrainer):
                     x_seqs = x_seqs[:, 1:]
                 else:
                     bos_step = torch.full((len(batch), 1), fill_value=batch.bos_val,
-                                          dtype=torch.long, device=device)
-
+                                          dtype=torch.long, device=batch.y_seqs.device)
 
                 x_mask = (x_seqs != batch.pad_val).unsqueeze(1)
                 y_seqs_with_bos = torch.cat([bos_step, batch.y_seqs], dim=1)
                 y_mask = batch.make_autoreg_mask(y_seqs_with_bos)
-                out = self.model(x_seqs, y_seqs_with_bos, x_mask, y_mask)
+                out = model(x_seqs, y_seqs_with_bos, x_mask, y_mask)
+
                 # [Batch x Time x D]
                 # skip the last time step (the one with EOS as input)
                 out = out[:, :-1, :]
                 # assumption:  y_seqs has EOS, and not BOS
-
                 loss = self.loss_func(out, batch.y_seqs, num_toks, False, get_out=do_bleu)
                 if do_bleu:
                     loss, outs = loss
@@ -795,7 +801,10 @@ class TransformerTrainer(SteppedTrainer):
         batches = steps * self.grad_accum_interval
         start_batch = self.start_step * self.grad_accum_interval
         check_point = check_point * self.grad_accum_interval
-
+        if isinstance(batch_size, int):
+            max_toks, max_sents = batch_size, float('inf')
+        else:
+            max_toks, max_sents = batch_size
         if args:
             # no extra args. let user know if an extra arg is passed
             raise Exception(f" Found extra args: {args}")
@@ -804,18 +813,17 @@ class TransformerTrainer(SteppedTrainer):
                  f' batch_size={batch_size} toks; sort_by={sort_by};'
                  f' check point size:{check_point}; fine_tune={fine_tune};'
                  f' dec_bos_cut={dec_bos_cut}')
-        """
-        if self.n_gpus > 1:
-            batch_size *= self.n_gpus
-            log.info(f"# GPUs = {self.n_gpus}, batch_size is set to {batch_size}")
-        """
+
+        distr = DistribTorch.instance()
         if batches <= start_batch:
             raise Exception(f'The model was already trained to {self.start_step} steps. '
                             f'Please increase the steps or clear the existing models')
-        train_data = self.exp.get_train_data(batch_size=batch_size, steps=batches - start_batch,
+        train_data = self.exp.get_train_data(batch_size=(max_toks, max_sents), steps=batches - start_batch,
                                              sort_by=sort_by, batch_first=True, fine_tune=fine_tune,
                                              keep_in_mem=keep_in_mem)
-        val_data = self.exp.get_val_data(batch_size, shuffle=False, batch_first=True,
+        val_data = None
+        if distr.is_global_main:
+            val_data = self.exp.get_val_data(batch_size=max_toks, shuffle=False, batch_first=True,
                                          sort_desc=False)
 
         train_state = TrainerState(self.model, check_point=check_point)
@@ -830,13 +838,14 @@ class TransformerTrainer(SteppedTrainer):
             stopper = EarlyStopper(cur_step=self.start_step, **early_stop)
 
         with tqdm(train_data, initial=start_batch, total=batches, unit='batch',
-                  dynamic_ncols=True) as data_bar:
+                  dynamic_ncols=True, disable=not distr.is_global_main) as data_bar:
             for batch in data_bar:
                 if update_interval == 0:
                     self.model.zero_grad()
 
-                # Prep batch
-                batch = batch.to(device)
+                #  if not dataparallel, then move
+                if self.n_gpus <= 1:
+                    batch = batch.to(device)
                 num_toks = batch.y_toks
                 x_seqs = batch.x_seqs
                 if dec_bos_cut:
@@ -844,7 +853,7 @@ class TransformerTrainer(SteppedTrainer):
                     x_seqs = x_seqs[:, 1:]
                 else:
                     bos_step = torch.full((len(batch), 1), fill_value=batch.bos_val,
-                                          dtype=torch.long, device=device)
+                                          dtype=torch.long, device=batch.y_seqs.device)
 
                 # Prep masks
                 x_mask = (x_seqs != batch.pad_val).unsqueeze(1)
@@ -882,35 +891,40 @@ class TransformerTrainer(SteppedTrainer):
                 # Save checkpoint
                 if is_check_pt:
                     train_loss = train_state.reset()
-                    train_state.train_mode(False)
-                    val_loss = self.run_valid_epoch(val_data, dec_bos_cut=dec_bos_cut)
-                    self.make_check_point(train_loss, val_loss=val_loss, keep_models=keep_models,
-                                          log_embedding=log_embedding)
-                    if check_pt_callback:
-                        check_pt_callback(model=self.model,
-                                          step=self.opt.curr_step,
-                                          train_loss=train_loss)
-                    train_state.train_mode(True)
+                    log.info(f"Chkpt Train loss={train_loss}; Runs validation? {distr.is_global_main}")
+                    if distr.is_global_main:
+                        train_state.train_mode(False)
+                        with torch.no_grad():
+                            val_loss = self.run_valid_epoch(val_data, dec_bos_cut=dec_bos_cut)
+                            self.make_check_point(train_loss, val_loss=val_loss, keep_models=keep_models,
+                                                  log_embedding=log_embedding)
+                            if check_pt_callback:
+                                check_pt_callback(model=self.model,
+                                                  step=self.opt.curr_step,
+                                                  train_loss=train_loss)
+                        train_state.train_mode(True)
+
+                        if stopper:
+                            stopper.validation(val_loss)
+                            if stopper.is_stop():
+                                log.info(f"Stopping at {stopper.cur_step} because {stopper.by}"
+                                         f" didnt improve over {stopper.patience} checkpoints")
+                                early_stopped = True
+                                break
                     unsaved_state = False
                     gc.collect()
-
-                    if stopper:
-                        stopper.validation(val_loss)
-                        if stopper.is_stop():
-                            log.info(f"Stopping at {stopper.cur_step} because {stopper.by}"
-                                     f" didnt improve over {stopper.patience} checkpoints")
-                            early_stopped = True
-                            break
+                    distr.barrier()
                 # Track gradient accumulation updates
                 update_interval = (update_interval + 1 ) % self.grad_accum_interval
 
         # End of training
-        if unsaved_state:
+        if unsaved_state and distr.is_global_main:
             train_loss = train_state.reset()
             train_state.train_mode(False)
             val_loss = self.run_valid_epoch(val_data, dec_bos_cut=dec_bos_cut)
             self.make_check_point(train_loss, val_loss=val_loss, keep_models=keep_models)
 
+        distr.barrier()
         return early_stopped
 
     def _log_resources(self, batch):

@@ -168,7 +168,7 @@ This makes the trainer use `train_{src,tgt}` for 0 - 200k steps,  followed by `f
 for 200k-300k steps. Note that `finetune_steps > steps` .
 
 [#conf-parent-child]
-=== Parent-Child : using pretrained model as parent
+=== Parent-Child Transfer
 To initialize from another compatible model as parent, add `parent:` specification to conf.yml as shown below:
 [source,yaml]
 ----
@@ -216,7 +216,7 @@ This feature is supported only in `AbstractTransformerNMT` and all of its childr
 If you are adding a new `NMTModel` or customising this feature, please override `get_trainable_parameters(self, include, exclude)` function to support this feature.
 
 [#conf-share-data]
-=== Sharing the data from other experiment
+=== Sharing Data between Experiments
 
 In the new experiment config, add `same_data` to reference parent experiment from which the data
 should be reused for training and validation. Note that this uses the same vocabulary as parent.

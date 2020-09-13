@@ -1,4 +1,4 @@
-__version__ = '0.4.2'
+__version__ = '0.5.0-dev'
 
 import os
 import logging
@@ -13,7 +13,7 @@ import multiprocessing as mp
 device_name = 'cuda:0' if torch.cuda.is_available() else 'cpu'
 device = torch.device(device_name)
 cpu_device = torch.device('cpu')
-cpu_count = int(os.environ.get('RTG_CPUS', str(max(1, mp.cpu_count() - 1))))
+cpu_count = int(os.environ.get('RTG_CPUS', str(max(1, mp.cpu_count() - 2))))
 
 from ruamel.yaml import YAML
 

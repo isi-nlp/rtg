@@ -3,18 +3,16 @@ import os
 import pickle
 import random
 import sqlite3
-from collections import namedtuple
 from itertools import zip_longest
 from pathlib import Path
 from typing import List, Iterator, Tuple, Union, Iterable, Dict, Any, Optional
-import multiprocessing as mp
 import torch
 from tqdm import tqdm
 import numpy as np
 
-from rtg import log, my_tensor as tensor, device, cpu_count
+from rtg import log, device, cpu_device
 from rtg.data.codec import Field
-from rtg.utils import IO, line_count, get_my_args, max_RSS
+from rtg.utils import IO, line_count, get_my_args, max_RSS, maybe_compress
 
 
 Array = np.ndarray
@@ -24,16 +22,9 @@ MonoSeqRecord = List[Union[int, str]]
 ParallelSeqRecord = Tuple[MonoSeqRecord, MonoSeqRecord]
 TokStream = Union[Iterator[Iterator[str]], Iterator[str]]
 
-"""
-An object of this class holds an example in sequence to sequence dataset
-"""
-#Example = namedtuple('Example', ['x', 'y'])
-
 
 class IdExample:
-    """
-    Example (x, y) with id
-    """
+    __slots__ = 'x', 'y', 'id', 'x_raw', 'y_raw', 'x_len', 'y_len'
 
     def __init__(self, x, y, id):
         self.x: Array = x
@@ -172,23 +163,6 @@ class TSVData(Iterable[IdExample]):
             recs = ((src[:src_len], tgt[:tgt_len]) for src, tgt in recs)
         else:  # Filter out longer sentences
             recs = ((src, tgt) for src, tgt in recs if len(src) <= src_len and len(tgt) <= tgt_len)
-        return recs
-
-    @staticmethod
-    def read_raw_parallel_recs_parallel(src_path: Union[str, Path], tgt_path: Union[str, Path],
-                                        truncate: bool, src_len: int, tgt_len: int, src_tokenizer,
-                                        tgt_tokenizer, cpu_count=cpu_count) \
-            -> Iterator[ParallelSeqRecord]:
-        """Uses multiprocess to process the dataset"""
-        # Read the data on a single thread
-        recs = TSVData.read_raw_parallel_lines(src_path, tgt_path)
-        log.info(f"Parallel processing the parallel data using {cpu_count} CPUs")
-
-        with mp.get_context("spawn").Pool(processes=cpu_count) as pool:
-            mapper_func = TokenizerTask([src_tokenizer, tgt_tokenizer], [src_len, tgt_len],
-                                        truncate)
-            recs = pool.map(mapper_func, recs)
-            recs = (rec for rec in recs if rec)
         return recs
 
     @staticmethod
@@ -409,7 +383,7 @@ def tokenize(strs: List[str]) -> List[List[str]]:
     return [s.split() for s in strs]
 
 
-def subsequent_mask(size):
+def subsequent_mask(size, device=device):
     """
     Mask out subsequent positions. upper diagonal elements should be zero
     :param size:
@@ -423,7 +397,7 @@ def subsequent_mask(size):
     return mask
 
 
-def padded_sequence_mask(lengths, max_len=None):
+def padded_sequence_mask(lengths, max_len=None, device=device):
     """
     :param lengths: a sequence of lenghts
     :param max_len: pad upto this length
@@ -448,7 +422,7 @@ class Batch:
 
     def __init__(self, batch: List[IdExample], sort_dec=False, batch_first=True,
                  add_eos_x=True, add_eos_y=True, add_bos_x=False, add_bos_y=False,
-                 field: Field = None):
+                 field: Field = None, device=cpu_device):
         """
         :param batch: List fo Examples
         :param sort_dec: True if the examples be sorted as descending order of their source sequence lengths
@@ -468,15 +442,15 @@ class Batch:
         if sort_dec:
             batch = sorted(batch, key=lambda _: len(_.x), reverse=True)
         self._len = len(batch)
-        self.x_len = tensor([len(e.x) for e in batch])
+        self.x_len = torch.tensor([len(e.x) for e in batch], device=device)
         self.x_toks = self.x_len.sum().float().item()
         self.max_x_len = self.x_len.max()
 
         # create x_seqs on CPU RAM and move to GPU at once
         self.x_seqs = torch.full(size=(self._len, self.max_x_len), fill_value=self.pad_val,
-                                 dtype=torch.long)
+                                 dtype=torch.long, device=device)
         for i, ex in enumerate(batch):
-            self.x_seqs[i, :len(ex.x)] = torch.tensor(ex.x, dtype=torch.long)
+            self.x_seqs[i, :len(ex.x)] = torch.tensor(ex.x, dtype=torch.long, device=device)
         self.x_seqs = self.x_seqs.to(device)
         if not batch_first:  # transpose
             self.x_seqs = self.x_seqs.t()
@@ -488,11 +462,11 @@ class Batch:
         self.has_y = first_y is not None
         if self.has_y:
             self.bos_eos_check(batch, 'y', add_bos_y, add_eos_y)
-            self.y_len = tensor([len(e.y) for e in batch])
+            self.y_len = torch.tensor([len(e.y) for e in batch], device=device)
             self.y_toks = self.y_len.sum().float().item()
             self.max_y_len = self.y_len.max().item()
             y_seqs = torch.full(size=(self._len, self.max_y_len), fill_value=self.pad_val,
-                                dtype=torch.long)
+                                dtype=torch.long, device=device)
             for i, ex in enumerate(batch):
                 y_seqs[i, :len(ex.y)] = torch.tensor(ex.y, dtype=torch.long)
             self.y_seqs = y_seqs.to(device)
@@ -539,9 +513,10 @@ class Batch:
 class BatchIterable(Iterable[Batch]):
 
     # This should have been called as Dataset
-    def __init__(self, data_path: Union[str, Path], batch_size: int, field: Field,
+    def __init__(self, data_path: Union[str, Path], batch_size:Union[int, Tuple[int,int]], field: Field,
                  sort_desc: bool = False, batch_first: bool = True, shuffle: bool = False,
-                 sort_by: str = None, keep_in_mem=False, raw_path: Tuple[Path]=None, **kwargs):
+                 sort_by: str = None, keep_in_mem=False, raw_path: Tuple[Path]=None,
+                 device=cpu_device, **kwargs):
         """
         Iterator for reading training data in batches
         :param data_path: path to TSV file
@@ -553,11 +528,16 @@ class BatchIterable(Iterable[Batch]):
         """
         self.field = field
         self.sort_desc = sort_desc
-        self.batch_size = batch_size
+        
+        if isinstance(batch_size, int):
+            self.max_toks, self.max_sents = batch_size, batch_size
+        else:
+            self.max_toks, self.max_sents = batch_size
         self.batch_first = batch_first
         self.sort_by = sort_by
         self.data_path = data_path
         self.keep_in_mem = keep_in_mem
+        self.device = device
         if not isinstance(data_path, Path):
             data_path = Path(data_path)
 
@@ -609,50 +589,51 @@ class BatchIterable(Iterable[Batch]):
                 continue
 
             this_len = max(len(ex.x), len(ex.y))
-            if (len(batch) + 1) * max(max_len, this_len) <= self.batch_size:
+            if len(batch) < self.max_sents and (len(batch) + 1) * max(max_len, this_len) <= self.max_toks:
                 batch.append(ex)  # this one can go in
                 max_len = max(max_len, this_len)
             else:
-                if this_len > self.batch_size:
-                    raise Exception(f'Unable to make a batch of {self.batch_size} toks'
+                if this_len > self.max_toks:
+                    raise Exception(f'Unable to make a batch of {self.max_toks} toks'
                                     f' with a seq of x_len:{len(ex.x)} y_len:{len(ex.y)}')
                 # yield the current batch
                 yield Batch(batch, sort_dec=self.sort_desc, batch_first=self.batch_first,
-                            field=self.field)
+                            field=self.field, device=self.device)
                 batch = [ex]  # new batch
                 max_len = this_len
         if batch:
             log.debug(f"\nLast batch, size={len(batch)}")
             yield Batch(batch, sort_dec=self.sort_desc, batch_first=self.batch_first,
-                        field=self.field)
+                        field=self.field, device=self.device)
 
     def _make_eq_len_batch_ids(self):
         sort = 'y_len desc'
         if isinstance(self.data, SqliteFile):  # only sqlite supports multiple sorts as of now
             sort += ', random() desc'
         rows = self.data.get_all(cols=['id', 'x_len', 'y_len'], sort=sort)
-        stats = [(r['id'], r['x_len'], r['y_len']) for r in rows]
         batches = []
         batch = []
         max_len = 0
-        for id, x_len, y_len in stats:
+
+        for row in rows:
+            id, x_len, y_len = row['id'], row['x_len'], row['y_len']
             if min(x_len, y_len) == 0:
                 log.warn("Skipping a record, either source or target is empty")
                 continue
 
             this_len = max(x_len, y_len)
-            if (len(batch) + 1) * max(max_len, this_len) <= self.batch_size:
+            if len(batch) < self.max_sents and (len(batch) + 1) * max(max_len, this_len) <= self.max_toks:
                 batch.append(id)  # this one can go in
                 max_len = max(max_len, this_len)
             else:
-                if this_len > self.batch_size:
-                    raise Exception(f'Unable to make a batch of {self.batch_size} toks'
+                if this_len > self.max_toks:
+                    raise Exception(f'Unable to make a batch of {self.max_toks} toks'
                                     f' with a seq of x_len:{x_len} y_len:{y_len}')
-                batches.append(batch)
+                batches.append(maybe_compress(batch))
                 batch = [id]  # new batch
                 max_len = this_len
         if batch:
-            batches.append(batch)
+            batches.append(maybe_compress(batch))
         return batches
 
     def make_eq_len_ran_batches(self):
@@ -667,7 +648,7 @@ class BatchIterable(Iterable[Batch]):
             batch = list(self.data.get_all_ids(batch_ids))
             # batch = [Example(r['x'], r.get('y')) for r in batch]
             yield Batch(batch, sort_dec=self.sort_desc, batch_first=self.batch_first,
-                        field=self.field)
+                        field=self.field, device=self.device)
 
     def __iter__(self) -> Iterator[Batch]:
         if self.sort_by == 'eq_len_rand_batch':
@@ -681,7 +662,7 @@ class BatchIterable(Iterable[Batch]):
 
     @property
     def num_batches(self) -> int:
-        return int(math.ceil(len(self.data) / self.batch_size))
+        return int(math.ceil(len(self.data) / self.max_toks))
 
 
 class LoopingIterable(Iterable[Batch]):

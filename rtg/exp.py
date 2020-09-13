@@ -32,7 +32,8 @@ class BaseExperiment:
         log.info(f"Initializing an experiment. Directory = {work_dir}")
         self.read_only = read_only
         self.work_dir = work_dir
-        self.log_file = work_dir / 'rtg.log'
+        self.log_dir = work_dir / 'logs'
+        self.log_file = self.log_dir / 'rtg.log'
         self.data_dir = work_dir / 'data'
         self.model_dir = work_dir / 'models'
         self._config_file = work_dir / 'conf.yml'
@@ -61,7 +62,7 @@ class BaseExperiment:
         self.samples_file = self.data_dir / 'samples.tsv.gz'
 
         if not read_only:
-            for _dir in [self.model_dir, self.data_dir]:
+            for _dir in [self.model_dir, self.data_dir, self.log_dir]:
                 if not _dir.exists():
                     _dir.mkdir(parents=True)
 
@@ -299,8 +300,13 @@ class TranslationExperiment(BaseExperiment):
 
     def pre_process_parallel(self, args: Dict[str, Any]):
         # check if files are parallel
-        self.check_line_count('training', args['train_src'], args['train_tgt'])
         self.check_line_count('validation', args['valid_src'], args['valid_tgt'])
+        if 'spark' in self.config:
+            log.warning(f"Spark backend detected: line count on training data is skipped")
+        else:
+            log.warning(f"Going to count lines. If this is a big dataset, it will take long time")
+            self.check_line_count('training', args['train_src'], args['train_tgt'])
+
         xt_args = dict(no_split_toks=args.get('no_split_toks'),
                        char_coverage=args.get('char_coverage', 0))
         if args.get('shared_vocab'):  # shared vocab
@@ -435,8 +441,7 @@ class TranslationExperiment(BaseExperiment):
                 f'{args[src_key]} and {args[tgt_key]} must have same number of lines'
         # create Piece IDs
         s_time = time.time()
-        reader_func = TSVData.read_raw_parallel_recs_parallel if self.codec_supports_multiproc \
-            else TSVData.read_raw_parallel_recs
+        reader_func = TSVData.read_raw_parallel_recs
         parallel_recs = reader_func(
             args[src_key], args[tgt_key], args['truncate'], args['src_len'], args['tgt_len'],
             src_tokenizer=self.src_vocab.encode_as_ids, tgt_tokenizer=self.tgt_vocab.encode_as_ids)
@@ -732,7 +737,7 @@ class TranslationExperiment(BaseExperiment):
         inp_file = IO.maybe_tmpfs(inp_file)
         train_data = BatchIterable(inp_file, batch_size=batch_size, sort_by=sort_by,
                                    batch_first=batch_first, shuffle=shuffle, field=self.tgt_vocab,
-                                   keep_in_mem=keep_in_mem, **self._get_batch_args())
+                                    **self._get_batch_args())
         if steps > 0:
             train_data = LoopingIterable(train_data, steps)
         return train_data
@@ -760,6 +765,10 @@ class TranslationExperiment(BaseExperiment):
         if steps > 0:
             data = LoopingIterable(data, steps)
         return data
+
+    def reload(self):
+        exp = type(self)(self.work_dir, read_only=self.read_only)
+        self.__dict__ = exp.__dict__
 
     def copy_vocabs(self, other):
         """

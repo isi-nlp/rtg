@@ -20,16 +20,16 @@ To disable GPU usage, simply set empty string to the variable or unset it
   unset CUDA_VISIBLE_DEVICES
 
 
-
-=== Using Fast and Temporary File System
+=== Fast Temporary FileSystem
 When shared compute grids with network file systems (NFS) are used, the disk IO can be too slow.
 It helps to move training data that is frequently read to a fast temporary file system.
 Placing training data on TMPFS can be a good thing to do in this situation.
 `export RTG_TMP` to the desired path such as `$TMPDIR` before starting rtg process.
 
-```bash
+[source,bash]
+----
 export RTG_TMP=$TMPDIR
-```
+----
 The RTG_TMP does NOT have to be unique to each directory. So you can use the same directory for all
 the experiments.
 
@@ -40,7 +40,6 @@ we shall revise this decision again.
 
 === Number of CPU Cores
 
-
 [source,bash]
 ----
 export RTG_CPUS=10     #$SLURM_CPUS_ON_NODE
@@ -48,4 +47,4 @@ export OMP_NUM_THREADS=$RTG_CPUS
 export MKL_NUM_THREADS=$RTG_CPUS
 ----
 
-`RTG_CPUS` is used by `nlcodec` to parallelize training data encoding
+For scaling to large datasets, see link:#scaling-big["Scaling to Big Datasets Using PySpark"] section.

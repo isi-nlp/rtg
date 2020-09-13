@@ -21,6 +21,11 @@ from torch.utils.tensorboard import SummaryWriter
 from enum import Enum
 import inspect
 from pathlib import Path
+from rtg.distrib import DistribTorch
+
+
+dtorch = DistribTorch.instance()
+
 
 
 class NoamOpt(Optimizer):
@@ -226,7 +231,9 @@ class NoOpSummaryWriter(SummaryWriter):
     """
 
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+        #super().__init__(*args, **kwargs)
+        # super will create dirs, which we dont want
+        pass
 
     def add_text(self, *args, **kwargs):
         pass
@@ -266,6 +273,7 @@ class SteppedTrainer:
         self.last_step = -1
         self.exp = exp
         optim_state = None
+        amp_state = None
         if model:
             self.model = model
         else:
@@ -277,10 +285,12 @@ class SteppedTrainer:
             last_model, self.last_step = self.exp.get_last_saved_model()
             if last_model:
                 log.info(f"Resuming training from step:{self.last_step}, model={last_model}")
-                state = torch.load(last_model)
+                state = torch.load(last_model, map_location=device)  
                 model_state = state['model_state'] if 'model_state' in state else state
                 if 'optim_state' in state:
                     optim_state = state['optim_state']
+                if 'amp_state' in state:
+                    amp_state = state['amp_state']
                 self.model.load_state_dict(model_state)
             else:
                 log.info("No earlier check point found. Looks like this is a fresh start")
@@ -289,28 +299,49 @@ class SteppedTrainer:
         for k, v in self.default_optim_args.items():
             optim_args[k] = optim_args.get(k, v)
 
-        self.model = self.model.to(device)
+        self.n_gpus = torch.cuda.device_count()
+        self.device_ids = list(range(self.n_gpus))
 
         inner_opt_args = {k: optim_args[k] for k in
                           ['lr', 'betas', 'eps', 'weight_decay', 'amsgrad']}
 
+        self.core_model = self.model.to(device)
+
+        
         trainable_params = self.exp.config['optim'].get('trainable', {})
-        trainable_params = self.model.get_trainable_params(include=trainable_params.get('include'),
+        if trainable_params:
+            if drtorch.is_distributed: # model is wrapped in DP or DistributedDP
+                log.warning(f">> Using more than 1 GPU with 'trainable' params is NOT tested")
+            trainable_params = self.core_model.get_trainable_params(include=trainable_params.get('include'),
                                                            exclude=trainable_params.get('exclude'))
+        else:
+            trainable_params = self.model.parameters()
+
         inner_opt = Optims[optim].new(trainable_params, **inner_opt_args)
+
+        if dtorch.fp16:
+            opt_level = 'O1'
+            log.info(f"Float precision opt_level: {opt_level}; see https://nvidia.github.io/apex/amp.html#opt-levels")
+            self.core_model, inner_opt = dtorch._amp.initialize(self.core_model, inner_opt,
+                                                        opt_level=opt_level)
+            if amp_state:
+                dtorch._amp.load_state_dict(amp_state)
+
+        self.model = dtorch.maybe_distributed(self.core_model)
+        
         if optim_state:
             log.info("restoring optimizer state from checkpoint")
             try:
-                inner_opt.load_state_dict(optim_state)
+                inner_opt.load_state_dict(optim_state)  
             except Exception:
                 log.exception("Unable to restore optimizer, skipping it.")
-        self.opt = NoamOpt(self.model.model_dim, optim_args['constant'], optim_args['warmup_steps'],
+        self.opt = NoamOpt(self.core_model.model_dim, optim_args['constant'], optim_args['warmup_steps'],
                            inner_opt, step=self.start_step, inv_sqrt=optim_args['inv_sqrt'])
 
         if self.exp.read_only:
             self.tbd = NoOpSummaryWriter()
         else:
-            self.tbd = SummaryWriter(log_dir=str(exp.work_dir / 'tensorboard'))
+            self.tbd = SummaryWriter(log_dir=str(exp.work_dir / 'tensorboard' ))
 
         self.exp.optim_args = optim, optim_args
         if not self.exp.read_only:
@@ -325,11 +356,10 @@ class SteppedTrainer:
                         self.tbd.add_text(f"sample/{samp_num}", " || ".join(sample), 0)
 
             from rtg.module.decoder import Decoder
-            self.decoder = Decoder.new(self.exp, self.model)
+            self.decoder = Decoder.new(self.exp, self.core_model)
 
         if self.start_step <= 1:
             self.maybe_init_model()
-        self.model = self.model.to(device)
 
         self.criterion = self.create_criterion(optim_args['criterion'])
 
@@ -350,7 +380,7 @@ class SteppedTrainer:
 
         optim_args = self.exp.optim_args[1]
         smoothing = optim_args.get('label_smoothing', 0.0)
-        tgt_embedding = self.model.tgt_embed[0].lut
+        tgt_embedding = self.core_model.tgt_embed[0].lut
         margin = optim_args.get('margin', 0.0)
         mode = optim_args.get('mode', 'dot')
         neg_sampling = optim_args.get('neg_sampling', 'random')
@@ -359,7 +389,7 @@ class SteppedTrainer:
 
         pad_idx = self.exp.tgt_vocab.pad_idx
         if criterion == 'smooth_kld':
-            return criteria.SmoothKLD(vocab_size=self.model.generator.vocab, smoothing=smoothing,
+            return criteria.SmoothKLD(vocab_size=self.core_model.generator.vocab, smoothing=smoothing,
                                       pad_idx=pad_idx)
         elif criterion == 'cross_entropy':
             return criteria.CrossEntropy()
@@ -384,14 +414,14 @@ class SteppedTrainer:
         if src_emb_mat is None:
             log.info("NOT initializing pre-trained source embedding")
         else:
-            self.model.init_src_embedding(src_emb_mat)
+            self.core_model.init_src_embedding(src_emb_mat)
 
         tgt_emb_mat = load_matrix(self.exp.emb_tgt_file)
         if tgt_emb_mat is None:
             log.info("NOT Initializing pre-trained target embeddings")
         else:
-            self.model.init_tgt_embedding(tgt_emb_mat)
-        self.model.maybe_init_from_parent(exp=self.exp)
+            self.core_model.init_tgt_embedding(tgt_emb_mat)
+        self.core_model.maybe_init_from_parent(exp=self.exp)
 
     def show_samples(self, beam_size=3, num_hyp=3, max_len=30):
         """
@@ -440,7 +470,7 @@ class SteppedTrainer:
                                    global_step=step_num, tag=f'Target embeddings')
 
         # Unwrap model state from DataParallel and persist
-        model = (self.model.module if isinstance(self.model, nn.DataParallel) else self.model)
+        model = (self.model.module if hasattr(self.model, 'module') else self.model)
         state = {
             'model_state': model.state_dict(),
             'optim_state': self.opt.optimizer.state_dict(),
@@ -452,6 +482,9 @@ class SteppedTrainer:
             'model_type': self.exp.model_type,
             'model_args': self.exp.model_args,
         }
+        
+        if dtorch.fp16:
+            state['amp_state'] = dtorch._amp.state_dict()
 
         self.exp.store_model(step_num, state, train_score=train_loss,
                              val_score=val_loss, keep=keep_models)
