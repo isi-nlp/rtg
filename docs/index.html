@@ -436,21 +436,33 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 #footer-text{color:rgba(0,0,0,.6);font-size:.9em}}
 @media amzn-kf8{#header,#content,#footnotes,#footer{padding:0}}
 </style>
+<!-- Global site tag (gtag.js) - Google Analytics -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=UA-172035750-1"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'UA-172035750-1');
+</script>
 </head>
-<body class="book">
+<body class="book toc2 toc-left">
 <div id="header">
 <h1>Reader-Translator-Generator (RTG)</h1>
 <div class="details">
 <span id="author" class="author">USC Information Sciences Institute Natural Language Group</span><br>
 </div>
-<div id="toc" class="toc">
+<div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
 <ul class="sectlevel1">
 <li><a href="#_overview">1. Overview</a>
 <ul class="sectlevel2">
 <li><a href="#_features">1.1. Features</a></li>
 <li><a href="#colab-example">1.2. Quick Start using Google Colab</a></li>
-<li><a href="#_setup">1.3. Setup</a></li>
+<li><a href="#_setup">1.3. Setup</a>
+<ul class="sectlevel3">
+<li><a href="#_development">1.3.1. Development:</a></li>
+</ul>
+</li>
 <li><a href="#_usage">1.4. Usage</a></li>
 <li><a href="#_credits_thanks">1.5. Credits / Thanks</a></li>
 </ul>
@@ -461,9 +473,9 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <li><a href="#conf-early-stop">2.2. Early stop</a></li>
 <li><a href="#conf-optim">2.3. Optimizer</a></li>
 <li><a href="#conf-finetune">2.4. Fine Tuning</a></li>
-<li><a href="#conf-parent-child">2.5. Parent-Child : using pretrained model as parent</a></li>
+<li><a href="#conf-parent-child">2.5. Parent-Child Transfer</a></li>
 <li><a href="#conf-freeze-wt">2.6. Freezing some parts of model</a></li>
-<li><a href="#conf-share-data">2.7. Sharing the data from other experiment</a></li>
+<li><a href="#conf-share-data">2.7. Sharing Data between Experiments</a></li>
 </ul>
 </li>
 <li><a href="#conf-vocab">3. Vocabulary Preprocessing using Sentencepiece or NLCodec</a>
@@ -502,14 +514,23 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <li><a href="#env-vars">7. Environment Variables</a>
 <ul class="sectlevel2">
 <li><a href="#_gpus">7.1. GPUs</a></li>
-<li><a href="#_using_fast_and_temporary_file_system">7.2. Using Fast and Temporary File System</a></li>
+<li><a href="#_fast_temporary_filesystem">7.2. Fast Temporary FileSystem</a></li>
 <li><a href="#_number_of_cpu_cores">7.3. Number of CPU Cores</a></li>
 </ul>
 </li>
-<li><a href="#dev-env">8. Development Environment:</a>
+<li><a href="#ddp">8. Distributed Data Parallel (DDP)</a></li>
+<li><a href="#fp16">9. FP16, Mixed Precision Training</a>
 <ul class="sectlevel2">
-<li><a href="#_run_tests">8.1. Run Tests</a></li>
-<li><a href="#_adding_a_new_model">8.2. Adding a new model</a></li>
+<li><a href="#_setup_2">9.1. Setup</a></li>
+<li><a href="#_run">9.2. Run</a></li>
+</ul>
+</li>
+<li><a href="#scaling-big">10. Scaling to Big Datasets Using PySpark</a></li>
+<li><a href="#_rtg_serve">11. RTG Serve</a></li>
+<li><a href="#dev-env">12. Development Environment:</a>
+<ul class="sectlevel2">
+<li><a href="#_run_tests">12.1. Run Tests</a></li>
+<li><a href="#_adding_a_new_model">12.2. Adding a new model</a></li>
 </ul>
 </li>
 </ul>
@@ -520,7 +541,7 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <h2 id="_overview">1. Overview</h2>
 <div class="sectionbody">
 <div class="paragraph">
-<p><a href="https://isi-nlp.github.io/rtg">Reader-Translator-Generator (RTG)</a> is a Neural Machine Translation toolkit based on pytorch.</p>
+<p><a href="https://isi-nlp.github.io/rtg-xt">Reader-Translator-Generator (RTG)</a> is a Neural Machine Translation toolkit based on pytorch.</p>
 </div>
 <div class="sect2">
 <h3 id="_features">1.1. Features</h3>
@@ -604,6 +625,16 @@ hyper params&#8201;&#8212;&#8201;required to reproduce experiments.</p>
 <div class="sect2">
 <h3 id="_setup">1.3. Setup</h3>
 <div class="paragraph">
+<p><code>rtg</code> has been published to PyPi at <a href="https://pypi.org/project/rtg/" class="bare">https://pypi.org/project/rtg/</a>.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>pip install rtg</pre>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_development">1.3.1. Development:</h4>
+<div class="paragraph">
 <p>Add the root of this repo to <code>PYTHONPATH</code> or install it via <code>pip --editable</code></p>
 </div>
 <div class="paragraph">
@@ -612,15 +643,15 @@ hyper params&#8201;&#8212;&#8201;required to reproduce experiments.</p>
 <div class="ulist">
 <ul>
 <li>
-<p><a href="https://github.com/isi-nlp/rtg" class="bare">https://github.com/isi-nlp/rtg</a></p>
+<p><a href="https://github.com/isi-nlp/rtg-xt" class="bare">https://github.com/isi-nlp/rtg-xt</a></p>
 </li>
 <li>
-<p><a href="https://github.com/isi-nlp/rtg-xt" class="bare">https://github.com/isi-nlp/rtg-xt</a></p>
+<p><a href="https://github.com/isi-nlp/rtg" class="bare">https://github.com/isi-nlp/rtg</a></p>
 </li>
 </ul>
 </div>
 <div class="paragraph">
-<p>Both <code>rtg-xt</code> and <code>rtg</code> has same code on master branch.
+<p>Both <code>rtg-xt</code> and <code>rtg</code> has same code on the master branch.
 <code>rtg-xt</code> has stable code base and meant to be used by anyone, so you should definitely get started with it.
 <code>rtg</code> is internal with some unfinished/work-in progress ideas (maybe unpublished), with issues and pull-requests by members of USC ISI team.
 We sync both code bases often.
@@ -628,19 +659,18 @@ If you like to collaborate with us and/or to get access to <code>rtg</code>, ema
 </div>
 <div class="listingblock">
 <div class="content">
-<pre>git clone https://github.com/isi-nlp/rtg.git
+<pre>git clone https://github.com/isi-nlp/rtg-xt.git
+# use https://github.com/isi-nlp/rtg.git if you have access to rtg.git
 cd rtg                # go to the code
-# use https://github.com/isi-nlp/rtg-xt.git if you dont have access to rtg.git
 
-conda create -n rtg python=3.7   # adds a conda env named rtg
-conda activate rtg  # activate it
+conda create -n rtg python=3.7   # creates a conda env named rtg
+conda activate rtg       # activate it
 
-# install this as a local editable pip package
 pip install --editable .
 # The requirements are in setup.py; you may customize it if you wish
 
-# or add it to PYTHONPATH
-export PYTHONPATH=$PWD</pre>
+export PYTHONPATH=$PWD # or add it to PYTHONPATH</pre>
+</div>
 </div>
 </div>
 </div>
@@ -937,7 +967,7 @@ for 200k-300k steps. Note that <code>finetune_steps &gt; steps</code> .</p>
 </div>
 </div>
 <div class="sect2">
-<h3 id="conf-parent-child">2.5. Parent-Child : using pretrained model as parent</h3>
+<h3 id="conf-parent-child">2.5. Parent-Child Transfer</h3>
 <div class="paragraph">
 <p>To initialize from another compatible model as parent, add <code>parent:</code> specification to conf.yml as shown below:</p>
 </div>
@@ -995,7 +1025,7 @@ If you are adding a new <code>NMTModel</code> or customising this feature, pleas
 </div>
 </div>
 <div class="sect2">
-<h3 id="conf-share-data">2.7. Sharing the data from other experiment</h3>
+<h3 id="conf-share-data">2.7. Sharing Data between Experiments</h3>
 <div class="paragraph">
 <p>In the new experiment config, add <code>same_data</code> to reference parent experiment from which the data
 should be reused for training and validation. Note that this uses the same vocabulary as parent.
@@ -1202,16 +1232,20 @@ For end usage of the RTG toolkit, the workflow should be as simple as:</p>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Decode new source files using the values set in <code>conf.yml</code></p></td>
 </tr>
 <tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">rtg-decode-pro</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Decode new source files using the values that you supply from CLI args</p></td>
-</tr>
-<tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">rtg-export</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Export an experiment</p></td>
 </tr>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">rtg-fork</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Fork an experiment with/without same conf, code, data, vocabularies etc</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">rtg-serve</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Serve an RTG model over HTTP API using  Flask server</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">rtg-decode-pro</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Decode new source files using the values that you supply from CLI args</p></td>
 </tr>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">rtg-prep</p></td>
@@ -1645,7 +1679,7 @@ unset CUDA_VISIBLE_DEVICES</pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_using_fast_and_temporary_file_system">7.2. Using Fast and Temporary File System</h3>
+<h3 id="_fast_temporary_filesystem">7.2. Fast Temporary FileSystem</h3>
 <div class="paragraph">
 <p>When shared compute grids with network file systems (NFS) are used, the disk IO can be too slow.
 It helps to move training data that is frequently read to a fast temporary file system.
@@ -1677,16 +1711,356 @@ export MKL_NUM_THREADS=$RTG_CPUS</code></pre>
 </div>
 </div>
 <div class="paragraph">
-<p><code>RTG_CPUS</code> is used by <code>nlcodec</code> to parallelize training data encoding</p>
+<p>For scaling to large datasets, see <a href="#scaling-big">"Scaling to Big Datasets Using PySpark"</a> section.</p>
 </div>
 </div>
 </div>
 </div>
 <div class="sect1">
-<h2 id="dev-env">8. Development Environment:</h2>
+<h2 id="ddp">8. Distributed Data Parallel (DDP)</h2>
+<div class="sectionbody">
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<div class="title">Note</div>
+</td>
+<td class="content">
+This is a new feature to RTG and not all edge cases are tested.
+</td>
+</tr>
+</table>
+</div>
+<div class="paragraph">
+<p><code>rtg.distrib.launch</code> simplifies the use of <code>torch.distributed.launch</code> as follows:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="bash">$ python -m rtg.distrib.launch -h
+usage: launch.py [-h] [-N NODES] [-r NODE_RANK] [-P PROCS_PER_NODE]
+                 [-G GPUS_PER_PROC] [--master-addr MASTER_ADDR]
+                 [--master-port MASTER_PORT] [-m | --no_python]
+                 training_script ...
+
+PyTorch distributed training launch helper utilty that will spawn up multiple
+distributed processes
+
+positional arguments:
+  training_script       The full path to the single GPU training
+                        program/script to be launched in parallel, followed by
+                        all the arguments for the training script
+  training_script_args
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -N NODES, --nodes NODES
+                        The number of nodes to use for distributed training
+                        (default: 1)
+  -r NODE_RANK, --node-rank NODE_RANK
+                        The rank of the node for multi-node distributed
+                        training (default: 0)
+  -P PROCS_PER_NODE, --procs-per-node PROCS_PER_NODE
+                        The number of processes to launch on each node with
+                        one gpu each, for GPU training, this is recommended to
+                        be set to the number of GPUs in your system so that
+                        each process can be bound to a single GPU. (default:
+                        1)
+  -G GPUS_PER_PROC, --gpus-per-proc GPUS_PER_PROC
+                        Number of GPUs to assign to each process. (default: 0)
+  --master-addr MASTER_ADDR
+                        Master node (rank 0)'s address, should be either the
+                        IP address or the hostname of node 0, for single node
+                        multi-proc training, the --master_addr can simply be
+                        127.0.0.1 (default: 127.0.0.1)
+  --master-port MASTER_PORT
+                        Master node (rank 0)'s free port that needs to be used
+                        for communciation during distributed training
+                        (default: 29500)
+  -m, --module          Changes each process to interpret the launch script as
+                        a python module, executing with the same behavior
+                        as'python -m'. (default: False)
+  --no_python           Do not prepend the training script with &quot;python&quot; -
+                        just exec it directly. Useful when the script is not a
+                        Python script. (default: False)</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p><strong>Examples</strong></p>
+</div>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>Run on two CPU processes <code>-P 2</code> on single node <code>-N 1</code> (for testing, no GPUS <code>-G 0</code>)</p>
+<div class="listingblock">
+<div class="content">
+<pre>python -m rtg.distrib.launch -N 1 -P 2 -G 0 -m rtg.pipeline  runs/005-tfm-nldb</pre>
+</div>
+</div>
+</li>
+<li>
+<p>Run on on single node, two processes, one GPU per process: <code>-N 1 -P 2 -G 1</code></p>
+</li>
+<li>
+<p>Run on on two node, two processes each, one GPU per process: <code>-N 2 -P 2 -G 1</code>.</p>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="bash"># on first node: rank 0
+python -m rtg.distrib.launch -N 2 -r 0 -P 2 -G 1 -m rtg.pipeline runs/005-tfm-nldb -G
+# on second node: rank 1
+python -m rtg.distrib.launch -N 2 -r 1 -P 2 -G 1 -m rtg.pipeline  runs/005-tfm-nldb -G</code></pre>
+</div>
+</div>
+</li>
+</ol>
+</div>
+<div class="paragraph">
+<p>WARNING:</p>
+</div>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>ChunkedLossCumpute doesnt work with DDP on GPUs; please disable it by <code>trainer.init_args.args.chunk_size=0</code></p>
+</li>
+<li>
+<p>Don&#8217;t ever use <code>-G 2</code> or more, instead use more <code>-P</code></p>
+</li>
+</ol>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="fp16">9. FP16, Mixed Precision Training</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Mixed precision training is supported by <code>NVIDIA/apex</code> library.
+Apex is a bit complex installation process, so it is an optional requirement that is needed only for FP16.</p>
+</div>
+<div class="sect2">
+<h3 id="_setup_2">9.1. Setup</h3>
+<div class="paragraph">
+<p><strong>Prerequisites:</strong></p>
+</div>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>The environment variable <code>CUDA_HOME</code> is set and that <code>$CUDA_HOME/bin/nvcc</code> is a valid path</p>
+</li>
+<li>
+<p>The cuda toolkit version is consistent</p>
+<div class="olist loweralpha">
+<ol class="loweralpha" type="a">
+<li>
+<p>e.g. if <code>nvcc --version</code> says version it is <code>10.1</code>, then <code>python -c 'import torch; print(torch.version.cuda)'</code>
+also says the same version.</p>
+</li>
+</ol>
+</div>
+</li>
+<li>
+<p>You have a newer version of <code>gcc</code>. See <code>gcc --version</code>. (In my trail-errors, gcc &gt;= 4.9 and gcc &#8656; 8.x worked</p>
+</li>
+</ol>
+</div>
+<div class="paragraph">
+<p>Once you have met the above requirements, do the following:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="bash">$ git clone https://github.com/NVIDIA/apex
+$ cd apex
+$ pip install -v --no-cache-dir --global-option=&quot;--cpp_ext&quot; --global-option=&quot;--cuda_ext&quot; ./</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>You should get a message as <code>Successfully installed apex-0.1</code> if the installation is success.
+Otherwise, you are on your own to fix the installation (and please update this documentation).</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_run">9.2. Run</h3>
+<div class="paragraph">
+<p>See that <code>rtg-pipe -h</code> has <code>-fp16, --fp16</code> CLI argumnent flags that can be enabled.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="bash">$ rtg-pipe &lt;experiment-dir&gt; --fp16</code></pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="scaling-big">10. Scaling to Big Datasets Using PySpark</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>When dealing with big datasets, the traditional tools such as multiprocessing and SQLite3 simply aren&#8217;t enogh.
+In such scenario, <a href="https://spark.apache.org/">PySpark</a> is a useful backend to use.
+When pyspark is enabled</p>
+</div>
+<div class="paragraph">
+<p>PySpark is used to</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>compute term frequencies which help speed up BPE learning</p>
+</li>
+<li>
+<p>encode data with BPE</p>
+</li>
+<li>
+<p>store data in <a href="https://isi-nlp.github.io/nlcodec/#_database">NLCodec MultipartDb  </a></p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>To enable pyspark backend</p>
+</div>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>Install pyspark; eg: <code>pip install pyspark &gt;= 3.0.0</code>.  Make sure you have a JVM/JDK that is compatible for pyspark.</p>
+</li>
+<li>
+<p>For data preparation, only <code>codec_lib: nlcodec</code> supports pyspark backend as of now. If you are using <code>sentencepiece</code>, switch to <code>nlcodec</code></p>
+</li>
+<li>
+<p>Add the <code>spark</code> block to the top level of <code>conf.yml</code>.  See <code>experiments/spark-bigdataprep.html</code> for a full example.</p>
+</li>
+</ol>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="yaml"><span style="color:#606">prep</span>:
+   <span style="color:#606">codec_lib</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">nlcodec</span></span>    <span style="color:#777"># only nlcodec supports pyspark backend</span>
+   <span style="color:#606">max_part_size</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">1000000</span></span>  <span style="color:#777"># part size (num of recs); divides the training data into multiple parts</span>
+   <span style="color:#F00;background-color:#FAA">... # other args</span>
+<span style="color:#606">spark</span>: <span style="color:#777"># add this block to enable spark backend</span>
+  <span style="color:#777"># double quote the keys containing dot</span>
+  <span style="color:#606"><span style="color:#404">&quot;</span><span>spark.master</span><span style="color:#404">&quot;</span></span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">local[3]</span></span>           <span style="color:#777"># set it to local[*] to use all local CPUs</span>
+  <span style="color:#606"><span style="color:#404">&quot;</span><span>spark.app.name</span><span style="color:#404">&quot;</span></span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">RTG NMT on Spark</span></span>  <span style="color:#777"># Name for the App</span>
+  <span style="color:#606"><span style="color:#404">&quot;</span><span>spark.driver.memory</span><span style="color:#404">&quot;</span></span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">6g</span></span>
+  <span style="color:#777">#key1: value1    # any other spark configs you want to control</span></code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>You may use <code>local[*]</code> to use all CPUs however, it is important to note that:</p>
+</div>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>If you have too many CPU cores (say 32 or more), the disk/storage may have too much pressure and the overall performance could degrade.</p>
+</li>
+<li>
+<p>Remember to exclude some CPUs out from spark for other work load, such as for pytorch. In the above example I used <code>local[3]</code> because I had only 4 CPUs in total and excluded one from spark.</p>
+</li>
+</ol>
+</div>
+<div class="paragraph">
+<p>Watch out the spark logs for any warning messages.
+Also, the log message provides the Spark web UI address when spark session is initialized.</p>
+</div>
+<div class="admonitionblock warning">
+<table>
+<tr>
+<td class="icon">
+<div class="title">Warning</div>
+</td>
+<td class="content">
+The multi-node spark distributed mode is not tested. (But it might work out of the box  if <code>"spark.master"</code> is correctly set)
+</td>
+</tr>
+</table>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_rtg_serve">11. RTG Serve</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>RTG model can be served using Flask Server.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="commandline">$ python -m rtg.serve -h  # rtg-serve
+[07-13 22:38:01] p49095 {__init__:53} INFO - rtg v0.3.1 from /Users/tg/work/me/rtg
+usage: rtg.serve [-h] [-sc] [-p PORT] [-ho HOST] [-msl MAX_SRC_LEN] exp_dir
+
+deploy a model to a RESTful react server
+
+positional arguments:
+  exp_dir               Experiment directory
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -sc, --skip-check     Skip Checking whether the experiment dir is prepared
+                        and trained (default: False)
+  -p PORT, --port PORT  port to run server on (default: 6060)
+  -ho HOST, --host HOST
+                        Host address to bind. (default: 0.0.0.0)
+  -msl MAX_SRC_LEN, --max-src-len MAX_SRC_LEN
+                        max source len; longer seqs will be truncated
+                        (default: None)</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>To launch a service for <code>runs/001-tfm</code> experiment</p>
+</div>
+<div class="paragraph">
+<p><code>python -m rtg.serve -sc runs/001-tfm</code></p>
+</div>
+<div class="paragraph">
+<p>It prints :
+<code>* Running on <a href="http://0.0.0.0:6060/" class="bare">http://0.0.0.0:6060/</a> (Press CTRL+C to quit)</code></p>
+</div>
+<div class="paragraph">
+<p>Currently only <code>/translate</code> API is supported. It accepts both <code>GET</code> with query params and <code>POST</code> with form params.</p>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<div class="title">Note</div>
+</td>
+<td class="content">
+batch decoding is yet to be supported. Current decoder decodes only one sentence at a time.
+</td>
+</tr>
+</table>
+</div>
+<div class="paragraph">
+<p>An example POST request:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre> curl --data "source=Comment allez-vous?" --data "source=Bonne journée" http://localhost:6060/translate</pre>
+</div>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="json">{
+  <span style="color:#606"><span style="color:#404">&quot;</span><span>source</span><span style="color:#404">&quot;</span></span>: [
+    <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">Comment allez-vous?</span><span style="color:#710">&quot;</span></span>,
+    <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">Bonne journée</span><span style="color:#710">&quot;</span></span>
+  ],
+  <span style="color:#606"><span style="color:#404">&quot;</span><span>translation</span><span style="color:#404">&quot;</span></span>: [
+    <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">How are you?</span><span style="color:#710">&quot;</span></span>,
+    <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">Have a nice day</span><span style="color:#710">&quot;</span></span>
+  ]
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>You can also request like GET method as <code><a href="http://localhost:6060/translate?source=text1&amp;source=text2" class="bare">http://localhost:6060/translate?source=text1&amp;source=text2</a></code>
+after properly URL encoding the <code>text1</code> <code>text2</code>. This should only be used for quick testing in your web browser.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="dev-env">12. Development Environment:</h2>
 <div class="sectionbody">
 <div class="sect2">
-<h3 id="_run_tests">8.1. Run Tests</h3>
+<h3 id="_run_tests">12.1. Run Tests</h3>
 <div class="paragraph">
 <p>Test cases are done using the <a href="https://docs.pytest.org/en/latest/"><code>pytest</code></a> framework.
 It can be installed using <code>pip install pytest</code></p>
@@ -1726,7 +2100,7 @@ It can be installed using <code>pip install pytest</code></p>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_adding_a_new_model">8.2. Adding a new model</h3>
+<h3 id="_adding_a_new_model">12.2. Adding a new model</h3>
 <div class="olist arabic">
 <ol class="arabic">
 <li>
@@ -1783,7 +2157,7 @@ trainers and generators.</p>
 </div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2020-06-20 13:27:43 -0700
+Last updated 2020-08-27 18:56:31 -0700
 </div>
 </div>
 </body>

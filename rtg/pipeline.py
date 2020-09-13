@@ -5,6 +5,7 @@
 
 import argparse
 from rtg import log, TranslationExperiment as Experiment
+from rtg.exp import load_conf
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
 from rtg.module.decoder import Decoder
@@ -19,6 +20,9 @@ import inspect
 import copy
 import json
 import subprocess
+from rtg.distrib import DistribTorch
+
+dtorch = DistribTorch.instance()
 
 
 @dataclass
@@ -100,9 +104,10 @@ class Pipeline:
                                  lowercase=lowercase)
         # this should be part of new sacrebleu  release (i sent a PR ;)
         bleu_str = f'BLEU = {bleu.score:.2f} {"/".join(f"{p:.1f}" for p in bleu.precisions)}' \
-            f' (BP = {bleu.bp:.3f} ratio = {(bleu.sys_len / bleu.ref_len):.3f}' \
-            f' hyp_len = {bleu.sys_len:d} ref_len={bleu.ref_len:d})'
-        bleu_file = detok_hyp.with_name(detok_hyp.name + ('.lc' if lowercase else '.oc') + '.sacrebleu')
+                   f' (BP = {bleu.bp:.3f} ratio = {(bleu.sys_len / bleu.ref_len):.3f}' \
+                   f' hyp_len = {bleu.sys_len:d} ref_len={bleu.ref_len:d})'
+        bleu_file = detok_hyp.with_name(
+            detok_hyp.name + ('.lc' if lowercase else '.oc') + '.sacrebleu')
         log.info(f'BLEU {detok_hyp} : {bleu_str}')
         IO.write_lines(bleu_file, bleu_str)
         return bleu.score
@@ -266,8 +271,8 @@ class Pipeline:
                 out_file.parent.mkdir(parents=True, exist_ok=True)
 
                 self.decode_eval_file(decoder, src_link, out_file, ref_link,
-                                              batch_size=eff_batch_size, beam_size=beam_size,
-                                              lp_alpha=lp_alpha, max_len=max_len)
+                                      batch_size=eff_batch_size, beam_size=beam_size,
+                                      lp_alpha=lp_alpha, max_len=max_len)
             except Exception as e:
                 log.exception(f"Something went wrong with '{name}' test")
                 err = test_dir / f'{name}.err'
@@ -275,13 +280,23 @@ class Pipeline:
 
     def run(self, run_tests=True):
         if not self.exp.read_only:
+            # if not distr.is_main:
+            #    log.clear_console() # console handler
             log.update_file_handler(str(self.exp.log_file))
         self.pre_checks()  # fail early, so TG can fix and restart
-        self.exp.pre_process()
+
+        if dtorch.is_global_main:
+            self.exp.pre_process()
+        dtorch.barrier()
+        if not dtorch.is_global_main:
+            self.exp.reload()  # with updated config and vocabs from global_main
+        # train on all
         self.exp.train()
+        dtorch.barrier()
         if run_tests:
-            with torch.no_grad():
-                self.run_tests()
+            if dtorch.is_global_main:
+                with torch.no_grad():
+                    self.run_tests()
 
 
 def parse_args():
@@ -291,7 +306,19 @@ def parse_args():
                         help="Config File. By default <work_dir>/conf.yml is used")
     parser.add_argument("-G", "--gpu-only", action="store_true", default=False,
                         help="Crash if no GPU is available")
+    parser.add_argument("-fp16", "--fp16", action="store_true", default=False,
+                        help="Float 16")
+
+    # multi-gpu / multi-node
+    parser.add_argument("--local_rank", "--local-rank", type=int, default=-1,
+                        help="Multi-GPU - Local rank")
+    parser.add_argument("--master-port", type=int, default=-1,
+                        help="Master port (for multi-node SLURM jobs)")
+    dtorch.setup()
     args = parser.parse_args()
+    if args.fp16:
+        assert torch.cuda.is_available(), "GPU required for fp16... exiting."
+        dtorch.enable_fp16()
 
     if args.gpu_only:
         assert torch.cuda.is_available(), "No GPU found... exiting"
@@ -301,7 +328,24 @@ def parse_args():
 
     conf_file: Path = args.conf if args.conf else args.exp / 'conf.yml'
     assert conf_file.exists(), f'NOT FOUND: {conf_file}'
-    return Experiment(args.exp, config=conf_file)
+    ExpFactory = Experiment
+    is_big = load_conf(conf_file).get('spark', {})
+    if is_big:
+        log.info("Big experiment mode enabled; checking pyspark backend")
+        try:
+            import pyspark
+            log.info("pyspark is available")
+        except:
+            log.warning("unable to import pyspark. Please do 'pip install pyspark' and run again")
+            raise
+        from rtg.big.exp import BigTranslationExperiment
+        ExpFactory = BigTranslationExperiment
+
+    read_only = not dtorch.is_global_main # only main can modify experiment
+    exp = ExpFactory(args.exp, config=conf_file, read_only=read_only)
+    dtorch.barrier()
+    return exp
+
 
 def main():
     pipe = Pipeline(exp=parse_args())
