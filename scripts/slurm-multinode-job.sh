@@ -1,4 +1,4 @@
-#!/usr/bin/env bash                                                                                                                                  [37/1983
+#!/usr/bin/env bash 
 
 #SBATCH --mem=40G
 #SBATCH --time=2-00:00:00

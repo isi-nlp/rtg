@@ -273,7 +273,7 @@ class TranslationExperiment(BaseExperiment):
         assert not (self.shared_field and self.src_field)
         assert not (self.shared_field and self.tgt_field)
         # both are set or both are unset
-        assert (self.src_field is None) == (self.tgt_field is None)
+        #assert (self.src_field is None) == (self.tgt_field is None)
 
         self._unsupervised = self.model_type in {'binmt', 'rnnlm', 'tfmlm'}
         if self._unsupervised:
