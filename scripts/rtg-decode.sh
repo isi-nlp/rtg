@@ -1,41 +1,35 @@
 #!/usr/bin/env bash
 
-#$ -P material
-#$ -cwd
-#$ -pe mt 4
-#$ -l h_vmem=4G,h_rt=24:00:00,gpu=1
-#$ -l 'h=vista01|vista02|vista03|vista04|vista05|vista08|vista09|vista12|vista14|vista15|vista16' # FAST GPUS
-# Pipeline script for MT
+#SBATCH --account=saral
+#SBATCH --partition=saral
+#SBATCH --mem=1200
+#SBATCH --time=0-24:00:00
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=2
+#SBATCH --gpus-per-task=1
+#SBATCH --output=RD-%x.out.%j
+#SBATCH --error=RD-%x.err.%j
+
 #
 # Author = Thamme Gowda (tg@isi.edu)
-# Date = April 3, 2019
+# Date = April 3, 2019; revised March 2020
 
 #SCRIPTS_DIR=$(dirname "${BASH_SOURCE[0]}")  # get the directory name
 #RTG_PATH=$(realpath "${SCRIPTS_DIR}/..")
 
 
-# If using compute grid, and dont rely on this relative path resolution, set the RTG_PATH here
-#RTG_PATH=/full/path/to/rtg-master
-RTG_PATH=/nas/material/users/tg/work/libs2/rtg-master
-
-OUT=
+XDIR=
 INP=
-OUTP=
-BEAMS=4
-ALPHA=0.6
+OUT=
 CONDA_ENV=torch-3.7     # empty means don't activate environment
-ENSEMBLE=5
-BATCH=3000
-
+BATCH=18000
+MAX_SRC_LEN=400
 
 usage() {
     echo "Usage: $0 -d <exp/dir>
     -i INPUT file to decode
     -o OUTPUT file to store translations
-    [-m beam size (default: $BEAMS)]
-    [-a length penalty alpha (default: $ALPHA)]
     [-b batch_size (default: $BATCH) ]
-    [-n ensemble models (default: $ENSEMBLE]
     [-e conda_env  default:$CONDA_ENV (empty string disables activation)]
 " 1>&2;
     exit 1;
@@ -45,33 +39,34 @@ usage() {
 while getopts ":b:d:e:i:o:a:m:n:" o; do
     case "${o}" in
 	b) BATCH=${OPTARG} ;;
-        d) OUT=${OPTARG} ;;
+        d) XDIR=${OPTARG} ;;
         e) CONDA_ENV=${OPTARG} ;;
         i) INP=${OPTARG} ;;
-        o) OUTP=${OPTARG} ;;
-        a) ALPHA=${OPTARG} ;;
-        m) BEAMS=${OPTARG} ;;
-        n) ENSEMBLE=${OPTARG} ;;
+        o) OUT=${OPTARG} ;;
         *) usage ;;
     esac
 done
 
 
-[[ -n $OUT ]] || usage   # show usage and exit
+[[ -n $XDIR ]] || usage   # show usage and exit
 [[ -n $INP ]] || usage   # show usage and exit
-[[ -n $OUTP ]] || usage   # show usage and exit
+[[ -n $OUT ]] || usage   # show usage and exit
+
+#if [[ ! ( $INP == *.tsv ) || ! ( $OUT == *.tsv ) ]]; then
+#    echo "Error: Input $INP and output $OUTP should be TSV files having ID<tab>Text"
+#    exit 4
+#fi
 
 #defaults
-source ~tg/.bashrc
+source ~/.bashrc
 # TODO: change this -- point to cuda libs
-export LD_LIBRARY_PATH=~jonmay/cuda-9.0/lib64:~jonmay/cuda/lib64:/usr/local/lib
+#export LD_LIBRARY_PATH=~jonmay/cuda-9.0/lib64:~jonmay/cuda/lib64:/usr/local/lib
 
 
 #################
-#NUM_GPUS=$(echo ${CUDA_VISIBLE_DEVICES} | tr ',' '\n' | wc -l)
 
-echo "Output dir = $OUT"
-[[ -d $OUT ]] || { echo "$OUT directory not found"; exit 3 ; }
+echo "Experiment Dir = $XDIR"
+[[ -d $XDIR ]] || { echo "$XDIR directory not found"; exit 3 ; }
 
 if [[ -n ${CONDA_ENV} ]]; then
     echo "Activating environment $CONDA_ENV"
@@ -79,12 +74,20 @@ if [[ -n ${CONDA_ENV} ]]; then
 fi
 
 
-export PYTHONPATH=$OUT/rtg.zip
+export PYTHONPATH=$XDIR/rtg.zip
 echo  "`date`: Starting decoding ... $OUT"
 
-cmd="python -m rtg.decode $OUT -sc -bc $BATCH -bs $BEAMS -lp $ALPHA -if $INP -of $OUTP -en $ENSEMBLE "
+function unssplit(){
+    awk -F '\t' '{if (last != $1) {printf "%s%s\t%s", last==""?"":"\n",$1, $2 } else { printf " %s", $2 } last=$1 } END {printf "\n"}'
+}
+
+cmd="python -m rtg.decode $XDIR -sc -b $BATCH -if $INP -of $OUT -msl $MAX_SRC_LEN "
 echo "command::: $cmd"
+
 if eval ${cmd}; then
+    # echo "preparing output file $OUT"
+   # paste <(cut -f1 $INP) <(cut -f1 $OUT.ssplit | sed 's/<unk>//g;') | unssplit > $OUT
+    #rm $OUT.ssplit
     echo "`date` :: Done"
 else
     echo "Error: exit status=$?"
