@@ -103,9 +103,7 @@ class Pipeline:
         bleu: BLEU = corpus_bleu(sys_stream=detok_lines, ref_streams=ref_liness,
                                  lowercase=lowercase)
         # this should be part of new sacrebleu  release (i sent a PR ;)
-        bleu_str = f'BLEU = {bleu.score:.2f} {"/".join(f"{p:.1f}" for p in bleu.precisions)}' \
-                   f' (BP = {bleu.bp:.3f} ratio = {(bleu.sys_len / bleu.ref_len):.3f}' \
-                   f' hyp_len = {bleu.sys_len:d} ref_len={bleu.ref_len:d})'
+        bleu_str = bleu.format()
         bleu_file = detok_hyp.with_name(
             detok_hyp.name + ('.lc' if lowercase else '.oc') + '.sacrebleu')
         log.info(f'BLEU {detok_hyp} : {bleu_str}')

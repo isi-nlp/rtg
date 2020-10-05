@@ -34,12 +34,12 @@ setuptools.setup(
     platforms=['any'],
     install_requires=[
         'ruamel.yaml >= 0.16.10',
-        'sacrebleu >= 1.4.6',
+        'sacrebleu >= 1.4.14',
         'sentencepiece >= 0.1.85',
         'tensorboard >= 2.2.1',
         'tqdm >= 4.45.0',
         'mosestokenizer >= 1.0.0',
-        'nlcodec >= 0.2.3',
+        'nlcodec >= 0.3.0',
         'torch >= 1.4'
     ],
     extra_requires={
