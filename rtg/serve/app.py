@@ -4,26 +4,27 @@ Serves an RTG model using Flask HTTP server
 """
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template, url_for, send_from_directory
 import torch
+import os
 
 from rtg import TranslationExperiment as Experiment, log
 from rtg.module.decoder import Decoder
 
 
-def prepare_decoder(cli_args):
-    # No grads required for decode
-    torch.set_grad_enabled(False)
-    exp = Experiment(cli_args.pop("exp_dir"), read_only=True)
-    dec_args = exp.config.get("decoder") or exp.config["tester"].get("decoder", {})
-    validate_args(cli_args, dec_args, exp)
-    decoder = Decoder.new(exp, ensemble=dec_args.pop("ensemble", 1))
-    return decoder, dec_args
+app = Flask(__name__)
+app.config['JSON_AS_ASCII'] = False
+
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+@app.route('/favicon.ico')
+def favicon():
+    return send_from_directory(os.path.join(app.root_path, 'static', 'img'), 'favicon.ico')
 
 
 def attach_translate_route(app, decoder, dec_args):
-
-    app.config['JSON_AS_ASCII'] = False
 
     @app.route("/translate", methods=["POST", "GET"])
     def translate():
@@ -32,9 +33,12 @@ def attach_translate_route(app, decoder, dec_args):
         if request.method == 'GET':
             sources = request.args.getlist("source", None)
         else:
-            sources = request.form.getlist("source", None)
+            sources = (request.json or {}).get('source', None)
+            if isinstance(sources, str):
+                sources = [sources]
+
         if not sources:
-            return "Please provide parameter 'source'", 400
+            return "Please submit parameter 'source'", 400
 
         translations = []
         for source in sources:
@@ -50,6 +54,15 @@ def validate_args(cli_args, conf_args, exp: Experiment):
                                     f' Please run "prep" sub task')
         assert exp.has_trained(), (f"Experiment dir {exp.work_dir} is not ready to decode."
                                    f" Please run 'train' sub task or --skip-check to ignore this")
+
+def prepare_decoder(cli_args):
+    # No grads required for decode
+    torch.set_grad_enabled(False)
+    exp = Experiment(cli_args.pop("exp_dir"), read_only=True)
+    dec_args = exp.config.get("decoder") or exp.config["tester"].get("decoder", {})
+    validate_args(cli_args, dec_args, exp)
+    decoder = Decoder.new(exp, ensemble=dec_args.pop("ensemble", 1))
+    return decoder, dec_args
 
 def parse_args():
     parser = ArgumentParser(
@@ -72,13 +85,13 @@ def parse_args():
 def main():
     cli_args = parse_args()
     decoder, dec_args = prepare_decoder(cli_args)
-    app = Flask(__name__)
     #CORS(app)  # TODO: insecure
     if cli_args.pop('debug'):
         app.debug = True
     attach_translate_route(app, decoder, dec_args)
     app.run(port=cli_args["port"], host=cli_args["host"])
 
-
+    # A very useful tutorial is found at:
+    # https://www.digitalocean.com/community/tutorials/how-to-make-a-web-application-using-flask-in-python-3
 if __name__ == "__main__":
     main()
