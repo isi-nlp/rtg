@@ -43,6 +43,7 @@ window.onload = function() {
     var $form = $(this),
     url = $form.attr('action');
     source = $('#source_txt').val().split('\n')
+
     data = JSON.stringify({'source': source })
     console.log(data);
 
