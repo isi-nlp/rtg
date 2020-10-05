@@ -6,6 +6,9 @@ from pathlib import Path
 import math
 from dataclasses import dataclass, field
 import hashlib
+import warnings
+import sys
+import os
 
 import torch
 from torch import nn as nn
@@ -18,6 +21,10 @@ from rtg.registry import factories, generators
 
 Hypothesis = Tuple[float, List[int]]
 StrHypothesis = Tuple[float, str]
+
+if not sys.warnoptions:
+    warnings.simplefilter("default") # Change the filter in this process
+    os.environ["PYTHONWARNINGS"] = "default" # Also affect subprocesses
 
 
 def load_models(models: List[Path], exp: Experiment):
@@ -329,7 +336,7 @@ class Decoder:
         """
         args = dict((k, v) for k, v in args.items() if v is not None)
         if args:
-            log.warn(f"Ignored args: {args} . To remove this message simply remove the args")
+            warnings.warn(f"Ignored args: {args}. To remove this message simply remove the args")
         assert beam_size >= num_hyp
         device = x_seqs.device
         batch_size = x_seqs.size(0)
