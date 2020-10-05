@@ -60,6 +60,7 @@ def parse_args():
     parser.add_argument("exp_dir", help="Experiment directory", type=str)
     parser.add_argument("-sc", "--skip-check", action="store_true",
         help="Skip Checking whether the experiment dir is prepared and trained")
+    parser.add_argument("--debug", action="store_true", help="Run Flask server in debug mode")
     parser.add_argument("-p", "--port", type=int, help="port to run server on", default=6060)
     parser.add_argument("-ho", "--host", help="Host address to bind.", default='0.0.0.0')
     parser.add_argument("-msl", "--max-src-len", type=int,
@@ -73,7 +74,8 @@ def main():
     decoder, dec_args = prepare_decoder(cli_args)
     app = Flask(__name__)
     #CORS(app)  # TODO: insecure
-    app.debug = True
+    if cli_args.pop('debug'):
+        app.debug = True
     attach_translate_route(app, decoder, dec_args)
     app.run(port=cli_args["port"], host=cli_args["host"])
 
