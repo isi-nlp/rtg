@@ -206,8 +206,9 @@ class Decoder:
             else:
                 log.info(f"Averaging {len(model_paths)} model states :: {model_paths}")
                 state = Decoder.average_states(model_paths)
-                log.info(f"Caching the averaged state at {cache_file}")
-                torch.save(state, str(cache_file))
+                if len(model_paths) > 1:
+                    log.info(f"Caching the averaged state at {cache_file}")
+                    torch.save(state, str(cache_file))
             return state
 
     @classmethod
