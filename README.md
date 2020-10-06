@@ -104,6 +104,11 @@ The `001-tfm` directory that hosts an experiment looks like this:
 ### Authors:
 [See Here](https://github.com/isi-nlp/rtg-xt/graphs/contributors)
 
+### Questions or Issues 
+
+Please use github issues to ask a question or report an issue :
+1. https://github.com/isi-nlp/rtg-xt/issues 
+2. https://github.com/isi-nlp/rtg/issues
 
 ### Credits / Thanks
 + OpenNMT and the Harvard NLP team for [Annotated transformer](http://nlp.seas.harvard.edu/2018/04/03/attention.html), I learned a lot from their work
