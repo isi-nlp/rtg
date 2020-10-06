@@ -460,7 +460,7 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <li><a href="#colab-example">1.2. Quick Start using Google Colab</a></li>
 <li><a href="#_setup">1.3. Setup</a>
 <ul class="sectlevel3">
-<li><a href="#_development">1.3.1. Development:</a></li>
+<li><a href="#_development_setup">1.3.1. Development Setup:</a></li>
 </ul>
 </li>
 <li><a href="#_usage">1.4. Usage</a></li>
@@ -541,7 +541,7 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <h2 id="_overview">1. Overview</h2>
 <div class="sectionbody">
 <div class="paragraph">
-<p><a href="https://isi-nlp.github.io/rtg-xt">Reader-Translator-Generator (RTG)</a> is a Neural Machine Translation toolkit based on pytorch.</p>
+<p><a href="https://github.com/isi-nlp/rtg-xt" target="_blank" rel="noopener">Reader-Translator-Generator (RTG)</a> is a Neural Machine Translation toolkit based on pytorch.</p>
 </div>
 <div class="sect2">
 <h3 id="_features">1.1. Features</h3>
@@ -552,7 +552,7 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 hyper params&#8201;&#8212;&#8201;required to reproduce experiments.</p>
 </li>
 <li>
-<p>Pre-processing options: <a href="https://github.com/google/sentencepiece">sentencepiece</a> or <a href="https://github.com/isi-nlp/nlcodec">nlcodec</a> (or add your own)</p>
+<p>Pre-processing options: <a href="https://github.com/google/sentencepiece" target="_blank" rel="noopener">sentencepiece</a> or <a href="https://github.com/isi-nlp/nlcodec" target="_blank" rel="noopener">nlcodec</a> (or add your own)</p>
 <div class="ulist">
 <ul>
 <li>
@@ -572,18 +572,18 @@ hyper params&#8201;&#8212;&#8201;required to reproduce experiments.</p>
 </div>
 </li>
 <li>
-<p><a href="https://arxiv.org/abs/1706.03762">Transformer model from "Attention is all you need"</a></p>
+<p><a href="https://arxiv.org/abs/1706.03762" target="_blank" rel="noopener">Transformer model from "Attention is all you need"</a></p>
 <div class="ulist">
 <ul>
 <li>
-<p>Automatically detects and parallelizes across multi GPUs. (Note: All GPUs must be in the same node, though!)</p>
+<p>Automatically detects and parallelizes across multi GPUs</p>
 <div class="ulist">
 <ul>
 <li>
 <p>Lot of varieties of transformer: width varying, skip transformer etc configurable from YAML files</p>
 </li>
 <li>
-<p><a href="https://papers.nips.cc/paper/5346-sequence-to-sequence-learning-with-neural-networks.pdf">RNN based Encoder-Decoder</a> with <a href="https://nlp.stanford.edu/pubs/emnlp15_attn.pdf">Attention</a>. (No longer use it, but it&#8217;s there for experimentation)</p>
+<p><a href="https://papers.nips.cc/paper/5346-sequence-to-sequence-learning-with-neural-networks.pdf" target="_blank" rel="noopener">RNN based Encoder-Decoder</a> with <a href="https://nlp.stanford.edu/pubs/emnlp15_attn.pdf" target="_blank" rel="noopener">Attention</a>. (No longer using it, but it&#8217;s available for experimentation)</p>
 </li>
 </ul>
 </div>
@@ -608,7 +608,7 @@ hyper params&#8201;&#8212;&#8201;required to reproduce experiments.</p>
 <p>Experiments and reproducibility are main focus. To control an experiment you edit an YAML file that is inside the experiment directory.</p>
 </li>
 <li>
-<p>Where ever possible, prefer <a href="https://www.wikiwand.com/en/Convention_over_configuration">convention-over-configuation</a>. Have a look at this experiment directory for the <code>examples/transformer.test.yml</code></p>
+<p>Where ever possible, prefer <a href="https://www.wikiwand.com/en/Convention_over_configuration" target="_blank" rel="noopener">convention-over-configuration</a>. Have a look at this experiment directory structure (below).</p>
 </li>
 </ul>
 </div>
@@ -625,7 +625,7 @@ hyper params&#8201;&#8212;&#8201;required to reproduce experiments.</p>
 <div class="sect2">
 <h3 id="_setup">1.3. Setup</h3>
 <div class="paragraph">
-<p><code>rtg</code> has been published to PyPi at <a href="https://pypi.org/project/rtg/" class="bare">https://pypi.org/project/rtg/</a>.</p>
+<p><code>rtg</code> has been published to PyPi at <a href="https://pypi.org/project/rtg/" class="bare">https://pypi.org/project/rtg/</a></p>
 </div>
 <div class="listingblock">
 <div class="content">
@@ -633,9 +633,22 @@ hyper params&#8201;&#8212;&#8201;required to reproduce experiments.</p>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_development">1.3.1. Development:</h4>
+<h4 id="_development_setup">1.3.1. Development Setup:</h4>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<div class="title">Note</div>
+</td>
+<td class="content">
+This is required only if you are developing (i.e. modifying RTG code). If you are planning to just use as it is, then <code>pip install rtg</code> should be all you need.
+</td>
+</tr>
+</table>
+</div>
 <div class="paragraph">
-<p>Add the root of this repo to <code>PYTHONPATH</code> or install it via <code>pip --editable</code></p>
+<p>While most users are
+Add the root of this repo to <code>PYTHONPATH</code> or install it via <code>pip --editable</code></p>
 </div>
 <div class="paragraph">
 <p>There are two versions of code:</p>
@@ -655,16 +668,17 @@ hyper params&#8201;&#8212;&#8201;required to reproduce experiments.</p>
 <code>rtg-xt</code> has stable code base and meant to be used by anyone, so you should definitely get started with it.
 <code>rtg</code> is internal with some unfinished/work-in progress ideas (maybe unpublished), with issues and pull-requests by members of USC ISI team.
 We sync both code bases often.
-If you like to collaborate with us and/or to get access to <code>rtg</code>, email <a href="https://isi.edu/~tg">TG</a> or <a href="https://isi.edu/~jonmay">JonMay</a>.</p>
+If you like to collaborate with us and/or to get access to <code>rtg</code>, email <a href="https://isi.edu/~tg" target="_blank" rel="noopener">TG</a> or <a href="https://isi.edu/~jonmay" target="_blank" rel="noopener">Jonathan May</a>.</p>
 </div>
 <div class="listingblock">
 <div class="content">
 <pre>git clone https://github.com/isi-nlp/rtg-xt.git
-# use https://github.com/isi-nlp/rtg.git if you have access to rtg.git
+# use https://github.com/isi-nlp/rtg.git if you have access
 cd rtg                # go to the code
 
 conda create -n rtg python=3.7   # creates a conda env named rtg
 conda activate rtg       # activate it
+
 
 pip install --editable .
 # The requirements are in setup.py; you may customize it if you wish
@@ -745,13 +759,13 @@ echo &quot;Chacun voit midi à sa porte.&quot; | python -m rtg.decode experiment
 <div class="ulist">
 <ul>
 <li>
-<p>OpenNMT and the Harvard NLP team for <a href="http://nlp.seas.harvard.edu/2018/04/03/attention.html">Annotated transformer</a>, I learned a lot from their work</p>
+<p>OpenNMT and the Harvard NLP team for <a href="http://nlp.seas.harvard.edu/2018/04/03/attention.html" target="_blank" rel="noopener">Annotated Transformer</a>, I learned a lot from their work</p>
 </li>
 <li>
-<p><a href="https://github.com/pytorch/fairseq">Fairseq</a> has taught and influenced some</p>
+<p><a href="https://github.com/pytorch/fairseq" target="_blank" rel="noopener">Fairseq</a> has taught and influenced some</p>
 </li>
 <li>
-<p><a href="https://www.isi.edu/research_groups/nlg/people">My team at USC ISI</a> for everything else</p>
+<p><a href="https://www.isi.edu/research_groups/nlg/people" target="_blank" rel="noopener">My team at USC ISI</a> for everything else</p>
 </li>
 </ul>
 </div>
@@ -2157,7 +2171,7 @@ trainers and generators.</p>
 </div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2020-08-27 18:56:31 -0700
+Last updated 2020-09-12 18:54:58 -0700
 </div>
 </div>
 </body>
