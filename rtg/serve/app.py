@@ -13,6 +13,8 @@ from sacremoses import MosesTokenizer, MosesDetokenizer, MosesPunctNormalizer, M
 from rtg import TranslationExperiment as Experiment
 from rtg.module.decoder import Decoder
 
+torch.set_grad_enabled(False)
+
 
 class RtgIO:
 
@@ -99,6 +101,16 @@ def attach_translate_route(cli_args):
         res = dict(source=sources, translation=translations)
         return jsonify(res)
 
+    @app.route("/conf.yml", methods=["GET"])
+    def get_conf():
+        conf_str = exp._config_file.read_text(encoding='utf-8', errors='ignore')
+        return render_template('conf.yml.html', conf_str=conf_str)
+
+    @app.route("/about", methods=["GET"])
+    def about():
+        def_desc = "Model description not available. Please view or update conf.yml"
+        return render_template('about.html', model_desc=exp.config.get("description", def_desc))
+
 
 def parse_args():
     parser = ArgumentParser(
@@ -110,20 +122,22 @@ def parse_args():
     parser.add_argument("-d", "--debug", action="store_true", help="Run Flask server in debug mode")
     parser.add_argument("-p", "--port", type=int, help="port to run server on", default=6060)
     parser.add_argument("-ho", "--host", help="Host address to bind.", default='0.0.0.0')
-    parser.add_argument("-msl", "--max-src-len", type=int,
+    parser.add_argument("-msl", "--max-src-len", type=int, default=250,
                         help="max source len; longer seqs will be truncated")
     args = vars(parser.parse_args())
     return args
 
+# uwsgi can take CLI args too
+# uwsgi --http 127.0.0.1:5000 --module rtg.serve.app:app --pyargv "rtgv0.5-768d9L6L-512K64K-datav1"
+cli_args = parse_args()
+attach_translate_route(cli_args)
+
 
 def main():
-    cli_args = parse_args()
-    torch.set_grad_enabled(False)
-
     #CORS(app)  # TODO: insecure
     if cli_args.pop('debug'):
         app.debug = True
-    attach_translate_route(cli_args)
+
     app.run(port=cli_args["port"], host=cli_args["host"])
 
     # A very useful tutorial is found at:

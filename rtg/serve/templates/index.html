@@ -23,12 +23,22 @@
       <div id="loading-progress" style="display: none;" class="spinner-border text-success float-left" role="status">
         <span class="sr-only">Loading...</span>
       </div>
-      <button type="submit" class="btn btn-primary float-right btn-success">Copy to Clipboard</button>
+      <button type="submit" class="btn btn-primary float-right btn-success" onclick="copyToClipboard()">Copy to Clipboard</button>
       </div>
   </div>
 </div>
 
 <script >
+
+  function copyToClipboard() {
+    var $temp = $("<input>");
+    $("body").append($temp);
+    $temp.val($("#target").text()).select();
+    document.execCommand("copy");
+    $temp.remove();
+    console.log("Copied.. ")
+}
+
 window.onload = function() {
   $(document).ajaxStart(function(){
        $("#loading-progress").show();
@@ -61,6 +71,7 @@ window.onload = function() {
       $('#target').text('');
     });
   });
+
 }
 </script>
 
