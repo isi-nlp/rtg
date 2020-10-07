@@ -11,6 +11,7 @@ RUN apt-get update && apt-get install -y \
     python3.7 \
     python3-pip \
     python3.7-dev \
+    build-essential \
     git \
     && apt-get autoremove --purge
 
@@ -29,9 +30,9 @@ ENV CUDA_HOME="/usr/local/cuda-10.2/"
 ENV PATH="/home/rtguser/.local/bin:/usr/local/cuda-10.2/bin:${PATH}"
 
 
-# Install torch/torchvision and dependencies via pip
-RUN pip install --user torch==1.6 rtg=0.5.0 gdown flask==1.1.2 && pip cache purge
+RUN pip install --user torch==1.6 rtg=0.5.0 gdown flask==1.1.2 uwsgi && pip cache purge
 # gdown is used for downloading large files from google drive
+# uwsgi and flask are used for rtg server deployment
 
 # Setup an experiment, get parent model
 RUN cd /home/rtguser/ && \
@@ -39,4 +40,6 @@ RUN cd /home/rtguser/ && \
    tar xvf rtgv0.5-768d9L6L-512K64K-datav1.tgz --one-top-level=rtgv0.5-768d9L6L-512K64K-datav1 --strip-components 1 && \
    rm rtgv0.5-768d9L6L-512K64K-datav1.tgz
 
-CMD rtg-serve  /home/rtguser/rtgv0.5-768d9L6L-512K64K-datav1
+#CMD rtg-serve  /home/rtguser/rtgv0.5-768d9L6L-512K64K-datav1
+#CMD python -m rtg.serve /home/rtguser/rtgv0.5-768d9L6L-512K64K-datav1
+CMD uwsgi --http 0.0.0.0:6060 --module rtg.serve.app:app --pyargv "/home/rtguser/rtgv0.5-768d9L6L-512K64K-datav1"
