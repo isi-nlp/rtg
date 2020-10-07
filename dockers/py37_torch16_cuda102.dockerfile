@@ -25,12 +25,15 @@ WORKDIR /home/rtguser
 USER rtguser
 
 # pip installed bins go here, they needs to be in PATH
-RUN mkdir -p /home/rtguser/.local/bin
+RUN mkdir -p /home/rtguser/.local/bin /home/rtguser/rtg
 ENV CUDA_HOME="/usr/local/cuda-10.2/"
 ENV PATH="/home/rtguser/.local/bin:/usr/local/cuda-10.2/bin:${PATH}"
 
+COPY --chown=rtguser:rtguser . /home/rtguser/rtg/
 
-RUN pip install --user torch==1.6 rtg=0.5.0 gdown flask==1.1.2 uwsgi && pip cache purge
+RUN pip install --user torch==1.6 gdown flask==1.1.2 uwsgi \
+ && cd /home/rtguser/rtg && pip install --editable . \
+ && pip cache purge
 # gdown is used for downloading large files from google drive
 # uwsgi and flask are used for rtg server deployment
 
