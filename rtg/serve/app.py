@@ -115,7 +115,7 @@ def attach_translate_route(cli_args):
 def parse_args():
     parser = ArgumentParser(
         prog="rtg.serve",
-        description="deploy a model to a RESTful react server",
+        description="Deploy an RTG model to a RESTful server",
         formatter_class=ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument("exp_dir", help="Experiment directory", type=str)
