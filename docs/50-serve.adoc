@@ -7,30 +7,28 @@ RTG model can be served using Flask Server.
 [source,commandline]
 ----
 $ python -m rtg.serve -h  # rtg-serve
-[07-13 22:38:01] p49095 {__init__:53} INFO - rtg v0.3.1 from /Users/tg/work/me/rtg
-usage: rtg.serve [-h] [-sc] [-p PORT] [-ho HOST] [-msl MAX_SRC_LEN] exp_dir
+usage: rtg.serve [-h] [-d] [-p PORT] [-ho HOST] [-msl MAX_SRC_LEN] exp_dir
 
-deploy a model to a RESTful react server
+Deploy an RTG model to a RESTful server
 
 positional arguments:
   exp_dir               Experiment directory
 
 optional arguments:
   -h, --help            show this help message and exit
-  -sc, --skip-check     Skip Checking whether the experiment dir is prepared
-                        and trained (default: False)
+  -d, --debug           Run Flask server in debug mode (default: False)
   -p PORT, --port PORT  port to run server on (default: 6060)
   -ho HOST, --host HOST
                         Host address to bind. (default: 0.0.0.0)
   -msl MAX_SRC_LEN, --max-src-len MAX_SRC_LEN
                         max source len; longer seqs will be truncated
-                        (default: None)
+                        (default: 250)
 ----
 
 
 To launch a service for `runs/001-tfm` experiment
 
-`python -m rtg.serve -sc runs/001-tfm`
+`python -m rtg.serve -d runs/001-tfm`
 
 It prints :
 `* Running on http://0.0.0.0:6060/ (Press CTRL+C to quit)`
@@ -61,6 +59,16 @@ An example POST request:
 You can also request like GET method as `http://localhost:6060/translate?source=text1&source=text2`
 after properly URL encoding the `text1` `text2`. This should only be used for quick testing in your web browser.
 
+
+**Production Deployment**
+Please use uWSGI for production deployment.
+
+[source,bash]
+----
+uwsgi --http 127.0.0.1:5000 --module rtg.serve.app:app --pyargv "<path-to-exp-dir>"
+----
+
+Note that `<path-to-exp-dir>` is expected to be a valid path to Experiment dir, it maybe obtained using `rtg-export` tool.
 
 
 
