@@ -6,7 +6,10 @@ from rtg.exp import TranslationExperiment as Experiment
 from dataclasses import dataclass
 from pathlib import Path
 from rtg.module.decoder import instantiate_model, Decoder
-from rtg import log, device
+from rtg import log, device, yaml
+import datetime
+
+import os
 import torch
 import time
 import argparse
@@ -59,6 +62,15 @@ class ExperimentExporter:
         prefix = f'model_{name}_avg{len(model_paths)}'
         to_exp.store_model(step_num, state, train_score=train_loss, val_score=val_loss, keep=10,
                            prefix=prefix)
+        chkpts = [mp.name for mp in model_paths]
+        status = {
+            'parent': str(self.exp.work_dir),
+            'ensemble': ensemble,
+            'checkpts': chkpts,
+            'when': datetime.datetime.now().isoformat(),
+            'who': os.environ.get('USER', '<unknown>'),
+        }
+        yaml.dump(status, stream=to_exp.work_dir / '_EXPORTED')
 
 
 def add_boolean(parser, name, help, dest=None, default=True):
