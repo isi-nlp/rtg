@@ -31,18 +31,8 @@ ENV PATH="/home/rtguser/.local/bin:/usr/local/cuda-10.2/bin:${PATH}"
 
 COPY --chown=rtguser:rtguser . /home/rtguser/rtg/
 
-RUN pip install --user torch==1.6 gdown flask==1.1.2 uwsgi \
- && cd /home/rtguser/rtg && pip install --editable . \
- && pip cache purge
-# gdown is used for downloading large files from google drive
-# uwsgi and flask are used for rtg server deployment
+RUN pip install --user torch==1.6 gdown flask==1.1.2 uwsgi sacremoses \
+   && cd /home/rtguser/rtg && pip install --editable . \
+   && pip cache purge
 
-# Setup an experiment, get parent model
-RUN cd /home/rtguser/ && \
-   gdown https://drive.google.com/uc?id=1VpM-NIaGxLnAGaR17hQwyfWQH0oh5Knw -O rtgv0.5-768d9L6L-512K64K-datav1.tgz && \
-   tar xvf rtgv0.5-768d9L6L-512K64K-datav1.tgz --one-top-level=rtgv0.5-768d9L6L-512K64K-datav1 --strip-components 1 && \
-   rm rtgv0.5-768d9L6L-512K64K-datav1.tgz
-
-#CMD rtg-serve  /home/rtguser/rtgv0.5-768d9L6L-512K64K-datav1
-#CMD python -m rtg.serve /home/rtguser/rtgv0.5-768d9L6L-512K64K-datav1
-CMD uwsgi --http 0.0.0.0:6060 --module rtg.serve.app:app --pyargv "/home/rtguser/rtgv0.5-768d9L6L-512K64K-datav1"
+CMD bash
