@@ -23,6 +23,7 @@ from pathlib import Path
 from rtg.distrib import DistribTorch
 
 
+
 dtorch = DistribTorch.instance()
 
 
@@ -285,9 +286,13 @@ class SteppedTrainer:
                 log.info(f"Resuming training from step:{self.last_step}, model={last_model}")
                 state = torch.load(last_model, map_location=device)  
                 model_state = state['model_state'] if 'model_state' in state else state
+
                 if 'optim_state' in state:
                     optim_state = state['optim_state']
                 self.model.load_state_dict(model_state)
+                if 'amp_state' in state and dtorch.fp16:
+                    log.info("Restoring  AMP state")
+                    dtorch._scaler.load_state_dict(state['amp_state'])
             else:
                 log.info("No earlier check point found. Looks like this is a fresh start")
 
@@ -469,6 +474,8 @@ class SteppedTrainer:
             'model_type': self.exp.model_type,
             'model_args': self.exp.model_args,
         }
+        if dtorch.fp16:
+            state['amp_state'] = dtorch._scaler.state_dict()
 
         self.exp.store_model(step_num, state, train_score=train_loss,
                              val_score=val_loss, keep=keep_models)
