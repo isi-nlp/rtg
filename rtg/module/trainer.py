@@ -3,7 +3,6 @@
 # Author: Thamme Gowda [tg at isi dot edu] 
 # Created: 10/17/18
 import torch
-import torch.nn as nn
 import rtg
 from rtg import log, yaml, TranslationExperiment as Experiment, device, BatchIterable
 from rtg.module import NMTModel
