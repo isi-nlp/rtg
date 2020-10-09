@@ -83,36 +83,9 @@ WARNING:
 [#fp16]
 == FP16, Mixed Precision Training
 
-Mixed precision training is supported by `NVIDIA/apex` library.
-Apex is a bit complex installation process, so it is an optional requirement that is needed only for FP16.
-
-=== Setup
-*Prerequisites:*
-
-. The environment variable `CUDA_HOME` is set and that `$CUDA_HOME/bin/nvcc` is a valid path
-. The cuda toolkit version is consistent
-  .. e.g. if `nvcc --version` says version it is `10.1`, then `python -c 'import torch; print(torch.version.cuda)'`
-also says the same version.
-. You have a newer version of `gcc`. See `gcc --version`. (In my trail-errors, gcc >= 4.9 and gcc <= 8.x worked
-
-Once you have met the above requirements, do the following:
-[source,bash]
-----
-$ git clone https://github.com/NVIDIA/apex
-$ cd apex
-$ pip install -v --no-cache-dir --global-option="--cpp_ext" --global-option="--cuda_ext" ./
-----
-
-You should get a message as `Successfully installed apex-0.1` if the installation is success.
-Otherwise, you are on your own to fix the installation (and please update this documentation).
-
-
-=== Run
-
-See that `rtg-pipe -h` has `-fp16, --fp16` CLI argumnent flags that can be enabled.
+Note that `rtg-pipe -h` has `-fp16, --fp16` CLI argument flag that can be used to enable mixed precision training.
 
 [source,bash]
 ----
 $ rtg-pipe <experiment-dir> --fp16
 ----
-
