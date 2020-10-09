@@ -40,7 +40,7 @@ setuptools.setup(
         'tqdm >= 4.45.0',
         'mosestokenizer >= 1.0.0',
         'nlcodec >= 0.3.0',
-        'torch >= 1.4',
+        'torch >= 1.6.0',
         'sacremoses @ git+ssh://git@github.com/isi-nlp/sacremoses@400328e3#egg=sacremoses',
     ],
     extra_requires={
