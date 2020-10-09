@@ -725,8 +725,9 @@ class TranslationExperiment(BaseExperiment):
                 [('src_len', 'max_src_len'), ('tgt_len', 'max_tgt_len'), ('truncate', 'truncate')]
                 if ik in prep_args}
 
-    def get_train_data(self, batch_size: int, steps: int = 0, sort_by='eq_len_rand_batch',
-                       batch_first=True, shuffle=False, fine_tune=False, keep_in_mem=False):
+    def get_train_data(self, batch_size: Union[int, Tuple[int,int]], steps: int = 0,
+                       sort_by='eq_len_rand_batch', batch_first=True, shuffle=False,
+                       fine_tune=False, keep_in_mem=False):
         inp_file = self.train_db if self.train_db.exists() else self.train_file
         if fine_tune:
             if not self.finetune_file.exists():
@@ -742,8 +743,8 @@ class TranslationExperiment(BaseExperiment):
             train_data = LoopingIterable(train_data, steps)
         return train_data
 
-    def get_val_data(self, batch_size: int, sort_desc=False, batch_first=True,
-                     shuffle=False):
+    def get_val_data(self, batch_size: Union[int, Tuple[int,int]], sort_desc=False,
+                     batch_first=True, shuffle=False):
         raw_path = None
         prep = self.config.get('prep', {})
         if 'valid_src' in prep and 'valid_tgt' in prep:
