@@ -832,8 +832,8 @@ class TransformerTrainer(SteppedTrainer):
         train_state.train_mode(True)
         unsaved_state = False
         cuda_available = torch.cuda.is_available()
-        update_interval = 0
 
+        batch_count = -1
         stopper = None
         early_stopped = False   # or converged
         if early_stop:
@@ -842,8 +842,11 @@ class TransformerTrainer(SteppedTrainer):
         with tqdm(train_data, initial=start_batch, total=batches, unit='batch',
                   dynamic_ncols=True, disable=not distr.is_global_main) as data_bar:
             for batch in data_bar:
-                #if update_interval == 0:
-                #    self.model.zero_grad()
+                batch_count += 1
+                take_step = (batch_count % self.grad_accum_interval) == 0
+
+               # if update_interval == 0:
+               #     self.model.zero_grad()
 
                 #  if not dataparallel, then move
                 if self.n_gpus <= 1:
@@ -868,9 +871,6 @@ class TransformerTrainer(SteppedTrainer):
 
                     # skip the last time step (the one with EOS as input)
                     out = out[:, :-1, :]
-
-                    # Trigger optimizer step after gradient accumulation
-                    take_step = update_interval == (self.grad_accum_interval - 1)
 
                     # assumption:  y_seqs has EOS, and not BOS
                     loss = self.loss_func(out, batch.y_seqs, num_toks, train_mode=True,
@@ -918,8 +918,6 @@ class TransformerTrainer(SteppedTrainer):
                     unsaved_state = False
                     gc.collect()
                     distr.barrier()
-                # Track gradient accumulation updates
-                update_interval = (update_interval + 1 ) % self.grad_accum_interval
 
         # End of training
         if unsaved_state and distr.is_global_main:
