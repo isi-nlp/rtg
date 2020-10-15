@@ -3,7 +3,6 @@
 # Author: Thamme Gowda [tg at isi dot edu] 
 # Created: 10/17/18
 import torch
-import torch.nn as nn
 import rtg
 from rtg import log, yaml, TranslationExperiment as Experiment, device, BatchIterable
 from rtg.module import NMTModel
@@ -22,6 +21,7 @@ from enum import Enum
 import inspect
 from pathlib import Path
 from rtg.distrib import DistribTorch
+
 
 
 dtorch = DistribTorch.instance()
@@ -273,7 +273,6 @@ class SteppedTrainer:
         self.last_step = -1
         self.exp = exp
         optim_state = None
-        amp_state = None
         if model:
             self.model = model
         else:
@@ -287,11 +286,13 @@ class SteppedTrainer:
                 log.info(f"Resuming training from step:{self.last_step}, model={last_model}")
                 state = torch.load(last_model, map_location=device)  
                 model_state = state['model_state'] if 'model_state' in state else state
+
                 if 'optim_state' in state:
                     optim_state = state['optim_state']
-                if 'amp_state' in state:
-                    amp_state = state['amp_state']
                 self.model.load_state_dict(model_state)
+                if 'amp_state' in state and dtorch.fp16:
+                    log.info("Restoring  AMP state")
+                    dtorch._scaler.load_state_dict(state['amp_state'])
             else:
                 log.info("No earlier check point found. Looks like this is a fresh start")
 
@@ -318,15 +319,6 @@ class SteppedTrainer:
             trainable_params = self.model.parameters()
 
         inner_opt = Optims[optim].new(trainable_params, **inner_opt_args)
-
-        if dtorch.fp16:
-            opt_level = 'O1'
-            log.info(f"Float precision opt_level: {opt_level}; see https://nvidia.github.io/apex/amp.html#opt-levels")
-            self.core_model, inner_opt = dtorch._amp.initialize(self.core_model, inner_opt,
-                                                        opt_level=opt_level)
-            if amp_state:
-                dtorch._amp.load_state_dict(amp_state)
-
         self.model = dtorch.maybe_distributed(self.core_model)
         
         if optim_state:
@@ -482,9 +474,8 @@ class SteppedTrainer:
             'model_type': self.exp.model_type,
             'model_args': self.exp.model_args,
         }
-        
         if dtorch.fp16:
-            state['amp_state'] = dtorch._amp.state_dict()
+            state['amp_state'] = dtorch._scaler.state_dict()
 
         self.exp.store_model(step_num, state, train_score=train_loss,
                              val_score=val_loss, keep=keep_models)

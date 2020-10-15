@@ -729,9 +729,10 @@ class TranslationExperiment(BaseExperiment):
                 [('src_len', 'max_src_len'), ('tgt_len', 'max_tgt_len'), ('truncate', 'truncate')]
                 if ik in prep_args}
 
-    def get_train_data(self, batch_size: int, steps: int = 0, sort_by='eq_len_rand_batch',
+    def get_train_data(self, batch_size:  Union[int, Tuple[int,int]], steps: int = 0, sort_by='eq_len_rand_batch',
                        batch_first=True, shuffle=False, fine_tune=False, keep_in_mem=False,
                        split_ratio: float = 0., dynamic_epoch=False):
+
         inp_file = self.train_db if self.train_db.exists() else self.train_file
         if fine_tune:
             if not self.finetune_file.exists():
@@ -760,12 +761,13 @@ class TranslationExperiment(BaseExperiment):
 
         return train_data
 
+
     def file_creator(self, train_file, split_ratio, *args, **kwargs):
         self._pre_process_parallel(*args, src_key='train_src', tgt_key='train_tgt',
                                    out_file=train_file, split_ratio=split_ratio, **kwargs)
         return train_file
 
-    def get_val_data(self, batch_size: int, sort_desc=False, batch_first=True,
+    def get_val_data(self, batch_size: Union[int, Tuple[int,int]], sort_desc=False, batch_first=True,
                      shuffle=False):
         raw_path = None
         prep = self.config.get('prep', {})

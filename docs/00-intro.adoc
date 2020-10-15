@@ -36,7 +36,8 @@ pip install rtg
 
 ==== Development Setup:
 
-NOTE: This is required only if you are developing (i.e. modifying RTG code). If you are planning to just use as it is, then `pip install rtg` should be all you need.
+NOTE: This mode of setup is required only if you are developing (i.e. modifying RTG code).
+If you are planning to use RTG without modifying source code, then `pip install rtg` should be all you need.
 
 While most users are
 Add the root of this repo to `PYTHONPATH` or install it via `pip --editable`
@@ -47,7 +48,7 @@ There are two versions of code:
 * https://github.com/isi-nlp/rtg-xt
 * https://github.com/isi-nlp/rtg
 
-Both `rtg-xt` and `rtg` has same code on the master branch.
+Both `rtg-xt` and `rtg` has the same code on `master` branch.
 `rtg-xt` has stable code base and meant to be used by anyone, so you should definitely get started with it.
 `rtg` is internal with some unfinished/work-in progress ideas (maybe unpublished), with issues and pull-requests by members of USC ISI team.
 We sync both code bases often.
@@ -69,6 +70,32 @@ pip install --editable .
 
 export PYTHONPATH=$PWD # or add it to PYTHONPATH
 ----
+
+==== Requirements
+NOTE: The required libraries are automatically installed by `pip`, so manual installation is not required.
+We are listing the requirements here for informative purposes only.
+
+NOTE: To view or modify the  version numbers of libraries, please go to `setup.py` at the root of this project.
+
+The following libraries are used:
+
+.Table Summary of CLI tools
+[cols="1,4"]
+|===
+| **Library**  | **Purpose**
+| torch        | deep learning library
+| tensorboard  | logging and visualizing training and validation losses
+| sacrebleu    | BLEU scorer
+| sacremoses   | tokenization and detokenization
+| tqdm         | Progress bar
+| ruamel.yaml  | configuration management
+| sentencepiece | (optional) vocabulary creation using word, char, BPE
+| nlcodec       |  (optional) similar to `sentencepiece`, but easily customizable; scales to big datasets using pyspark, offers efficient storage of encoded parallel data
+| flask, jinja  |  (optional) HTTP API and web interface for serving the models
+| pyspark       |  (optional) parallelized data preparation (using `nlcodec`) for massive datasets.
+|===
+
+Thanks to all the awesome developers of these above tools.
 
 
 === Usage

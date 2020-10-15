@@ -1,9 +1,9 @@
 [#conf.yml]
 == RTG *`conf.yml`* File
 
-The key component of RTG toolkit is a `conf.yml`. As the name says - it is a YAML file containing configuration
-for an experiment.
-Before we get into understanding what goes into configuration file
+The key component of RTG toolkit is a `conf.yml`. As the name suggest - it is a YAML file containing configuration
+of experiment.
+Before we try to understand what goes into a configuration file, let us review the high level entities:
 
 * Experiment - the top level entity that wraps everything below, for the sake of reproducibility.
 * Data Preparation - NLP datasets require preparation of textual data. Typically, creation of
