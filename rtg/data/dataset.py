@@ -176,7 +176,7 @@ class TSVData(Iterable[IdExample]):
             yield from recs
 
 
-class TokenizerTask():
+class TokenizerTask:
     """Works with Parallel data"""
 
     def __init__(self, tokenizers: List, lengths: List[int], truncate: bool):
@@ -542,13 +542,19 @@ class BatchIterable(Iterable[Batch]):
             data_path = Path(data_path)
 
         assert data_path.exists(), f'Invalid State: Training data doesnt exist;' \
-                                   f' Please remove _PREPARED and rerun.'
-        if data_path.name.endswith(".db"):
+            f' Please remove _PREPARED and rerun.'
+        self.data_path = data_path
+
+        if any([data_path.name.endswith(suf) for suf in ('.db', '.db.tmp')]):
+
             self.data = SqliteFile(data_path, sort_by=sort_by, **kwargs)
+            self.n_batches = len(self._make_eq_len_batch_ids())
         else:
             if sort_by:
                 raise Exception(f'sort_by={sort_by} not supported for TSV data')
             self.data = TSVData(data_path, shuffle=shuffle, longest_first=False, **kwargs)
+            self.n_batches = len(self.data)
+
         if raw_path:  # for logging and validation BLEU
             # Only narrower use case is supported
             assert not shuffle
@@ -639,6 +645,7 @@ class BatchIterable(Iterable[Batch]):
     def make_eq_len_ran_batches(self):
         # every pass introduces some randomness
         batches = self._make_eq_len_batch_ids()
+        self.n_batches = len(batches)
         log.info(f"length sorted random batches = {len(batches)}. Shuffling🔀...")
         if not batches:
             raise Exception(f'Found no training data. Please check config and {self.data_path}')
@@ -662,7 +669,7 @@ class BatchIterable(Iterable[Batch]):
 
     @property
     def num_batches(self) -> int:
-        return int(math.ceil(len(self.data) / self.max_toks))
+        return self.n_batches
 
 
 class LoopingIterable(Iterable[Batch]):
@@ -682,3 +689,43 @@ class LoopingIterable(Iterable[Batch]):
                 self.count += 1
                 if self.count >= self.total:
                     break
+
+
+class GenerativeBatchIterable(Iterable[Batch]):
+
+    def __init__(self, file_creator: callable, batches: int, batch_size: int, field: Field,
+                 dynamic_epoch: bool = False, batch_first: bool = True, shuffle: bool = True,
+                 sort_by: str = 'eq_len_rand_batch', **kwargs):
+        self.file_creator = file_creator
+        self.total = batches
+        self.batch_size = batch_size
+        self.field = field
+        self.dynamic_epoch = dynamic_epoch
+        self.batch_first = batch_first
+        self.shuffle = shuffle
+        self.sort_by = sort_by
+        self.kwargs = kwargs
+        self.count = 0
+        self.feed = True
+
+    def generate_data(self) -> Iterable[Batch]:
+        file_name = self.file_creator()
+        data = BatchIterable(
+            file_name, batch_size=self.batch_size, field=self.field, sort_by=self.sort_by,
+            batch_first=self.batch_first, shuffle=self.shuffle, **self.kwargs
+        )
+        return data
+
+    def __iter__(self) -> Iterator[Batch]:
+        data = self.generate_data()
+
+        while self.feed:
+            for batch in data:
+                yield batch
+                self.count += 1
+                if self.count >= self.total:
+                    self.feed = False
+                    break
+
+            if self.dynamic_epoch:
+                data = self.generate_data()

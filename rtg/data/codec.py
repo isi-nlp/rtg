@@ -32,7 +32,7 @@ class Field(metaclass=ABCMeta):
         return list(zip(cls.reserved_toks, cls.reserved_idxs))
 
     @abstractmethod
-    def encode_as_ids(self, text, add_bos, add_eos) -> Array:
+    def encode_as_ids(self, text, add_bos, add_eos, split_ratio: Optional[float] = 0.) -> Array:
         pass
 
     @abstractmethod
@@ -83,7 +83,10 @@ class SPField(SentencePieceProcessor, Field):
         super().__init__()
         assert self.load(path)
 
-    def encode_as_ids(self, text: str, add_bos=False, add_eos=False) -> Array:
+    def encode_as_ids(self, text: str, add_bos=False, add_eos=False, split_ratio=0.) -> Array:
+        assert split_ratio == 0, 'SentencePiece doesnt support SWR, ' \
+                                 'please use NLCodec or disable SWR by setting split_ratio=0'
+
         ids = super(SPField, self).encode_as_ids(text)
         if add_bos and ids[0] != self.bos_idx:
             ids.insert(0, self.bos_idx)
@@ -164,8 +167,12 @@ class NLField(Field):
             # Todo swap it with nlcodec.Reserved
             assert self.vocab[idx].name == tok
 
-    def encode_as_ids(self, text: str, add_bos=False, add_eos=False) -> Array:
-        ids = self.codec.encode(text)
+    def encode_as_ids(self, text: str, add_bos=False, add_eos=False, split_ratio=0.) -> Array:
+        if self.codec.name == "bpe" and split_ratio > 0:
+            ids = self.codec.encode(text, split_ratio)
+        else:
+            ids = self.codec.encode(text)
+
         if add_bos and ids[0] != self.bos_idx:
             ids.insert(0, self.bos_idx)
         if add_eos and ids[-1] != self.eos_idx:
@@ -312,7 +319,10 @@ class PretrainMatchField(Field):
             yaml.dump(data, wrtr)
         return cls(model_path)
 
-    def encode_as_ids(self, text: str, add_bos=False, add_eos=False) -> Array:
+    def encode_as_ids(self, text: str, add_bos=False, add_eos=False, split_ratio=0.) -> Array:
+        assert split_ratio == 0, 'SentencePiece doesnt support SWR, ' \
+                                 'please use NLCodec or disable SWR by setting split_ratio=0'
+
         pieces = self.tokenize(text)
         ids = [self.tok2idx.get(p, self.unk_idx) for p in pieces]
         if add_bos and ids[0] != self.bos_idx:

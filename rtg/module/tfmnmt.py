@@ -796,6 +796,8 @@ class TransformerTrainer(SteppedTrainer):
         """
         log_resources = args.pop('log_resources', False)
         log_embedding = args.pop('log_embedding', False)
+        split_ratio = args.pop('split_ratio', 0.)
+        dynamic_epoch = args.pop('dynamic_epoch', False)
         assert log_interval > 0
 
         # Gradient accumulation
@@ -820,13 +822,15 @@ class TransformerTrainer(SteppedTrainer):
         if batches <= start_batch:
             raise Exception(f'The model was already trained to {self.start_step} steps. '
                             f'Please increase the steps or clear the existing models')
-        train_data = self.exp.get_train_data(batch_size=(max_toks, max_sents), steps=batches - start_batch,
-                                             sort_by=sort_by, batch_first=True, fine_tune=fine_tune,
-                                             keep_in_mem=keep_in_mem)
+
+        train_data = self.exp.get_train_data(
+            batch_size=batch_size, steps=batches - start_batch, sort_by=sort_by, batch_first=True,
+            fine_tune=fine_tune, keep_in_mem=keep_in_mem, split_ratio=split_ratio, dynamic_epoch=dynamic_epoch
+        )
         val_data = None
         if distr.is_global_main:
             val_data = self.exp.get_val_data(batch_size=max_toks, shuffle=False, batch_first=True,
-                                         sort_desc=False)
+                                             sort_desc=False)
 
         train_state = TrainerState(self.model, check_point=check_point)
         train_state.train_mode(True)
@@ -888,7 +892,7 @@ class TransformerTrainer(SteppedTrainer):
                         self._log_resources(batch)
 
                 progress_msg, is_check_pt = train_state.step(num_toks, loss)
-                progress_msg += f', LR={self.opt.curr_lr:g}'
+                progress_msg += f', LR={self.opt.curr_lr:0.8f}'
                 data_bar.set_postfix_str(progress_msg, refresh=False)
                 del batch
 
