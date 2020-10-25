@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from rtg.module.decoder import instantiate_model, Decoder
 from rtg import log, device, yaml
+from rtg.utils import  IO
 import datetime
 
 import os
@@ -20,7 +21,7 @@ class ExperimentExporter:
 
     def export(self, target: Path, name: str=None, ensemble: int = 1, copy_config=True,
                copy_vocab=True):
-        to_exp = Experiment(target, config=self.exp.config)
+        to_exp = Experiment(target.resolve(), config=self.exp.config)
 
         if copy_config:
             log.info("Copying config")
@@ -71,6 +72,9 @@ class ExperimentExporter:
             'who': os.environ.get('USER', '<unknown>'),
         }
         yaml.dump(status, stream=to_exp.work_dir / '_EXPORTED')
+
+        if self.exp._trained_flag.exists():
+            IO.copy(self.exp._trained_flag, to_exp._trained_flag)
 
 
 def add_boolean(parser, name, help, dest=None, default=True):

@@ -86,6 +86,7 @@ class BigTranslationExperiment(TranslationExperiment):
                 n_parts = math.ceil(total / max_part_size)
                 log.info(f"Writing to {out_file}; {n_parts} parts,"
                          f" not exceeding {max_part_size:,} records in each part")
+                
                 rdd_as_db(id_rdd, db_path=out_file, field_names=['x', 'y'], overwrite=True,
                           repartition=n_parts)
 

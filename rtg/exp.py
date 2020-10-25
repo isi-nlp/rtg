@@ -783,7 +783,7 @@ class TranslationExperiment(BaseExperiment):
                                     (self._tgt_field_file, other._tgt_field_file),
                                     (self._shared_field_file, other._shared_field_file)]:
             if source.exists():
-                IO.copy_file(source, destination)
+                IO.copy_file(source.resolve(), destination.resolve())
                 src_txt_file = source.with_name(source.name.replace('.model', '.vocab'))
                 if src_txt_file.exists():
                     dst_txt_file = destination.with_name(
