@@ -6,12 +6,13 @@ import os
 import socket
 from dataclasses import dataclass
 from typing import ClassVar
+from torch.optim.optimizer import Optimizer
+from torch.cuda.amp import GradScaler
 
 import torch
 from torch import nn
 
 from rtg import log
-
 
 get_env = os.environ.get
 
@@ -30,10 +31,9 @@ class DistribTorch:
     gpu_count: int = torch.cuda.device_count()
     visible_devices: str = get_env('CUDA_VISIBLE_DEVICES', '')
     max_norm = 10
-    fp16 = get_env('USE_FP16', 'false').lower() in {'yes', 'true', 'y', 't'}
-    _amp = None
-    _apex = None
+    fp16 = False  # Manually enable by calling enable_fp16()
 
+    _scaler = None
     _is_backend_ready = False
     # singleton instance; lazy initialization
     _instance: ClassVar['DistribTorch'] = None
@@ -53,12 +53,9 @@ class DistribTorch:
 
     def enable_fp16(self):
         if not self.fp16:   # conditional import
-            import apex as apex
-            from apex import amp as amp
-            self._amp = amp
-            self._apex = apex
-            log.info("apex and amp are available; fp16 enabled")
             self.fp16 = True
+            self._scaler = GradScaler(enabled=self.fp16)
+            log.info("Enabling FP16  /Automatic Mixed Precision training")
         else:
             log.warning(" fp16 is already enabled")
             
@@ -81,11 +78,8 @@ class DistribTorch:
         if self.world_size > 1:
             if not self._is_backend_ready:
                 self.setup()
-            if self.fp16:
-                return self._apex.parallel.DistributedDataParallel(module)
-            else:
-                return torch.nn.parallel.DistributedDataParallel(module)
-        return module    # dont wrap
+            return torch.nn.parallel.DistributedDataParallel(module)
+        return module    # don't wrap
 
     @property
     def is_distributed(self):
@@ -104,13 +98,20 @@ class DistribTorch:
             torch.distributed.barrier()
         # else we dont need it
 
-    def backward(self, loss, opt=None):
+    def backward(self, loss):
         if torch.isnan(loss):
             log.warning('loss is nan; backward() skipped')
             return
         if self.fp16:
-            with self._amp.scale_loss(loss, opt.optimizer) as scaled_loss:
-                scaled_loss.backward()
-            torch.nn.utils.clip_grad_norm_(self._amp.master_params(opt.optimizer), self.max_norm)
+            loss = self._scaler.scale(loss)
+            # to apply norm: TODO: unscale gradients ; refer to docs
+            # torch.nn.utils.clip_grad_norm_(self._amp.master_params(opt.optimizer), self.max_norm)
+        loss.backward()
+
+    def step(self, optimizer: Optimizer):
+        if self.fp16:
+            self._scaler.step(optimizer)
+            self._scaler.update()
         else:
-            loss.backward()
+            optimizer.step()
+        optimizer.zero_grad()

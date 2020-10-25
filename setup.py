@@ -40,7 +40,8 @@ setuptools.setup(
         'tqdm >= 4.45.0',
         'mosestokenizer >= 1.0.0',
         'nlcodec >= 0.3.0',
-        'torch >= 1.4'
+        'torch >= 1.6.0',
+        'sacremoses @ git+ssh://git@github.com/isi-nlp/sacremoses@400328e3#egg=sacremoses',
     ],
     extra_requires={
         'big': ['pyspark >= 3.0'],
@@ -57,7 +58,7 @@ setuptools.setup(
             'rtg-prep=rtg.prep:main',
             'rtg-train=rtg.train:main',
             'rtg-fork=rtg.fork:main',
-            'rtg-serve=rtg.serve:main',
+            'rtg-serve=rtg.serve.app:main',
             'rtg-syscomb=rtg.syscomb.__main__:main',
         ],
     }

@@ -1,0 +1,23 @@
+{% extends 'base.html' %}
+
+{% block head %}
+  <link rel="stylesheet" href="{{url_for('static', filename='css/highlight-default.css')}}">
+{% endblock %}
+
+{% block content %}
+<h2>{% block title %} Reader Translator Generator - conf.yml {% endblock %}</h2>
+
+<div class="container">
+  <div class="row">
+    <div>
+      <pre>
+        <code class="yaml">{{ conf_str }}</code>
+      </pre>
+    </div>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/highlight.pack.js') }}"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+
+{% endblock %}

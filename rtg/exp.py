@@ -3,6 +3,7 @@ import os
 import random
 from datetime import datetime, timedelta
 from pathlib import Path
+from functools import partial
 from typing import Optional, Dict, List, Tuple, Union, Any
 import time
 
@@ -10,7 +11,7 @@ import numpy as np
 import torch
 
 from rtg import log, yaml
-from rtg.data.dataset import (TSVData, BatchIterable, LoopingIterable, SqliteFile)
+from rtg.data.dataset import (TSVData, BatchIterable, LoopingIterable, SqliteFile, GenerativeBatchIterable)
 from rtg.data.codec import Field, SPField, NLField, PretrainMatchField
 from rtg.utils import IO, line_count
 
@@ -55,6 +56,7 @@ class BaseExperiment:
 
         self.train_file = self.data_dir / 'train.tsv.gz'
         self.train_db = self.data_dir / 'train.db'
+        self.train_db_tmp = self.data_dir / 'train.db.tmp'
         self.finetune_file = self.data_dir / 'finetune.db'
         self.valid_file = self.data_dir / 'valid.tsv.gz'
         self.combo_file = self.data_dir / 'combo.tsv.gz'
@@ -423,7 +425,8 @@ class TranslationExperiment(BaseExperiment):
                    self.tgt_vocab)
 
     def _pre_process_parallel(self, src_key: str, tgt_key: str, out_file: Path,
-                              args: Optional[Dict[str, Any]] = None, line_check=True):
+                              args: Optional[Dict[str, Any]] = None, line_check=True,
+                              split_ratio: float = 0.):
         """
         Pre process records of a parallel corpus
         :param args: all arguments for 'prep' task
@@ -444,8 +447,9 @@ class TranslationExperiment(BaseExperiment):
         reader_func = TSVData.read_raw_parallel_recs
         parallel_recs = reader_func(
             args[src_key], args[tgt_key], args['truncate'], args['src_len'], args['tgt_len'],
-            src_tokenizer=self.src_vocab.encode_as_ids, tgt_tokenizer=self.tgt_vocab.encode_as_ids)
-        if out_file.name.endswith('.db'):
+            src_tokenizer=partial(self.src_vocab.encode_as_ids, split_ratio=split_ratio),
+            tgt_tokenizer=partial(self.tgt_vocab.encode_as_ids, split_ratio=split_ratio))
+        if any([out_file.name.endswith(suf) for suf in ('.db', '.db.tmp')]):
             SqliteFile.write(out_file, records=parallel_recs)
         else:
             TSVData.write_parallel_recs(parallel_recs, out_file)
@@ -725,8 +729,10 @@ class TranslationExperiment(BaseExperiment):
                 [('src_len', 'max_src_len'), ('tgt_len', 'max_tgt_len'), ('truncate', 'truncate')]
                 if ik in prep_args}
 
-    def get_train_data(self, batch_size: int, steps: int = 0, sort_by='eq_len_rand_batch',
-                       batch_first=True, shuffle=False, fine_tune=False, keep_in_mem=False):
+    def get_train_data(self, batch_size:  Union[int, Tuple[int,int]], steps: int = 0, sort_by='eq_len_rand_batch',
+                       batch_first=True, shuffle=False, fine_tune=False, keep_in_mem=False,
+                       split_ratio: float = 0., dynamic_epoch=False):
+
         inp_file = self.train_db if self.train_db.exists() else self.train_file
         if fine_tune:
             if not self.finetune_file.exists():
@@ -734,15 +740,34 @@ class TranslationExperiment(BaseExperiment):
                 self._pre_process_parallel('finetune_src', 'finetune_tgt', self.finetune_file)
             log.info("Using Fine tuning corpus instead of training corpus")
             inp_file = self.finetune_file
+
         inp_file = IO.maybe_tmpfs(inp_file)
-        train_data = BatchIterable(inp_file, batch_size=batch_size, sort_by=sort_by,
-                                   batch_first=batch_first, shuffle=shuffle, field=self.tgt_vocab,
-                                    **self._get_batch_args())
-        if steps > 0:
-            train_data = LoopingIterable(train_data, steps)
+        train_file = inp_file.with_suffix('.db.tmp')
+
+        if split_ratio > 0:
+            file_creator = partial(self.file_creator, train_file=train_file, split_ratio=split_ratio)
+            train_data = GenerativeBatchIterable(
+                file_creator=file_creator, batches=steps, batch_size=batch_size, field=self.tgt_vocab,
+                dynamic_epoch=dynamic_epoch, batch_first=batch_first, shuffle=shuffle, sort_by=sort_by,
+                **self._get_batch_args()
+            )
+        else:
+            self._pre_process_parallel('train_src', 'train_tgt', out_file=train_file)
+            data = BatchIterable(
+                train_file, batch_size=batch_size, field=self.tgt_vocab, sort_by=sort_by,
+                batch_first=batch_first, shuffle=shuffle, **self._get_batch_args()
+            )
+            train_data = LoopingIterable(data, steps)
+
         return train_data
 
-    def get_val_data(self, batch_size: int, sort_desc=False, batch_first=True,
+
+    def file_creator(self, train_file, split_ratio, *args, **kwargs):
+        self._pre_process_parallel(*args, src_key='train_src', tgt_key='train_tgt',
+                                   out_file=train_file, split_ratio=split_ratio, **kwargs)
+        return train_file
+
+    def get_val_data(self, batch_size: Union[int, Tuple[int,int]], sort_desc=False, batch_first=True,
                      shuffle=False):
         raw_path = None
         prep = self.config.get('prep', {})
@@ -759,9 +784,10 @@ class TranslationExperiment(BaseExperiment):
             # user may have added fine tune file later
             self._pre_process_parallel('combo_src', 'combo_tgt', self.combo_file)
         combo_file = IO.maybe_tmpfs(self.combo_file)
-        data = BatchIterable(combo_file, batch_size=batch_size, sort_desc=sort_desc,
-                             field=self.tgt_vocab, batch_first=batch_first, shuffle=shuffle,
-                             **self._get_batch_args())
+        data = BatchIterable(
+            combo_file, batch_size=batch_size, sort_desc=sort_desc, field=self.tgt_vocab,
+            batch_first=batch_first, shuffle=shuffle, **self._get_batch_args()
+        )
         if steps > 0:
             data = LoopingIterable(data, steps)
         return data

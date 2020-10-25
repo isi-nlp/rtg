@@ -13,6 +13,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
+from torch.cuda.amp import autocast
 from tqdm import tqdm
 
 from rtg import device, log, TranslationExperiment as Experiment
@@ -25,6 +26,7 @@ from torch.optim.optimizer import Optimizer
 from dataclasses import dataclass
 from sacrebleu import corpus_bleu
 from rtg.distrib import DistribTorch
+
 
 dtorch = DistribTorch.instance()
 
@@ -500,10 +502,9 @@ class SimpleLossFunction:
         loss = self.criterion(scores, truth).sum() / normalizer
 
         if train_mode:  # don't do this for validation set
-            dtorch.backward(loss, self.opt)
+            dtorch.backward(loss)
             if take_step:
-                self.opt.step()
-                self.opt.zero_grad()
+                dtorch.step(self.opt)
         result = loss.item()
         if get_out:
             result = (result, x_probs.argmax(dim=-1))
@@ -547,13 +548,12 @@ class ChunkedLossCompute(SimpleLossFunction):
             loss = self.criterion(chunked_dist, chunked_ys).sum() / normalizer
             total += loss.detach().item()
             if train_mode:
-                dtorch.backward(loss, self.opt)
+                dtorch.backward(loss)
         if train_mode:
             out_grad = _y_feats.grad.data
             y_feats.backward(gradient=out_grad)
             if take_step:
-                self.opt.step()
-                self.opt.zero_grad()
+                dtorch.step(self.opt)
         if get_out:
             outs = torch.cat(out_chunks, dim=1)
             return total, outs
@@ -636,15 +636,16 @@ class MultiGPULossFunction(ChunkedLossCompute):
             total_loss += chk_loss.item()
 
             if train_mode:
-                chk_loss.backward()  # backward for the chunked part
+                dtorch.backward(chk_loss)
+                 # backward for the chunked part
 
         # back prop all loss through the rest of the network
         if train_mode:
             # back prop the rest of network
             y_feats.backward(gradient=_y_feats.grad.data)
             if take_step:
-                self.opt.step()
-                self.opt.zero_grad()
+                dtorch.step(self.opt)
+
         if get_out:
             # [S x [NumChunks x [B/S x ChunkSize]]]
             # first cat [NumChunks x [B/S x ChunkSize] along time dim to make full seq
@@ -729,7 +730,8 @@ class TransformerTrainer(SteppedTrainer):
                 # skip the last time step (the one with EOS as input)
                 out = out[:, :-1, :]
                 # assumption:  y_seqs has EOS, and not BOS
-                loss = self.loss_func(out, batch.y_seqs, num_toks, False, get_out=do_bleu)
+                loss = self.loss_func(out, batch.y_seqs, num_toks, train_mode=False,
+                                      get_out=do_bleu)
                 if do_bleu:
                     loss, outs = loss
                     outs = outs.tolist()
@@ -794,6 +796,8 @@ class TransformerTrainer(SteppedTrainer):
         """
         log_resources = args.pop('log_resources', False)
         log_embedding = args.pop('log_embedding', False)
+        split_ratio = args.pop('split_ratio', 0.)
+        dynamic_epoch = args.pop('dynamic_epoch', False)
         assert log_interval > 0
 
         # Gradient accumulation
@@ -818,20 +822,22 @@ class TransformerTrainer(SteppedTrainer):
         if batches <= start_batch:
             raise Exception(f'The model was already trained to {self.start_step} steps. '
                             f'Please increase the steps or clear the existing models')
-        train_data = self.exp.get_train_data(batch_size=(max_toks, max_sents), steps=batches - start_batch,
-                                             sort_by=sort_by, batch_first=True, fine_tune=fine_tune,
-                                             keep_in_mem=keep_in_mem)
+
+        train_data = self.exp.get_train_data(
+            batch_size=batch_size, steps=batches - start_batch, sort_by=sort_by, batch_first=True,
+            fine_tune=fine_tune, keep_in_mem=keep_in_mem, split_ratio=split_ratio, dynamic_epoch=dynamic_epoch
+        )
         val_data = None
         if distr.is_global_main:
             val_data = self.exp.get_val_data(batch_size=max_toks, shuffle=False, batch_first=True,
-                                         sort_desc=False)
+                                             sort_desc=False)
 
         train_state = TrainerState(self.model, check_point=check_point)
         train_state.train_mode(True)
         unsaved_state = False
         cuda_available = torch.cuda.is_available()
-        update_interval = 0
 
+        batch_count = -1
         stopper = None
         early_stopped = False   # or converged
         if early_stop:
@@ -840,8 +846,11 @@ class TransformerTrainer(SteppedTrainer):
         with tqdm(train_data, initial=start_batch, total=batches, unit='batch',
                   dynamic_ncols=True, disable=not distr.is_global_main) as data_bar:
             for batch in data_bar:
-                if update_interval == 0:
-                    self.model.zero_grad()
+                batch_count += 1
+                take_step = (batch_count % self.grad_accum_interval) == 0
+
+               # if update_interval == 0:
+               #     self.model.zero_grad()
 
                 #  if not dataparallel, then move
                 if self.n_gpus <= 1:
@@ -860,18 +869,17 @@ class TransformerTrainer(SteppedTrainer):
                 y_seqs_with_bos = torch.cat([bos_step, batch.y_seqs], dim=1)
                 y_mask = batch.make_autoreg_mask(y_seqs_with_bos)
 
-                # [Batch x Time x D]
-                out = self.model(x_seqs, y_seqs_with_bos, x_mask, y_mask)
+                with autocast(enabled=dtorch.fp16):
+                    # [Batch x Time x D]
+                    out = self.model(x_seqs, y_seqs_with_bos, x_mask, y_mask)
 
-                # skip the last time step (the one with EOS as input)
-                out = out[:, :-1, :]
+                    # skip the last time step (the one with EOS as input)
+                    out = out[:, :-1, :]
 
-                # Trigger optimizer step after gradient accumulation
-                take_step = update_interval == (self.grad_accum_interval - 1)
+                    # assumption:  y_seqs has EOS, and not BOS
+                    loss = self.loss_func(out, batch.y_seqs, num_toks, train_mode=True,
+                                          take_step=take_step)
 
-                # assumption:  y_seqs has EOS, and not BOS
-                loss = self.loss_func(out, batch.y_seqs, num_toks, train_mode=True,
-                                      take_step=take_step)
                 if stopper and take_step:
                     stopper.step()
                 # Log
@@ -884,7 +892,7 @@ class TransformerTrainer(SteppedTrainer):
                         self._log_resources(batch)
 
                 progress_msg, is_check_pt = train_state.step(num_toks, loss)
-                progress_msg += f', LR={self.opt.curr_lr:g}'
+                progress_msg += f', LR={self.opt.curr_lr:0.8f}'
                 data_bar.set_postfix_str(progress_msg, refresh=False)
                 del batch
 
@@ -914,8 +922,6 @@ class TransformerTrainer(SteppedTrainer):
                     unsaved_state = False
                     gc.collect()
                     distr.barrier()
-                # Track gradient accumulation updates
-                update_interval = (update_interval + 1 ) % self.grad_accum_interval
 
         # End of training
         if unsaved_state and distr.is_global_main:
