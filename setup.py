@@ -41,7 +41,7 @@ setuptools.setup(
         'mosestokenizer >= 1.0.0',
         'nlcodec >= 0.3.0',
         'torch >= 1.6.0',
-        'sacremoses @ git+ssh://git@github.com/isi-nlp/sacremoses@400328e3#egg=sacremoses',
+        'sacremoses @ git+https://github.com/isi-nlp/sacremoses.git@400328e3#egg=sacremoses',
     ],
     extra_requires={
         'big': ['pyspark >= 3.0'],
