@@ -42,6 +42,7 @@ setuptools.setup(
         'nlcodec >= 0.3.0',
         'torch >= 1.6.0',
         'sacremoses @ git+https://github.com/isi-nlp/sacremoses.git@400328e3#egg=sacremoses',
+        'portalocker >= 2.0.0',
     ],
     extra_requires={
         'big': ['pyspark >= 3.0'],

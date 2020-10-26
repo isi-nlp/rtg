@@ -9,6 +9,7 @@ import hashlib
 import warnings
 import sys
 import os
+import portalocker
 
 import torch
 from torch import nn as nn
@@ -207,15 +208,19 @@ class Decoder:
                 model_paths = exp.list_models()[:ensemble]
             digest = hashlib.md5(";".join(str(p) for p in model_paths).encode('utf-8')).hexdigest()
             cache_file = exp.model_dir / f'avg_state{len(model_paths)}_{digest}.pkl'
-            if cache_file.exists():
-                log.info(f"Cache exists: reading from {cache_file}")
-                state = Decoder._checkpt_to_model_state(cache_file)
-            else:
-                log.info(f"Averaging {len(model_paths)} model states :: {model_paths}")
-                state = Decoder.average_states(model_paths)
-                if len(model_paths) > 1:
-                    log.info(f"Caching the averaged state at {cache_file}")
-                    torch.save(state, str(cache_file))
+            lock_file = cache_file.with_suffix('.lock')
+            MAX_TIMEOUT = 12 * 60 * 60  # 12 hours
+            with portalocker.Lock(lock_file, 'w', timeout=MAX_TIMEOUT) as fh:
+                # check if downloaded by  other parallel process
+                if lock_file.exists() and cache_file.exists():
+                    log.info(f"Cache exists: reading from {cache_file}")
+                    state = Decoder._checkpt_to_model_state(cache_file)
+                else:
+                    log.info(f"Averaging {len(model_paths)} model states :: {model_paths}")
+                    state = Decoder.average_states(model_paths)
+                    if len(model_paths) > 1:
+                        log.info(f"Caching the averaged state at {cache_file}")
+                        torch.save(state, str(cache_file))
             return state
 
     @classmethod
