@@ -21,6 +21,7 @@ RUN python3.7 -m pip install --upgrade pip  && ln -s /usr/bin/python3.7 /usr/bin
 #Make non-root user;
 RUN useradd --create-home rtguser
 #RUN chown -Rv rtguser:rtguser /home/rtguser
+
 WORKDIR /home/rtguser
 USER rtguser
 
@@ -31,7 +32,7 @@ ENV PATH="/home/rtguser/.local/bin:/usr/local/cuda-10.2/bin:${PATH}"
 
 COPY --chown=rtguser:rtguser . /home/rtguser/rtg/
 
-RUN pip install --user torch==1.6 gdown flask==1.1.2 uwsgi sacremoses \
+RUN pip install --user torch==1.6 gdown flask==1.1.2 uwsgi  \
    && cd /home/rtguser/rtg && pip install --editable . \
    && pip cache purge
 
