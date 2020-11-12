@@ -733,30 +733,26 @@ class TranslationExperiment(BaseExperiment):
                        batch_first=True, shuffle=False, fine_tune=False, keep_in_mem=False,
                        split_ratio: float = 0., dynamic_epoch=False):
 
-        inp_file = self.train_db if self.train_db.exists() else self.train_file
+        data_path = self.train_db if self.train_db.exists() else self.train_file
         if fine_tune:
             if not self.finetune_file.exists():
                 # user may have added fine tune file later
                 self._pre_process_parallel('finetune_src', 'finetune_tgt', self.finetune_file)
             log.info("Using Fine tuning corpus instead of training corpus")
-            inp_file = self.finetune_file
-
-        inp_file = IO.maybe_tmpfs(inp_file)
-        train_file = inp_file.with_suffix('.db.tmp')
+            data_path = self.finetune_file
 
         if split_ratio > 0:
+            data_path = IO.maybe_tmpfs(data_path)
+            train_file = data_path.with_suffix('.db.tmp')
             file_creator = partial(self.file_creator, train_file=train_file, split_ratio=split_ratio)
             train_data = GenerativeBatchIterable(
                 file_creator=file_creator, batches=steps, batch_size=batch_size, field=self.tgt_vocab,
                 dynamic_epoch=dynamic_epoch, batch_first=batch_first, shuffle=shuffle, sort_by=sort_by,
-                **self._get_batch_args()
-            )
+                **self._get_batch_args())
         else:
-            self._pre_process_parallel('train_src', 'train_tgt', out_file=train_file)
             data = BatchIterable(
-                train_file, batch_size=batch_size, field=self.tgt_vocab, sort_by=sort_by,
-                batch_first=batch_first, shuffle=shuffle, **self._get_batch_args()
-            )
+                data_path=data_path, batch_size=batch_size, field=self.tgt_vocab, sort_by=sort_by,
+                batch_first=batch_first, shuffle=shuffle, **self._get_batch_args())
             train_data = LoopingIterable(data, steps)
 
         return train_data
