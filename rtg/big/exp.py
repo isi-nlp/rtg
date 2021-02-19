@@ -52,7 +52,7 @@ class BigTranslationExperiment(TranslationExperiment):
             self.spark_conf['spark.master'] = f'local[{cpu_count}]'
 
     def _pre_process_parallel(self, src_key: str, tgt_key: str, out_file: Path,
-                              args: Optional[Dict[str, Any]] = None, line_check=False):
+                              args: Optional[Dict[str, Any]] = None, line_check=False, **kwargs):
         """
         Pre process records of a parallel corpus
         :param args: all arguments for 'prep' task
@@ -61,6 +61,8 @@ class BigTranslationExperiment(TranslationExperiment):
         :param out_file: path to store processed TSV data (compresses if name ends with .gz)
         :return:
         """
+        if kwargs:
+            log.warning(f"The following args are ignored:{kwargs}")
         if not out_file.name.endswith(".nldb"):
             if 'train' in out_file.name:
                 log.warning(f"set .nldb extension to enable spark")
@@ -110,7 +112,9 @@ class BigTranslationExperiment(TranslationExperiment):
                                         char_coverage=char_coverage, spark=spark)
 
     def get_train_data(self, batch_size: Tuple[int, int], steps: int = 0, sort_by='eq_len_rand_batch',
-                       batch_first=True, shuffle=False, fine_tune=False, keep_in_mem=False):
+                       batch_first=True, shuffle=False, fine_tune=False, keep_in_mem=False, **kwargs):
+        if kwargs:
+            log.warning(f"The following args are ignored:{kwargs}")
         data_path = self.train_file
         if fine_tune:
             if not self.finetune_file.exists():
