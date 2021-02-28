@@ -39,7 +39,7 @@ setuptools.setup(
         'tensorboard >= 2.2.1',
         'tqdm >= 4.45.0',
         'mosestokenizer >= 1.0.0',
-        'nlcodec >= 0.3.0',
+        'nlcodec >= 0.3.2',
         'torch >= 1.6.0',
         'sacremoses @ git+https://github.com/isi-nlp/sacremoses.git@400328e3#egg=sacremoses',
         'portalocker >= 2.0.0',
