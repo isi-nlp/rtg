@@ -1,12 +1,11 @@
 # Transformer aka "Attention is all you need"
 # Thanks to http://nlp.seas.harvard.edu/2018/04/03/attention.html
-import os
 import copy
 import math
 import time
 import gc
 from abc import ABC
-from typing import Callable, Optional, List, Union
+from typing import Callable, Optional, Union
 import traceback
 
 import torch
@@ -553,7 +552,7 @@ class ChunkedLossCompute(SimpleLossFunction):
             out_grad = _y_feats.grad.data
             y_feats.backward(gradient=out_grad)
             if take_step:
-                dtorch.step(self.opt)
+                dtorch.step(optimizer=self.opt)
         if get_out:
             outs = torch.cat(out_chunks, dim=1)
             return total, outs
@@ -584,13 +583,8 @@ class TransformerTrainer(SteppedTrainer):
                                                 opt=self.opt)
         else:
             log.info(f"Using Chunked Loss Generator. chunk_size={chunk_size}")
-            if DistribTorch.instance().is_distributed:
-                raise Exception("Chunked Loss is not supported with DDP. Your options are:"
-                                "\n1. set trainer.init_args.chunk_size = 0 to disable it"
-                                "\n2. dont use distributed data parallel. run this on one 1 proc"
-                                "\n3. make chunk + DDP work together and remove this check")
             self.loss_func = ChunkedLossCompute(generator=generator, criterion=self.criterion,
-                                                    opt=self.opt, chunk_size=chunk_size)
+                                                opt=self.opt, chunk_size=chunk_size)
 
     def run_valid_epoch(self, data_iter: BatchIterable, dec_bos_cut=False, do_bleu=True):
         """

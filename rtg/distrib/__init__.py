@@ -6,8 +6,10 @@ import os
 import socket
 from dataclasses import dataclass
 from typing import ClassVar
+from torch import nn
 from torch.optim.optimizer import Optimizer
 from torch.cuda.amp import GradScaler
+import torch.distributed as dist
 
 import torch
 from torch import nn
@@ -37,6 +39,7 @@ class DistribTorch:
     _is_backend_ready = False
     # singleton instance; lazy initialization
     _instance: ClassVar['DistribTorch'] = None
+    _model: nn.Module = None
 
     def setup(self):
         log.info("DistribTorch setup()")
@@ -78,7 +81,8 @@ class DistribTorch:
         if self.world_size > 1:
             if not self._is_backend_ready:
                 self.setup()
-            return torch.nn.parallel.DistributedDataParallel(module)
+            self._model = module
+            #return torch.nn.parallel.DistributedDataParallel(module)
         return module    # don't wrap
 
     @property
@@ -108,7 +112,17 @@ class DistribTorch:
             # torch.nn.utils.clip_grad_norm_(self._amp.master_params(opt.optimizer), self.max_norm)
         loss.backward()
 
+    def average_gradients(self, model):
+        size = float(self.world_size)
+        for param in model.parameters():
+            dist.all_reduce(param.grad.data, op=dist.reduce_op.SUM)
+            # TODO: ring reduce https://pytorch.org/tutorials/intermediate/dist_tuto.html#our-own-ring-allreduce
+            param.grad.data /= size
+
     def step(self, optimizer: Optimizer):
+        if self.is_distributed:
+            self.average_gradients(self._model)
+            #TODO: Maybe we dont need to average every step ?
         if self.fp16:
             self._scaler.step(optimizer)
             self._scaler.update()

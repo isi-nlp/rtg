@@ -76,8 +76,8 @@ python -m rtg.distrib.launch -N 2 -r 1 -P 2 -G 1 -m rtg.pipeline  runs/005-tfm-n
 
 WARNING:
 
-1. ChunkedLossCumpute doesnt work with DDP on GPUs; please disable it by `trainer.init_args.args.chunk_size=0`
-2. Don't ever use `-G 2` or more, instead use more `-P`
+1. Don't ever use `-G 2` or more (i.e. dont use 2 or more GPUs per process), instead use more `-P` (i.e. more processes with 1 GPU each.
+
 
 
 [#fp16]
