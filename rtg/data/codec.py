@@ -73,6 +73,18 @@ class Field(metaclass=ABCMeta):
         """
         pass
 
+    def shrink_vocab(self, files: List, min_freq:int, save_at: Path) -> List[int]:
+        """
+        Shrinks the current vocabulary and saves at given path
+        :param files: corpus file to extract vocab
+        :param min_freq: minimum frequency that determines whether a type remains or drops out
+        :param save_at: path to save the modified vocab
+        :return:  List of indexes. Example [0, 2, 5] is spec for shrinking 6 items to 3.
+         Items at index 0 remains at 0; index 2 goes to index 1, and 5 goes to index 2.
+         Indices are sorted as increasing order, so its safe to do inplace updates from index 0.
+        """
+        raise Exception(f'Not implemented for {type(self)}')
+
 
 class SPField(SentencePieceProcessor, Field):
     """A wrapper class for sentence piece trainer and processor"""
@@ -233,6 +245,19 @@ class NLField(Field):
 
         learn_vocab(inp=inp, level=model_type, model=model_path, vocab_size=vocab_size, **kwargs)
         return cls(model_path)
+
+    def shrink_vocab(self, files: List, min_freq:int, save_at: Path) -> List[int]:
+        """
+        Shrinks the current vocabulary and saves at given path
+        :param files: corpus file to extract vocab
+        :param min_freq: minimum frequency that determines whether a type remains or drops out
+        :param save_at: path to save the modified vocab
+        :return:  List of indexes. Example [0, 2, 5] is spec for shrinking 6 items to 3.
+         Items at index 0 remains at 0; index 2 goes to index 1, and 5 goes to index 2.
+         Indices are sorted as increasing order, so its safe to do inplace updates from index 0.
+        """
+        mappings = self.codec.shrink_vocab(files, min_freq=min_freq, save_at=save_at)
+        return mappings
 
 class PretrainMatchField(Field):
     # this order is for fairseq's XML-R
