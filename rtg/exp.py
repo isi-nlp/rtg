@@ -567,7 +567,7 @@ class TranslationExperiment(BaseExperiment):
         assert self.codec_name == 'nlcodec', 'Only nlcodec supports shrinking of vocabs'
         args = self.config['prep']
 
-        if self._shared_field_file:
+        if self.shared_vocab:
             corpus = [args[key] for key in ['train_src', 'train_tgt', 'mono_src', 'mono_tgt']
                       if args.get(key)]
             remap_src = self.shared_vocab.shrink_vocab(files=corpus, min_freq=1,
@@ -643,16 +643,16 @@ class TranslationExperiment(BaseExperiment):
                 tgt_embed.0.lut.weight [N x d]
                 generator.proj.weight [N x d]
                 generator.proj.bias [N] """
-            map_keys = []
             if remap_src:
-                map_keys.append('src_embed.0.lut.weight')
+                key = 'src_embed.0.lut.weight'
+                avg_state[key] = map_rows(remap_src, avg_state[key], name=key)
             if remap_tgt:
-                map_keys += ['tgt_embed.0.lut.weight', 'generator.proj.weight', 'generator.proj.bias']
-            for key in map_keys:
-                if key not in avg_state:
-                    log.warning(f'{key} not found in avg_state of parent model. Mapping skipped')
-                    continue
-                avg_state[key] = map_rows(remap_tgt, avg_state[key])
+                map_keys = ['tgt_embed.0.lut.weight', 'generator.proj.weight', 'generator.proj.bias']
+                for key in map_keys:
+                    if key not in avg_state:
+                        log.warning(f'{key} not found in avg_state of parent model. Mapping skipped')
+                        continue
+                    avg_state[key] = map_rows(remap_tgt, avg_state[key], name=key)
             if self.parent_model_state.exists():
                 self.parent_model_state.rename(self.parent_model_state.with_suffix('.orig'))
             torch.save(avg_state, self.parent_model_state)
