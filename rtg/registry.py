@@ -12,7 +12,6 @@ from rtg.module.wvtfmnmt import WVTransformerTrainer
 from rtg.module.wvskptfmnmt import WVSKPTransformerTrainer
 from rtg.module.mtfmnmt import MTransformerTrainer
 from rtg.module.rnnmt import SteppedRNNMTTrainer
-from rtg.binmt.bicycle import BiNmtTrainer
 from rtg.lm.rnnlm import RnnLmTrainer
 from rtg.lm.tfmlm import TfmLmTrainer
 from rtg.module.skptfmnmt import SkipTransformerNMT
@@ -26,9 +25,10 @@ from rtg.module.ext.robertamt import RoBERTaMT
 
 from rtg.module.generator import *
 
+# TODO: use decorators https://github.com/isi-nlp/rtg/issues/246
+
 trainers = {
     't2t': TransformerTrainer,
-    'binmt': BiNmtTrainer,
     'seq2seq': SteppedRNNMTTrainer,
     'tfmnmt': TransformerTrainer,
     'skptfmnmt': SKPTransformerTrainer,
@@ -48,7 +48,6 @@ trainers = {
 factories = {
     't2t': TransformerNMT.make_model,
     'seq2seq': RNNMT.make_model,
-    'binmt': BiNMT.make_model,
     'tfmnmt': TransformerNMT.make_model,
     'skptfmnmt': SkipTransformerNMT.make_model,
     'wvtfmnmt': WidthVaryingTransformerNMT.make_model,
@@ -67,7 +66,6 @@ factories = {
 generators = {
     't2t': T2TGenerator,
     'seq2seq': Seq2SeqGenerator,
-    'binmt': BiNMTGenerator,
     'combo': ComboGenerator,
     'tfmnmt': T2TGenerator,
     'skptfmnmt': T2TGenerator,

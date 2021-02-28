@@ -6,7 +6,6 @@
 import abc
 import torch
 from rtg import log
-from rtg.binmt.bicycle import BiNMT
 from rtg.module.rnnmt import RNNMT
 from rtg.lm.rnnlm import RnnLm
 from rtg.lm.tfmlm import TfmLm
@@ -42,16 +41,6 @@ class Seq2SeqGenerator(GeneratorFactory):
         last_ys = past_ys[:, -1]
         log_probs, self.dec_hids, attn = self.model.dec(self.enc_outs, last_ys, self.dec_hids)
         return (log_probs, attn) if get_attn else log_probs
-
-
-class BiNMTGenerator(Seq2SeqGenerator):
-
-    def __init__(self, model: BiNMT, field, x_seqs, x_lens, path):
-        # pick a sub Seq2Seq model inside the BiNMT model as per the given path
-        assert path
-        super().__init__(model.paths[path], field, x_seqs, x_lens)
-        self.path = path
-        self.wrapper = model
 
 
 class T2TGenerator(GeneratorFactory):

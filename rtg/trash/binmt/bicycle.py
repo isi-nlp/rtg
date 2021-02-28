@@ -2,7 +2,7 @@
 #
 # Author: Thamme Gowda [tg at isi dot edu] 
 # Created: 10/17/18
-
+from rtg.module.generator import Seq2SeqGenerator
 from rtg.module.rnnmt import *
 from typing import Mapping
 from time import time
@@ -383,3 +383,13 @@ def __test_binmt_model__():
 
 if __name__ == '__main__':
     __test_binmt_model__()
+
+
+class BiNMTGenerator(Seq2SeqGenerator):
+
+    def __init__(self, model: BiNMT, field, x_seqs, x_lens, path):
+        # pick a sub Seq2Seq model inside the BiNMT model as per the given path
+        assert path
+        super().__init__(model.paths[path], field, x_seqs, x_lens)
+        self.path = path
+        self.wrapper = model
