@@ -563,6 +563,28 @@ class TranslationExperiment(BaseExperiment):
                 _write_dict(report, Path(str(outp) + '.report.txt'))
                 _write_emb_matrix(emb_matrix, str(outp))
 
+    def shrink_vocabs(self):
+        assert self.codec_name == 'nlcodec', 'Only nlcodec supports shrinking of vocabs'
+        args = self.config['prep']
+
+        if self._shared_field_file:
+            corpus = [args[key] for key in ['train_src', 'train_tgt', 'mono_src', 'mono_tgt']
+                      if args.get(key)]
+            remap_src = self.shared_vocab.shrink_vocab(files=corpus, min_freq=1,
+                                                    save_at=self._shared_field_file)
+            remap_tgt = remap_src
+        else:
+            corpus_src = [args[key] for key in ['train_src', 'mono_src'] if args.get(key)]
+            remap_src = self.src_vocab.shrink_vocab(files=corpus_src, min_freq=1,
+                                                     save_at=self._src_field_file)
+            corpus_tgt = [args[key] for key in ['train_tgt', 'mono_tgt'] if args.get(key)]
+            remap_tgt = self.tgt_vocab.shrink_vocab(files=corpus_tgt, min_freq=1,
+                                                     save_at=self._tgt_field_file)
+        self.reload_vocabs()
+        self.model_args['src_vocab'] = len(self.src_vocab)
+        self.model_args['tgt_vocab'] = len(self.tgt_vocab)
+        return remap_src, remap_tgt
+
     def inherit_parent(self):
         parent = self.config['parent']
         parent_exp = TranslationExperiment(parent['experiment'], read_only=True)
@@ -604,6 +626,38 @@ class TranslationExperiment(BaseExperiment):
             avg_state = Decoder.average_states(model_paths=model_paths)
             log.info(f"Saving parent model's state to {self.parent_model_state}")
             torch.save(avg_state, self.parent_model_state)
+
+        shrink_spec = parent.get('shrink')
+        if shrink_spec:
+            remap_src, remap_tgt = self.shrink_vocabs()
+            def map_rows(mapping: List[int], source: torch.Tensor, name=''):
+                assert max(mapping) < len(source)
+                target = torch.zeros((len(mapping), *source.shape[1:]),
+                                     dtype=source.dtype, device=source.device)
+                for new_idx, old_idx in enumerate(mapping):
+                    target[new_idx] = source[old_idx]
+                log.info(f"Mapped {name} {source.shape} --> {target.shape} ")
+                return target
+
+            """ src_embed.0.lut.weight [N x d]
+                tgt_embed.0.lut.weight [N x d]
+                generator.proj.weight [N x d]
+                generator.proj.bias [N] """
+            map_keys = []
+            if remap_src:
+                map_keys.append('src_embed.0.lut.weight')
+            if remap_tgt:
+                map_keys += ['tgt_embed.0.lut.weight', 'generator.proj.weight', 'generator.proj.bias']
+            for key in map_keys:
+                if key not in avg_state:
+                    log.warning(f'{key} not found in avg_state of parent model. Mapping skipped')
+                    continue
+                avg_state[key] = map_rows(remap_tgt, avg_state[key])
+            if self.parent_model_state.exists():
+                self.parent_model_state.rename(self.parent_model_state.with_suffix('.orig'))
+            torch.save(avg_state, self.parent_model_state)
+            self.persist_state()  # this will fix src_vocab and tgt_vocab of model_args conf
+
 
     def pre_process(self, args=None, force=False):
         if self.has_prepared() and not force:
