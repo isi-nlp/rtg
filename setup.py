@@ -61,6 +61,7 @@ setuptools.setup(
             'rtg-fork=rtg.fork:main',
             'rtg-serve=rtg.serve.app:main',
             'rtg-syscomb=rtg.syscomb.__main__:main',
+            'rtg-launch=rtg.distrib.launch:main',
         ],
     }
 )
