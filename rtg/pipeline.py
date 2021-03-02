@@ -15,7 +15,7 @@ import torch
 import random
 from collections import defaultdict
 from mosestokenizer import MosesDetokenizer
-from sacrebleu import corpus_bleu, BLEU
+from sacrebleu import corpus_bleu, BLEUScore
 import inspect
 import copy
 import json
@@ -97,10 +97,10 @@ class Pipeline:
         return detok_file
 
     def evaluate_file(self, detok_hyp: Path, ref: Union[Path, List[str]], lowercase=True) -> float:
-        detok_lines = IO.get_lines(detok_hyp)
+        detok_lines = list(IO.get_lines(detok_hyp))
         # takes multiple refs, but here we have only one
         ref_liness = [IO.get_lines(ref) if isinstance(ref, Path) else ref]
-        bleu: BLEU = corpus_bleu(sys_stream=detok_lines, ref_streams=ref_liness,
+        bleu: BLEUScore = corpus_bleu(sys_stream=detok_lines, ref_streams=ref_liness,
                                  lowercase=lowercase)
         # this should be part of new sacrebleu  release (i sent a PR ;)
         bleu_str = bleu.format()
