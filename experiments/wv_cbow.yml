@@ -15,6 +15,7 @@ optim:
 prep:
   max_types: 500
   pieces: bpe
+  codec_lib: nlcodec
   shared_vocab: true
   src_len: 100
   tgt_len: 100
@@ -34,5 +35,5 @@ trainer:
   ctx_size: 2
   keep_models: 10
   side: src+tgt
-  steps: 200
+  steps: 1000
 updated_at: '2019-03-18T07:31:59.887272'

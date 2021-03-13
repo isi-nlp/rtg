@@ -372,7 +372,6 @@ class SteppedTrainer:
 
         optim_args = self.exp.optim_args[1]
         smoothing = optim_args.get('label_smoothing', 0.0)
-        tgt_embedding = self.core_model.tgt_embed[0].lut
         margin = optim_args.get('margin', 0.0)
         mode = optim_args.get('mode', 'dot')
         neg_sampling = optim_args.get('neg_sampling', 'random')
@@ -381,17 +380,19 @@ class SteppedTrainer:
 
         pad_idx = self.exp.tgt_vocab.pad_idx
         if criterion == 'smooth_kld':
-            return criteria.SmoothKLD(vocab_size=self.core_model.generator.vocab, smoothing=smoothing,
+            return criteria.SmoothKLD(vocab_size=self.core_model.vocab_size, smoothing=smoothing,
                                       pad_idx=pad_idx)
         elif criterion == 'cross_entropy':
-            return criteria.CrossEntropy()
+            return criteria.CrossEntropy(pad_idx=pad_idx)
         elif criterion == 'binary_cross_entropy':
             return criteria.BinaryCrossEntropy(smoothing=smoothing, pad_idx=pad_idx)
         elif criterion == 'triplet_loss':
+            tgt_embedding = self.core_model.tgt_embed[0].lut
             return criteria.TripletLoss(embedding=tgt_embedding, margin=margin,
                                         neg_region=neg_region,
                                         mode=mode, neg_sampling=neg_sampling, pad_idx=pad_idx)
         elif criterion == 'smooth_kld_and_triplet_loss':
+            tgt_embedding = self.core_model.tgt_embed[0].lut
             return criteria.SmoothKLDAndTripletLoss(
                 embedding=tgt_embedding, margin=margin, neg_region=neg_region, mode=mode,
                 neg_sampling=neg_sampling, smoothing=smoothing, alpha=alpha, pad_idx=pad_idx)

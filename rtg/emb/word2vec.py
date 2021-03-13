@@ -20,6 +20,7 @@ from rtg import TranslationExperiment as Experiment
 from rtg.utils import IO
 from tqdm import tqdm
 import pickle
+import numpy as np
 
 
 class CBOW(Model):
@@ -94,10 +95,10 @@ class CBOWBatchReader:
             if 'tgt' in self.side:
                 yield ex.y
 
-    def _make_ctxs(self, seq: List):
+    def _make_ctxs(self, seq: np.ndarray):
         # left_ctx + word + right_ctx
         if self.add_eos or self.add_bos:
-            seq = copy.copy(seq)
+            seq = list(seq)  # ndarray to list or a copy of list
             if self.add_bos and seq[0] != self.field.bos_idx:
                 seq.insert(0, self.field.bos_idx)
             if self.add_eos and seq[-1] != self.field.eos_idx:
@@ -135,12 +136,14 @@ class DataReader:
 
     def get_training_data(self, batch_size, ctx_size, n_batches):
         train_db = SqliteFile(self.exp.train_db)
-        reader = CBOWBatchReader(train_db, batch_size=batch_size, ctx_size=ctx_size, side=self.side)
+        reader = CBOWBatchReader(train_db, batch_size=batch_size, ctx_size=ctx_size, side=self.side,
+                                 field=self.exp.src_vocab)
         return LoopingIterable(reader, batches=n_batches)
 
     def get_val_data(self, batch_size, ctx_size):
         data = TSVData(self.exp.valid_file, longest_first=False)
-        return CBOWBatchReader(data, batch_size=batch_size, ctx_size=ctx_size, side=self.side)
+        return CBOWBatchReader(data, batch_size=batch_size, ctx_size=ctx_size, side=self.side,
+                               field=self.exp.src_vocab)
 
 
 class CBOWTrainer(SteppedTrainer):

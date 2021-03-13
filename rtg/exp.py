@@ -174,7 +174,9 @@ class BaseExperiment:
         :param desc: True to sort in reverse (default); False to sort in ascending
         :return: list of model paths
         """
-        paths = self.model_dir.glob('model_*.pkl')
+        paths = list(self.model_dir.glob('model_*.pkl'))
+        if not paths:
+            paths = list(self.model_dir.glob('embeddings_*.gz'))
         sorters = {
             'valid_score': self._path_to_validn_score,
             'total_score': self._path_to_total_score,
@@ -193,8 +195,10 @@ class BaseExperiment:
         :return: Tuple[Optional[Path], step_num:int]
         """
         models = self.list_models(sort=sort, desc=desc)
+        print(models)
         if models:
-            step, train_score, valid_score = models[0].name.replace('.pkl', '').split('_')[-3:]
+            name = models[0].name.replace('.pkl', '').replace('.txt.gz', '')
+            step, train_score, valid_score = name.split('_')[-3:]
             return models[0], int(step)
         else:
             return None, 0
