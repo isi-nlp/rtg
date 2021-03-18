@@ -86,7 +86,7 @@ def attach_translate_route(cli_args):
         if request.method == 'GET':
             sources = request.args.getlist("source", None)
         else:
-            sources = (request.json or {}).get('source', None)
+            sources = (request.json or {}).get('source', None) or request.form.getlist("source")
             if isinstance(sources, str):
                 sources = [sources]
         if not sources:

@@ -62,6 +62,7 @@ after properly URL encoding the `text1` `text2`. This should only be used for qu
 
 **Production Deployment**
 Please use uWSGI for production deployment.
+If you dont already have uWSGI, you may install it via conda by running `conda install -c conda-forge uwsgi`.
 
 [source,bash]
 ----
