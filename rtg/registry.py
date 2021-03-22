@@ -5,7 +5,9 @@
 # - Lukas J. Ferrer [lferrer (at) isi (dot) edu]
 # Created: 3/9/19
 
-
+from dataclasses import dataclass
+from typing import Any, Optional, Mapping, Dict
+from rtg.exp import  BaseExperiment
 from rtg.module.tfmnmt import TransformerTrainer
 from rtg.module.skptfmnmt import SKPTransformerTrainer
 from rtg.module.wvtfmnmt import WVTransformerTrainer
@@ -84,3 +86,47 @@ generators = {
 
 
 #  TODO: simplify this; use decorators to register directly from class's code
+
+@dataclass
+class Model:
+    name: str
+    Model: Any
+    Trainer: Any
+    Generator: Any
+    Experiment: BaseExperiment
+
+REGISTRY: Dict[str, Model] = {}
+
+def register_model(obj, *args, **kwargs):
+    attrs = ['model_type', 'make_model', 'make_trainer', 'experiment_type']
+    for attr in attrs:
+        assert hasattr(obj, attr), f'{obj}.{attr} is expected but not defined'
+
+    name = getattr(obj, 'model_type')
+    assert name not in REGISTRY, f'{name} model type is already registered.'
+    m = Model(name=name, Model=getattr(obj, 'make_model'),
+              Trainer=getattr(obj, 'make_trainer'),
+              Generator=getattr(obj, 'make_generator', None),
+              Experiment=getattr(obj, 'experiment_type'))
+    REGISTRY[name] = m
+
+    def _wrapper(func):
+        return func(*args, **kwargs)
+    return _wrapper
+
+if __name__ == '__main__':
+
+    @register_model
+    class MyModel:
+        model_type = 'mymodel'
+        experiment_type = BaseExperiment
+
+        @classmethod
+        def make_model(self):
+            pass
+
+        @classmethod
+        def make_trainer(self):
+            pass
+
+    print(REGISTRY)

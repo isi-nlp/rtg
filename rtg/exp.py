@@ -259,6 +259,37 @@ class BaseExperiment:
                 return p
         return None
 
+    def pre_process(self, args=None, force=False):
+        if self.has_prepared() and not force:
+            log.warning("Already prepared")
+            return
+        args = args if args else self.config['prep']
+        if 'parent' in self.config:
+            self.inherit_parent()
+
+        if 'same_data' in args:
+            data = Path(args['same_data']) / 'data'
+            assert data.exists()
+            log.info(f"Reusing prepared data dir from {data}")
+            if self.data_dir.exists():
+                if self.data_dir.is_symlink():
+                    self.data_dir.unlink()
+                else:
+                    self.data_dir.rename('data.bak')
+            self.data_dir.symlink_to(data.resolve(), target_is_directory=True)
+            self.reload()
+            self._prepared_flag.touch()
+
+    def inherit_parent(self):
+        raise NotImplemented()
+
+    def train(self, args=None):
+        raise NotImplementedError()
+
+    def reload(self):
+        exp = type(self)(self.work_dir, read_only=self.read_only)
+        self.__dict__ = exp.__dict__
+
 
 class TranslationExperiment(BaseExperiment):
 
@@ -664,36 +695,15 @@ class TranslationExperiment(BaseExperiment):
 
 
     def pre_process(self, args=None, force=False):
+        super(TranslationExperiment, self).pre_process(args, )
         if self.has_prepared() and not force:
             log.warning("Already prepared")
             return
-        args = args if args else self.config['prep']
-        if 'parent' in self.config:
-            self.inherit_parent()
 
-        if 'same_data' in args:
-            data = Path(args['same_data']) / 'data'
-            assert data.exists()
-            log.info(f"Reusing prepared data dir from {data}")
-            if self.data_dir.exists():
-                if self.data_dir.is_symlink():
-                    self.data_dir.unlink()
-                else:
-                    self.data_dir.rename('data.bak')
-            self.data_dir.symlink_to(data.resolve(), target_is_directory=True)
-            self.reload_vocabs()
+        if self._unsupervised:
+            self.pre_process_mono(args)
         else:
-            vocabs = args.get('vocabs')
-            if vocabs:
-                parent = TranslationExperiment(vocabs, read_only=True)
-                parent.copy_vocabs(self)
-                self.shared_field, self.src_field, self.tgt_field = [
-                    self.Field(str(f)) if f.exists() else None
-                    for f in (self._shared_field_file, self._src_field_file, self._tgt_field_file)]
-            if self._unsupervised:
-                self.pre_process_mono(args)
-            else:
-                self.pre_process_parallel(args)
+            self.pre_process_parallel(args)
 
         self.maybe_pre_process_embeds()
         # update state on disk
@@ -846,9 +856,6 @@ class TranslationExperiment(BaseExperiment):
             data = LoopingIterable(data, steps)
         return data
 
-    def reload(self):
-        exp = type(self)(self.work_dir, read_only=self.read_only)
-        self.__dict__ = exp.__dict__
 
     def copy_vocabs(self, other):
         """

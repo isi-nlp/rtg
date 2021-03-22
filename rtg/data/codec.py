@@ -13,7 +13,6 @@ from rtg import log, yaml
 from sentencepiece import SentencePieceProcessor, SentencePieceTrainer
 
 from rtg.utils import IO
-from functools import lru_cache
 
 Array = np.ndarray
 
