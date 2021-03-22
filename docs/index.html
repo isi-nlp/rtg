@@ -540,7 +540,7 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <h2 id="_overview">1. Overview</h2>
 <div class="sectionbody">
 <div class="paragraph">
-<p><a href="https://github.com/isi-nlp/rtg-xt" target="_blank" rel="noopener">Reader-Translator-Generator (RTG)</a> is a Neural Machine Translation toolkit based on pytorch.</p>
+<p><a href="https://github.com/isi-nlp/rtg" target="_blank" rel="noopener">Reader-Translator-Generator (RTG)</a> is a Neural Machine Translation toolkit based on pytorch.</p>
 </div>
 <div class="sect2">
 <h3 id="_features">1.1. Features</h3>
@@ -656,24 +656,23 @@ Add the root of this repo to <code>PYTHONPATH</code> or install it via <code>pip
 <div class="ulist">
 <ul>
 <li>
-<p><a href="https://github.com/isi-nlp/rtg-xt" class="bare">https://github.com/isi-nlp/rtg-xt</a></p>
+<p><a href="https://github.com/isi-nlp/rtg" class="bare">https://github.com/isi-nlp/rtg</a></p>
 </li>
 <li>
-<p><a href="https://github.com/isi-nlp/rtg" class="bare">https://github.com/isi-nlp/rtg</a></p>
+<p><a href="https://github.com/isi-nlp/rtg-in" class="bare">https://github.com/isi-nlp/rtg-in</a></p>
 </li>
 </ul>
 </div>
 <div class="paragraph">
-<p>Both <code>rtg-xt</code> and <code>rtg</code> has the same code on <code>master</code> branch.
-<code>rtg-xt</code> has stable code base and meant to be used by anyone, so you should definitely get started with it.
-<code>rtg</code> is internal with some unfinished/work-in progress ideas (maybe unpublished), with issues and pull-requests by members of USC ISI team.
-We sync both code bases often.
-If you like to collaborate with us and/or to get access to <code>rtg</code>, email <a href="https://isi.edu/~tg" target="_blank" rel="noopener">TG</a> or <a href="https://isi.edu/~jonmay" target="_blank" rel="noopener">Jonathan May</a>.</p>
+<p>Both <code>rtg</code> and <code>rtg-in</code> have the same code on their <code>master</code> branches.
+<code>rtg</code> has stable code base and meant to be used by anyone, so it is recommended for the new users.
+<code>rtg-in</code> is internal to ISI NLP with some unfinished/work-in progress ideas (maybe unpublished), with issues and pull-requests by members of USC ISI team, and often less stable.
+We sync both code bases often (<code>sync-xt.sh</code> at the root of the repo).
+If you like to collaborate with us and/or to get access to <code>rtg-in</code>, email <a href="https://isi.edu/~tg" target="_blank" rel="noopener">TG</a> or <a href="https://isi.edu/~jonmay" target="_blank" rel="noopener">Jonathan May</a>.</p>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre>git clone https://github.com/isi-nlp/rtg-xt.git
-# use https://github.com/isi-nlp/rtg.git if you have access
+<pre>git clone https://github.com/isi-nlp/rtg.git
 cd rtg                # go to the code
 
 conda create -n rtg python=3.7   # creates a conda env named rtg
@@ -1943,10 +1942,7 @@ python -m rtg.distrib.launch -N 2 -r 1 -P 2 -G 1 -m rtg.pipeline  runs/005-tfm-n
 <div class="olist arabic">
 <ol class="arabic">
 <li>
-<p>ChunkedLossCumpute doesnt work with DDP on GPUs; please disable it by <code>trainer.init_args.args.chunk_size=0</code></p>
-</li>
-<li>
-<p>Don&#8217;t ever use <code>-G 2</code> or more, instead use more <code>-P</code></p>
+<p>Don&#8217;t ever use <code>-G 2</code> or more (i.e. dont use 2 or more GPUs per process), instead use more <code>-P</code> (i.e. more processes with 1 GPU each.</p>
 </li>
 </ol>
 </div>
@@ -2130,7 +2126,8 @@ after properly URL encoding the <code>text1</code> <code>text2</code>. This shou
 </div>
 <div class="paragraph">
 <p><strong>Production Deployment</strong>
-Please use uWSGI for production deployment.</p>
+Please use uWSGI for production deployment.
+If you dont already have uWSGI, you may install it via conda by running <code>conda install -c conda-forge uwsgi</code>.</p>
 </div>
 <div class="listingblock">
 <div class="content">

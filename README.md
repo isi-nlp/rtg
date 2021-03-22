@@ -11,8 +11,8 @@ Docs: available under [docs/](docs/index.adoc) directory, which are also rendere
 ### Questions or Issues 
 
 Please use github issues to ask a question or report an issue :
-1. https://github.com/isi-nlp/rtg-xt/issues 
-2. https://github.com/isi-nlp/rtg/issues
+1. https://github.com/isi-nlp/rtg/issues   (public/ external repo)
+2. https://github.com/isi-nlp/rtg-in/issues (a fork of rtg internal to ISI NLP)
 
 ### Credits / Thanks
 + OpenNMT and the Harvard NLP team for [Annotated transformer](http://nlp.seas.harvard.edu/2018/04/03/attention.html), I learned a lot from their work
