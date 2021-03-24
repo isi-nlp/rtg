@@ -63,5 +63,7 @@ setuptools.setup(
             'rtg-syscomb=rtg.syscomb.__main__:main',
             'rtg-launch=rtg.distrib.launch:main',
         ],
-    }
+    },
+    include_package_data=True,
+    zip_safe=False,
 )
