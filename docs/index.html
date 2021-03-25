@@ -1082,9 +1082,8 @@ for 200k-300k steps. Note that <code>finetune_steps &gt; steps</code> .</p>
     <span style="color:#606">shared</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">shared</span></span>       <span style="color:#777"># for reusing the shared vocab</span>
     <span style="color:#777">#src: src            # for separate vocabs</span>
     <span style="color:#777">#tgt: tgt</span>
-
-  <span style="color:#606">shrink</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">true</span></span> <span style="color:#777"># shrink vocabularies and embeddings to child data</span>
-               <span style="color:#777"># specified in train_{src,tgt} and mono_{src,tgt}</span>
+  <span style="color:#606">shrink</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">true</span></span>        <span style="color:#777"># shrink vocabularies and embeddings to child data</span>
+                      <span style="color:#777"># specified in train_{src,tgt} and mono_{src,tgt}</span>
   <span style="color:#606">model</span>:
     <span style="color:#606">args</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">true</span></span>          <span style="color:#777"># update/overwrite the model_args of child with the parent</span>
     <span style="color:#606">ensemble</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">5</span></span>         <span style="color:#777"># how many checkpoints of parent to ensemble, to obtain initial state</span>
@@ -2068,16 +2067,15 @@ optional arguments:
   -p PORT, --port PORT  port to run server on (default: 6060)
   -ho HOST, --host HOST
                         Host address to bind. (default: 0.0.0.0)
+  -b BASE, --base BASE  Base prefix path for all the URLs (default: None)
   -msl MAX_SRC_LEN, --max-src-len MAX_SRC_LEN
                         max source len; longer seqs will be truncated
                         (default: 250)</code></pre>
 </div>
 </div>
 <div class="paragraph">
-<p>To launch a service for <code>runs/001-tfm</code> experiment</p>
-</div>
-<div class="paragraph">
-<p><code>python -m rtg.serve -d runs/001-tfm</code></p>
+<p>To launch a service for <code>runs/001-tfm</code> experiment, run <code>python -m rtg.serve -d runs/001-tfm</code>
+To use basepath of <code>/v1</code>: <code>python -m rtg.serve -d runs/001-tfm -b /v1</code></p>
 </div>
 <div class="paragraph">
 <p>It prints :
@@ -2093,7 +2091,7 @@ optional arguments:
 <div class="title">Note</div>
 </td>
 <td class="content">
-batch decoding is yet to be supported. Current decoder decodes only one sentence at a time.
+batch decoding is yet to be supported. The current decoder decodes only one sentence at a time.
 </td>
 </tr>
 </table>
@@ -2131,7 +2129,24 @@ If you dont already have uWSGI, you may install it via conda by running <code>co
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="bash">uwsgi --http 127.0.0.1:5000 --module rtg.serve.app:app --pyargv &quot;&lt;path-to-exp-dir&gt;&quot;</code></pre>
+<pre class="CodeRay highlight"><code data-lang="bash">uwsgi --http 127.0.0.1:5000 --module rtg.serve.app:app --pyargv &quot;&lt;path-to-exp-dir&gt;&quot;
+
+# or using a .ini file
+uwsgi --ini examples/uwsgi.ini</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Where the <code>uwsgi.ini</code> has the following info:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="ini">[uwsgi]
+http = 0.0.0.0:6060
+module = rtg.serve.app:app
+pyargv = /full/path/&lt;path-to-exp-dir&gt; -b /v1
+master = true
+processes = 1
+stats = 127.0.0.1:9191</code></pre>
 </div>
 </div>
 <div class="paragraph">
