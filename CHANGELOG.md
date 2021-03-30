@@ -1,4 +1,4 @@
-# v0.5.0 : WIP 
+# v0.5.0 : 20210329
 - DDP: multinode training see `scripts/slurm-multinode-launch.sh`
 - FP16 and mixed precision (upgrade from APEX to torch's built in AMP)
 - NLCodec & NLDb integration for scaling to large datasets using pyspark backend
