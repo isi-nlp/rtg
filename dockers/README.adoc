@@ -1,0 +1,31 @@
+== Docker Release
+
+
+Build and release base image (`tgowda/rtg`). This image would be used by models (`tgowda/rtg-model`).
+
+[source,bash]
+----
+VERSION=v0.5.0-torch1.6
+docker build . -f dockers/rtg-0.5.0-py37_torch16_cuda102.dockerfile \
+ -t tgowda/rtg:$VERSION
+
+# login; if required
+docker login
+
+# release
+docker push tgowda/rtg:$VERSION
+----
+
+**Build and release models:**
+
+[source,bash]
+----
+docker build . -f dockers/rtg-0.5.0-500toEng-v1.dockerfile \
+-t tgowda/rtg-model:500toEng-v1
+
+# test
+docker run --rm -i -p 6060:6060 tgowda/rtg-model:500toEng-v1
+
+# release
+docker push tgowda/rtg-model:500toEng-v1
+----

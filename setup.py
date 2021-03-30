@@ -41,7 +41,7 @@ setuptools.setup(
         'mosestokenizer >= 1.0.0',
         'nlcodec >= 0.3.1',
         'torch >= 1.6.0',
-        'sacremoses @ git+https://github.com/isi-nlp/sacremoses.git@400328e3#egg=sacremoses',
+        'sacremoses-xt >= 0.0.44',
         'portalocker >= 2.0.0',
     ],
     extra_requires={
