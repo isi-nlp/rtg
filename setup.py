@@ -62,6 +62,7 @@ setuptools.setup(
             'rtg-serve=rtg.serve.app:main',
             'rtg-syscomb=rtg.syscomb.__main__:main',
             'rtg-launch=rtg.distrib.launch:main',
+            'rtg-params=rtg.tool.params:main',
         ],
     },
     include_package_data=True,
