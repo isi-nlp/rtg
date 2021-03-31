@@ -23,6 +23,8 @@ The following command line tools are added when `rtg` is installed using pip.
 | rtg-prep       | Prepare an experiment. You should be using `rtg-pipe`
 | rtg-train      | Train a model. You should be using `rtg-pipe`
 | rtg-syscomb    | System combination. Dont bother about it for now.
+| rtg-launch     | Launch data distributed training
+| rtg-params     | Show parameters in model
 |===
 
 [#rtg-pipe]

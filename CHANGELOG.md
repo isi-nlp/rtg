@@ -1,3 +1,8 @@
+# v0.5.1 : WIP
+
+- Add `rtg-params` command that shows trainable parameters in model (layer wise as well as total)
+
+
 # v0.5.0 : 20210329
 - DDP: multinode training see `scripts/slurm-multinode-launch.sh`
 - FP16 and mixed precision (upgrade from APEX to torch's built in AMP)
