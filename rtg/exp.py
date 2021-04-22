@@ -106,11 +106,11 @@ class BaseExperiment:
     def has_trained(self):
         return self._trained_flag.exists()
 
-    def store_model(self, epoch: int, model, train_score: float, val_score: float, keep: int,
+    def store_model(self, optimizer_step: int, model, train_score: float, val_score: float, keep: int,
                     prefix='model', keeper_sort='step'):
         """
         saves model to a given path
-        :param epoch: epoch number of model
+        :param optimizer_step: optimizer step of the model
         :param model: model object itself
         :param train_score: score of model on training split
         :param val_score: score of model on validation split
@@ -124,9 +124,9 @@ class BaseExperiment:
         if self.read_only:
             log.warning("Ignoring the store request; experiment is readonly")
             return
-        name = f'{prefix}_{epoch:03d}_{train_score:.6f}_{val_score:.6f}.pkl'
+        name = f'{prefix}_{optimizer_step:03d}_{train_score:.6f}_{val_score:.6f}.pkl'
         path = self.model_dir / name
-        log.info(f"Saving epoch {epoch} to {path}")
+        log.info(f"Saving optimizer step {optimizer_step} to {path}")
         torch.save(model, str(path))
 
         del_models = []
@@ -141,7 +141,7 @@ class BaseExperiment:
             os.remove(str(d_model))
 
         with IO.writer(os.path.join(self.model_dir, 'scores.tsv'), append=True) as f:
-            cols = [str(epoch), datetime.now().isoformat(), name, f'{train_score:g}',
+            cols = [str(optimizer_step), datetime.now().isoformat(), name, f'{train_score:g}',
                     f'{val_score:g}']
             f.write('\t'.join(cols) + '\n')
 
