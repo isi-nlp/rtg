@@ -3,6 +3,16 @@
 
 RTG model can be served using Flask Server.
 
+=== Flask Installation
+
+[source, commandline]
+----
+$ pip install rtg[serve]
+----
+
+Flask has its own set of dependencies unrelated to the core functionality, hence, not installed when installing `rtg`.
+
+=== Running
 
 [source,commandline]
 ----

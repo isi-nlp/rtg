@@ -39,6 +39,10 @@ def parse_args():
                         help='Length penalty alpha. to disable set <= 0.0 '
                              'Ideally in the range [0.0, 1.0] but you are allowed to '
                              'experiment beyond > 1.0 but not less than 0.0')
+    parser.add_argument("-ml", '--max-len', type=int, default=60,
+                        help='Maximum output sequence length. '
+                             'Example: if max_len=10 and if source_len is 50, '
+                             'then decoder goes up to 50+10 time steps in search of EOS token.')
     parser.add_argument("-msl", '--max-src-len', type=int,
                         help='max source len; longer seqs will be truncated')
     parser.add_argument("-nh", '--num-hyp', type=int, default=1,
