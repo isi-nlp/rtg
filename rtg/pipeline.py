@@ -326,9 +326,13 @@ def parse_args():
 
     conf_file: Path = args.conf if args.conf else args.exp / 'conf.yml'
     assert conf_file.exists(), f'NOT FOUND: {conf_file}'
-    ExpFactory = Experiment
-    is_big = load_conf(conf_file).get('spark', {})
-    if is_big:
+    conf = load_conf(conf_file)
+    ExpFactory = Experiment  # default
+    if conf.get('model_type') == 'tfmcls':
+        log.info("Classification experiment")
+        from rtg.emb.tfmcls import ClassificationExperiment
+        ExpFactory = ClassificationExperiment
+    elif conf.get('spark', {}):
         log.info("Big experiment mode enabled; checking pyspark backend")
         try:
             import pyspark
@@ -343,7 +347,6 @@ def parse_args():
     exp = ExpFactory(args.exp, config=conf_file, read_only=read_only)
     dtorch.barrier()
     return exp
-
 
 def main():
     pipe = Pipeline(exp=parse_args())

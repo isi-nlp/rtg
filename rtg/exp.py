@@ -484,7 +484,10 @@ class TranslationExperiment(BaseExperiment):
             args[src_key], args[tgt_key], args['truncate'], args['src_len'], args['tgt_len'],
             src_tokenizer=partial(self.src_vocab.encode_as_ids, split_ratio=split_ratio),
             tgt_tokenizer=partial(self.tgt_vocab.encode_as_ids, split_ratio=split_ratio))
-        if any([out_file.name.endswith(suf) for suf in ('.db', '.db.tmp')]):
+        if any([out_file.name.endswith(suf) for suf in ('.nldb', '.nldb.tmp')]):
+            from nlcodec.db import MultipartDb
+            MultipartDb.create(path=out_file, recs=parallel_recs, field_names=('x', 'y'))
+        elif any([out_file.name.endswith(suf) for suf in ('.db', '.db.tmp')]):
             SqliteFile.write(out_file, records=parallel_recs)
         else:
             TSVData.write_parallel_recs(parallel_recs, out_file)
@@ -799,7 +802,7 @@ class TranslationExperiment(BaseExperiment):
 
     def get_train_data(self, batch_size:  Union[int, Tuple[int,int]], steps: int = 0, sort_by='eq_len_rand_batch',
                        batch_first=True, shuffle=False, fine_tune=False, keep_in_mem=False,
-                       split_ratio: float = 0., dynamic_epoch=False):
+                       split_ratio: float = 0., dynamic_epoch=False, y_is_cls=False):
 
         data_path = self.train_db if self.train_db.exists() else self.train_file
         if fine_tune:
@@ -812,6 +815,7 @@ class TranslationExperiment(BaseExperiment):
         if split_ratio > 0:
             data_path = IO.maybe_tmpfs(data_path)
             train_file = data_path.with_suffix('.db.tmp')
+            assert not y_is_cls, 'Not supported feature'
             file_creator = partial(self.file_creator, train_file=train_file, split_ratio=split_ratio)
             train_data = GenerativeBatchIterable(
                 file_creator=file_creator, batches=steps, batch_size=batch_size, field=self.tgt_vocab,
@@ -820,7 +824,7 @@ class TranslationExperiment(BaseExperiment):
         else:
             data = BatchIterable(
                 data_path=data_path, batch_size=batch_size, field=self.tgt_vocab, sort_by=sort_by,
-                batch_first=batch_first, shuffle=shuffle, **self._get_batch_args())
+                batch_first=batch_first, shuffle=shuffle, y_is_cls=y_is_cls, **self._get_batch_args())
             train_data = LoopingIterable(data, steps)
 
         return train_data
@@ -832,7 +836,7 @@ class TranslationExperiment(BaseExperiment):
         return train_file
 
     def get_val_data(self, batch_size: Union[int, Tuple[int,int]], sort_desc=False, batch_first=True,
-                     shuffle=False):
+                     shuffle=False, y_is_cls=False):
         raw_path = None
         prep = self.config.get('prep', {})
         if 'valid_src' in prep and 'valid_tgt' in prep:
@@ -840,7 +844,8 @@ class TranslationExperiment(BaseExperiment):
 
         return BatchIterable(self.valid_file, batch_size=batch_size, sort_desc=sort_desc,
                              batch_first=batch_first, shuffle=shuffle, field=self.tgt_vocab,
-                             keep_in_mem=True, raw_path=raw_path, **self._get_batch_args())
+                             keep_in_mem=True, raw_path=raw_path, y_is_cls=y_is_cls,
+                             **self._get_batch_args())
 
     def get_combo_data(self, batch_size: int, steps: int = 0, sort_desc=False, batch_first=True,
                        shuffle=False):

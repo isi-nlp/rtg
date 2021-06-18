@@ -51,8 +51,6 @@ class IdExample:
         else:  # should not have val at pos
             assert seq[pos] != val
 
-    def eos_check(self, side, exist):
-        raise
 
     def __getitem__(self, key):
         if key == 'x_len':
@@ -61,6 +59,16 @@ class IdExample:
             return len(self.y)
         else:
             return getattr(self, key)
+
+
+
+class NLDbExample(IdExample):
+    """
+    # NLDd has (id, x, y) where as here (x, y, id) ; I think NLDb is doing correctly
+    """
+    __slots__ = 'x', 'y', 'id'
+    def __init__(self, id, x, y):
+        super().__init__(x, y, id)
 
 
 class TSVData(Iterable[IdExample]):
@@ -418,15 +426,30 @@ class Batch:
     An object of this class holds a batch of examples
     """
     _x_attrs = ['x_len', 'x_seqs']
-    _y_attrs = ['y_len', 'y_seqs']
+    _y_attrs = ['y_len', 'y_seqs', 'ys']
+    _all_attrs = _x_attrs + _y_attrs
 
     def __init__(self, batch: List[IdExample], sort_dec=False, batch_first=True,
                  add_eos_x=True, add_eos_y=True, add_bos_x=False, add_bos_y=False,
-                 field: Field = None, device=cpu_device):
+                 y_is_cls=False, field: Field = None, device=cpu_device):
         """
+
         :param batch: List fo Examples
+        :param sort_dec: sort by descending of lengths
+        :param batch_first: batch dim first, (false => time dim first)
+        :param add_eos_x: append eos to x seqs; false => make sure no eos at x's end
+        :param add_eos_y: append eos to y seqs; false => make sure no eos at y's end
+        :param add_bos_x: prepend bos to x seqs; false => make sure no bos at x's front
+        :param add_bos_y: prepend bos to y seqs; false => make sure no bos at y's front
+        :param y_is_cls: y is a class. ignore eos, bos things on y seqs
+        :param field:
+        :param device:
+        """
+        """
+        :param batch: 
         :param sort_dec: True if the examples be sorted as descending order of their source sequence lengths
         :Param Batch_First: first dimension is batch
+        
         """
         assert field
         self.bos_val: int = field.bos_idx
@@ -436,6 +459,7 @@ class Batch:
         self.eos_y = add_eos_y
         self.bos_x = add_bos_x
         self.bos_y = add_bos_y
+        self.y_is_cls = y_is_cls
         self.batch_first = batch_first
 
         self.bos_eos_check(batch, 'x', add_bos_x, add_eos_x)
@@ -461,20 +485,31 @@ class Batch:
         first_y = batch[0].y
         self.has_y = first_y is not None
         if self.has_y:
-            self.bos_eos_check(batch, 'y', add_bos_y, add_eos_y)
-            self.y_len = torch.tensor([len(e.y) for e in batch], device=device)
-            self.y_toks = self.y_len.sum().float().item()
-            self.max_y_len = self.y_len.max().item()
-            y_seqs = torch.full(size=(self._len, self.max_y_len), fill_value=self.pad_val,
-                                dtype=torch.long, device=device)
-            for i, ex in enumerate(batch):
-                y_seqs[i, :len(ex.y)] = torch.tensor(ex.y, dtype=torch.long)
-            self.y_seqs = y_seqs.to(device)
-            if not batch_first:  # transpose
-                self.y_seqs = self.y_seqs.t()
-            self.y_raw = None
-            if batch[0].y_raw:
-                self.y_raw = [ex.y_raw for ex in batch]
+            if y_is_cls:
+                ys = torch.full(size=(self._len,), fill_value=self.pad_val,
+                                    dtype=torch.long, device=device)
+                for i, ex in enumerate(batch):
+                    y = ex.y
+                    if hasattr(y, '__len__'):
+                        assert len(y) == 1
+                        y = y[0]
+                    ys[i] = y
+                self.ys = ys.to(device)
+            else:
+                self.bos_eos_check(batch, 'y', add_bos_y, add_eos_y)
+                self.y_len = torch.tensor([len(e.y) for e in batch], device=device)
+                self.y_toks = self.y_len.sum().float().item()
+                self.max_y_len = self.y_len.max().item()
+                y_seqs = torch.full(size=(self._len, self.max_y_len), fill_value=self.pad_val,
+                                    dtype=torch.long, device=device)
+                for i, ex in enumerate(batch):
+                    y_seqs[i, :len(ex.y)] = torch.tensor(ex.y, dtype=torch.long)
+                self.y_seqs = y_seqs.to(device)
+                if not batch_first:  # transpose
+                    self.y_seqs = self.y_seqs.t()
+                self.y_raw = None
+                if batch[0].y_raw:
+                    self.y_raw = [ex.y_raw for ex in batch]
 
     def bos_eos_check(self, batch: List[IdExample], side: str, bos: bool, eos: bool):
         """
@@ -494,8 +529,9 @@ class Batch:
 
     def to(self, device):
         """Move this batch to given device"""
-        for name in self._x_attrs + (self._y_attrs if self.has_y else []):
-            setattr(self, name, getattr(self, name).to(device))
+        for name in self._all_attrs:
+            if hasattr(self, name):
+                setattr(self, name, getattr(self, name).to(device))
         return self
 
     def make_autoreg_mask(self, tgt):
@@ -516,7 +552,7 @@ class BatchIterable(Iterable[Batch]):
     def __init__(self, data_path: Union[str, Path], batch_size:Union[int, Tuple[int,int]], field: Field,
                  sort_desc: bool = False, batch_first: bool = True, shuffle: bool = False,
                  sort_by: str = None, keep_in_mem=False, raw_path: Tuple[Path]=None,
-                 device=cpu_device, **kwargs):
+                 device=cpu_device, y_is_cls=False, **kwargs):
         """
         Iterator for reading training data in batches
         :param data_path: path to TSV file
@@ -537,6 +573,7 @@ class BatchIterable(Iterable[Batch]):
         self.sort_by = sort_by
         self.data_path = data_path
         self.keep_in_mem = keep_in_mem
+        self.y_is_cls = y_is_cls
         self.device = device
         if not isinstance(data_path, Path):
             data_path = Path(data_path)
@@ -545,8 +582,12 @@ class BatchIterable(Iterable[Batch]):
             f' Please remove _PREPARED and rerun.'
         self.data_path = data_path
 
-        if any([data_path.name.endswith(suf) for suf in ('.db', '.db.tmp')]):
-
+        if any([data_path.name.endswith(suf) for suf in ('.nldb', '.nldb.tmp')]):
+            assert sort_by == 'random', f'sort_by={sort_by} is not supported for nldb. Try "random"'
+            from nlcodec.db import MultipartDb
+            self.data = MultipartDb.load(data_path, shuffle=shuffle, rec_type=NLDbExample)
+            self.n_batches = -1
+        elif any([data_path.name.endswith(suf) for suf in ('.db', '.db.tmp')]):
             self.data = SqliteFile(data_path, sort_by=sort_by, **kwargs)
             self.n_batches = len(self._make_eq_len_batch_ids())
         else:
@@ -604,13 +645,13 @@ class BatchIterable(Iterable[Batch]):
                                     f' with a seq of x_len:{len(ex.x)} y_len:{len(ex.y)}')
                 # yield the current batch
                 yield Batch(batch, sort_dec=self.sort_desc, batch_first=self.batch_first,
-                            field=self.field, device=self.device)
+                            field=self.field, device=self.device, y_is_cls=self.y_is_cls)
                 batch = [ex]  # new batch
                 max_len = this_len
         if batch:
             log.debug(f"\nLast batch, size={len(batch)}")
             yield Batch(batch, sort_dec=self.sort_desc, batch_first=self.batch_first,
-                        field=self.field, device=self.device)
+                        field=self.field, device=self.device, y_is_cls=self.y_is_cls)
 
     def _make_eq_len_batch_ids(self):
         sort = 'y_len desc'
@@ -655,7 +696,7 @@ class BatchIterable(Iterable[Batch]):
             batch = list(self.data.get_all_ids(batch_ids))
             # batch = [Example(r['x'], r.get('y')) for r in batch]
             yield Batch(batch, sort_dec=self.sort_desc, batch_first=self.batch_first,
-                        field=self.field, device=self.device)
+                        field=self.field, device=self.device, y_is_cls=self.y_is_cls)
 
     def __iter__(self) -> Iterator[Batch]:
         if self.sort_by == 'eq_len_rand_batch':

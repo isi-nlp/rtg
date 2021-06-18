@@ -1,4 +1,4 @@
-from abc import ABCMeta, abstractmethod, ABC
+from abc import ABCMeta, abstractmethod, ABC, abstractproperty
 import torch
 import torch.nn as nn
 from rtg import log
@@ -16,17 +16,17 @@ class Model(nn.Module):
     @property
     @abstractmethod
     def model_dim(self):
-        pass
+        raise NotImplementedError
 
     @property
     @abstractmethod
     def model_type(self):
-        pass
+        raise NotImplementedError()
 
     @property
     @abstractmethod
     def vocab_size(self):
-        pass
+        raise NotImplementedError
 
     @classmethod
     @abstractmethod

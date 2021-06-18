@@ -131,6 +131,7 @@ class TrainerState:
     total_loss: float = 0.0
     steps: int = 0
     start: float = time.time()
+    unit:str = 'tok'
 
     def running_loss(self):
         return self.total_loss / self.steps if self.steps > 0 else float('inf')
@@ -156,7 +157,7 @@ class TrainerState:
     def progress_bar_msg(self):
         elapsed = time.time() - self.start
         return f'Loss:{self.running_loss():.4f},' \
-               f' {int(self.total_toks / elapsed)}toks/s'
+               f' {int(self.total_toks / elapsed)}{self.unit}/s'
 
     def is_check_point(self):
         return self.steps == self.check_point

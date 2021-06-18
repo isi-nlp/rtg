@@ -7,6 +7,7 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 import abc
+#from rtg.registry import CRITERION, register
 
 
 class Criterion(nn.Module, abc.ABC):
@@ -24,6 +25,7 @@ class Criterion(nn.Module, abc.ABC):
         self.input_type = input_type
 
 
+#@register(kind=CRITERION, name="cross_entropy")
 class CrossEntropy(Criterion):
 
     def __init__(self, pad_idx):
@@ -44,6 +46,7 @@ class CrossEntropy(Criterion):
         return per_tok_loss
 
 
+#@register(kind=CRITERION, name="binary_cross_entropy")
 class BinaryCrossEntropy(Criterion):
 
     def __init__(self, pad_idx, smoothing=0.1):
@@ -72,6 +75,7 @@ class BinaryCrossEntropy(Criterion):
         return per_tok_loss
 
 
+#@register(kind=CRITERION, name="smooth_kld")
 class SmoothKLD(Criterion):
     """
     Label smoothing
@@ -109,6 +113,7 @@ class SmoothKLD(Criterion):
         return loss
 
 
+#@register(kind=CRITERION, name="triplet_loss")
 class TripletLoss(Criterion):
     # Note: Triplet loss doesnt work fully yet; it sorta works and then overfits
 
@@ -172,6 +177,7 @@ class TripletLoss(Criterion):
         return triplet_loss
 
 
+#@register(kind=CRITERION, name="smooth_kld_and_triplet_loss")
 class SmoothKLDAndTripletLoss(Criterion):
 
     def __init__(self, embedding, pad_idx, margin: float = 0., neg_region: float = 0.05,

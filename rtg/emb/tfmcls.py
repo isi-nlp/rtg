@@ -4,61 +4,82 @@
 # Created: 3/12/21
 
 import copy
+import gc
+from typing import Optional, List, Tuple, Union, Callable, Dict
+from functools import partial
+import time
+import tqdm
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import Optional, List, Tuple, Union
-from rtg import log
+from torch.cuda.amp import autocast
+
+from rtg import log, device
 from rtg.exp import TranslationExperiment
-from rtg.registry import register_model
+from rtg.registry import register, MODEL
 from rtg.utils import get_my_args
 from rtg.module import Model
-from rtg.module.trainer import SteppedTrainer
+from rtg.module.trainer import SteppedTrainer, TrainerState, EarlyStopper
 from rtg.module.tfmnmt import (Encoder, EncoderLayer, MultiHeadedAttention, PositionwiseFeedForward,
                                PositionalEncoding, Embeddings, SimpleLossFunction)
+from rtg.distrib import DistribTorch
 
 
 
-class SequenceClassifier(nn.Module):
+dtorch = DistribTorch.instance()
+
+
+class SentenceCompressor(nn.Module):
+    """
+    Compresses token representation into a single vector
+    """
+    def __init__(self, d_model: int, attn: MultiHeadedAttention):
+        super(SentenceCompressor, self).__init__()
+        self.cls_repr = nn.Parameter(torch.zeros(d_model))
+        self.d_model = d_model
+        self.attn = attn
+
+    def forward(self, src, src_mask):
+        B, T, D = src.size()  # [Batch, Time, Dim]
+        assert D == self.d_model
+        query = self.cls_repr.view(1, 1, D).repeat(B, 1, 1)
+        # Args: Query, Key, Value, Mask
+        cls_repr = self.attn(query, src, src, src_mask)
+        cls_repr = cls_repr.squeeze()  # [B, D]
+        return cls_repr
+
+
+class Classifier(nn.Module):
     scores = {
         'logits': lambda x, dim=None: x,
         'softmax': F.softmax,
         'log_softmax': F.log_softmax,
         'sigmoid': lambda x, dim=None: x.sigmoid(),
-        'embedding': None,
     }
 
-    def __init__(self, d_model: int, n_classes: int, attn: MultiHeadedAttention):
+    def __init__(self, d_model: int, n_classes: int):
         super().__init__()
         self.d_model = d_model
         self.n_classes = n_classes
-        # cls_repr vector is used to compute sentence representation from token representation
-        # How: weighted average over tokens aka attention
-        self.cls_repr = nn.Parameter(torch.zeros(d_model))
-        self.attn = attn
         self.proj = nn.Linear(d_model, n_classes)
 
-    def forward(self, src, src_mask, score='logits'):
+    def forward(self, repr, score='logits'):
         score = score or 'logits'
-        B, T, D = src.size()  # [Batch, Time, Dim]
+        B, D = repr.shape    # [Batch, Dim]
         assert D == self.d_model
         assert score in self.scores, f'"score", Given={score}, known={list(self.scores.keys())}'
-        # Args: Query, Key, Value, Mask
-        query = self.cls_repr.view(1, 1, D).repeat(B,1,1)
-        cls_repr = self.attn(query, src, src, src_mask)
-        cls_repr = cls_repr.squeeze()  # [B, D]
-        if score == 'embedding':
-            return cls_repr
-        cls_repr = self.proj(cls_repr)
+        cls_repr = self.proj(repr)
         return self.scores[score](cls_repr, dim=-1)
 
 
 class ClassificationExperiment(TranslationExperiment):
     """Treat source as source sequence, target as class"""
-    pass
-    """
-    train
-    """
+
+    def __init__(self, *args, **kwargs):
+        super(ClassificationExperiment, self).__init__(*args, **kwargs)
+        self.train_db = self.data_dir / 'train.nldb'
+
     def pre_process(self, args=None, force=False):
         args = args or self.config.get('prep')
         is_shared = args.get('shared')
@@ -90,7 +111,13 @@ class ClassificationExperiment(TranslationExperiment):
 
         # target vocabulary; class names. treat each line as a word
         tgt_corpus = [args[key] for key in ['train_tgt'] if args.get(key)]
-        self.tgt_field = self._make_vocab("src", self._tgt_field_file, 'class', corpus=tgt_corpus)
+
+        self.tgt_field = self._make_vocab("tgt", self._tgt_field_file, 'class',
+                                          corpus=tgt_corpus, vocab_size=-1)
+        n_classes = self.config['model_args'].get('tgt_vocab')
+        if len(self.tgt_field) != n_classes:
+            log.warning(f'model_args.tgt_vocab={n_classes},'
+                        f' but found {len(self.tgt_field)} cls in {tgt_corpus}')
 
         train_file = self.train_db
 
@@ -116,8 +143,7 @@ class ClassificationExperiment(TranslationExperiment):
         TSVData.write_parallel_recs(samples, self.samples_file)
         """
 
-
-@register_model
+@register(kind=MODEL)
 class TransformerClassifier(Model):
 
     model_type = 'tfmcls'
@@ -125,21 +151,32 @@ class TransformerClassifier(Model):
 
     EncoderFactory = Encoder
     EncoderLayerFactory = EncoderLayer
-    ClassifierFactory = SequenceClassifier
+    CompressorFactory = SentenceCompressor
+    ClassifierFactory = Classifier
 
-    def __init__(self, encoder: Encoder, src_embed, classifier):
+    def __init__(self, encoder: Encoder, src_embed, compressor: SentenceCompressor,
+                 classifier: Classifier):
         super().__init__()
         self.encoder: Encoder = encoder
         self.src_embed = src_embed
+        self.compressor =  compressor
         self.classifier = classifier
 
-    def encode(self, src, src_mask):
-        return self.encoder(self.src_embed(src), src_mask)
+    @property
+    def model_dim(self):
+        return self.classifier.d_model
 
-    def forward(self, src, tgt, src_mask, score=None):
+
+    def encode(self, src, src_mask):
+        tok_repr = self.encoder(self.src_embed(src), src_mask)
+        return self.compressor(tok_repr, src_mask)
+
+    def forward(self, src, src_mask, score='logits'):
         "Take in and process masked src and target sequences."
-        enc_outs = self.encode(src, src_mask)
-        return self.classifier(enc_outs, src_mask, score=score)
+        sent_repr = self.encode(src, src_mask)
+        if score == 'embedding':  # sentence embedding
+            return sent_repr
+        return self.classifier(sent_repr, score=score)
 
     @classmethod
     def make_model(cls, src_vocab: int, tgt_vocab: int, enc_layers=6, hid_size=512, ff_size=2048,
@@ -150,7 +187,7 @@ class TransformerClassifier(Model):
         # get all args for reconstruction at a later phase
         args = get_my_args(exclusions=['cls', 'exp'])
         assert activation in {'relu', 'elu', 'gelu'}
-        assert enc_layers > 0, "Zero encoder layers!"
+        assert enc_layers > 0, "Zero encoder layers! Hmm🤔"
 
         log.info(f"Make model, Args={args}")
         c = copy.deepcopy
@@ -160,9 +197,10 @@ class TransformerClassifier(Model):
                                                             enc_layers)
         src_emb = nn.Sequential(Embeddings(hid_size, src_vocab),
                                 PositionalEncoding(hid_size, dropout))
-        classifier = cls.ClassifierFactory(d_model=hid_size, n_classes=tgt_vocab, attn=c(attn))
+        classifier = cls.ClassifierFactory(d_model=hid_size, n_classes=tgt_vocab)
+        compressor = cls.CompressorFactory(d_model=hid_size, attn=c(attn))
 
-        model = cls(encoder, src_emb, classifier)
+        model = cls(encoder, src_emb, compressor=compressor, classifier=classifier)
 
         model.init_params()
         return model, args
@@ -180,6 +218,8 @@ class ClassifierTrainer(SteppedTrainer):
                  model_factory=TransformerClassifier.make_model,
                  **optim_args):
         super().__init__(exp, model, model_factory=model_factory, optim=optim, **optim_args)
+        assert isinstance(self.core_model, TransformerClassifier),\
+            f'Expected an instance of TransformerClassifier; but found {type(self.core_model)}'
         trainer_args = self.exp.config.get('trainer', {}).get('init_args', {})
         chunk_size = trainer_args.get('chunk_size', -1)
         if chunk_size > 0:
@@ -191,13 +231,175 @@ class ClassifierTrainer(SteppedTrainer):
             raise Exception(f"Please use: python -m rtg.distrib.launch -G {self.n_gpus} \n "
                             f" or set single GPU by: export CUDA_VISIBLE_DEVICES=0 ")
 
-        generator = self.core_model.generator
-        self.loss_func = SimpleLossFunction(generator=generator, criterion=self.criterion,
-                                                opt=self.opt)
+        self.classifier = self.core_model.classifier
+
+    def loss_func(self, scores, labels, train_mode=False, take_step=False):
+        loss = self.criterion(scores, labels).sum() / len(labels)
+        if train_mode:  # don't do this for validation set
+            dtorch.backward(loss)
+            if take_step:
+                dtorch.step(self.opt)
+        result = loss.item()
+        return result
+
+    def run_valid_epoch(self, val_data):
+        """
+        :param data_iter: data iterator
+        :return: loss value
+        """
+        start = time.time()
+        total_loss = 0.0
+        num_batches = 0
+        model = self.core_model
+        assert not model.training
+        with tqdm.tqdm(val_data, unit='batch', dynamic_ncols=True) as data_bar:
+            for i, batch in enumerate(data_bar):
+                with autocast(enabled=dtorch.fp16):
+                    if self.n_gpus <= 1: #  if not dataparallel, then move
+                        batch = batch.to(device)
+                    x_mask = (batch.x_seqs != batch.pad_val).unsqueeze(1)
+                    scores = self.model(src=batch.x_seqs, src_mask=x_mask,
+                                        score=self.criterion.input_type)
+                    loss = self.loss_func(scores=scores, labels=batch.ys,
+                                          train_mode=False, take_step=False)
+
+                    total_loss += loss
+                    num_batches += 1
+                    elapsed = time.time() - start
+                    data_bar.set_postfix_str(
+                        f'Loss:{loss:.4f}, {int(len(batch) / elapsed)}item/s', refresh=False)
+
+                start = time.time()
+
+        score = total_loss / num_batches
+        return score
+
+
+    def train(self, steps: int, check_point: int, batch_size: int, log_interval=10,
+              check_pt_callback: Optional[Callable] = None, keep_models=10, sort_by='random',
+              keep_in_mem=False, early_stop=None, fine_tune=False, **args):
+
+        """
+        :param steps: how many optimizer steps to train (also, means how many batches)
+        :param check_point: after how many checkpoints to
+        :param batch_size: how many target tokens in batch max ( = max_len * num_sentences)
+        :param check_pt_callback: function to call back after checkpt
+        :param keep_models: how many checkpts to keep
+        :param keep_in_mem: keep training data in memory
+        :param early_stop: {patience: N validations, by: loss, enabled: True}
+        :param args: any extra args
+        :return:
+        """
+
+        # Gradient accumulation
+        opt_steps = steps
+        batches = steps * self.grad_accum_interval
+        start_batch = self.start_step * self.grad_accum_interval
+        check_point = check_point * self.grad_accum_interval
+        if isinstance(batch_size, int):
+            max_toks, max_sents = batch_size, float('inf')
+        else:
+            max_toks, max_sents = batch_size
+        if args:
+            # no extra args. let user know if an extra arg is passed
+            raise Exception(f" Found extra args: {args}")
+        log.info(f'Going to train for {opt_steps} optimizer steps over {batches} batches'
+                 f' (from {self.start_step} steps);'
+                 f' batch_size={batch_size} toks; sort_by={sort_by};')
+
+        distr = DistribTorch.instance()
+        if batches <= start_batch:
+            raise Exception(f'The model was already trained to {self.start_step} steps. '
+                            f'Please increase the steps or clear the existing models')
+
+        train_data = self.exp.get_train_data(
+            batch_size=batch_size, steps=batches - start_batch, sort_by=sort_by, batch_first=True,
+            keep_in_mem=keep_in_mem, fine_tune=fine_tune, y_is_cls=True)
+        val_data = None
+        if distr.is_global_main:
+            val_data = self.exp.get_val_data(batch_size=max_toks, shuffle=False, batch_first=True,
+                                             sort_desc=False, y_is_cls=True)
+
+        train_state = TrainerState(self.model, check_point=check_point, unit='item')
+        train_state.train_mode(True)
+        unsaved_state = False
+
+        batch_count = -1
+        stopper = None
+        early_stopped = False   # or converged
+        if early_stop:
+            stopper = EarlyStopper(cur_step=self.start_step, **early_stop)
+
+        with tqdm.tqdm(train_data, initial=start_batch, total=batches, unit='batch',
+                  dynamic_ncols=True, disable=not distr.is_global_main) as data_bar:
+            for batch in data_bar:
+                batch_count += 1
+                take_step = (batch_count % self.grad_accum_interval) == 0
+
+                with autocast(enabled=dtorch.fp16):
+                    if self.n_gpus <= 1: #  if not dataparallel, then move
+                        batch = batch.to(device)
+
+                    x_mask = (batch.x_seqs != batch.pad_val).unsqueeze(1)
+                    scores = self.model(src=batch.x_seqs, src_mask=x_mask,
+                                        score=self.criterion.input_type)
+                    loss = self.loss_func(scores=scores, labels=batch.ys,
+                                          train_mode=True, take_step=take_step)
+
+                if stopper and take_step:
+                    stopper.step()
+                # Log
+                unsaved_state = True
+                if self.opt.curr_step % log_interval == 0:
+                    self.tbd.add_scalars('training', {'step_loss': loss,
+                                                      'learn_rate': self.opt.curr_lr},
+                                         self.opt.curr_step)
+
+                progress_msg, is_check_pt = train_state.step(len(batch), loss)
+                progress_msg += f', LR={self.opt.curr_lr:0.8f}'
+                data_bar.set_postfix_str(progress_msg, refresh=False)
+                del batch
+
+                # Save checkpoint
+                if is_check_pt:
+                    train_loss = train_state.reset()
+                    log.info(f"Chkpt Train loss={train_loss:g}; Runs validation? {distr.is_global_main}")
+                    if distr.is_global_main:
+                        train_state.train_mode(False)
+                        with torch.no_grad():
+                            val_loss = self.run_valid_epoch(val_data)
+                            self.make_check_point(train_loss, val_loss=val_loss,
+                                                  keep_models=keep_models)
+                            if check_pt_callback:
+                                check_pt_callback(model=self.model,
+                                                  step=self.opt.curr_step,
+                                                  train_loss=train_loss)
+                        train_state.train_mode(True)
+
+                        if stopper:
+                            stopper.validation(val_loss)
+                            if stopper.is_stop():
+                                log.info(f"Stopping at {stopper.cur_step} because {stopper.by}"
+                                         f" didnt improve over {stopper.patience} checkpoints")
+                                early_stopped = True
+                                break
+                    unsaved_state = False
+                    gc.collect()
+                    distr.barrier()
+
+        # End of training
+        if unsaved_state and distr.is_global_main:
+            train_loss = train_state.reset()
+            train_state.train_mode(False)
+            val_loss = self.run_valid_epoch(val_data)
+            self.make_check_point(train_loss, val_loss=val_loss, keep_models=keep_models)
+
+        distr.barrier()
+        return early_stopped
 
 
 if __name__ == '__main__':
-    args = dict(src_vocab=8000, n_classes=3, enc_layers=2, hid_size=128, ff_size=256, n_heads=2)
+    args = dict(src_vocab=8000, tgt_vocab=3, enc_layers=2, hid_size=128, ff_size=256, n_heads=2)
     model, args_2 = TransformerClassifier.make_model(**args)
     # if you are running this in pycharm, please set Working Dir=<rtg repo base dir> for run config
     dir = 'experiments/sample-exp'

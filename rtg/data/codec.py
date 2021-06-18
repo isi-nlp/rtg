@@ -174,9 +174,10 @@ class NLField(Field):
         self.codec: EncoderScheme = load_scheme(path)
         self.vocab: List[Type] = self.codec.table
         log.info(f'Loaded {len(self.codec)} types from {path}')
-        for tok, idx in self.reserved():  # reserved are reserved
-            # Todo swap it with nlcodec.Reserved
-            assert self.vocab[idx].name == tok
+        if self.codec.name not in ('class',):  # except in classification field
+            for tok, idx in self.reserved():  # reserved are reserved
+                # Todo swap it with nlcodec.Reserved
+                assert self.vocab[idx].name == tok
 
     def encode_as_ids(self, text: str, add_bos=False, add_eos=False, split_ratio=0.) -> Array:
         if self.codec.name == "bpe" and split_ratio > 0:
