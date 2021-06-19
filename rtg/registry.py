@@ -5,6 +5,13 @@
 # - Lukas J. Ferrer [lferrer (at) isi (dot) edu]
 # Created: 3/9/19
 
+from enum import Enum
+
+class ProblemType(str, Enum):
+    TRANSLATION = "translation"
+    CLASSIFICATION = "classification"
+
+
 import re
 from dataclasses import dataclass
 from typing import Any, Optional, Mapping, Dict, Type

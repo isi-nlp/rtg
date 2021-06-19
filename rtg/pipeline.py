@@ -21,6 +21,7 @@ import copy
 import json
 import subprocess
 from rtg.distrib import DistribTorch
+from rtg.registry import ProblemType
 
 dtorch = DistribTorch.instance()
 
@@ -29,6 +30,12 @@ dtorch = DistribTorch.instance()
 class Pipeline:
     exp: Experiment
 
+    def __post_init__(self):
+        self.tests_types = {
+            ProblemType.TRANSLATION: self.run_translation_tests,
+            ProblemType.CLASSIFICATION: self.run_classification_tests
+        }
+
     def pre_checks(self):
         # Some more validation needed
         assert self.exp.work_dir.exists()
@@ -36,8 +43,11 @@ class Pipeline:
         assert conf.get('prep') is not None
         assert conf.get('trainer') is not None
         assert conf.get('tester') is not None
-        assert conf['tester']['suit'] is not None
-        for name, data in conf['tester']['suit'].items():
+        if not conf['tester'].get('suite') and conf['tester'].get('suit'):
+            # it was mis spelled as suit https://github.com/isi-nlp/rtg/issues/9
+            conf['tester']['suite'] = conf['tester']['suit']
+        assert conf['tester'].get('suite') is not None
+        for name, data in conf['tester']['suite'].items():
             if isinstance(data, str):
                 src, ref = data, None
             elif isinstance(data, list):
@@ -197,12 +207,62 @@ class Pipeline:
             data = {str(k): v for k, v in memory.items()}
             IO.write_lines(tune_log, json.dumps(data))
 
-    def run_tests(self, exp=None, args=None):
+
+    def run_classification_tests(self, exp=None, args=None):
+        from rtg.emb.tfmcls import ClassificationExperiment
+        exp:ClassificationExperiment = exp or self.exp
+        assert exp.problem_type is ProblemType.CLASSIFICATION
+        args = args or exp.config['tester']
+        suite: Dict[str, List] = args['suite']
+        assert suite
+        log.info(f"Found {len(suite)} suite :: {suite.keys()}")
+
+        eval_args = dict(
+            batch_size = args.get('batch_size') or self.exp.config['trainer']['batch_size'],
+            max_len = args.get('batch_size', 256))
+        ens = args.get('ensemble', 1)
+        _, step = exp.get_last_saved_model()
+        model = exp.load_model(ensemble=ens)
+        model = model.eval()
+        test_dir = exp.work_dir / f'test_step{step}_ens{ens}'
+        test_dir.mkdir(exist_ok=True, parents=True)
+        for name, data in suite.items():
+            src, label = data, None
+            if isinstance(data, list):
+                src, label = data[:2]
+            try:
+                src_link = test_dir / f'{name}.src'
+                label_link = test_dir / f'{name}.label'
+                buffer = [(src_link, Path(src).resolve())]
+                if label:
+                    buffer.append((label_link, Path(label).resolve()))
+                for link, orig in buffer:
+                    if not link.exists():
+                        link.symlink_to(orig)
+                metric, top1_labels, top1_probs = exp.evaluate_classifier(
+                    model, input=src_link, labels=label_link, **eval_args)
+
+                log.info(metric.format(delim='\t'))
+
+                test_dir.mkdir(parents=True, exist_ok=True)
+                score_file = test_dir / f'{name}.score.tsv'
+                score_file.write_text(metric.format(delim=','))
+
+                out = '\n'.join(f'{l}\t{p:g}' for l, p in zip(top1_labels, top1_probs))
+                out_file = test_dir / f'{name}.out.tsv'
+                out_file.write_text(out)
+
+            except Exception as e:
+                log.exception(f"Something went wrong with '{name}' test")
+                err = test_dir / f'{name}.err'
+                err.write_text(str(e))
+
+    def run_translation_tests(self, exp=None, args=None):
         exp = exp or self.exp
         args = args or exp.config['tester']
-        suit: Dict[str, List] = args['suit']
-        assert suit
-        log.info(f"Found {len(suit)} suit :: {suit.keys()}")
+        suite: Dict[str, List] = args.get('suite')
+        assert suite
+        log.info(f"Found {len(suite)} suit :: {suite.keys()}")
 
         _, step = exp.get_last_saved_model()
         if 'decoder' not in args:
@@ -245,7 +305,7 @@ class Pipeline:
         test_dir.mkdir(parents=True, exist_ok=True)
 
         decoder = Decoder.new(exp, ensemble=ensemble)
-        for name, data in suit.items():
+        for name, data in suite.items():
             # noinspection PyBroadException
             src, ref = data, None
             out_file = None
@@ -292,9 +352,13 @@ class Pipeline:
         self.exp.train()
         dtorch.barrier()
         if run_tests:
-            if dtorch.is_global_main:
-                with torch.no_grad():
-                    self.run_tests()
+            if self.exp.problem_type in self.tests_types:
+                if dtorch.is_global_main:
+                    with torch.no_grad():
+                        self.tests_types[self.exp.problem_type]()
+            else:
+                log.warning(f"{self.exp.problem_type} dont have test runner yet. "
+                            f"Known runners: {self.tests_types}. Please fix me")
 
 
 def parse_args():

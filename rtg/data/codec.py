@@ -26,13 +26,16 @@ class Field(metaclass=ABCMeta):
     reserved_toks = [pad_tok, unk_tok, bos_tok, eos_tok, cls_tok]
     reserved_idxs = [pad_idx, unk_idx, bos_idx, eos_idx, cls_idx]
 
+    def __init__(self):
+        self.class_names = None
+
     @classmethod
     def reserved(cls):
         return list(zip(cls.reserved_toks, cls.reserved_idxs))
 
     @abstractmethod
     def encode_as_ids(self, text, add_bos, add_eos, split_ratio: Optional[float] = 0.) -> Array:
-        pass
+        raise NotImplementedError
 
     @abstractmethod
     def decode_ids(self, ids, trunc_eos):
@@ -42,19 +45,19 @@ class Field(metaclass=ABCMeta):
         :param trunc_eos: skip everything after first EOS token in sequence
         :return:
         """
-        pass
+        raise NotImplementedError
 
     @abstractmethod
     def tokenize(self, text):
-        pass
+        raise NotImplementedError
 
     @abstractmethod
     def detokenize(self, tokens):
-        pass
+        raise NotImplementedError
 
     @abstractmethod
     def __len__(self):
-        pass
+        raise NotImplementedError
 
     @staticmethod
     @abstractmethod
@@ -70,7 +73,7 @@ class Field(metaclass=ABCMeta):
         :param no_split_toks: Don't split these tokens
         :return:
         """
-        pass
+        raise NotImplementedError
 
     def shrink_vocab(self, files: List, min_freq:int, save_at: Path) -> List[int]:
         """
@@ -93,6 +96,7 @@ class SPField(SentencePieceProcessor, Field):
     def __init__(self, path: str):
         super().__init__()
         assert self.load(path)
+        self.class_names = [self.IdToPiece(i) for i in range(len(self))]
 
     def encode_as_ids(self, text: str, add_bos=False, add_eos=False, split_ratio=0.) -> Array:
         assert split_ratio == 0, 'SentencePiece doesnt support SWR, ' \
@@ -178,6 +182,7 @@ class NLField(Field):
             for tok, idx in self.reserved():  # reserved are reserved
                 # Todo swap it with nlcodec.Reserved
                 assert self.vocab[idx].name == tok
+        self.class_names = [t.name for t in self.vocab]
 
     def encode_as_ids(self, text: str, add_bos=False, add_eos=False, split_ratio=0.) -> Array:
         if self.codec.name == "bpe" and split_ratio > 0:
@@ -286,6 +291,7 @@ class PretrainMatchField(Field):
             assert self.tok2idx[tok] == idx
             assert self.idx2tok[idx] == tok
         self.new_idx2old_idx = {new_idx: old_idx for tok, (new_idx, old_idx) in data['mapping'].items()}
+        self.class_names = self.idx2tok
 
     @classmethod
     def load_hub_model(cls, model_id):

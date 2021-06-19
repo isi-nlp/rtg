@@ -5,16 +5,14 @@ from typing import List, Tuple, Type, Dict, Any, Optional, Iterator
 from pathlib import Path
 import math
 from dataclasses import dataclass, field
-import hashlib
 import warnings
 import sys
 import os
-import portalocker
 
 import torch
 from torch import nn as nn
 
-from rtg import TranslationExperiment as Experiment, debug_mode
+from rtg import TranslationExperiment as Experiment
 from rtg import log, device, my_tensor as tensor
 from rtg.module.generator import GeneratorFactory
 from rtg.data.dataset import Field
@@ -34,22 +32,9 @@ def load_models(models: List[Path], exp: Experiment):
         assert model_path.exists()
         log.info(f"Load Model {i}: {model_path} ")
         chkpt = torch.load(str(model_path), map_location=device)
-        model = instantiate_model(chkpt)
+        model = exp.load_model_with_state(chkpt)
         res.append(model)
     return res
-
-
-def instantiate_model(checkpt_state, exp=None):
-    chkpt = checkpt_state
-    state = chkpt['model_state']
-    model_type = chkpt['model_type']
-    model_args = chkpt['model_args']
-    # Dummy experiment wrapper
-    factory = factories[model_type]
-    model = factory(exp=exp, **model_args)[0]
-    model.load_state_dict(state)
-    log.info(f"Successfully restored the model state of : {model_type}")
-    return model
 
 
 class ReloadEvent(Exception):
@@ -171,58 +156,6 @@ class Decoder:
         return self.gen_factory(self.model, field=self.exp.tgt_vocab,
                                 x_seqs=x_seqs, x_lens=x_lens, **self.gen_args)
 
-    @staticmethod
-    def average_states(model_paths: List[Path]):
-        assert model_paths, 'at least one model checkpoint should be given. Check your directory'
-        for i, mp in enumerate(model_paths):
-            next_state = Decoder._checkpt_to_model_state(mp)
-            if i < 1:
-                state_dict = next_state
-                key_set = set(state_dict.keys())
-            else:
-                # noinspection PyUnboundLocalVariable
-                assert key_set == set(next_state.keys())
-                for key in key_set:     # Running average
-                    state_dict[key] = (i*state_dict[key] + next_state[key]) / (i + 1)
-        return state_dict
-
-    @staticmethod
-    def _checkpt_to_model_state(checkpt_path: str):
-        state = torch.load(checkpt_path, map_location=device)
-        if 'model_state' in state:
-            state = state['model_state']
-        return state
-
-    @staticmethod
-    def maybe_ensemble_state(exp, model_paths: Optional[List[str]], ensemble: int = 1):
-        if model_paths and len(model_paths) == 1:
-            log.info(f" Restoring state from requested model {model_paths[0]}")
-            return Decoder._checkpt_to_model_state(model_paths[0])
-        elif not model_paths and ensemble <= 1:
-            model_path, _ = exp.get_best_known_model()
-            log.info(f" Restoring state from best known model: {model_path}")
-            return Decoder._checkpt_to_model_state(model_path)
-        else:
-            if not model_paths:
-                # Average
-                model_paths = exp.list_models()[:ensemble]
-            digest = hashlib.md5(";".join(str(p) for p in model_paths).encode('utf-8')).hexdigest()
-            cache_file = exp.model_dir / f'avg_state{len(model_paths)}_{digest}.pkl'
-            lock_file = cache_file.with_suffix('.lock')
-            MAX_TIMEOUT = 12 * 60 * 60  # 12 hours
-            with portalocker.Lock(lock_file, 'w', timeout=MAX_TIMEOUT) as fh:
-                # check if downloaded by  other parallel process
-                if lock_file.exists() and cache_file.exists():
-                    log.info(f"Cache exists: reading from {cache_file}")
-                    state = Decoder._checkpt_to_model_state(cache_file)
-                else:
-                    log.info(f"Averaging {len(model_paths)} model states :: {model_paths}")
-                    state = Decoder.average_states(model_paths)
-                    if len(model_paths) > 1:
-                        log.info(f"Caching the averaged state at {cache_file}")
-                        torch.save(state, str(cache_file))
-            return state
-
     @classmethod
     def combo_new(cls, exp: Experiment, model_paths: List[str], weights: List[float]):
         assert len(model_paths) == len(weights), 'one weight per model needed'
@@ -253,7 +186,7 @@ class Decoder:
         if model is None:
             factory = factories[model_type]
             model = factory(exp=exp, **exp.model_args)[0]
-            state = cls.maybe_ensemble_state(exp, model_paths=model_paths, ensemble=ensemble)
+            state = exp.maybe_ensemble_state(model_paths=model_paths, ensemble=ensemble)
             model.load_state_dict(state)
             log.info("Successfully restored the model state.")
         elif isinstance(model, nn.DataParallel):
