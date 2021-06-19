@@ -346,14 +346,14 @@ class Pipeline:
         if dtorch.is_global_main:
             self.exp.pre_process()
         dtorch.barrier()
-        if not dtorch.is_global_main:
-            self.exp.reload()  # with updated config and vocabs from global_main
+        self.exp.reload()  # with updated config and vocabs from global_main
         # train on all
         self.exp.train()
         dtorch.barrier()
         if run_tests:
             if self.exp.problem_type in self.tests_types:
                 if dtorch.is_global_main:
+                    self.exp.reload()    # if user changed config for tests while training
                     with torch.no_grad():
                         self.tests_types[self.exp.problem_type]()
             else:
