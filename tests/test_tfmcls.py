@@ -69,7 +69,7 @@ def test_tfmcls_model():
     exp.config['trainer'].update(dict(steps=50, check_point=25))
     # exp.config['prep']['num_samples'] = 0
     Pipeline(exp).run(run_tests=False)
-    sanity_check_experiment(exp)
+    sanity_check_experiment(exp, samples=False, shared_vocab=False)
     print(f"Cleaning up {tmp_dir}")
     # shutil.rmtree(tmp_dir, ignore_errors=True)
 

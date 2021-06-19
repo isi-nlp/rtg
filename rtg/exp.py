@@ -743,8 +743,7 @@ class TranslationExperiment(BaseExperiment):
             ensemble = model_sepc.get('ensemble', 1)
             model_paths = parent_exp.list_models(sort='step', desc=True)[:ensemble]
             log.info(f"Averaging {len(model_paths)} checkpoints of parent model: \n{model_paths}")
-            from rtg.module.decoder import Decoder
-            avg_state = Decoder.average_states(model_paths=model_paths)
+            avg_state = self.average_states(model_paths=model_paths)
             log.info(f"Saving parent model's state to {self.parent_model_state}")
             torch.save(avg_state, self.parent_model_state)
 
@@ -781,6 +780,7 @@ class TranslationExperiment(BaseExperiment):
 
 
     def pre_process(self, args=None, force=False):
+        args = args or self.config['prep']
         super(TranslationExperiment, self).pre_process(args, )
         if self.has_prepared() and not force:
             log.warning("Already prepared")
