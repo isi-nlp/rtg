@@ -219,7 +219,7 @@ class Pipeline:
 
         eval_args = dict(
             batch_size = args.get('batch_size') or self.exp.config['trainer']['batch_size'],
-            max_len = args.get('batch_size', 256))
+            max_len = args.get('max_len', 256))
         ens = args.get('ensemble', 1)
         _, step = exp.get_last_saved_model()
         model = exp.load_model(ensemble=ens)

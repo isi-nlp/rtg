@@ -8,7 +8,7 @@ import gc
 import time
 from functools import partial
 from pathlib import Path
-from typing import Optional, Callable
+from typing import Optional, Callable, Union, Tuple
 
 import torch
 import torch.nn as nn
@@ -151,7 +151,7 @@ class ClassificationExperiment(TranslationExperiment):
         TSVData.write_parallel_recs(samples, self.samples_file)
         """
 
-    def get_predictions(self, model, input, batch_size: int, max_len):
+    def get_predictions(self, model, input, batch_size: Union[int, Tuple[int, int]], max_len):
         max_len = max_len or 256
         texts = IO.get_lines(input)
         txt_to_ids = partial(self.src_field.encode_as_ids, add_bos=False, add_eos=False)
@@ -160,7 +160,6 @@ class ClassificationExperiment(TranslationExperiment):
         model = model.eval().to(device)
         preds = []
         top1_probs = []
-        buffer = []
         tok_count = 0
 
         def _consume_batch(buffer):
@@ -177,11 +176,17 @@ class ClassificationExperiment(TranslationExperiment):
             preds += top_1.tolist()
             top1_probs += top_1probs.tolist()
 
+        if isinstance(batch_size, int):
+            max_toks, max_sents = batch_size, float('inf')
+        else:
+            max_toks, max_sents = batch_size
+
+        buffer = []
         with tqdm.tqdm(texts, total=len(texts)) as data_bar:
             for txt in data_bar:
                 buffer.append(txt)
                 tok_count += len(txt)
-                if tok_count > batch_size:
+                if tok_count >= max_toks or len(buffer) >= max_sents:
                     _consume_batch(buffer)
                     # new batch
                     buffer.clear()
@@ -190,7 +195,8 @@ class ClassificationExperiment(TranslationExperiment):
                 _consume_batch(buffer)
             return preds, top1_probs
 
-    def evaluate_classifier(self, model, input: Path, labels: Path, batch_size: int, max_len: int):
+    def evaluate_classifier(self, model, input: Path, labels: Path, batch_size, max_len: int):
+        model = model.eval()
         preds, probs = self.get_predictions(model, input, batch_size=batch_size, max_len=max_len)
         label_to_id = partial(self.tgt_field.encode_as_ids, add_bos=False, add_eos=False)
         labels = [label_to_id(x)[0] for x in IO.get_lines(labels)]
