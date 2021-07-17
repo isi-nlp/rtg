@@ -299,7 +299,7 @@ class ClassifierTrainer(SteppedTrainer):
         self.classifier = self.core_model.classifier
 
     def loss_func(self, scores, labels, train_mode=False, take_step=False):
-        loss = self.criterion(scores, labels).sum() / len(labels)
+        loss = self.criterion(scores, labels, mask_pad=False).sum() / len(labels)
         if train_mode:  # don't do this for validation set
             dtorch.backward(loss)
             if take_step:
@@ -344,6 +344,7 @@ class ClassifierTrainer(SteppedTrainer):
 
         class_names = self.exp.tgt_vocab.class_names
         metrics = ClsMetric(prediction=preds, truth=labels, clsmap=class_names)
+
         self.tbd.add_scalars('val_performance',
                              dict(macrof1=metrics.macro_f1, accuracy=metrics.accuracy,
                                   microf1=metrics.micro_f1), self.opt.curr_step)
@@ -354,7 +355,9 @@ class ClassifierTrainer(SteppedTrainer):
                                  self.opt.curr_step)
             self.tbd.add_scalars('val_recall', dict(zip(metrics.clsmap, metrics.recall)),
                                  self.opt.curr_step)
-
+        log_conf_mat = len(class_names) < 40
+        log.info(f"validation at step={self.opt.curr_step}\n{metrics.format(confusion=log_conf_mat)}")
+            
         loss_avg = total_loss / num_batches
         return loss_avg, metrics
 
