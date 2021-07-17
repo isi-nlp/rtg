@@ -109,7 +109,8 @@ class ClassificationExperiment(TranslationExperiment):
             self.check_line_count('training', args['train_src'], args['train_tgt'])
 
         xt_args = dict(no_split_toks=args.get('no_split_toks'),
-                       char_coverage=args.get('char_coverage', 0))
+                       char_coverage=args.get('char_coverage', 0),
+                       min_co_ev=args.get('src_min_co_ev', args.get('min_co_ev', None)))
 
         src_corpus = [args[key] for key in ['train_src', 'mono_src'] if args.get(key)]
         max_src_size = args.get('max_src_types', args.get('max_types', None))

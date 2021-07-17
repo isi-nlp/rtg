@@ -218,7 +218,7 @@ class NLField(Field):
     @classmethod
     def train(cls, model_type: str, vocab_size: int, model_path: str, files: List[str],
               no_split_toks: Optional[List[str]] = None, char_coverage: float = 0,
-              dedup=True, spark=None):
+              dedup=True, spark=None, min_co_ev=None):
         """
         :param model_type: word, char, bpe
         :param vocab_size: vocabulary size
@@ -226,11 +226,14 @@ class NLField(Field):
         :param files: text for creating vcabulary
         :param no_split_toks:
         :param char_coverage: character coverage (0, 1]. value <= 0 => default coverage
+        :param min_co_ev: (for BPE only) minimum co-evidence for subword merges
         :return:
         """
         assert not no_split_toks, 'not supported in nlcodec yet'
         from nlcodec import learn_vocab, term_freq
         kwargs = dict(char_coverage=char_coverage) if char_coverage > 0 else {}
+        if min_co_ev:
+            kwargs["min_co_ev"] = min_co_ev
         if not spark:
             inp = IO.get_liness(*files)
         else:
