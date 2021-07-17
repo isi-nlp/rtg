@@ -466,7 +466,8 @@ class TranslationExperiment(BaseExperiment):
         TSVData.write_parallel_recs(samples, self.samples_file)
 
     def _make_vocab(self, name: str, vocab_file: Path, model_type: str, vocab_size: int,
-                    corpus: List, no_split_toks: List[str] = None, char_coverage=0) -> Field:
+                    corpus: List, no_split_toks: List[str] = None, char_coverage=0,
+                    min_co_ev=None) -> Field:
         """
         Construct vocabulary file
         :param name: name : src, tgt or shared -- for the sake of logging
@@ -489,8 +490,11 @@ class TranslationExperiment(BaseExperiment):
 
         flat_uniq_corpus = list(flat_uniq_corpus)
         log.info(f"Going to build {name} vocab from files")
+        xt_args = {}
+        if min_co_ev:
+            xt_args["min_co_ev"] = min_co_ev
         return self.Field.train(model_type, vocab_size, str(vocab_file), flat_uniq_corpus,
-                                no_split_toks=no_split_toks, char_coverage=char_coverage)
+                                no_split_toks=no_split_toks, char_coverage=char_coverage, **xt_args)
 
     def pre_process_mono(self, args):
         xt_args = dict(no_split_toks=args.get('no_split_toks'),
