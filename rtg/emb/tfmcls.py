@@ -136,6 +136,7 @@ class ClassificationExperiment(TranslationExperiment):
 
         if args.get("finetune_src") or args.get("finetune_tgt"):
             self._pre_process_parallel('finetune_src', 'finetune_tgt', self.finetune_file)
+        self.persist_state()
         self._prepared_flag.touch()
 
         """
