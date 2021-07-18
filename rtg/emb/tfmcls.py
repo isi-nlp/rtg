@@ -153,30 +153,34 @@ class ClassificationExperiment(TranslationExperiment):
         TSVData.write_parallel_recs(samples, self.samples_file)
         """
 
-    def get_predictions(self, model, input, batch_size: Union[int, Tuple[int, int]], max_len):
-        max_len = max_len or 256
+    def get_predictions(self, model, input, batch_size: Union[int, Tuple[int, int]], max_len=256):
         texts = IO.get_lines(input)
         txt_to_ids = partial(self.src_field.encode_as_ids, add_bos=False, add_eos=False)
-        texts = [txt_to_ids(x)[:max_len] for x in texts]
-        log.info(f"Predicting labels for {len(texts)} sentences")
+        texts = (txt_to_ids(x)[:max_len] for x in texts)
+        # sort as descending order of lengths
+        texts_lensorted = list(sorted(enumerate(texts), key=lambda x:len(x[1]), reverse=True))
+        log.info(f"Predicting labels for {len(texts_lensorted)} sentences")
         model = model.eval().to(device)
         preds = []
         top1_probs = []
         tok_count = 0
 
-        def _consume_batch(buffer):
+        def _consume_minibatch(buffer):
             nonlocal preds, top1_probs  # accessing outer variable
-            max_len = max(len(x) for x in buffer)
+            max_len = max(len(x) for orig_i, x in buffer)
             x_seqs = torch.full((len(buffer), max_len), fill_value=self.src_field.pad_idx,
                                 dtype=torch.long)
-            for i, x in enumerate(buffer):
-                x_seqs[i, :len(x)] = torch.tensor(x, dtype=torch.long)
+            batch_is = [batch_i for batch_i, x in buffer]
+            for minibatch_i, (batch_i, x) in enumerate(buffer):
+                x_seqs[minibatch_i, :len(x)] = torch.tensor(x, dtype=torch.long)
+
             x_seqs = x_seqs.to(device)
             x_mask = (x_seqs != self.src_field.pad_idx).unsqueeze(1)
             probs = model(src=x_seqs, src_mask=x_mask, score='softmax')
             top_1probs, top_1 = probs.max(dim=1)
-            preds += top_1.tolist()
-            top1_probs += top_1probs.tolist()
+
+            preds += list(zip(batch_is, top_1.tolist()))
+            top1_probs += list(zip(batch_is, top_1probs.tolist()))
 
         if isinstance(batch_size, int):
             max_toks, max_sents = batch_size, float('inf')
@@ -184,18 +188,22 @@ class ClassificationExperiment(TranslationExperiment):
             max_toks, max_sents = batch_size
 
         buffer = []
-        with tqdm.tqdm(texts, total=len(texts)) as data_bar:
-            for txt in data_bar:
-                buffer.append(txt)
+        with tqdm.tqdm(texts_lensorted, total=len(texts_lensorted)) as data_bar:
+            for idx, txt in data_bar:
+                buffer.append((idx, txt))
                 tok_count += len(txt)
                 if tok_count >= max_toks or len(buffer) >= max_sents:
-                    _consume_batch(buffer)
+                    _consume_minibatch(buffer)
                     # new batch
                     buffer.clear()
                     tok_count = 0
             if buffer:
-                _consume_batch(buffer)
-            return preds, top1_probs
+                _consume_minibatch(buffer)
+
+        # restore order, drop indices
+        preds = [p for i, p in sorted(preds, key=lambda x:x[0])]
+        top1_probs = [p for i, p in sorted(top1_probs, key=lambda x: x[0])]
+        return preds, top1_probs
 
     def evaluate_classifier(self, model, input: Path, labels: Path, batch_size, max_len: int):
         model = model.eval()
