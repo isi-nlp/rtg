@@ -712,7 +712,7 @@ class TranslationExperiment(BaseExperiment):
 
     def inherit_parent(self):
         parent = self.config['parent']
-        parent_exp = TranslationExperiment(parent['experiment'], read_only=True)
+        parent_exp = type(self)(parent['experiment'], read_only=True)
         log.info(f"Parent experiment: {parent_exp.work_dir}")
         parent_exp.has_prepared()
         vocab_sepc = parent.get('vocab')

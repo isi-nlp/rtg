@@ -314,8 +314,8 @@ class SteppedTrainer:
         if trainable_params:
             if dtorch.is_distributed: # model is wrapped in DP or DistributedDP
                 log.warning(f">> Using more than 1 GPU with 'trainable' params is NOT tested")
-            trainable_params = self.core_model.get_trainable_params(include=trainable_params.get('include'),
-                                                           exclude=trainable_params.get('exclude'))
+            trainable_params = self.core_model.get_trainable_params(
+                include=trainable_params.get('include'), exclude=trainable_params.get('exclude'))
         else:
             trainable_params = self.model.parameters()
 

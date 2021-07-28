@@ -8,7 +8,7 @@ import gc
 import time
 from functools import partial
 from pathlib import Path
-from typing import Optional, Callable, Union, Tuple
+from typing import Optional, Callable, Union, Tuple, List
 
 import torch
 import torch.nn as nn
@@ -100,6 +100,9 @@ class ClassificationExperiment(TranslationExperiment):
             log.warning("Already prepared")
             return
 
+        if 'parent' in self.config:
+            self.inherit_parent()
+
         # check if files are parallel
         self.check_line_count('validation', args['valid_src'], args['valid_tgt'])
         if 'spark' in self.config:
@@ -137,21 +140,15 @@ class ClassificationExperiment(TranslationExperiment):
 
         if args.get("finetune_src") or args.get("finetune_tgt"):
             self._pre_process_parallel('finetune_src', 'finetune_tgt', self.finetune_file)
+
         self.persist_state()
         self._prepared_flag.touch()
 
-        """
-        # get samples from validation set
-        n_samples = args.get('num_samples', 10)
-        space_tokr = lambda line: line.strip().split()
-        val_raw_recs = TSVData.read_raw_parallel_recs(
-            args['valid_src'], args['valid_tgt'], args['truncate'], args['src_len'],
-            args['tgt_len'], src_tokenizer=space_tokr, tgt_tokenizer=space_tokr)
-        val_raw_recs = list(val_raw_recs)
-        random.shuffle(val_raw_recs)
-        samples = val_raw_recs[:n_samples]
-        TSVData.write_parallel_recs(samples, self.samples_file)
-        """
+    def inherit_parent(self):
+        parent = self.config['parent']
+        if parent.get('shrink'):
+            raise ValueError('parent.shrink not supported for this model yet')
+        super(ClassificationExperiment, self).inherit_parent()
 
     def get_predictions(self, model, input, batch_size: Union[int, Tuple[int, int]], max_len=256):
         texts = IO.get_lines(input)
@@ -235,6 +232,34 @@ class TransformerClassifier(Model):
         self.src_embed = src_embed
         self.compressor = compressor
         self.classifier = classifier
+
+    def get_trainable_params(self, include=None, exclude=None):
+        if not include and not exclude or include == 'all':
+            return super().get_trainable_params()
+        if exclude:
+            raise Exception("Exclude not supported yet. Please use include")
+            # TODO: implement it later when it is really really needed!
+        assert isinstance(include, list)
+        # a valid example for include
+        # 'src_embed', 'compressor', 'classifier', 'encoder:0,1,2,3,...,n-1',  # encoder:layers
+        param_groups = []
+        for sub_name in include:
+            if hasattr(self, sub_name):
+                log.info(f"Trainable parameters <-- {sub_name}")
+                param_groups.extend(getattr(self, sub_name).parameters())
+            elif sub_name.startswith('encoder:'): # sub select layers
+                sub_name, layers = sub_name.split(':')  # encoder:layer_idx
+                layers = [int(x) for x in layers.split(',')]
+                for layer_idx in layers:
+                    log.info(f'Trainable parameters <-- {sub_name}[{layer_idx}] ')
+                    layer = self.encoder.layers[layer_idx]
+                    param_groups.extend(layer.parameters())
+                if len(self.encoder.layers) - 1 in layers:  # the last layer is trainable, then norm
+                    log.info(f'Trainable parameters <-- {sub_name}.norm')
+                    param_groups.extend(self.encoder.norm.parameters())
+            else:
+                raise Exception(f'{sub_name} not supported or invalid')
+        return param_groups
 
     @property
     def model_dim(self):
