@@ -160,19 +160,19 @@ class ClassificationExperiment(TranslationExperiment):
         model = model.eval().to(device)
         preds = []
         top1_probs = []
-        tok_count = 0
+        pad_idx = self.src_field.pad_idx
 
         def _consume_minibatch(buffer):
-            nonlocal preds, top1_probs  # accessing outer variable
+            nonlocal preds, top1_probs, model, pad_idx  # accessing outer variable
             max_len = max(len(x) for orig_i, x in buffer)
-            x_seqs = torch.full((len(buffer), max_len), fill_value=self.src_field.pad_idx,
+            x_seqs = torch.full((len(buffer), max_len), fill_value=pad_idx,
                                 dtype=torch.long)
             batch_is = [batch_i for batch_i, x in buffer]
             for minibatch_i, (batch_i, x) in enumerate(buffer):
                 x_seqs[minibatch_i, :len(x)] = torch.tensor(x, dtype=torch.long)
 
             x_seqs = x_seqs.to(device)
-            x_mask = (x_seqs != self.src_field.pad_idx).unsqueeze(1)
+            x_mask = (x_seqs != pad_idx).unsqueeze(1)
             probs = model(src=x_seqs, src_mask=x_mask, score='softmax')
             top_1probs, top_1 = probs.max(dim=1)
 
@@ -185,6 +185,7 @@ class ClassificationExperiment(TranslationExperiment):
             max_toks, max_sents = batch_size
 
         buffer = []
+        tok_count = 0
         with tqdm.tqdm(texts_lensorted, total=len(texts_lensorted)) as data_bar:
             for idx, txt in data_bar:
                 buffer.append((idx, txt))

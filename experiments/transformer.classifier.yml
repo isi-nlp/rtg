@@ -1,5 +1,5 @@
 model_args:
-  src_vocab: 4000
+  src_vocab: 2751
   tgt_vocab: 14
   enc_layers: 3
   hid_size: 128
@@ -10,6 +10,16 @@ model_args:
   dropout: 0.2
   activation: relu
 model_type: tfmcls
+__parent:
+  experiment: <path/to/experiment/dir>
+  vocab:
+    src: src            # for separate vocabs
+    #tgt: tgt
+  shrink: true        # shrink vocabularies and embeddings to child data
+                      # specified in train_src and mono_src
+  model:
+    args: true          # update/overwrite the model_args of child with the parent
+    ensemble: 5         # how many checkpoints of parent to ensemble, to obtain initial state
 optim:
   args:
     criterion: cross_entropy
@@ -52,4 +62,4 @@ trainer:
   keep_models: 10
   steps: 3000
   sort_by: random
-updated_at: '2021-06-18T09:31:10.563247'
+updated_at: '2021-07-17T01:47:52.884370'
