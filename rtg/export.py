@@ -44,7 +44,7 @@ class ExperimentExporter:
                                model_type=chkpt_state['model_type'],
                                model_args=chkpt_state['model_args'])
         log.info("Instantiating it ...")
-        model = self.exp.load_model(model_paths=chkpt_state)
+        model = self.exp.load_model_with_state(checkpt_state=chkpt_state)
         log.info(f"Exporting to {target}")
         to_exp = Experiment(target, config=self.exp.config)
         to_exp.persist_state()
@@ -74,7 +74,7 @@ class ExperimentExporter:
         yaml.dump(status, stream=to_exp.work_dir / '_EXPORTED')
 
         if self.exp._trained_flag.exists():
-            IO.copy(self.exp._trained_flag, to_exp._trained_flag)
+            IO.copy_file(self.exp._trained_flag, to_exp._trained_flag)
 
 
 def add_boolean(parser, name, help, dest=None, default=True):
