@@ -364,7 +364,8 @@ class ClassifierTrainer(SteppedTrainer):
         num_batches = 0
         model = self.core_model
         assert not model.training
-        labels, preds = [], []
+        label_ids, pred_ids, pred_probs = [], [], []
+        
         with tqdm.tqdm(val_data, unit='batch', dynamic_ncols=True) as data_bar:
             for i, batch in enumerate(data_bar):
                 with autocast(enabled=dtorch.fp16):
@@ -382,18 +383,20 @@ class ClassifierTrainer(SteppedTrainer):
                     data_bar.set_postfix_str(
                         f'Loss:{loss:.4f}, {int(len(batch) / elapsed)}item/s', refresh=False)
 
-                    labels += batch.ys.tolist()
+                    label_ids += batch.ys.tolist()
                     if self.criterion.input_type == 'logits':
                         probs = F.softmax(scores, dim=1)
                     else:
                         probs = scores
 
-                    _, top_1 = probs.max(dim=1)
-                    preds += top_1.tolist()
+                    top1_probs, top1_idx = probs.max(dim=1)
+                    pred_ids += top1_idx.tolist()
+                    pred_probs += top1_probs.tolist()
                 start = time.time()
 
         class_names = self.exp.tgt_vocab.class_names
-        metrics = ClsMetric(prediction=preds, truth=labels, clsmap=class_names)
+        metrics = ClsMetric(prediction=pred_ids, truth=label_ids, clsmap=class_names)
+        pred_names = [class_names[pi] for pi in pred_ids]
 
         step = self.opt.curr_step
         self.tbd.add_scalars('val_performance',
@@ -408,8 +411,11 @@ class ClassifierTrainer(SteppedTrainer):
         log.info(f"validation at step={step}\n{metrics.format(confusion=log_conf_mat)}")
         val_metric_dir = self.exp.work_dir / 'validations'
         val_metric_dir.mkdir(exist_ok=True)
-        (val_metric_dir / f'validation-{step:6d}.csv').write_text(metrics.format(delim=','))
-            
+        (val_metric_dir / f'validation-{step:06d}.score.csv').write_text(metrics.format(delim=','))
+        with (val_metric_dir / f'validation-{step:06d}.out.tsv').open('w') as out:
+            for p_name, p_prob in zip(pred_names, pred_probs):
+                out.write(f'{p_name}\t{p_prob:g}\n')
+
         loss_avg = total_loss / num_batches
         return loss_avg, metrics
 

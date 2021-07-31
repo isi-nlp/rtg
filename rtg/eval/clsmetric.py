@@ -106,8 +106,11 @@ def main(**args):
     labels = [l.strip() for l in args['labels']]
     freqs = list(sorted(Counter(preds + labels).items(), key=lambda x:x[1], reverse=True))
     clsmap = [lbl for lbl, freq in freqs]
+    clsidx = {c:i for i, c in enumerate(clsmap)}
+    preds = [clsidx[c] for c in preds]
+    labels = [clsidx[c] for c in labels]
     metric = ClsMetric(prediction=preds, truth=labels, clsmap=clsmap)
-    result = metric.format(delim=args.get('delim', ','))
+    result = metric.format(delim=args.get('delim', ','), confusion=args.get('confusion'))
     print(result)
 
 
@@ -120,6 +123,7 @@ def parse_args():
     p.add_argument('-l', '--labels', type=argparse.FileType('r'), required=True,
                    help='Labels file path')
     p.add_argument('-d', '--delim', default=',', help='Delimiter')
+    p.add_argument('-c', '--confusion', action='store_true', help='Also compute confusion matrix')    
     return p.parse_args()
 
 def __test():
