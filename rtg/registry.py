@@ -15,7 +15,7 @@ class ProblemType(str, Enum):
 import re
 from dataclasses import dataclass
 from typing import Any, Optional, Mapping, Dict, Type
-from rtg.exp import  BaseExperiment
+from rtg.exp import BaseExperiment
 from rtg.module.tfmnmt import TransformerTrainer
 from rtg.module.skptfmnmt import SKPTransformerTrainer
 from rtg.module.wvtfmnmt import WVTransformerTrainer
@@ -92,7 +92,6 @@ generators = {
     'wv_cbow': CBOW.make_model  # FIXME: this is a place holder
 }
 
-
 #  TODO: simplify this; use decorators to register directly from class's code
 
 ####
@@ -137,7 +136,6 @@ class Model:
 
     def experiment(self, work_dir, *args, **kwargs):
         return self.Experiment(work_dir, *args, **kwargs)
-
 
 
 def register(kind, name=None):
@@ -192,7 +190,6 @@ def __register_all():
 __register_all()
 
 if __name__ == '__main__':
-
     @register(MODEL)
     class MyModel:
         model_type = 'mymodel'

@@ -8,10 +8,12 @@
 # Author: Thamme Gowda [tg (at) isi (dot) edu]
 # Created: 4/26/21
 
+import logging as log
 from typing import List, Union
 from torch import Tensor
 import numpy as np
-
+from collections import Counter
+log.basicConfig(level=log.INFO)
 Array = Union[List[int], Tensor, np.ndarray]
 
 
@@ -98,9 +100,35 @@ class ClsMetric:
         return body
 
 
-if __name__ == '__main__':
+def main(**args):
+    args = args or vars(parse_args())
+    preds = [l.strip() for l in args['preds']]
+    labels = [l.strip() for l in args['labels']]
+    freqs = list(sorted(Counter(preds + labels).items(), key=lambda x:x[1], reverse=True))
+    clsmap = [lbl for lbl, freq in freqs]
+    metric = ClsMetric(prediction=preds, truth=labels, clsmap=clsmap)
+    result = metric.format(delim=args.get('delim', ','))
+    print(result)
+
+
+def parse_args():
+    import argparse
+    p = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+
+    p.add_argument('-p', '--preds', type=argparse.FileType('r'), required=True,
+                   help='Predictions file path')
+    p.add_argument('-l', '--labels', type=argparse.FileType('r'), required=True,
+                   help='Labels file path')
+    p.add_argument('-d', '--delim', default=',', help='Delimiter')
+    return p.parse_args()
+
+def __test():
     preds = [0, 0, 1, 1, 0, 1, 0, 1]
     truth = [0, 0, 0, 0, 1, 1, 1, 2]
     clsmap = ["cat", "dog", "goat"]
     metric = ClsMetric(prediction=preds, truth=truth, clsmap=clsmap)
     print(metric.format(delim=','))
+
+if __name__ == '__main__':
+    main()
+

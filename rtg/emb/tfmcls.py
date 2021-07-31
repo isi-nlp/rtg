@@ -150,8 +150,21 @@ class ClassificationExperiment(TranslationExperiment):
             raise ValueError('parent.shrink not supported for this model yet')
         super(ClassificationExperiment, self).inherit_parent()
 
-    def get_predictions(self, model, input, batch_size: Union[int, Tuple[int, int]], max_len=256):
-        texts = IO.get_lines(input)
+    def get_predictions(self, model, input: (str, Path, List[str]),
+                        batch_size: Union[int, Tuple[int, int]], max_len=256):
+        """
+        :param model:
+        :param input: either a path string or Path object, or list of strings
+        :param batch_size:
+        :param max_len:
+        :return:
+        """
+
+        if isinstance(input, (str, Path)):
+            texts = IO.get_lines(input)
+        else:
+            assert isinstance(input, list) and isinstance(input[0], str)
+            texts = input
         txt_to_ids = partial(self.src_field.encode_as_ids, add_bos=False, add_eos=False)
         texts = (txt_to_ids(x)[:max_len] for x in texts)
         # sort as descending order of lengths
@@ -199,21 +212,21 @@ class ClassificationExperiment(TranslationExperiment):
                 _consume_minibatch(buffer)
 
         # restore order, drop indices
-        preds = [p for i, p in sorted(preds, key=lambda x:x[0])]
+        preds_idx = [p for i, p in sorted(preds, key=lambda x:x[0])]
+        pred_labels = [self.tgt_vocab.class_names[idx]  for idx in preds_idx]
         top1_probs = [p for i, p in sorted(top1_probs, key=lambda x: x[0])]
-        return preds, top1_probs
+        return preds_idx, pred_labels, top1_probs
 
     def evaluate_classifier(self, model, input: Path, labels: Path, batch_size, max_len: int):
         model = model.eval()
-        preds, probs = self.get_predictions(model, input, batch_size=batch_size, max_len=max_len)
+        pred_idx, pred_labels, probs = self.get_predictions(model, input, batch_size=batch_size, max_len=max_len)
         label_to_id = partial(self.tgt_field.encode_as_ids, add_bos=False, add_eos=False)
         labels = [label_to_id(x)[0] for x in IO.get_lines(labels)]
-        assert len(preds) == len(labels), f'preds:{len(preds)} == truth:{len(labels)}?'
+        assert len(pred_idx) == len(labels), f'preds:{len(pred_idx)} == truth:{len(labels)}?'
         log.info(f"Testing on {len(labels)} examples")
         clsmap = self.tgt_field.class_names
-        metric = ClsMetric(prediction=preds, truth=labels, clsmap=clsmap)
-        pred_names = [clsmap[x] for x in preds]
-        return metric, pred_names, probs
+        metric = ClsMetric(prediction=pred_idx, truth=labels, clsmap=clsmap)
+        return metric, pred_labels, probs
 
 
 @register(kind=MODEL)
@@ -372,25 +385,30 @@ class ClassifierTrainer(SteppedTrainer):
                     labels += batch.ys.tolist()
                     if self.criterion.input_type == 'logits':
                         probs = F.softmax(scores, dim=1)
-                        _, top_1 = probs.max(dim=1)
-                        preds += top_1.tolist()
+                    else:
+                        probs = scores
+
+                    _, top_1 = probs.max(dim=1)
+                    preds += top_1.tolist()
                 start = time.time()
 
         class_names = self.exp.tgt_vocab.class_names
         metrics = ClsMetric(prediction=preds, truth=labels, clsmap=class_names)
 
+        step = self.opt.curr_step
         self.tbd.add_scalars('val_performance',
                              dict(macrof1=metrics.macro_f1, accuracy=metrics.accuracy,
-                                  microf1=metrics.micro_f1), self.opt.curr_step)
+                                  microf1=metrics.micro_f1), step)
         if len(class_names) < 40:
-            self.tbd.add_scalars('val_f1', dict(zip(metrics.clsmap, metrics.f1)),
-                                 self.opt.curr_step)
+            self.tbd.add_scalars('val_f1', dict(zip(metrics.clsmap, metrics.f1)), step)
             self.tbd.add_scalars('val_precision', dict(zip(metrics.clsmap, metrics.precision)),
-                                 self.opt.curr_step)
-            self.tbd.add_scalars('val_recall', dict(zip(metrics.clsmap, metrics.recall)),
-                                 self.opt.curr_step)
+                                 step)
+            self.tbd.add_scalars('val_recall', dict(zip(metrics.clsmap, metrics.recall)), step)
         log_conf_mat = len(class_names) < 40
-        log.info(f"validation at step={self.opt.curr_step}\n{metrics.format(confusion=log_conf_mat)}")
+        log.info(f"validation at step={step}\n{metrics.format(confusion=log_conf_mat)}")
+        val_metric_dir = self.exp.work_dir / 'validations'
+        val_metric_dir.mkdir(exist_ok=True)
+        (val_metric_dir / f'validation-{step:6d}.csv').write_text(metrics.format(delim=','))
             
         loss_avg = total_loss / num_batches
         return loss_avg, metrics
@@ -422,7 +440,7 @@ class ClassifierTrainer(SteppedTrainer):
             max_toks, max_sents = batch_size
         if args:
             # no extra args. let user know if an extra arg is passed
-            raise Exception(f" Found extra args: {args}")
+            raise Exception(f"Found extra args: {args}")
         log.info(f'Going to train for {opt_steps} optimizer steps over {batches} batches'
                  f' (from {self.start_step} steps);'
                  f' batch_size={batch_size} toks; sort_by={sort_by};')
@@ -518,19 +536,3 @@ class ClassifierTrainer(SteppedTrainer):
         distr.barrier()
         return early_stopped
 
-
-if __name__ == '__main__':
-    args = dict(src_vocab=8000, tgt_vocab=3, enc_layers=2, hid_size=128, ff_size=256, n_heads=2)
-    model, args_2 = TransformerClassifier.make_model(**args)
-    # if you are running this in pycharm, please set Working Dir=<rtg repo base dir> for run config
-    dir = 'experiments/sample-exp'
-    from rtg.exp import TranslationExperiment as Experiment
-
-    exp = Experiment(work_dir=dir, read_only=True)
-    model.train()
-    data = exp.get_train_data(batch_size=256, steps=100)
-    for batch in data:
-        x_mask = (batch.x_seqs != batch.pad_val).unsqueeze(1)
-        ys = torch.randint(low=0, high=args['n_classes'], size=(len(batch), 1))
-        res = model(src=batch.x_seqs, tgt=ys, src_mask=x_mask)
-        print(res)

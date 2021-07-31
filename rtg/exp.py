@@ -352,7 +352,8 @@ class BaseExperiment:
         factory = factories[self.model_type]
         model = factory(exp=self, **self.model_args)[0]
         state = self.maybe_ensemble_state(model_paths=model_paths, ensemble=ensemble)
-        model.load_state_dict(state)
+        errors = model.load_state_dict(state)
+        log.info(f"{errors}")
         return model
 
     def load_model_with_state(self, checkpt_state):
@@ -364,7 +365,8 @@ class BaseExperiment:
         # Dummy experiment wrapper
         factory = factories[model_type]
         model = factory(exp=self, **model_args)[0]
-        model.load_state_dict(state)
+        errors = model.load_state_dict(state)
+        log.info(f"{errors}")
         log.info(f"Successfully restored the model state of : {model_type}")
         return model
 

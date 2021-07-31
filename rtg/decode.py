@@ -4,9 +4,15 @@ import sys
 import io
 from argparse import ArgumentDefaultsHelpFormatter as ArgFormatter
 import torch
-
-from rtg import TranslationExperiment as Experiment, log
+from typing import List, TextIO
+import copy
+from pathlib import Path
+from rtg import log
+from rtg.exp import load_conf
 from rtg.module.decoder import Decoder
+from rtg.registry import registry, MODEL, Model as Spec
+from rtg.emb.tfmcls import ClassificationExperiment
+from rtg.exp import TranslationExperiment
 
 
 def parse_args():
@@ -34,7 +40,7 @@ def parse_args():
     return args
 
 
-def validate_args(cli_args, conf_args, exp: Experiment):
+def validate_args(cli_args, conf_args, exp):
     if not cli_args.pop('skip_check'):  # if --skip-check is not requested
         assert exp.has_prepared(), \
             f'Experiment dir {exp.work_dir} is not ready to train. Please run "prep" sub task'
@@ -50,16 +56,13 @@ def validate_args(cli_args, conf_args, exp: Experiment):
         conf_args['max_src_len'] = cli_args['max_src_len']
 
 
-def main():
-    # No grads required for decode
-    torch.set_grad_enabled(False)
-    cli_args = parse_args()
-    exp = Experiment(cli_args.pop('exp_dir'), read_only=True)
+def decode_mt(exp, **cli_args):
     dec_args = exp.config.get('decoder') or exp.config['tester'].get('decoder', {})
     validate_args(cli_args, dec_args, exp)
-
+    input: List[TextIO] = cli_args.pop('input')
+    output: List[TextIO] = cli_args.pop('output')
     decoder = Decoder.new(exp, ensemble=dec_args.pop('ensemble', 1))
-    for inp, out in zip(cli_args['input'], cli_args['output']):
+    for inp, out in zip(input, output):
         log.info(f"Decode :: {inp} -> {out}")
         try:
             if cli_args.get('no_buffer'):
@@ -68,6 +71,39 @@ def main():
                 return decoder.decode_file(inp, out, **dec_args)
         except:
             log.exception(f"Decode failed for {inp}")
+
+def predict_cls(exp: ClassificationExperiment, **cli_args):
+    conf_args = copy.copy(exp.config.get('tester', {}))
+    batch_size = cli_args.get('batch_size', None) or conf_args.get('batch_size', None)
+    max_len = cli_args.get('max_src_len', 0) or conf_args.get('max_len', 0)
+    assert batch_size
+    assert max_len > 0
+    assert not cli_args.get('no_buffer'), 'Option --no-buffer is not yet supported for this model.'
+    model = exp.load_model()
+    for in_stream, out_stream in zip(cli_args['input'], cli_args['output']):
+        input = [line.strip() for line in in_stream]
+        log.info(f"going to label {len(input)} sequences; batch_size={batch_size} max_len={max_len}")
+        top1_idx, top1_label, top1_prob = exp.get_predictions(model, input=input, batch_size=batch_size, max_len=max_len)
+        for label, prob in zip(top1_label, top1_prob):
+            out_stream.write(f'{label}\t{prob:g}\n')
+        log.info(f"Wrote to {out_stream}")
+    log.info("===All done!===")
+
+def main():
+    # No grads required for decode
+    torch.set_grad_enabled(False)
+    cli_args = parse_args()
+    exp_dir = Path(cli_args.pop('exp_dir'))
+    conf = load_conf(exp_dir / 'conf.yml')
+    assert conf.get('model_type')
+    assert conf['model_type'] in registry[MODEL]
+    spec: Spec = registry[MODEL][conf['model_type']]
+    exp = spec.Experiment(exp_dir, config=conf, read_only=True)
+    if isinstance(exp, ClassificationExperiment):
+        predict_cls(exp, **cli_args)
+    else:
+        assert isinstance(exp, TranslationExperiment)
+        decode_mt(exp, **cli_args)
 
 
 if __name__ == '__main__':
