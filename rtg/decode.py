@@ -83,7 +83,8 @@ def predict_cls(exp: ClassificationExperiment, **cli_args):
     for in_stream, out_stream in zip(cli_args['input'], cli_args['output']):
         input = [line.strip() for line in in_stream]
         log.info(f"going to label {len(input)} sequences; batch_size={batch_size} max_len={max_len}")
-        top1_idx, top1_label, top1_prob = exp.get_predictions(model, input=input, batch_size=batch_size, max_len=max_len)
+        top1_idx, top1_label, top1_prob = exp.get_predictions(
+            model, input=input, batch_size=batch_size, max_len=max_len)
         for label, prob in zip(top1_label, top1_prob):
             out_stream.write(f'{label}\t{prob:g}\n')
         log.info(f"Wrote to {out_stream}")

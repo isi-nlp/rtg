@@ -40,7 +40,7 @@ prep:
   pieces: bpe
   codec_lib: nlcodec
   shared_vocab: false
-  src_len: 100
+  src_len: 256
   tgt_len: 100
   train_src: tests/test-data/dbpedia/train.text
   train_tgt: tests/test-data/dbpedia/train.label
@@ -62,4 +62,4 @@ trainer:
   keep_models: 10
   steps: 3000
   sort_by: random
-updated_at: '2021-07-17T01:47:52.884370'
+updated_at: '2021-07-31T19:29:42.341722'

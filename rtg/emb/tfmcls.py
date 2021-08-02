@@ -88,6 +88,11 @@ class ClassificationExperiment(TranslationExperiment):
     def problem_type(self) -> ProblemType:
         return ProblemType.CLASSIFICATION
 
+    @property
+    def src_to_ids(self):
+        # EOS is added by batch maker during training
+        return partial(self.src_field.encode_as_ids, add_bos=False, add_eos=True)
+
     def pre_process(self, args=None, force=False):
         args = args or self.config.get('prep')
         is_shared = args.get('shared')
@@ -159,17 +164,17 @@ class ClassificationExperiment(TranslationExperiment):
         :param max_len:
         :return:
         """
-
         if isinstance(input, (str, Path)):
             texts = IO.get_lines(input)
         else:
             assert isinstance(input, list) and isinstance(input[0], str)
             texts = input
-        txt_to_ids = partial(self.src_field.encode_as_ids, add_bos=False, add_eos=False)
+        txt_to_ids = partial(self.src_field.encode_as_ids, add_bos=False, add_eos=True)
         texts = (txt_to_ids(x)[:max_len] for x in texts)
         # sort as descending order of lengths
-        texts_lensorted = list(sorted(enumerate(texts), key=lambda x:len(x[1]), reverse=True))
-        log.info(f"Predicting labels for {len(texts_lensorted)} sentences")
+        texts_lensorted = list(sorted(enumerate(texts), key=lambda x: len(x[1]), reverse=True))
+        log.info(f"Predicting labels for {len(texts_lensorted)} sentences;"
+                 f" batch_size={batch_size} max_len={max_len}")
         model = model.eval().to(device)
         preds = []
         top1_probs = []
@@ -330,6 +335,7 @@ class ClassifierTrainer(SteppedTrainer):
                  model_factory=TransformerClassifier.make_model,
                  **optim_args):
         super().__init__(exp, model, model_factory=model_factory, optim=optim, **optim_args)
+        self.exp: ClassificationExperiment = exp
         assert isinstance(self.core_model, TransformerClassifier), \
             f'Expected an instance of TransformerClassifier; but found {type(self.core_model)}'
         trainer_args = self.exp.config.get('trainer', {}).get('init_args', {})
@@ -365,7 +371,6 @@ class ClassifierTrainer(SteppedTrainer):
         model = self.core_model
         assert not model.training
         label_ids, pred_ids, pred_probs = [], [], []
-        
         with tqdm.tqdm(val_data, unit='batch', dynamic_ncols=True) as data_bar:
             for i, batch in enumerate(data_bar):
                 with autocast(enabled=dtorch.fp16):
