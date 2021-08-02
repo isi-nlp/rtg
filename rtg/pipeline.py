@@ -233,6 +233,10 @@ class Pipeline:
             try:
                 src_link = test_dir / f'{name}.src'
                 label_link = test_dir / f'{name}.label'
+                out_file = test_dir / f'{name}.out.tsv'
+                if out_file.exists() and out_file.stat().st_size > 0:
+                    log.warning(f"{out_file} exists and not empty, so skipping it")
+                    continue
                 buffer = [(src_link, Path(src).resolve())]
                 if label:
                     buffer.append((label_link, Path(label).resolve()))
@@ -249,7 +253,7 @@ class Pipeline:
                 score_file.write_text(metric.format(delim=','))
 
                 out = '\n'.join(f'{l}\t{p:g}' for l, p in zip(top1_labels, top1_probs))
-                out_file = test_dir / f'{name}.out.tsv'
+
                 out_file.write_text(out)
 
             except Exception as e:
