@@ -181,9 +181,8 @@ parent:
     shared: shared       # for reusing the shared vocab
     #src: src            # for separate vocabs
     #tgt: tgt
-
-  shrink: true # shrink vocabularies and embeddings to child data
-               # specified in train_{src,tgt} and mono_{src,tgt}
+  shrink: true        # shrink vocabularies and embeddings to child data
+                      # specified in train_{src,tgt} and mono_{src,tgt}
   model:
     args: true          # update/overwrite the model_args of child with the parent
     ensemble: 5         # how many checkpoints of parent to ensemble, to obtain initial state

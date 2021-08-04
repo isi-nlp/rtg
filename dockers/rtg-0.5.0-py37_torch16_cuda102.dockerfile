@@ -30,10 +30,10 @@ RUN mkdir -p /home/rtguser/.local/bin /home/rtguser/rtg
 ENV CUDA_HOME="/usr/local/cuda-10.2/"
 ENV PATH="/home/rtguser/.local/bin:/usr/local/cuda-10.2/bin:${PATH}"
 
-COPY --chown=rtguser:rtguser . /home/rtguser/rtg/
+#COPY --chown=rtguser:rtguser . /home/rtguser/rtg/
+#   && cd /home/rtguser/rtg && pip install --editable . \
 
-RUN pip install --user torch==1.6 gdown flask==1.1.2 uwsgi  \
-   && cd /home/rtguser/rtg && pip install --editable . \
+RUN pip install --user torch==1.6 flask==1.1.2 uwsgi rtg==0.5.0  \
    && pip cache purge
 
 CMD bash

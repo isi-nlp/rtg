@@ -540,7 +540,7 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <h2 id="_overview">1. Overview</h2>
 <div class="sectionbody">
 <div class="paragraph">
-<p><a href="https://github.com/isi-nlp/rtg-xt" target="_blank" rel="noopener">Reader-Translator-Generator (RTG)</a> is a Neural Machine Translation toolkit based on pytorch.</p>
+<p><a href="https://github.com/isi-nlp/rtg" target="_blank" rel="noopener">Reader-Translator-Generator (RTG)</a> is a Neural Machine Translation toolkit based on pytorch.</p>
 </div>
 <div class="sect2">
 <h3 id="_features">1.1. Features</h3>
@@ -656,24 +656,23 @@ Add the root of this repo to <code>PYTHONPATH</code> or install it via <code>pip
 <div class="ulist">
 <ul>
 <li>
-<p><a href="https://github.com/isi-nlp/rtg-xt" class="bare">https://github.com/isi-nlp/rtg-xt</a></p>
+<p><a href="https://github.com/isi-nlp/rtg" class="bare">https://github.com/isi-nlp/rtg</a></p>
 </li>
 <li>
-<p><a href="https://github.com/isi-nlp/rtg" class="bare">https://github.com/isi-nlp/rtg</a></p>
+<p><a href="https://github.com/isi-nlp/rtg-in" class="bare">https://github.com/isi-nlp/rtg-in</a></p>
 </li>
 </ul>
 </div>
 <div class="paragraph">
-<p>Both <code>rtg-xt</code> and <code>rtg</code> has the same code on <code>master</code> branch.
-<code>rtg-xt</code> has stable code base and meant to be used by anyone, so you should definitely get started with it.
-<code>rtg</code> is internal with some unfinished/work-in progress ideas (maybe unpublished), with issues and pull-requests by members of USC ISI team.
-We sync both code bases often.
-If you like to collaborate with us and/or to get access to <code>rtg</code>, email <a href="https://isi.edu/~tg" target="_blank" rel="noopener">TG</a> or <a href="https://isi.edu/~jonmay" target="_blank" rel="noopener">Jonathan May</a>.</p>
+<p>Both <code>rtg</code> and <code>rtg-in</code> have the same code on their <code>master</code> branches.
+<code>rtg</code> has stable code base and meant to be used by anyone, so it is recommended for the new users.
+<code>rtg-in</code> is internal to ISI NLP with some unfinished/work-in progress ideas (maybe unpublished), with issues and pull-requests by members of USC ISI team, and often less stable.
+We sync both code bases often (<code>sync-xt.sh</code> at the root of the repo).
+If you like to collaborate with us and/or to get access to <code>rtg-in</code>, email <a href="https://isi.edu/~tg" target="_blank" rel="noopener">TG</a> or <a href="https://isi.edu/~jonmay" target="_blank" rel="noopener">Jonathan May</a>.</p>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre>git clone https://github.com/isi-nlp/rtg-xt.git
-# use https://github.com/isi-nlp/rtg.git if you have access
+<pre>git clone https://github.com/isi-nlp/rtg.git
 cd rtg                # go to the code
 
 conda create -n rtg python=3.7   # creates a conda env named rtg
@@ -1083,9 +1082,8 @@ for 200k-300k steps. Note that <code>finetune_steps &gt; steps</code> .</p>
     <span style="color:#606">shared</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">shared</span></span>       <span style="color:#777"># for reusing the shared vocab</span>
     <span style="color:#777">#src: src            # for separate vocabs</span>
     <span style="color:#777">#tgt: tgt</span>
-
-  <span style="color:#606">shrink</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">true</span></span> <span style="color:#777"># shrink vocabularies and embeddings to child data</span>
-               <span style="color:#777"># specified in train_{src,tgt} and mono_{src,tgt}</span>
+  <span style="color:#606">shrink</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">true</span></span>        <span style="color:#777"># shrink vocabularies and embeddings to child data</span>
+                      <span style="color:#777"># specified in train_{src,tgt} and mono_{src,tgt}</span>
   <span style="color:#606">model</span>:
     <span style="color:#606">args</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">true</span></span>          <span style="color:#777"># update/overwrite the model_args of child with the parent</span>
     <span style="color:#606">ensemble</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">5</span></span>         <span style="color:#777"># how many checkpoints of parent to ensemble, to obtain initial state</span>
@@ -1382,6 +1380,14 @@ For end usage of the RTG toolkit, the workflow should be as simple as:</p>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">rtg-syscomb</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">System combination. Dont bother about it for now.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">rtg-launch</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Launch data distributed training</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">rtg-params</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Show parameters in model</p></td>
 </tr>
 </tbody>
 </table>
@@ -1943,10 +1949,7 @@ python -m rtg.distrib.launch -N 2 -r 1 -P 2 -G 1 -m rtg.pipeline  runs/005-tfm-n
 <div class="olist arabic">
 <ol class="arabic">
 <li>
-<p>ChunkedLossCumpute doesnt work with DDP on GPUs; please disable it by <code>trainer.init_args.args.chunk_size=0</code></p>
-</li>
-<li>
-<p>Don&#8217;t ever use <code>-G 2</code> or more, instead use more <code>-P</code></p>
+<p>Don&#8217;t ever use <code>-G 2</code> or more (i.e. dont use 2 or more GPUs per process), instead use more <code>-P</code> (i.e. more processes with 1 GPU each.</p>
 </li>
 </ol>
 </div>
@@ -2072,16 +2075,15 @@ optional arguments:
   -p PORT, --port PORT  port to run server on (default: 6060)
   -ho HOST, --host HOST
                         Host address to bind. (default: 0.0.0.0)
+  -b BASE, --base BASE  Base prefix path for all the URLs (default: None)
   -msl MAX_SRC_LEN, --max-src-len MAX_SRC_LEN
                         max source len; longer seqs will be truncated
                         (default: 250)</code></pre>
 </div>
 </div>
 <div class="paragraph">
-<p>To launch a service for <code>runs/001-tfm</code> experiment</p>
-</div>
-<div class="paragraph">
-<p><code>python -m rtg.serve -d runs/001-tfm</code></p>
+<p>To launch a service for <code>runs/001-tfm</code> experiment, run <code>python -m rtg.serve -d runs/001-tfm</code>
+To use basepath of <code>/v1</code>: <code>python -m rtg.serve -d runs/001-tfm -b /v1</code></p>
 </div>
 <div class="paragraph">
 <p>It prints :
@@ -2097,7 +2099,7 @@ optional arguments:
 <div class="title">Note</div>
 </td>
 <td class="content">
-batch decoding is yet to be supported. Current decoder decodes only one sentence at a time.
+batch decoding is yet to be supported. The current decoder decodes only one sentence at a time.
 </td>
 </tr>
 </table>
@@ -2130,11 +2132,29 @@ after properly URL encoding the <code>text1</code> <code>text2</code>. This shou
 </div>
 <div class="paragraph">
 <p><strong>Production Deployment</strong>
-Please use uWSGI for production deployment.</p>
+Please use uWSGI for production deployment.
+If you dont already have uWSGI, you may install it via conda by running <code>conda install -c conda-forge uwsgi</code>.</p>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="bash">uwsgi --http 127.0.0.1:5000 --module rtg.serve.app:app --pyargv &quot;&lt;path-to-exp-dir&gt;&quot;</code></pre>
+<pre class="CodeRay highlight"><code data-lang="bash">uwsgi --http 127.0.0.1:5000 --module rtg.serve.app:app --pyargv &quot;&lt;path-to-exp-dir&gt;&quot;
+
+# or using a .ini file
+uwsgi --ini examples/uwsgi.ini</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Where the <code>uwsgi.ini</code> has the following info:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="ini">[uwsgi]
+http = 0.0.0.0:6060
+module = rtg.serve.app:app
+pyargv = /full/path/&lt;path-to-exp-dir&gt; -b /v1
+master = true
+processes = 1
+stats = 127.0.0.1:9191</code></pre>
 </div>
 </div>
 <div class="paragraph">

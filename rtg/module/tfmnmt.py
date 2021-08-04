@@ -600,8 +600,8 @@ class TransformerTrainer(SteppedTrainer):
         hyps, refs = [], []   # BLEU
         model = self.core_model
         assert not model.training
-        with tqdm(data_iter, total=data_iter.num_batches,
-                  unit='batch', dynamic_ncols=True) as data_bar:
+        with tqdm(data_iter, total=data_iter.num_items,
+                  unit='sentence', dynamic_ncols=True) as data_bar:
             # TODO: BLEU1
             for i, batch in enumerate(data_bar):
                 if self.n_gpus <= 1:
@@ -647,6 +647,7 @@ class TransformerTrainer(SteppedTrainer):
                     f'Loss:{loss:.4f}, {int(num_toks / elapsed)}toks/s', refresh=False)
 
                 start = time.time()
+                data_bar.update(len(batch))
 
         score = total_loss / num_batches
         if do_bleu:

@@ -4,7 +4,7 @@ Serves an RTG model using Flask HTTP server
 """
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 
-from flask import Flask, request, jsonify, render_template, url_for, send_from_directory
+from flask import Flask, request, jsonify, render_template, url_for, send_from_directory, Blueprint
 import torch
 import os
 from html import unescape
@@ -57,20 +57,21 @@ class RtgIO:
         #    text = self.true_caser.truecase(text, return_str=True)
         return text
 
-
+exp = None
 app = Flask(__name__)
 app.config['JSON_AS_ASCII'] = False
-exp = None
 
+bp = Blueprint('burritos', __name__,
+                        template_folder='templates')
 
-@app.route('/')
+@bp.route('/')
 def index():
+    #return "this is a test"
     return render_template('index.html')
 
 @app.route('/favicon.ico')
 def favicon():
-    return send_from_directory(os.path.join(app.root_path, 'static', 'img'), 'favicon.ico')
-
+    return send_from_directory(os.path.join(bp.root_path, 'static', 'favicon'), 'favicon.ico')
 
 def attach_translate_route(cli_args):
     global exp
@@ -79,7 +80,7 @@ def attach_translate_route(cli_args):
     decoder = Decoder.new(exp, ensemble=dec_args.pop("ensemble", 1))
     dataprep = RtgIO(exp=exp)
 
-    @app.route("/translate", methods=["POST", "GET"])
+    @bp.route("/translate", methods=["POST", "GET"])
     def translate():
         if request.method not in ("POST", "GET"):
             return "GET and POST are supported", 400
@@ -101,14 +102,14 @@ def attach_translate_route(cli_args):
         res = dict(source=sources, translation=translations)
         return jsonify(res)
 
-    @app.route("/conf.yml", methods=["GET"])
+    @bp.route("/conf.yml", methods=["GET"])
     def get_conf():
         conf_str = exp._config_file.read_text(encoding='utf-8', errors='ignore')
         return render_template('conf.yml.html', conf_str=conf_str)
 
-    @app.route("/about", methods=["GET"])
+    @bp.route("/about", methods=["GET"])
     def about():
-        def_desc = "Model description not available. Please view or update conf.yml"
+        def_desc = "Model description is unavailable; please update conf.yml"
         return render_template('about.html', model_desc=exp.config.get("description", def_desc))
 
 
@@ -122,6 +123,7 @@ def parse_args():
     parser.add_argument("-d", "--debug", action="store_true", help="Run Flask server in debug mode")
     parser.add_argument("-p", "--port", type=int, help="port to run server on", default=6060)
     parser.add_argument("-ho", "--host", help="Host address to bind.", default='0.0.0.0')
+    parser.add_argument("-b", "--base", help="Base prefix path for all the URLs")
     parser.add_argument("-msl", "--max-src-len", type=int, default=250,
                         help="max source len; longer seqs will be truncated")
     args = vars(parser.parse_args())
@@ -131,13 +133,19 @@ def parse_args():
 # uwsgi --http 127.0.0.1:5000 --module rtg.serve.app:app --pyargv "rtgv0.5-768d9L6L-512K64K-datav1"
 cli_args = parse_args()
 attach_translate_route(cli_args)
+app.register_blueprint(bp, url_prefix=cli_args.get('base'))
+if cli_args.pop('debug'):
+    app.debug = True
 
+
+# register a home page if needed
+if cli_args.get('base'):
+    @app.route('/')
+    def home():
+        return render_template('home.html', demo_url=cli_args.get('base'))
 
 def main():
     #CORS(app)  # TODO: insecure
-    if cli_args.pop('debug'):
-        app.debug = True
-
     app.run(port=cli_args["port"], host=cli_args["host"])
 
     # A very useful tutorial is found at:

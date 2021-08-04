@@ -3,6 +3,16 @@
 
 RTG model can be served using Flask Server.
 
+=== Flask Installation
+
+[source, commandline]
+----
+$ pip install rtg[serve]
+----
+
+Flask has its own set of dependencies unrelated to the core functionality, hence, not installed when installing `rtg`.
+
+=== Running
 
 [source,commandline]
 ----
@@ -20,22 +30,23 @@ optional arguments:
   -p PORT, --port PORT  port to run server on (default: 6060)
   -ho HOST, --host HOST
                         Host address to bind. (default: 0.0.0.0)
+  -b BASE, --base BASE  Base prefix path for all the URLs (default: None)
   -msl MAX_SRC_LEN, --max-src-len MAX_SRC_LEN
                         max source len; longer seqs will be truncated
                         (default: 250)
 ----
 
 
-To launch a service for `runs/001-tfm` experiment
+To launch a service for `runs/001-tfm` experiment, run `python -m rtg.serve -d runs/001-tfm`
+To use basepath of `/v1`: `python -m rtg.serve -d runs/001-tfm -b /v1`
 
-`python -m rtg.serve -d runs/001-tfm`
 
 It prints :
 `* Running on http://0.0.0.0:6060/ (Press CTRL+C to quit)`
 
 Currently only `/translate` API is supported. It accepts both `GET` with query params and `POST` with form params.
 
-NOTE: batch decoding is yet to be supported. Current decoder decodes only one sentence at a time.
+NOTE: batch decoding is yet to be supported. The current decoder decodes only one sentence at a time.
 
 An example POST request:
 ----
@@ -67,9 +78,26 @@ If you dont already have uWSGI, you may install it via conda by running `conda i
 [source,bash]
 ----
 uwsgi --http 127.0.0.1:5000 --module rtg.serve.app:app --pyargv "<path-to-exp-dir>"
+
+# or using a .ini file
+uwsgi --ini examples/uwsgi.ini
+----
+Where the `uwsgi.ini` has the following info:
+
+[source,ini]
+----
+[uwsgi]
+http = 0.0.0.0:6060
+module = rtg.serve.app:app
+pyargv = /full/path/<path-to-exp-dir> -b /v1
+master = true
+processes = 1
+stats = 127.0.0.1:9191
 ----
 
 Note that `<path-to-exp-dir>` is expected to be a valid path to Experiment dir, it maybe obtained using `rtg-export` tool.
+
+
 
 
 
