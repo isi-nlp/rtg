@@ -1,0 +1,4 @@
+include README.md
+graft rtg/serve/static
+graft rtg/serve/templates
+global-exclude *.pyc

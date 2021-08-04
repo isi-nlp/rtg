@@ -41,7 +41,7 @@ setuptools.setup(
         'mosestokenizer >= 1.0.0',
         'nlcodec >= 0.4.0-dev',
         'torch >= 1.6.0',
-        'sacremoses @ git+https://github.com/isi-nlp/sacremoses.git@400328e3#egg=sacremoses',
+        'sacremoses-xt >= 0.0.44',
         'portalocker >= 2.0.0',
     ],
     extra_requires={
@@ -62,6 +62,9 @@ setuptools.setup(
             'rtg-serve=rtg.serve.app:main',
             'rtg-syscomb=rtg.syscomb.__main__:main',
             'rtg-launch=rtg.distrib.launch:main',
+            'rtg-params=rtg.tool.params:main',
         ],
-    }
+    },
+    include_package_data=True,
+    zip_safe=False,
 )

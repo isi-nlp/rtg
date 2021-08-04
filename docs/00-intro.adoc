@@ -1,6 +1,6 @@
 == Overview
 
-https://github.com/isi-nlp/rtg-xt[Reader-Translator-Generator (RTG)^] is a Neural Machine Translation toolkit based on pytorch.
+https://github.com/isi-nlp/rtg[Reader-Translator-Generator (RTG)^] is a Neural Machine Translation toolkit based on pytorch.
 
 === Features
 * Reproducible experiments: one `conf.yml`  that has everything -- data paths, params, and
@@ -45,20 +45,19 @@ Add the root of this repo to `PYTHONPATH` or install it via `pip --editable`
 
 There are two versions of code:
 
-* https://github.com/isi-nlp/rtg-xt
 * https://github.com/isi-nlp/rtg
+* https://github.com/isi-nlp/rtg-in
 
-Both `rtg-xt` and `rtg` has the same code on `master` branch.
-`rtg-xt` has stable code base and meant to be used by anyone, so you should definitely get started with it.
-`rtg` is internal with some unfinished/work-in progress ideas (maybe unpublished), with issues and pull-requests by members of USC ISI team.
-We sync both code bases often.
-If you like to collaborate with us and/or to get access to `rtg`, email https://isi.edu/~tg[TG^] or https://isi.edu/~jonmay[Jonathan May^].
+Both `rtg` and `rtg-in` have the same code on their `master` branches.
+`rtg` has stable code base and meant to be used by anyone, so it is recommended for the new users.
+`rtg-in` is internal to ISI NLP with some unfinished/work-in progress ideas (maybe unpublished), with issues and pull-requests by members of USC ISI team, and often less stable.
+We sync both code bases often (`sync-xt.sh` at the root of the repo).
+If you like to collaborate with us and/or to get access to `rtg-in`, email https://isi.edu/~tg[TG^] or https://isi.edu/~jonmay[Jonathan May^].
 
 
 [Source,bash]
 ----
-git clone https://github.com/isi-nlp/rtg-xt.git
-# use https://github.com/isi-nlp/rtg.git if you have access
+git clone https://github.com/isi-nlp/rtg.git
 cd rtg                # go to the code
 
 conda create -n rtg python=3.7   # creates a conda env named rtg

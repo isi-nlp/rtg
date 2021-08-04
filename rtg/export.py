@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from rtg.module.decoder import Decoder
 from rtg import log, device, yaml
-from rtg.utils import  IO
+from rtg.utils import IO
 import datetime
 
 import os
@@ -48,7 +48,11 @@ class ExperimentExporter:
         log.info(f"Exporting to {target}")
         to_exp = Experiment(target, config=self.exp.config)
         to_exp.persist_state()
-
+        
+        IO.copy_file(self.exp.model_dir / 'scores.tsv', to_exp.model_dir / 'scores.tsv')
+        if (self.exp.work_dir / 'rtg.zip').exists():
+            IO.copy_file(self.exp.work_dir / 'rtg.zip', to_exp.work_dir / 'rtg.zip')
+        
         src_chkpt = chkpt_state
         log.warning("step number, training loss and validation loss are not recalculated.")
         step_num, train_loss, val_loss = [src_chkpt.get(n, -1)

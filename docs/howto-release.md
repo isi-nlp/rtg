@@ -2,7 +2,7 @@
 
 Using twine : https://twine.readthedocs.io/en/latest/ 
 
-1. Update the `__version__` in `nlcodec/__init__.py`  
+1. Update the `__version__` in `rtg/__init__.py`  
   `rm -r build dist rtg.egg-info`
 2. Build :: `$ python setup.py sdist bdist_wheel`    
 3. Upload to **testpypi** ::  `$ twine upload -r testpypi dist/*`
