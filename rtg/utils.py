@@ -14,6 +14,7 @@ from typing import Tuple
 import resource
 import sys
 import numpy as np
+from itertools import zip_longest
 
 
 # Size of each element in tensor
@@ -200,6 +201,24 @@ class IO:
             atexit.register(cls.safe_delete, tmp_file)
         return file
 
+    @classmethod
+    def parallel_read(cls, file1, file2, *files, tokrs=None):
+        inputs = [file1, file2] + (files or [])
+        if tokrs:
+            assert len(tokrs) == len(inputs)
+        readers = [IO.reader(f).__enter__() for f in inputs]
+        try:
+            for rec in zip_longest(*readers):
+                assert all(x is not None for x in rec)
+                if tokrs:
+                    rec = [tokr(x) for tokr, x in zip(tokrs, rec)]
+                yield rec
+        finally:
+            for r in readers:
+                try:
+                    r.close()
+                except:
+                    pass
 
 def max_RSS(who=resource.RUSAGE_SELF) -> Tuple[int, str]:
     """Gets memory usage of current process, maximum so far.
