@@ -14,10 +14,12 @@ from rtg import TranslationExperiment as Experiment
 import random
 from rtg.module.trainer import TrainerState, SteppedTrainer
 from tqdm import tqdm
-from . import LanguageModel
+from rtg.registry import register, MODEL
+from rtg.module import LangModel
 
 
-class RnnLm(SeqDecoder, LanguageModel):
+@register(MODEL, name='rnnlm')
+class RnnLm(SeqDecoder, LangModel):
 
     def __init__(self, embedder: Embedder, generator: Generator, n_layers: int = 1,
                  dropout: float = 0.1):
@@ -81,6 +83,15 @@ class RnnLm(SeqDecoder, LanguageModel):
                 pred_word_idx = word_probs.argmax(dim=1)
                 prev_out = pred_word_idx.view(batch_size, 1)
         return outp_probs.t()
+
+    @classmethod
+    def make_trainer(cls, *args, **kwargs):
+        return RnnLmTrainer(*args, model_factory=cls.make_model, **kwargs)
+
+    @classmethod
+    def make_generator(cls, *args, **kwargs):
+        from rtg.module.generator import RnnLmGenerator
+        return RnnLmGenerator(*args, **kwargs)
 
 
 class RnnLmTrainer(SteppedTrainer):
@@ -175,7 +186,7 @@ class RnnLmTrainer(SteppedTrainer):
 
 def test_lm():
     #model, args = RnnLm.make('eng', 8000)
-    work_dir = '/Users/tg/work/me/rtg/saral/runs/1S-rnnlm-basic'
+    work_dir = 'work/1S-rnnlm-basic'
     exp = Experiment(work_dir)
     trainer = RnnLmTrainer(exp=exp)
     trainer.train(steps=2000, check_point=100, batch_size=64)

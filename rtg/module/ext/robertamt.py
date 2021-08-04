@@ -10,6 +10,8 @@ from rtg.module.tfmnmt import (TransformerNMT, EncoderLayer, DecoderLayer, Gener
 from rtg import TranslationExperiment as Experiment, log
 from rtg.data.codec import PretrainMatchField
 from rtg.utils import get_my_args
+from rtg.registry import register, MODEL
+
 
 class RobertaGenerator(Generator):
     """
@@ -33,6 +35,7 @@ class RobertaGenerator(Generator):
         return super().forward(x, score=score, **kwargs)
 
 
+@register(MODEL, 'robertamt')
 class RoBERTaMT(TransformerNMT):
     GeneratorFactory = RobertaGenerator
     model_type = 'robertamt'
@@ -237,10 +240,6 @@ class RoBERTaMT(TransformerNMT):
         """
         log.info(f"Success: initialized {type(roberta)} to {type(self)}")
 
-
-def __test_model__():
-    model = RoBERTaMT.make_model()
-
-
-if __name__ == '__main__':
-    __test_model__()
+    @classmethod
+    def make_trainer(cls, *args, **kwargs):
+        return NotImplementedError('Training not supported by this model; inference only')

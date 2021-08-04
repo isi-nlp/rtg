@@ -348,23 +348,20 @@ class BaseExperiment:
             return state
         
     def load_model(self, model_paths=None, ensemble=1):
-        from rtg.registry import factories
-        factory = factories[self.model_type]
-        model = factory(exp=self, **self.model_args)[0]
+        from .registry import MODELS
+        model = MODELS[self.model_type].Model(exp=self, **self.model_args)[0]
         state = self.maybe_ensemble_state(model_paths=model_paths, ensemble=ensemble)
         errors = model.load_state_dict(state)
         log.info(f"{errors}")
         return model
 
     def load_model_with_state(self, checkpt_state):
-        from rtg.registry import factories
+        from .registry import MODELS
         chkpt = checkpt_state
         state = chkpt['model_state']
         model_type = chkpt['model_type']
         model_args = chkpt['model_args']
-        # Dummy experiment wrapper
-        factory = factories[model_type]
-        model = factory(exp=self, **model_args)[0]
+        model = MODELS[model_type].Model(exp=self, **model_args)[0]
         errors = model.load_state_dict(state)
         log.info(f"{errors}")
         log.info(f"Successfully restored the model state of : {model_type}")
@@ -847,11 +844,10 @@ class TranslationExperiment(BaseExperiment):
             log.warning(
                 f"Already trained upto {last_step}; Requested: train={train_steps}, finetune={finetune_steps} Skipped")
             return
-
-        from rtg.registry import trainers, factories
+        from .registry import MODELS
+        spec = MODELS[self.model_type]
         name, optim_args = self.optim_args
-        trainer = trainers[self.model_type](self, optim=name,
-                                            model_factory=factories[self.model_type], **optim_args)
+        trainer = spec.Trainer(self, optim=name, **optim_args)
         if last_step < train_steps:  # regular training
             stopped = trainer.train(fine_tune=False, **run_args)
             if not self.read_only:

@@ -16,7 +16,7 @@ from rtg import TranslationExperiment as Experiment
 from rtg import log, device, my_tensor as tensor, debug_mode
 from rtg.module.generator import GeneratorFactory
 from rtg.data.dataset import Field
-from rtg.registry import factories, generators
+from rtg.registry import MODELS, ModelSpec
 
 Hypothesis = Tuple[float, List[int]]
 StrHypothesis = Tuple[float, str]
@@ -183,9 +183,10 @@ class Decoder:
         """
         if not model_type:
             model_type = exp.model_type
+        assert model_type in MODELS, f'{model_type} is invalid; known:{MODELS.keys()}'
+        spec = MODELS[model_type]
         if model is None:
-            factory = factories[model_type]
-            model = factory(exp=exp, **exp.model_args)[0]
+            model = spec.Model(exp=exp, **exp.model_args)[0]
             state = exp.maybe_ensemble_state(model_paths=model_paths, ensemble=ensemble)
             model.load_state_dict(state)
             log.info("Successfully restored the model state.")
@@ -193,12 +194,11 @@ class Decoder:
             model = model.module
 
         model = model.eval().to(device=device)
-        generator = generators[model_type]
         if exp.optim_args[1] and exp.optim_args[1].get('criterion') == 'binary_cross_entropy':
             log.info("((Going to decode in multi-label mode))")
             gen_args = gen_args or {}
             gen_args['multi_label'] = True
-        return cls(model, generator, exp, gen_args)
+        return cls(model, spec.Generator, exp, gen_args)
 
     def greedy_decode(self, x_seqs, x_lens, max_len, **args) -> List[Hypothesis]:
         """

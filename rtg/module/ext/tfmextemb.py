@@ -3,8 +3,7 @@
 # Author: Thamme Gowda [tg (at) isi (dot) edu] 
 # Created: 2019-05-17
 
-from rtg.module.tfmnmt import (
-    TransformerTrainer, TransformerNMT, attention, MultiHeadedAttention, PositionalEncoding,
+from rtg.module.tfmnmt import (AbstractTransformerNMT, attention, MultiHeadedAttention, PositionalEncoding,
     Encoder, EncoderLayer, PositionwiseFeedForward, Decoder, DecoderLayer, Embeddings, Generator)
 from torch import nn
 from rtg import TranslationExperiment as Experiment, log
@@ -12,11 +11,12 @@ import inspect
 import torch
 import copy
 from rtg.data.codec import Field
-
+from rtg.registry import register, MODEL
 padding_idx = Field.pad_idx
 
 
-class TfmExtEmbNMT(TransformerNMT):
+@register(MODEL, 'tfmextembmt')
+class TfmExtEmbNMT(AbstractTransformerNMT):
 
     def __init__(self, *args, src_ext_emb: nn.Embedding, tgt_ext_emb: nn.Embedding, **kwargs):
         super().__init__(*args, **kwargs)
@@ -88,15 +88,9 @@ class TfmExtEmbNMT(TransformerNMT):
         return model, args
 
     @classmethod
-    def make_trainer(cls, *args, **kwargs):
-        return TfmExtEmbTrainer(*args, **kwargs)
-
-
-class TfmExtEmbTrainer(TransformerTrainer):
-
-    def __init__(self, *args, model_factory=TfmExtEmbNMT.make_model, **kwargs):
-        super().__init__(*args, model_factory=model_factory, **kwargs)
-        assert isinstance(self.model, TfmExtEmbNMT)  # type check
+    def make_generator(cls, *args, **kwargs):
+        from rtg.module.generator import TfmExtEembGenerator
+        return TfmExtEembGenerator(*args, **kwargs)
 
 
 class MultiHeadedAttentionExt(nn.Module):

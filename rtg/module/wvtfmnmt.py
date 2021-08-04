@@ -12,7 +12,7 @@ from rtg.module.tfmnmt import (EncoderLayer, DecoderLayer, PositionwiseFeedForwa
                                Embeddings, PositionalEncoding, Generator, AbstractTransformerNMT, TransformerTrainer)
 from rtg import TranslationExperiment as Experiment, log
 from rtg.utils import get_my_args
-
+from rtg.registry import register, MODEL
 
 class WidthVaryingEncoder(nn.Module):
     """Stack of N encoders with heterogeneous feed forward dimensions"""
@@ -62,6 +62,7 @@ class WidthVaryingDecoder(nn.Module):
         return self.norm(x)
 
 
+@register(MODEL, name='wvtfmnmt')
 class WidthVaryingTransformerNMT(AbstractTransformerNMT, ABC):
     """Enables heterogeneous feed forward dimensions in the Encoder and Decoder"""
 
@@ -119,14 +120,6 @@ class WidthVaryingTransformerNMT(AbstractTransformerNMT, ABC):
         return model, args
 
 
-class WVTransformerTrainer(TransformerTrainer):
-
-    def __init__(self, *args, model_factory=WidthVaryingTransformerNMT.make_model, **kwargs):
-        super().__init__(*args, model_factory=model_factory, **kwargs)
-        assert isinstance(self.model, WidthVaryingTransformerNMT) or \
-            (isinstance(self.model, nn.DataParallel) and isinstance(self.model.module, WidthVaryingTransformerNMT))
-
-
 def __test_model__():
     from rtg.data.dummy import DummyExperiment
     from rtg import Batch, my_tensor as tensor
@@ -162,7 +155,8 @@ def __test_model__():
     exp = DummyExperiment("work.tmp.wvtfmnmt", config=config, read_only=True,
                           vocab_size=vocab_size)
     exp.model_args = args
-    trainer = WVTransformerTrainer(exp=exp, warmup_steps=200, **config['optim']['args'])
+    trainer = WidthVaryingTransformerNMT.make_trainer(exp=exp, warmup_steps=200,
+                                                      **config['optim']['args'])
     decr = Decoder.new(exp, trainer.model)
 
     assert 2 == Batch.bos_val

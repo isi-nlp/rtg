@@ -12,6 +12,7 @@ from rtg.data.dataset import Batch, BatchIterable, padded_sequence_mask
 from rtg.data.codec import Field
 from rtg.module import NMTModel
 from rtg.module.trainer import TrainerState, SteppedTrainer
+from rtg.registry import register, MODEL
 
 PAD_IDX = Field.pad_idx  #
 
@@ -293,6 +294,7 @@ class Seq2SeqBridge(nn.Module):
         return enc_outs, enc_hids
 
 
+@register(MODEL, 'rnnmt')
 class RNNMT(NMTModel):
 
     def __init__(self, enc: SeqEncoder, dec: SeqDecoder, bridge: Seq2SeqBridge = None):
@@ -440,6 +442,14 @@ class RNNMT(NMTModel):
         model.init_params()
         return model, args
 
+    @classmethod
+    def make_trainer(cls, *args, **kwargs):
+        return SteppedRNNMTTrainer(*args, **kwargs)
+
+    @classmethod
+    def make_generator(cls, *args, **kwargs):
+        from rtg.module.generator import Seq2SeqGenerator
+        return Seq2SeqGenerator(*args, **kwargs)
 
 def aeq(*items):
     for i in items[1:]:

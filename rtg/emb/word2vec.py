@@ -2,17 +2,15 @@
 #
 # Author: Thamme Gowda [tg (at) isi (dot) edu] 
 # Created: 3/16/19
-from typing import Optional, Callable, List, Iterable
-import copy
+from typing import Optional, Callable, Iterable
 
 import torch
 from torch import nn
 import torch.nn.functional as F
-#import rtg.dataprep as prep
 from rtg.data.codec import Field
 from rtg.data.dataset import SqliteFile, LoopingIterable, TSVData, IdExample
 from rtg import device
-from rtg.module import Model
+from rtg.module import LangModel
 from rtg.module.trainer import SteppedTrainer
 from rtg import log
 from dataclasses import dataclass
@@ -21,9 +19,11 @@ from rtg.utils import IO
 from tqdm import tqdm
 import pickle
 import numpy as np
+from rtg.registry import register, MODEL
 
 
-class CBOW(Model):
+@register(MODEL, name='CBOW')
+class CBOW(LangModel):
     """
     continuous bag of words by Mikolov et al
     https://papers.nips.cc/paper/5021-distributed-representations-of-words-and-phrases-and-their-compositionality.pdf
@@ -71,7 +71,7 @@ class CBOW(Model):
 
     @classmethod
     def make_trainer(cls, *args, **kwargs):
-        return CBOWTrainer(*args, **kwargs)
+        return CBOWTrainer(*args, model_factory=cls.make_model, **kwargs)
 
 
 @dataclass

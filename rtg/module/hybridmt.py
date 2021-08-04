@@ -13,9 +13,12 @@ import torch
 import torch.nn as nn
 
 from rtg.module.tfmnmt import (Encoder, EncoderLayer, PositionwiseFeedForward, PositionalEncoding,
-                               Generator, MultiHeadedAttention, Embeddings, TransformerNMT,
-                               TransformerTrainer)
+                               Generator, MultiHeadedAttention, Embeddings, TransformerNMT)
 from rtg import TranslationExperiment as Experiment, log
+from rtg.registry import register, MODEL
+from rtg.data.codec import Field
+
+cls_idx = Field.cls_idx
 
 
 class RnnDecoder(nn.Module):
@@ -47,6 +50,7 @@ class RnnDecoder(nn.Module):
         return self.dropout(output)
 
 
+@register(MODEL, name='hybridmt')
 class HybridMT(TransformerNMT):
 
     @property
@@ -100,6 +104,12 @@ class HybridMT(TransformerNMT):
         model.init_params()
         return model, args
 
+    @classmethod
+    def make_generator(cls, *args, **kwargs):
+        from rtg.module.generator import MTfmGenerator
+        return MTfmGenerator(*args, **kwargs)
+
+
     def forward(self, src, tgt, src_mask, tgt_mask, gen_probs=False, log_probs=True):
         "Take in and process masked src and target sequences."
         assert src.shape[0] == tgt.shape[0]
@@ -132,17 +142,6 @@ class HybridMT(TransformerNMT):
         hidden_state = (sent_repr, sent_repr) if rnn_type == 'LSTM' else sent_repr
         return self.decoder(hidden_state, embs)
 
-    @classmethod
-    def make_trainer(cls, *args, **kwargs):
-        return HybridMTTrainer(*args, **kwargs)
-
-class HybridMTTrainer(TransformerTrainer):
-
-    def __init__(self, *args, model_factory=HybridMT.make_model, **kwargs):
-        super().__init__(*args, model_factory=model_factory, **kwargs)
-        assert isinstance(self.model, HybridMT)  # type check
-
-
 def __test_model__():
     from rtg.data.dummy import DummyExperiment
     from rtg import Batch, my_tensor as tensor
@@ -164,7 +163,7 @@ def __test_model__():
     exp = DummyExperiment("work.tmp.hybridmt", config={'model_type': 'hybridmt'}, read_only=True,
                           vocab_size=vocab_size)
     exp.model_args = args
-    trainer = HybridMTTrainer(exp=exp, warmup_steps=200)
+    trainer = HybridMT.make_trainer(exp=exp, warmup_steps=200)
     decr = Decoder.new(exp, trainer.model)
 
     assert 2 == Batch.bos_val

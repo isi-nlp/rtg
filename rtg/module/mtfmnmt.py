@@ -15,6 +15,7 @@ from rtg.module.tfmnmt import (Encoder, EncoderLayer, PositionwiseFeedForward, P
                                TransformerTrainer, SublayerConnection, clones)
 from rtg import TranslationExperiment as Experiment, log
 from rtg.data.codec import Field
+from rtg.registry import MODEL, register
 
 cls_idx = Field.cls_idx
 pad_idx = Field.cls_idx
@@ -117,6 +118,7 @@ class MDecoder(nn.Module):
         return self.norm(x)
 
 
+@register(MODEL, name="mtfmnmt")
 class MTransformerNMT(AbstractTransformerNMT):
 
     @property
@@ -169,6 +171,11 @@ class MTransformerNMT(AbstractTransformerNMT):
         model.init_params()
         return model, args
 
+    @classmethod
+    def make_generator(cls, *args, **kwargs):
+        from rtg.module.generator import MTfmGenerator
+        return MTfmGenerator(*args, **kwargs)
+
     def forward(self, src, tgt, src_mask, tgt_mask, gen_probs=False, log_probs=True):
         "Take in and process masked src and target sequences."
         assert src.shape[0] == tgt.shape[0]
@@ -204,14 +211,6 @@ class MTransformerNMT(AbstractTransformerNMT):
             return self.decoder(embs, tgt_mask, sent_repr)
 
 
-class MTransformerTrainer(TransformerTrainer):
-
-    def __init__(self, *args, model_factory=MTransformerNMT.make_model, **kwargs):
-        super().__init__(*args, model_factory=model_factory, **kwargs)
-        assert isinstance(self.model, MTransformerNMT) or \
-            (isinstance(self.model, nn.DataParallel) and isinstance(self.model.module, MTransformerNMT))
-
-
 def __test_model__():
     from rtg.data.dummy import DummyExperiment
     from rtg import my_tensor as tensor
@@ -231,7 +230,7 @@ def __test_model__():
     exp = DummyExperiment("work.tmp.mtfmnmt", config={'model_type': 'mtfmnmt'}, read_only=True,
                           vocab_size=vocab_size)
     exp.model_args = args
-    trainer = MTransformerTrainer(exp=exp, warmup_steps=200)
+    trainer = MTransformerNMT.make_trainer(exp=exp, warmup_steps=200)
     decr = Decoder.new(exp, trainer.model)
 
     assert 2 == exp.tgt_vocab.bos_idx
