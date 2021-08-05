@@ -1,0 +1,25 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<h2>{% block title %} Reader Translator Generator - About {% endblock %}</h2>
+
+<div class="container">
+  <h4>Model Description:</h4>
+    <p>{{ model_desc|safe }}</p>
+  <br/>
+  <h4>About RTG: </h4>
+    <p>Reader Translator Generator (RTG) is a neural machine translator toolkit based on Pytorch.
+      It is developed by researchers at <a href="https://isi.edu">USC Information Sciences Institute</a>.
+    </p>
+    <ul>
+      <li>Github: <a href="https://github.com/isi-nlp/rtg ">https://github.com/isi-nlp/rtg </a></li>
+      <li>Docs:  <a href="https://isi-nlp.github.io/rtg/">https://isi-nlp.github.io/rtg/ </a> </li>
+      <li>PyPI: <a href="https://pypi.org/project/rtg/"> https://pypi.org/project/rtg/</a> </li> </li>
+    </ul>
+    <p>
+     If you face any problems, please notify us by creating an issue on the Github link specified above.
+      - <a href="https://isi.edu/~tg"> Thamme Gowda</a>
+    </p>
+</div>
+
+{% endblock %}

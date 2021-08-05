@@ -5,26 +5,36 @@
 
 import argparse
 from rtg import log, TranslationExperiment as Experiment
+from rtg.exp import load_conf
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
 from rtg.module.decoder import Decoder
-from rtg import RTG_PATH
 from rtg.utils import IO, line_count
 from dataclasses import dataclass
 import torch
 import random
 from collections import defaultdict
 from mosestokenizer import MosesDetokenizer
-from sacrebleu import corpus_bleu, BLEU
+from sacrebleu import corpus_bleu, BLEUScore
 import inspect
 import copy
 import json
 import subprocess
+from rtg.distrib import DistribTorch
+from rtg.registry import ProblemType
+
+dtorch = DistribTorch.instance()
 
 
 @dataclass
 class Pipeline:
     exp: Experiment
+
+    def __post_init__(self):
+        self.tests_types = {
+            ProblemType.TRANSLATION: self.run_translation_tests,
+            ProblemType.CLASSIFICATION: self.run_classification_tests
+        }
 
     def pre_checks(self):
         # Some more validation needed
@@ -33,8 +43,11 @@ class Pipeline:
         assert conf.get('prep') is not None
         assert conf.get('trainer') is not None
         assert conf.get('tester') is not None
-        assert conf['tester']['suit'] is not None
-        for name, data in conf['tester']['suit'].items():
+        if not conf['tester'].get('suite') and conf['tester'].get('suit'):
+            # it was mis spelled as suit https://github.com/isi-nlp/rtg/issues/9
+            conf['tester']['suite'] = conf['tester']['suit']
+        assert conf['tester'].get('suite') is not None
+        for name, data in conf['tester']['suite'].items():
             if isinstance(data, str):
                 src, ref = data, None
             elif isinstance(data, list):
@@ -60,6 +73,7 @@ class Pipeline:
     def moses_detokenize(self, inp: Path, out: Path, col=0, lang='en', post_op=None):
         log.info(f"detok : {inp} --> {out}")
         tok_lines = IO.get_lines(inp, col=col, line_mapper=lambda x: x.split())
+        # TODO: replace with sacremoses
         with MosesDetokenizer(lang=lang) as detok:
             detok_lines = (detok(tok_line) for tok_line in tok_lines)
             if post_op:
@@ -93,16 +107,15 @@ class Pipeline:
         return detok_file
 
     def evaluate_file(self, detok_hyp: Path, ref: Union[Path, List[str]], lowercase=True) -> float:
-        detok_lines = IO.get_lines(detok_hyp)
+        detok_lines = list(IO.get_lines(detok_hyp))
         # takes multiple refs, but here we have only one
         ref_liness = [IO.get_lines(ref) if isinstance(ref, Path) else ref]
-        bleu: BLEU = corpus_bleu(sys_stream=detok_lines, ref_streams=ref_liness,
+        bleu: BLEUScore = corpus_bleu(sys_stream=detok_lines, ref_streams=ref_liness,
                                  lowercase=lowercase)
         # this should be part of new sacrebleu  release (i sent a PR ;)
-        bleu_str = f'BLEU = {bleu.score:.2f} {"/".join(f"{p:.1f}" for p in bleu.precisions)}' \
-            f' (BP = {bleu.bp:.3f} ratio = {(bleu.sys_len / bleu.ref_len):.3f}' \
-            f' hyp_len = {bleu.sys_len:d} ref_len={bleu.ref_len:d})'
-        bleu_file = detok_hyp.with_name(detok_hyp.name + ('.lc' if lowercase else '.oc') + '.sacrebleu')
+        bleu_str = bleu.format()
+        bleu_file = detok_hyp.with_name(
+            detok_hyp.name + ('.lc' if lowercase else '.oc') + '.sacrebleu')
         log.info(f'BLEU {detok_hyp} : {bleu_str}')
         IO.write_lines(bleu_file, bleu_str)
         return bleu.score
@@ -127,7 +140,7 @@ class Pipeline:
 
     def tune_decoder_params(self, exp: Experiment, tune_src: str, tune_ref: str, batch_size: int,
                             trials: int = 10, lowercase=True,
-                            beam_size=[1, 4, 8], ensemble=[1, 5, 10], lp_alpha=[0.0, 0.4, 0.6],
+                            beam_size=(1, 4, 8), ensemble=(1, 5, 10), lp_alpha=(0.0, 0.4, 0.6),
                             suggested: List[Tuple[int, int, float]] = None,
                             **fixed_args):
         _, _, _, tune_args = inspect.getargvalues(inspect.currentframe())
@@ -194,12 +207,66 @@ class Pipeline:
             data = {str(k): v for k, v in memory.items()}
             IO.write_lines(tune_log, json.dumps(data))
 
-    def run_tests(self, exp=None, args=None):
+
+    def run_classification_tests(self, exp=None, args=None):
+        from rtg.emb.tfmcls import ClassificationExperiment
+        exp:ClassificationExperiment = exp or self.exp
+        assert exp.problem_type is ProblemType.CLASSIFICATION
+        args = args or exp.config['tester']
+        suite: Dict[str, List] = args['suite']
+        assert suite
+        log.info(f"Found {len(suite)} suite :: {suite.keys()}")
+
+        eval_args = dict(
+            batch_size = args.get('batch_size') or self.exp.config['trainer']['batch_size'],
+            max_len = args.get('max_len', 256))
+        ens = args.get('ensemble', 1)
+        _, step = exp.get_last_saved_model()
+        model = exp.load_model(ensemble=ens)
+        model = model.eval()
+        test_dir = exp.work_dir / f'test_step{step}_ens{ens}'
+        test_dir.mkdir(exist_ok=True, parents=True)
+        for name, data in suite.items():
+            src, label = data, None
+            if isinstance(data, list):
+                src, label = data[:2]
+            try:
+                src_link = test_dir / f'{name}.src'
+                label_link = test_dir / f'{name}.label'
+                out_file = test_dir / f'{name}.out.tsv'
+                if out_file.exists() and out_file.stat().st_size > 0:
+                    log.warning(f"{out_file} exists and not empty, so skipping it")
+                    continue
+                buffer = [(src_link, Path(src).resolve())]
+                if label:
+                    buffer.append((label_link, Path(label).resolve()))
+                for link, orig in buffer:
+                    if not link.exists():
+                        link.symlink_to(orig)
+                metric, top1_labels, top1_probs = exp.evaluate_classifier(
+                    model, input=src_link, labels=label_link, **eval_args)
+
+                log.info(metric.format(delim='\t'))
+
+                test_dir.mkdir(parents=True, exist_ok=True)
+                score_file = test_dir / f'{name}.score.tsv'
+                score_file.write_text(metric.format(delim=','))
+
+                out = '\n'.join(f'{l}\t{p:g}' for l, p in zip(top1_labels, top1_probs))
+
+                out_file.write_text(out)
+
+            except Exception as e:
+                log.exception(f"Something went wrong with '{name}' test")
+                err = test_dir / f'{name}.err'
+                err.write_text(str(e))
+
+    def run_translation_tests(self, exp=None, args=None):
         exp = exp or self.exp
         args = args or exp.config['tester']
-        suit: Dict[str, List] = args['suit']
-        assert suit
-        log.info(f"Found {len(suit)} suit :: {suit.keys()}")
+        suite: Dict[str, List] = args.get('suite')
+        assert suite
+        log.info(f"Found {len(suite)} suit :: {suite.keys()}")
 
         _, step = exp.get_last_saved_model()
         if 'decoder' not in args:
@@ -242,7 +309,7 @@ class Pipeline:
         test_dir.mkdir(parents=True, exist_ok=True)
 
         decoder = Decoder.new(exp, ensemble=ensemble)
-        for name, data in suit.items():
+        for name, data in suite.items():
             # noinspection PyBroadException
             src, ref = data, None
             out_file = None
@@ -266,39 +333,93 @@ class Pipeline:
                 out_file.parent.mkdir(parents=True, exist_ok=True)
 
                 self.decode_eval_file(decoder, src_link, out_file, ref_link,
-                                              batch_size=eff_batch_size, beam_size=beam_size,
-                                              lp_alpha=lp_alpha, max_len=max_len)
+                                      batch_size=eff_batch_size, beam_size=beam_size,
+                                      lp_alpha=lp_alpha, max_len=max_len)
             except Exception as e:
                 log.exception(f"Something went wrong with '{name}' test")
                 err = test_dir / f'{name}.err'
                 err.write_text(str(e))
 
-    def run(self):
-        log.update_file_handler(str(self.exp.log_file))
+    def run(self, run_tests=True):
+        if not self.exp.read_only:
+            # if not distr.is_main:
+            #    log.clear_console() # console handler
+            log.update_file_handler(str(self.exp.log_file))
         self.pre_checks()  # fail early, so TG can fix and restart
-        self.exp.pre_process()
+
+        if dtorch.is_global_main:
+            self.exp.pre_process()
+        dtorch.barrier()
+        self.exp.reload()  # with updated config and vocabs from global_main
+        # train on all
         self.exp.train()
-        with torch.no_grad():
-            self.run_tests()
+        dtorch.barrier()
+        if run_tests:
+            if self.exp.problem_type in self.tests_types:
+                if dtorch.is_global_main:
+                    self.exp.reload()    # if user changed config for tests while training
+                    with torch.no_grad():
+                        self.tests_types[self.exp.problem_type]()
+            else:
+                log.warning(f"{self.exp.problem_type} dont have test runner yet. "
+                            f"Known runners: {self.tests_types}. Please fix me")
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(prog="rtg.prep", description="prepare NMT experiment")
-    parser.add_argument("exp", help="Working directory of experiment", type=Path)
-    parser.add_argument("conf", type=Path, nargs='?',
+    parser = argparse.ArgumentParser(prog="rtg-pipe", description="RTG Pipeline CLI")
+    parser.add_argument("exp", metavar='EXP_DIR', help="Working directory of experiment", type=Path)
+    parser.add_argument("conf", metavar='conf.yml', type=Path, nargs='?',
                         help="Config File. By default <work_dir>/conf.yml is used")
     parser.add_argument("-G", "--gpu-only", action="store_true", default=False,
                         help="Crash if no GPU is available")
+    parser.add_argument("-fp16", "--fp16", action="store_true", default=False,
+                        help="Float 16")
+
+    # multi-gpu / multi-node
+    parser.add_argument("--local_rank", "--local-rank", type=int, default=-1,
+                        help="Multi-GPU - Local rank")
+    parser.add_argument("--master-port", type=int, default=-1,
+                        help="Master port (for multi-node SLURM jobs)")
+    dtorch.setup()
     args = parser.parse_args()
+    if args.fp16:
+        assert torch.cuda.is_available(), "GPU required for fp16... exiting."
+        dtorch.enable_fp16()
 
     if args.gpu_only:
         assert torch.cuda.is_available(), "No GPU found... exiting"
+    if torch.cuda.is_available():
+        for i in range(torch.cuda.device_count()):
+            log.info(f'Cuda {i}: {torch.cuda.get_device_properties(i)}')
 
     conf_file: Path = args.conf if args.conf else args.exp / 'conf.yml'
-    assert conf_file.exists()
-    return Experiment(args.exp, config=conf_file)
+    assert conf_file.exists(), f'NOT FOUND: {conf_file}'
+    conf = load_conf(conf_file)
+    ExpFactory = Experiment  # default
+    if conf.get('model_type') == 'tfmcls':
+        log.info("Classification experiment")
+        from rtg.emb.tfmcls import ClassificationExperiment
+        ExpFactory = ClassificationExperiment
+    elif conf.get('spark', {}):
+        log.info("Big experiment mode enabled; checking pyspark backend")
+        try:
+            import pyspark
+            log.info("pyspark is available")
+        except:
+            log.warning("unable to import pyspark. Please do 'pip install pyspark' and run again")
+            raise
+        from rtg.big.exp import BigTranslationExperiment
+        ExpFactory = BigTranslationExperiment
+
+    read_only = not dtorch.is_global_main # only main can modify experiment
+    exp = ExpFactory(args.exp, config=conf_file, read_only=read_only)
+    dtorch.barrier()
+    return exp
+
+def main():
+    pipe = Pipeline(exp=parse_args())
+    pipe.run()
 
 
 if __name__ == '__main__':
-    pipe = Pipeline(exp=parse_args())
-    pipe.run()
+    main()

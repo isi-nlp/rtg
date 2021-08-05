@@ -1,0 +1,350 @@
+[#conf.yml]
+== RTG *`conf.yml`* File
+
+The key component of RTG toolkit is a `conf.yml`. As the name suggest - it is a YAML file containing configuration
+of experiment.
+Before we try to understand what goes into a configuration file, let us review the high level entities:
+
+* Experiment - the top level entity that wraps everything below, for the sake of reproducibility.
+* Data Preparation - NLP datasets require preparation of textual data. Typically, creation of
+vocabulary to map text into sequence of integers. Here we can specify type of encoding scheme
+such as BPE/char/words, and vocabulary size.
+* Model - model is neural net for NMT or LM tasks. Here we
+* Optimizer - Optimizer and optimization criteria
+* Trainer - training steps, batch size etc
+* Tester [Optional] -- testing to do post training
+** Tuner [Optional] - to search for beam size, length penalty etc
+** Decoder - the Beam decoder parameters, maybe overwritten by Tuner
+** Suite - a set of source and reference file pairs, for computing BLEU scores
+
+[#conf-minimal]
+=== Minimal Yet Complete Config File:
+
+.conf.yml
+[source,yaml]
+----
+model_args: # model construction args
+  ff_size: 2048
+  hid_size: 512
+  n_heads: 8
+  attn_dropout: 0.1  # Use lower dropout rates for attention because it masks an entire timestep 
+  dropout: 0.2
+  enc_layers: 6
+  dec_layers: 6
+  src_vocab: 8000
+  tgt_vocab: 8000
+  tied_emb: three-way  # choices: null, one-way, two-way, three-way
+model_type: tfmnmt  # model type. tfmnmt is the transformer NMT model
+optim:
+  name: ADAM
+  args:
+    criterion: smooth_kld  # other choices: "cross_entropy", "binary_cross_entropy",
+                           #                "smooth_kld_and_triplet_loss",
+                           #                "triplet_loss" (doesn't converge alone)
+    betas:
+      - 0.9
+      - 0.98
+    eps: 1.0e-09
+    label_smoothing: 0.1
+    lr: 0.2
+    warmup_steps: 8000
+    constant: 2
+    inv_sqrt: false        # False = default NoamOpt learning rate schedule
+    amsgrad: false
+    weight_decay: 0
+prep: # data preparation
+  max_types: 8000  # maximum number of types in vocab ; if shared_vocab=false, set max_src_types and max_tgt_types separately
+  pieces: bpe   # choices: bpe, char, word, unigram  from google/sentencepiece
+  shared_vocab: true  # true means same vocab for src and tgt, false means different vocabs
+  src_len: 256   # longer sentences, decision is made as per 'truncate={true,false}'
+  tgt_len: 256
+  truncate: true  # what to do with long sentences: if true truncate at src_len or tgt_len; if false filter away
+  train_src: wmt_data/data/de-en/europarl-v9.de-en.de.tok   # training data
+  train_tgt: wmt_data/data/de-en/europarl-v9.de-en.en.tok
+  valid_src: wmt_data/data/dev/newstest2013.de.tok
+  valid_tgt: wmt_data/data/dev/newstest2013.en.tok
+tester:
+  decoder:
+   beam_size: 4
+   batch_size: 18000   # effective size = batch_size/beam_size
+  suit:  # suit of tests to run after the training
+    newstest2013:  # name of test and list of src.tok, ref file (ref should be unmodified)
+      - wmt_data/data/dev/newstest2013.de.tok
+      - wmt_data/data/dev/newstest2013.en
+    newstest2014:  # name of test and list of src.tok, ref file (ref should be unmodified)
+      - wmt_data/data/dev/newstest2014-deen-src.de.tok
+      - wmt_data/data/dev/newstest2014-deen-ref.en
+trainer:
+  init_args:
+    chunk_size: 10   # generation in chunks of time steps to reduce memory consumption
+    grad_accum: 1     # How many batches to accumulate gradients
+  batch_size: 4200   # not exceeding these many tokens (including paddings)
+  check_point: 1000  # how often to checkpoint?
+  keep_models: 10   # how many checkpoints to keep on disk (small enough to save disk, large enough for checkpt averaging
+  steps: 200000      # how many steps to train; if early_stop is enabled, this is max steps
+  keep_in_mem: true   # keep training data in memory
+updated_at: '2019-03-09T21:15:33.707183'  # automatically updated by system
+seed: 12345  # fix the manual seed of pytorch + cuda + numpy + python_stdlib RNGs. Remove/comment this to disable
+----
+
+[#conf-early-stop]
+=== Early stop
+Add the below piece of config to `trainer` to enable early stop on convergence.
+[source,yaml]
+----
+trainer:
+  ....           # other args
+  steps: 100000      # steps is treated as max steps
+  checkpoint: 1000   # validate every these many steps
+  early_stop:       # remove this block to disable
+    enabled: true   # or, alternatively flip this to disable;
+    by: loss        # stop by validation loss (default); TODO: add BLEU
+    patience: 5     # how many validations to wait, to be sure of stopping; each validation is per check_point steps
+    min_steps: 8000  # minimum steps to wait before test for early stop;
+    signi_round: 3   # significant in 'by' value, used as round(value, signi_round).
+                     # e.g. round(1/3, 3) = 0.333; round(100/3, 0) = 33; round(100/3, -1) = 30.0
+
+----
+
+[#conf-optim]
+=== Optimizer
+
+By default, we use the `ADAM` optimizer from
+link:https://arxiv.org/abs/1412.6980[Adam: A Method for Stochastic Optimization].
+It is also possible to use `ADAMW` from link:https://arxiv.org/abs/1711.05101[Decoupled Weight Decay Regularization],
+since weight decay is different in optimizers with variable step sizes.
+
+Note: When `inv_sqrt: false`, `lr` does nothing. When `inv_sqrt: true`, `constant` does nothing.
+
+An alternative optimizer may look like:
+[source,yaml]
+----
+optim:
+  name: ADAMW
+  args:
+    criterion: smooth_kld_and_triplet_loss
+    betas:
+      - 0.9
+      - 0.98
+    eps: 1.0e-08
+    label_smoothing: 0.1
+    lr: 0.0005
+    warmup_steps: 4000
+    constant: 2           # Does nothing if inv_sqrt==True
+    inv_sqrt: true        # If truem lr should be under 0.005
+    amsgrad: true
+    weight_decay: 1e-3    # Use ADAMW if weight decay != 0
+----
+
+[#conf-finetune]
+=== Fine Tuning
+
+We define fine tuning as the act of changing the training data at certain time step in the training process.
+To enable this feature, we need to do following.
+
+Step1. specify, `finetune_src` `finetune_tgt` in the `prep` block as follows
+[source,yaml]
+----
+prep: # data preparation
+  ....
+  train_src: wmt_data/data/de-en/europarl-v9.de-en.de.tok   # training data
+  train_tgt: wmt_data/data/de-en/europarl-v9.de-en.en.tok
+  finetune_src: wmt_data/data/de-en/finetune.de-en.de.tok   # Finetuning data
+  finetune_tgt: wmt_data/data/de-en/finetune.de-en.en.tok
+  valid_src: wmt_data/data/dev/newstest2013.de.tok
+  valid_tgt: wmt_data/data/dev/newstest2013.en.tok
+----
+Step2, Inform the Trainer to continue training, edit the `trainer` block with `finetune_steps`.
+[source,yaml]
+----
+trainer:
+  batch_size: 12000        # training batch size
+  steps: 200000           # how many steps to train
+  finetune_steps: 300000 # fine tuning steps.
+  finetune_batch_size: 1024  # fine tuning batch_size; optional; default is training batach_size
+
+----
+This makes the trainer use `train_{src,tgt}` for 0 - 200k steps,  followed by `finetune_{src,tgt}`
+for 200k-300k steps. Note that `finetune_steps > steps` .
+
+[#conf-parent-child]
+=== Parent-Child Transfer
+To initialize from another compatible model as parent, add `parent:` specification to conf.yml as shown below:
+[source,yaml]
+----
+model_type: tfmnmt
+model_args:
+  # will be inherited from parent  ; see parent.mode.args: true
+parent:
+  experiment: <path/to/experiment/dir>
+  vocab:
+    shared: shared       # for reusing the shared vocab
+    #src: src            # for separate vocabs
+    #tgt: tgt
+  shrink: true        # shrink vocabularies and embeddings to child data
+                      # specified in train_{src,tgt} and mono_{src,tgt}
+  model:
+    args: true          # update/overwrite the model_args of child with the parent
+    ensemble: 5         # how many checkpoints of parent to ensemble, to obtain initial state
+# ... rest of the config such as prep, trainer etc
+----
+
+[#conf-freeze-wt]
+=== Freezing some parts of model
+Frozen weights associated to parts of network means the weights remain unmodified during the course of the training.
+It is a useful feature when the model weights are initialized from a well trained parent model.
+WKT Optimizer is the one that modifies model's parameters according to their gradients.
+Therefore, to freeze the weights implies excluding the weights from optimizer.
+Or alternatively, explicitly mention the parts of the model needs to be trained (i.e. updated by optimizer).
+
+Here is an example -- comment or remove the parts that you wish to freeze in the below 6 layer network.
+[source,yaml]
+----
+optim:
+  name: ADAM
+  args:
+    ....# the usual args for optimizer
+  trainable:  # trainable parameter
+    include: # only include these and exclude everything else not listed here
+    - src_embed
+    - tgt_embed
+    - generator
+    - 'encoder:0,1,2,3,4,5'  # the numbers are layer indices starting from 0
+    - 'decoder:0,1,2,3,4,5'  # the numbers are layer indices starting from 0
+----
+TODO: add support for `exclude` logic ie. include everything else except the mentioned.
+
+This feature is supported only in `AbstractTransformerNMT` and all of its children.
+If you are adding a new `NMTModel` or customising this feature, please override `get_trainable_parameters(self, include, exclude)` function to support this feature.
+
+[#conf-share-data]
+=== Sharing Data between Experiments
+
+In the new experiment config, add `same_data` to reference parent experiment from which the data
+should be reused for training and validation. Note that this uses the same vocabulary as parent.
+The child experiment creates a symbolic link to parent experiments data (instead of copying,
+to reduce the disk space).
+
+Alternatively, you may use `rtg-fork --data` to fork an experiment with same data,
+where the forked experiment will have symbolic link to parent's data.
+
+[source,yaml]
+----
+
+prep:
+  same_data: path/to/prior/experiment_dir
+
+----
+
+[#conf-vocab]
+== Vocabulary Preprocessing using Sentencepiece or NLCodec
+
+link:https://github.com/google/sentencepiece[Google's sentencepiece] is an awesome lib for
+preprocessing the text datasets.
+We've used sentencepiece's python API since day-1 of RTG and it is the default library.
+However, since the core sentencepiece is written in C++, it was hard to modify to explore some new
+ideas on BPE (without knowing C++). So, we reimplemented BPE in pure python, with advanced
+datastructures such as linked-lists, prefix tries and dirty-maxheap to match the speed.
+Our reimplementation is named as link:https://github.com/isi-nlp/nlcodec/[NLCodec].
+NLCoded can be enabled as:
+
+[source, yaml]
+----
+prep:
+  ....
+  codec_lib: nlcodec  # default is sentpiece
+----
+
+=== Vocabulary Types
+Both `sentpiece` or `nlcodec` support `pieces=` `bpe`, `char`, `word`.
+
+[source, yaml]
+----
+prep:
+  ....
+  codec_lib: nlcodec  # other option: sentpiece
+  pieces: bpe         # other options: char, word
+----
+As of now, only `sentpiece` supports `pieces=unigram`.
+
+=== Character coverage
+
+For `bpe` and `char` vocabulary types, a useful trick is to exclude low frequency character and mark them as `UNK's`.
+Usually expressed as percentage of character coverage in training corpus.
+Sentencepiece's default (when we last checked) is 99.95% ie 0.9995.
+Here is how to set this for eg to 99.99% i.e. 0.9999 in `nlcodec`
+[source, yaml]
+----
+prep:
+  ....
+  codec_lib: nlcodec      # other option: sentpiece
+  pieces: bpe             # other options: char, word
+  char_coverage: 0.9999
+----
+
+=== Sub-Word Regularization
+
+When using `codec_lib: nlcodec` and `pieces: bpe`, you have the option to add
+sub-word regularization to your training.
+Normally, text is split into the fewest tokens necessary to represent
+the sequence (greedy split).
+By occasionally splitting some tokens into its constituents (suboptimal split),
+we can represent the same sequence many different ways.
+This allows us to leverage less data more effectively.
+
+[source, yaml]
+----
+trainer:
+  ....
+  split_ratio: 0.1        # 10% chance to suboptimally split (recursive)
+  dynamic_epoch: true     # Recompute splits for each epoch
+----
+
+[#avoid-oom]
+== Avoiding Out-of-Memory
+
+Out-of-memory is pretty common, and we have worked out ways to avoid that situation as much as possible.
+
+=== Trainer Memory
+Let's visualize the total required memory for training a model in the order of a 4D tensor: `[ ModelDim x Batch x SequenceLength x Vocabulary]`
+
+- Model dim is often fixed. We dont do anything fancy here.
+- Vocabulary size is often fixed too. We dont do anything fancy here.
+If you can use smaller target vocabulary, it greatly reduces memory consumption.
+Sometimes, especially when training data is less, https://arxiv.org/abs/2004.02334[using smaller target vocabulary  such as 8K is actually best thing to do!]
+
+
+So, we are left with `Batch x SequenceLength` as two dims that we can manipulate.
+
+For *SequenceLength*, set `trainer.init_args.chunk_size` to a smaller value to break down whole sequence into smaller chunks.
+This operation does not affect gradients, but affects training time. Smaller chunk_size => less memory, but it also means more chunks => more time.
+Also note that the `prep.src_len` and `prep.tgt_len` allows you to decide maximum length of source and target sequences.
+When combined that with `prep.truncate=True`, all longer sequences will be truncated, or `prep.truncate=False` causes the longer sequences to be dropped.
+
+Regarding *Batch*, there are some things you can do.
+
+1. If you have GPUs with larger memory, use them. For example, V100 with 32GB is much better than 1080 Ti with 11GB.
+2. If you dont have larger GPU, but you have many smaller GPUs, use many them by setting `CUDA_VISIBLE_DEVICES` variable to comma separated list of GPU IDs.
+  The built in `DataParallel` module divides batches into multiple GPUs => reduces total memory needed on each GPU.
+3. If you dont have multiple GPUs, use `trainer.init_args.grad_accum`.  eg. if you set `grad_accum=2`, the effective `batch_size` is `2 * batch_size`.
+
+
+In summary, to make best out of your GPUs, adjust `trainer.init_args.chunk_size`, `trainer.init_args.grad_accum`, and `trainer.batch_size`.
+I suggest using `gpustat -i 0.5`, look at the GPU RAM usage and see if you need to increase or decrease some parameters.
+
+Regarding the CPU RAM, we usually need as much as a single GPU RAM.
+But if you have a plenty of it, please enable `trainer.keep_in_mem=True` to reduce disk IO.
+This `keep_in_mem` parameter informs the trainer to load training data once and hold it in CPU RAM during the course of training.
+
+
+=== Decoder Memory
+
+Since beam decoder is used, let's visualize memory as `[Batch x Beams x Vocabulary x SequenceLength]`
+
+- `tester.decoder.beam_size` : Number of beams to be used. You may reduce it, e.g. beam_size=4 if often a good value.
+- `tester.decoder.batch_size` for 1 beam. internally, it calculates, effective = batch_size/beam_size
+- `tester.decoder.max_len` is a relative length. It decides how long the target sequence can grow in relation to source length. For example, max_len=50 => len(src) + 50
+
+`rtg-decode` has `--max-src-len` argument which can be used to hard limit the max length of source sentences.
+`--max-src-len` can be degrade test performance since it drops out words.
+Right thing to do for long sequences will be to split long sentences in input and merge the outputs after decoding.

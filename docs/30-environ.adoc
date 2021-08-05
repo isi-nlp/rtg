@@ -1,0 +1,50 @@
+[#env-vars]
+== Environment Variables
+
+=== GPUs
+
+By default, RTG uses all GPUs specified by `CUDA_VISIBLE_DEVICES` environment variable.
+
+To check if GPU is configured correctly,
+
+   python -c 'import torch; print(torch.cuda.is_available(), torch.cuda.device_count())'
+   # prints True and number_of_gpus
+
+You can specify multiple GPUS, say devices with ids `0` and `1`
+
+ export CUDA_VISIBLE_DEVICES=0,1
+
+To disable GPU usage, simply set empty string to the variable or unset it
+
+  export CUDA_VISIBLE_DEVICES=
+  unset CUDA_VISIBLE_DEVICES
+
+
+=== Fast Temporary FileSystem
+When shared compute grids with network file systems (NFS) are used, the disk IO can be too slow.
+It helps to move training data that is frequently read to a fast temporary file system.
+Placing training data on TMPFS can be a good thing to do in this situation.
+`export RTG_TMP` to the desired path such as `$TMPDIR` before starting rtg process.
+
+[source,bash]
+----
+export RTG_TMP=$TMPDIR
+----
+The RTG_TMP does NOT have to be unique to each directory. So you can use the same directory for all
+the experiments.
+
+Note: the model checkpoints dont use TMPDIR as of now. Since the checkpoints are
+taken once for every 1000 steps or so, it should be okay for now. But if it is a problem that needs to be addressed
+we shall revise this decision again.
+
+
+=== Number of CPU Cores
+
+[source,bash]
+----
+export RTG_CPUS=10     #$SLURM_CPUS_ON_NODE
+export OMP_NUM_THREADS=$RTG_CPUS
+export MKL_NUM_THREADS=$RTG_CPUS
+----
+
+For scaling to large datasets, see link:#scaling-big["Scaling to Big Datasets Using PySpark"] section.

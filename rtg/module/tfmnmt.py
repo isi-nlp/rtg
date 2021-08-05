@@ -1,26 +1,34 @@
-# Tensor 2 Tensor aka Attention is all you need
+# Transformer aka "Attention is all you need"
 # Thanks to http://nlp.seas.harvard.edu/2018/04/03/attention.html
-import os
 import copy
 import math
 import time
-import inspect
 import gc
 from abc import ABC
-from typing import Callable, Optional, List, Union
+from typing import Callable, Optional, Union
+import traceback
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
+from torch.cuda.amp import autocast
 from tqdm import tqdm
 
-from rtg import device, log, my_tensor as tensor, TranslationExperiment as Experiment
-from rtg.dataprep import Batch, BatchIterable
+from rtg import device, log, TranslationExperiment as Experiment
+from rtg.utils import get_my_args
+from rtg.utils import get_my_args
+from rtg.data.dataset import BatchIterable
 from rtg.module import NMTModel
-from rtg.module.trainer import TrainerState, SteppedTrainer
+from rtg.module.trainer import TrainerState, SteppedTrainer, EarlyStopper
+from rtg.module.criterion import Criterion
 from torch.optim.optimizer import Optimizer
 from dataclasses import dataclass
+from sacrebleu import corpus_bleu
+from rtg.distrib import DistribTorch
+
+
+dtorch = DistribTorch.instance()
 
 
 def clones(module, N):
@@ -31,21 +39,58 @@ def clones(module, N):
 class Generator(nn.Module):
     "Define standard linear + softmax generation step."
 
+    # compile a pool of post processors
+    scores = {
+        'logits': lambda x, dim=None: x,
+        'softmax': F.softmax,
+        'log_softmax': F.log_softmax,
+        'sigmoid': lambda x, dim=None: x.sigmoid(),
+        'embedding': None,
+        'identity': None
+    }
+
     def __init__(self, d_model: int, vocab: int):
         super().__init__()
         self.d_model = d_model
         self.vocab = vocab
         self.proj = nn.Linear(d_model, vocab)
+        self.warn_msgs = set()
 
-    def forward(self, x, log_probs=True):
+    def forward(self, x, score=None, gen_probs=True, log_probs=True):
+        """
+        :param x: features or hidden states
+        :param score: what scores are do you want in return? Your options are
+            'logits' -- scores without any normalization
+            'softmax' -- raw probs for multi class
+            'log_softmax' -- log probs for multiclass
+            'sigmoid' -- for multilabel task
+        :param gen_probs: (deprecated, use 'score=logits') False to get logits; default is True
+        :param log_probs: (deprecated, use score='log_softmax' or 'softmax').
+            False to get raw probs from softmax, True to get probs from log_softmax.
+        :return: scores based on choice of score=xxx
+        """
+        # made this mess to preserve backward compatibility
+        if not score:
+            score = 'logits'
+            if gen_probs:
+                score = 'log_softmax' if log_probs else 'softmax'
+            warn_msg = f'API deprecated. use "score={score}" attribute.'
+            if warn_msg not in self.warn_msgs:  # warn only Once
+                self.warn_msgs.add(warn_msg)
+                log.warning(warn_msg)
+                traceback.print_stack(limit=6)
+        assert score in self.scores, f'{self.scores.keys()} supported but given "{score}"'
+        if score == 'embedding' or score == 'identity':
+            return x
         x = self.proj(x)
-        return (F.log_softmax if log_probs else F.softmax)(x, dim=-1)
+        return self.scores[score](x, dim=-1)
 
 
 class EncoderLayer(nn.Module):
     "Encoder is made up of self-attn and feed forward (defined below)"
 
-    def __init__(self, size, self_attn, feed_forward, dropout):
+    def __init__(self, size, self_attn: 'MultiHeadedAttention',
+                 feed_forward: 'PositionwiseFeedForward', dropout):
         super().__init__()
         self.self_attn = self_attn
         self.feed_forward = feed_forward
@@ -151,7 +196,7 @@ class AbstractTransformerNMT(NMTModel, ABC):
                  f" tgt_out: {id(self.generator.proj.weight.data)}")
         assert weights.shape == self.src_embed[0].lut.weight.shape
         self.src_embed[0].lut.weight.data.copy_(weights.data)
-        #self.generator.proj.weight = self.tgt_embed[0].lut.weight
+        # self.generator.proj.weight = self.tgt_embed[0].lut.weight
 
     def init_tgt_embedding(self, weights, input=True, output=True):
         log.info(f"Are embedding tied ? see object ids: "
@@ -184,17 +229,59 @@ class AbstractTransformerNMT(NMTModel, ABC):
             log.info(f"Tying embeddings: SrcInp == TgtInp")
             self.src_embed[0].lut.weight = self.tgt_embed[0].lut.weight
 
+    def get_trainable_params(self, include=None, exclude=None):
+        if not include and not exclude or include == 'all':
+            return super().get_trainable_params()
+        if exclude:
+            raise Exception("Exclude not supported yet. Please use include")
+            # TODO: implement it later when it is really really needed!
+        assert isinstance(include, list)
+        # a valid example for include
+        valid_include = [
+            'src_embed', 'tgt_embed', 'generator',
+            'encoder:0,1,2,3,4,5',  # encoder:layers
+            'decoder:0,1,2,3,4,5'  # decoder:layers
+        ]
+        param_groups = []
+        for sub_name in include:
+            if hasattr(self, sub_name):
+                log.info(f"Trainable parameters <-- {sub_name}")
+                param_groups.extend(getattr(self, sub_name).parameters())
+            elif sub_name.startswith('encoder:') or sub_name.startswith('decoder:'):
+                # subselect layers
+                sub_name, layers = sub_name.split(':')  # encoder;layers_idx
+
+                layers = [int(x) for x in layers.split(',')]
+                sub_module = dict(encoder=self.encoder, decoder=self.decoder)[sub_name]
+                for layer_idx in layers:
+                    log.info(f'Trainable parameters <-- {sub_name}[{layer_idx}] ')
+                    layer = sub_module.layers[layer_idx]
+                    param_groups.extend(layer.parameters())
+                if len(sub_module.layers) - 1 in layers:  # the last layer is trainable, then norm
+                    log.info(f'Trainable parameters <-- {sub_name}.norm')
+                    param_groups.extend(sub_module.norm.parameters())
+            else:
+                raise Exception(f'{sub_name} not supported')
+
+        return param_groups
+
     @classmethod
     def make_model(cls, src_vocab, tgt_vocab, enc_layers=6, dec_layers=6, hid_size=512,
                    ff_size=2048, n_heads=8, dropout=0.1, tied_emb='three-way', activation='relu',
                    exp: Experiment = None):
-        raise NotImplementedError
+        raise NotImplementedError()
 
 
 class TransformerNMT(AbstractTransformerNMT):
     """
     A standard Encoder-Decoder Transformer architecture.
     """
+    # Factories; looks a bit complicated, but very useful if child classes want to customize these.
+    GeneratorFactory = Generator
+    EncoderLayerFactory = EncoderLayer
+    DecoderLayerFactory = DecoderLayer
+    EncoderFactory = Encoder
+    DecoderFactory = Decoder
 
     def __init__(self, encoder: Encoder, decoder: Decoder,
                  src_embed, tgt_embed,
@@ -208,36 +295,34 @@ class TransformerNMT(AbstractTransformerNMT):
         return 'tfmnmt'
 
     @classmethod
-    def make_model(cls, src_vocab, tgt_vocab, enc_layers=6, dec_layers=6, hid_size=512, ff_size=2048,
-                   n_heads=8, attn_bias=True, dropout=0.1, tied_emb='three-way', activation='relu',
-                   exp: Experiment = None):
+    def make_model(cls, src_vocab, tgt_vocab, enc_layers=6, dec_layers=6, hid_size=512,
+                   ff_size=2048,
+                   n_heads=8, attn_bias=True, attn_dropout=0.1, dropout=0.2, activation='relu',
+                   tied_emb='three-way', exp: Experiment = None):
         "Helper: Construct a model from hyper parameters."
 
         # get all args for reconstruction at a later phase
-        _, _, _, args = inspect.getargvalues(inspect.currentframe())
-        for exclusion in ['cls', 'exp']:
-            del args[exclusion]  # exclude some args
-        # In case you are wondering, why I didnt use **kwargs here:
-        #   these args are read from conf file where user can introduce errors, so the parameter
-        #   validation and default value assignment is implicitly done by function call for us :)
+        args = get_my_args(exclusions=['cls', 'exp'])
         assert activation in {'relu', 'elu', 'gelu'}
         log.info(f"Make model, Args={args}")
         c = copy.deepcopy
-        attn = MultiHeadedAttention(n_heads, hid_size, dropout=dropout, bias=attn_bias)
+        attn = MultiHeadedAttention(n_heads, hid_size, dropout=attn_dropout, bias=attn_bias)
         ff = PositionwiseFeedForward(hid_size, ff_size, dropout, activation=activation)
 
         if enc_layers == 0:
             log.warning("Zero encoder layers!")
-        encoder = Encoder(EncoderLayer(hid_size, c(attn), c(ff), dropout), enc_layers)
+        encoder = cls.EncoderFactory(cls.EncoderLayerFactory(hid_size, c(attn), c(ff), dropout),
+                                     enc_layers)
 
         assert dec_layers > 0
-        decoder = Decoder(DecoderLayer(hid_size, c(attn), c(attn), c(ff), dropout), dec_layers)
+        decoder = cls.DecoderFactory(
+            cls.DecoderLayerFactory(hid_size, c(attn), c(attn), c(ff), dropout), dec_layers)
 
         src_emb = nn.Sequential(Embeddings(hid_size, src_vocab),
                                 PositionalEncoding(hid_size, dropout))
         tgt_emb = nn.Sequential(Embeddings(hid_size, tgt_vocab),
                                 PositionalEncoding(hid_size, dropout))
-        generator = Generator(hid_size, tgt_vocab)
+        generator = cls.GeneratorFactory(hid_size, tgt_vocab)
 
         model = cls(encoder, decoder, src_emb, tgt_emb, generator)
 
@@ -246,6 +331,10 @@ class TransformerNMT(AbstractTransformerNMT):
 
         model.init_params()
         return model, args
+
+    @classmethod
+    def make_trainer(cls, *args, **kwargs):
+        return TransformerTrainer(*args, **kwargs)
 
 
 class SublayerConnection(nn.Module):
@@ -293,7 +382,9 @@ def attention(query, key, value, mask=None, dropout=None):
         # Now, if you got this, take a moment to thank http://nlp.seas.harvard.edu/rush.html
         # for devising this concise code. I needed a lot of time to understand how this code works!
         #
-        scores = scores.masked_fill(mask == 0, -1e9)
+        #scores = scores.masked_fill(mask == 0, -1e9)
+        low_val = -2**15 if dtorch.fp16 else -1e9
+        scores = scores.masked_fill(mask == 0, low_val)
     p_attn = F.softmax(scores, dim=-1)  # [BatchSize x Heads x Time=SeqLen x SeqLen ]
     if dropout is not None:
         p_attn = dropout(p_attn)
@@ -349,7 +440,12 @@ class PositionwiseFeedForward(nn.Module):
         self.w_1 = nn.Linear(d_model, d_ff)
         self.w_2 = nn.Linear(d_ff, d_model)
         self.dropout = nn.Dropout(dropout)
-        activations = dict(relu=F.relu, elu=F.elu, gelu=F.gelu)
+        activations = dict(relu=F.relu, elu=F.elu)
+
+        if activation == 'gelu':
+            activations['gelu'] = F.gelu
+            # probably you are using old torch; please upgrade to torch 1.2+
+
         self.activation = activations[activation]
 
     def forward(self, x):
@@ -389,167 +485,80 @@ class PositionalEncoding(nn.Module):
         return self.dropout(x)
 
 
-class LabelSmoothing(nn.Module):
-    """
-    Label smoothing
-    """
-
-    def __init__(self, vocab_size: int, padding_idx: int, smoothing=0.1):
-        super().__init__()
-        self.size = vocab_size
-        assert 0.0 <= smoothing <= 1.0
-        self.padding_idx = padding_idx
-        # want elementwise_mean but due to padded tokens, we do the division ourselves
-        self.criterion = nn.KLDivLoss(reduction='sum')
-        self.fill_val = smoothing / (vocab_size - 2)  # exclude 2  = padding, and expected word
-        self.confidence = 1.0 - smoothing
-
-    def forward(self, x, target):
-        # 'x' is log probabilities, originally [B, T, V], but here [B.T, V]
-        # 'target' is expected word Ids, originally [B, T] but here [B.T]
-        assert x.shape[1] == self.size
-        assert x.shape[0] == target.shape[0]
-        target = target.unsqueeze(1)  # [B.T x 1]   # and it has class_idx of correct class
-
-        smooth_truth = torch.full_like(x, fill_value=self.fill_val, requires_grad=False)
-        smooth_truth[:, self.padding_idx] = 0
-        smooth_truth.scatter_(1, target, self.confidence)
-
-        mask = target.eq(self.padding_idx)
-        smooth_truth.masked_fill_(mask, 0)
-        # note: x is log probs, smooth_truth is just probs
-        loss = self.criterion(x, smooth_truth)
-        # loss is a scalar value (0-dim )
-        # but data parallel expects tensors (for gathering along a dim), so doing this
-        return loss.unsqueeze(0)
-
-
 @dataclass
 class SimpleLossFunction:
     """
     A simple loss function that computes the loss using the criterion given
     """
     generator: Generator
-    criterion: LabelSmoothing
+    criterion: Criterion
     opt: Optimizer
 
-    def __call__(self, x_feats, y_seqs, normalizer, train_mode=True):
-        x_probs = self.generator(x_feats)  # B x T x D --> B x T x V
-
+    def __call__(self, x_feats, y_seqs, normalizer, train_mode=True, take_step=True, get_out=False):
+        # B x T x D --> B x T x V
+        x_probs = self.generator(x_feats, score=self.criterion.input_type)
         scores = x_probs.contiguous().view(-1, x_probs.size(-1))  # B x T x V --> B.T x V
         truth = y_seqs.contiguous().view(-1)  # B x T --> B.T
-        # TODO: normalize by per sequence length, not just the total number of tokens
         loss = self.criterion(scores, truth).sum() / normalizer
+
         if train_mode:  # don't do this for validation set
-            loss.backward()
-            self.opt.step()
-            self.opt.zero_grad()
-        return loss.item()
+            dtorch.backward(loss)
+            if take_step:
+                dtorch.step(self.opt)
+        result = loss.item()
+        if get_out:
+            result = (result, x_probs.argmax(dim=-1))
+        return result
 
 
 @dataclass
 class ChunkedLossCompute(SimpleLossFunction):
     chunk_size: int = 10
 
-    def __call__(self, y_feats, y_seqs, normalizer: Union[int, float], train_mode=True,
-                 chunk_size=None):
+    def __call__(self, y_feats, y_seqs, normalizer: Union[int, float],
+                 train_mode=True, chunk_size=None, take_step=True, get_out=False):
+        """
+
+        :param y_feats:
+        :param y_seqs:
+        :param normalizer:
+        :param train_mode: Should the gradients be propagated
+        :param chunk_size:  Chunk  size along the time dim
+        :param take_step: should the optimizer.step() be called
+        :param get_out: should the best outputs be returned
+        :return: total_loss if get_outs=False (default)
+                (total_loss, outputs) if get_out=True
+        """
         chunk_size = chunk_size or self.chunk_size
         assert chunk_size > 0
         total = 0
         _y_feats = y_feats.detach().clone()
         _y_feats.requires_grad = True  # yet collect grads
-
+        out_chunks = []
         for i in range(0, _y_feats.shape[1], chunk_size):
             # grad network is cut here
             chunked_feats = _y_feats[:, i:i + chunk_size]
-            chunked_dist = self.generator(chunked_feats)
-
-            chunked_dist = chunked_dist.contiguous().view(-1, chunked_dist.shape[
-                -1])  # B x C x V -> B.C x V
+            chunked_dist = self.generator(chunked_feats, score=self.criterion.input_type)
+            if get_out:
+                top_idxs = chunked_dist.argmax(dim=-1) # # B x C x V -> B x C
+                out_chunks.append(top_idxs)
+            # B x C x V -> B.C x V
+            chunked_dist = chunked_dist.contiguous().view(-1, chunked_dist.shape[-1])
             chunked_ys = y_seqs[:, i:i + chunk_size].contiguous().view(-1)  # B x C -> B.C
             loss = self.criterion(chunked_dist, chunked_ys).sum() / normalizer
-            total = total + loss.detach().item()
+            total += loss.detach().item()
             if train_mode:
-                loss.backward()
+                dtorch.backward(loss)
         if train_mode:
             out_grad = _y_feats.grad.data
             y_feats.backward(gradient=out_grad)
-            self.opt.step()
-            self.opt.zero_grad()
-
-        return total
-
-
-class MultiGPULossFunction(ChunkedLossCompute):
-
-    def __init__(self, dp_module: nn.DataParallel, criterion: LabelSmoothing, opt: Optimizer,
-                 chunk_size: int, devices: List, out_device=None):
-        super().__init__(None, criterion, opt, chunk_size)
-        self.multi_gpu = len(devices) > 1
-        assert self.multi_gpu
-        self.devices = devices
-        self.out_device = out_device if out_device is not None else devices[0]
-        assert isinstance(dp_module, nn.DataParallel)
-        self.dp_module: nn.DataParallel = dp_module
-        self.sct_criteria = nn.parallel.replicate(self.criterion, devices=self.devices)
-
-    def __call__(self, y_feats, y_seqs, normalizer, train_mode=True, chunk_size=None):
-
-        batch_dim = 0
-        assert y_feats.shape[batch_dim] == y_seqs.shape[batch_dim]
-
-        # disconnect y_feats nodes from rest of graph
-        _y_feats = y_feats.data.clone().detach()
-        _y_feats.requires_grad = True  # even though detached, we still need grads here
-
-        # naming: sct = Scattered  chk = Chunked
-        # Scatter is horizontal split (i.e. along batch) ; Chunk is vertical split (ie. along time)
-        # Scatter is handled by pytorch's dataparallel utils
-        sct_feats = nn.parallel.scatter(_y_feats, target_gpus=self.devices, dim=batch_dim)
-        sct_ys = nn.parallel.scatter(y_seqs, target_gpus=self.devices, dim=batch_dim)
-        assert len(sct_feats) == len(sct_ys)
-
-        n_scts = len(sct_feats)  # if the batch is smaller than n_gpus; only use a subset
-
-        sct_criteria = self.sct_criteria[:n_scts]
-        # use generator from data parallel, because the generator params maybe tied to embeddings
-        # TODO: I am not 100% sure if this actually works
-        generator = self.dp_module.module.generator
-        sct_generators = nn.parallel.replicate(generator, devices=self.devices)[:n_scts]
-
-        chunk_size = chunk_size or self.chunk_size
-        assert chunk_size > 0
-        seq_len = y_feats.shape[1]  # B x L x D
-        assert seq_len == y_seqs.shape[-1]  # B x L
-        total_loss = 0
-
-        for i in range(0, seq_len, chunk_size):
-            chk_sct_feats = [sf[:, i:i + chunk_size] for sf in sct_feats]
-            chk_sct_flat_ys = [sy[:, i:i + chunk_size].contiguous().view(-1) for sy in
-                               sct_ys]  # also falttened
-
-            chk_sct_dist = nn.parallel.parallel_apply(sct_generators, chk_sct_feats)
-            chk_sct_flt_dist = [chk_dist.contiguous().view(-1, chk_dist.shape[-1]) for chk_dist in
-                                chk_sct_dist]
-            args_pair = list(zip(chk_sct_flt_dist, chk_sct_flat_ys))
-            chk_sct_loss = nn.parallel.parallel_apply(sct_criteria, args_pair)
-
-            # update total loss
-            chk_losses = nn.parallel.gather(chk_sct_loss, target_device=self.out_device)
-            chk_loss = chk_losses.sum() / normalizer
-            total_loss += chk_loss.item()
-
-            if train_mode:
-                chk_loss.backward()  # backward for the chunked part
-
-        # back prop all loss through the rest of the network
-        if train_mode:
-            # back prop the rest of network
-            y_feats.backward(gradient=_y_feats.grad.data)
-            self.opt.step()
-            self.opt.zero_grad()
-
-        return total_loss
+            if take_step:
+                dtorch.step(optimizer=self.opt)
+        if get_out:
+            outs = torch.cat(out_chunks, dim=1)
+            return total, outs
+        else:
+            return total
 
 
 class TransformerTrainer(SteppedTrainer):
@@ -560,30 +569,25 @@ class TransformerTrainer(SteppedTrainer):
                  model_factory=TransformerNMT.make_model,
                  **optim_args):
         super().__init__(exp, model, model_factory=model_factory, optim=optim, **optim_args)
-        generator = self.model.generator
-        criterion = LabelSmoothing(vocab_size=generator.vocab,
-                                   padding_idx=Batch.pad_value,
-                                   smoothing=self._smoothing)
-
-        self.n_gpus = torch.cuda.device_count()
-        chunk_size = self.exp.config.get('trainer', {}).get('init_args', {}).get('chunk_size', 10)
-        log.info(f"Going to use {self.n_gpus} GPUs; "
-                 f" Chunk_size={chunk_size} CUDA_VISIBLE_DEVICES="
-                 f"{os.environ.get('CUDA_VISIBLE_DEVICES')}")
+        trainer_args = self.exp.config.get('trainer', {}).get('init_args', {})
+        chunk_size = trainer_args.get('chunk_size', -1)
+        self.grad_accum_interval = trainer_args.get('grad_accum', 1)
+        assert self.grad_accum_interval > 0
 
         if self.n_gpus > 1:  # Multi GPU mode
-            device_ids = list(range(self.n_gpus))
-            log.warning("Multi GPU mode <<this feature is not well tested>>")
-            self.model = nn.DataParallel(self.model, dim=0, device_ids=device_ids)
+            raise Exception(f"Please use: python -m rtg.distrib.launch -G {self.n_gpus} \n "
+                            f" or set single GPU by: export CUDA_VISIBLE_DEVICES=0 ")
 
-            self.loss_func = MultiGPULossFunction(self.model, criterion=criterion,
-                                                  opt=self.opt,
-                                                  chunk_size=chunk_size, devices=device_ids)
+        generator = self.core_model.generator
+        if not chunk_size or chunk_size < 1:
+            self.loss_func = SimpleLossFunction(generator=generator, criterion=self.criterion,
+                                                opt=self.opt)
         else:
-            self.loss_func = ChunkedLossCompute(generator=generator, criterion=criterion,
+            log.info(f"Using Chunked Loss Generator. chunk_size={chunk_size}")
+            self.loss_func = ChunkedLossCompute(generator=generator, criterion=self.criterion,
                                                 opt=self.opt, chunk_size=chunk_size)
 
-    def run_valid_epoch(self, data_iter: BatchIterable, dec_bos_cut=False):
+    def run_valid_epoch(self, data_iter: BatchIterable, dec_bos_cut=False, do_bleu=True):
         """
         :param data_iter: data iterator
         :param dec_bos_cut: cut first step of input as first step of decoder
@@ -593,37 +597,66 @@ class TransformerTrainer(SteppedTrainer):
         total_tokens = 0
         total_loss = 0.0
         num_batches = 0
-        with tqdm(data_iter, total=data_iter.num_batches,
-                  unit='batch', dynamic_ncols=True) as data_bar:
+        hyps, refs = [], []   # BLEU
+        model = self.core_model
+        assert not model.training
+        with tqdm(data_iter, total=data_iter.num_items,
+                  unit='sentence', dynamic_ncols=True) as data_bar:
+            # TODO: BLEU1
             for i, batch in enumerate(data_bar):
-                batch = batch.to(device)
+                if self.n_gpus <= 1:
+                    batch = batch.to(device)
                 num_toks = batch.y_toks
                 x_seqs = batch.x_seqs
+                if do_bleu and not bool(batch.y_raw):
+                    log.warning("BLEU is not possible; raw sentences are not set to validation batches")
+                    do_bleu = False
+                if do_bleu:
+                    refs.extend(batch.y_raw)
+
                 if dec_bos_cut:
                     bos_step = x_seqs[:, :1]
                     x_seqs = x_seqs[:, 1:]
                 else:
-                    bos_step = torch.full((len(batch), 1), fill_value=Batch.bos_val,
-                                          dtype=torch.long, device=device)
+                    bos_step = torch.full((len(batch), 1), fill_value=batch.bos_val,
+                                          dtype=torch.long, device=batch.y_seqs.device)
 
-                x_mask = (x_seqs != batch.pad_value).unsqueeze(1)
+                x_mask = (x_seqs != batch.pad_val).unsqueeze(1)
                 y_seqs_with_bos = torch.cat([bos_step, batch.y_seqs], dim=1)
-                y_mask = Batch.make_target_mask(y_seqs_with_bos)
-                out = self.model(x_seqs, y_seqs_with_bos, x_mask, y_mask)
+                y_mask = batch.make_autoreg_mask(y_seqs_with_bos)
+                out = model(x_seqs, y_seqs_with_bos, x_mask, y_mask)
+
                 # [Batch x Time x D]
                 # skip the last time step (the one with EOS as input)
                 out = out[:, :-1, :]
                 # assumption:  y_seqs has EOS, and not BOS
-                loss = self.loss_func(out, batch.y_seqs, num_toks, False)
+                loss = self.loss_func(out, batch.y_seqs, num_toks, train_mode=False,
+                                      get_out=do_bleu)
+                if do_bleu:
+                    loss, outs = loss
+                    outs = outs.tolist()
+                    for out in outs:
+                        hyp = self.exp.tgt_vocab.decode_ids(out)
+                        hyps.append(hyp)
+
                 total_loss += loss
                 total_tokens += num_toks
                 num_batches += 1
                 elapsed = time.time() - start
                 data_bar.set_postfix_str(
                     f'Loss:{loss:.4f}, {int(num_toks / elapsed)}toks/s', refresh=False)
+
                 start = time.time()
+                data_bar.update(len(batch))
 
         score = total_loss / num_batches
+        if do_bleu:
+            # this is non standard BLEU: greedy(beam=1), tokenized with whatever was used for training
+            bleu = corpus_bleu(hyps, [refs], tokenize='none', force=True)
+            log.info(f'\n {bleu.format()}')
+            data = {f'P{i+1}':p for i, p in enumerate(bleu.precisions)}
+            data['bleu']=  bleu.score
+            self.tbd.add_scalars('validn_greedytokbleu', data, self.opt.curr_step)
         return score
 
     def overfit_batch(self, batch, max_iters=100, stop_loss=0.01):
@@ -646,66 +679,111 @@ class TransformerTrainer(SteppedTrainer):
 
     def train(self, steps: int, check_point: int, batch_size: int,
               check_pt_callback: Optional[Callable] = None, fine_tune=False, dec_bos_cut=False,
-              keep_models=10, sort_by='eq_len_rand_batch', log_interval: int = 10, **args):
-        """
+              keep_models=10, sort_by='eq_len_rand_batch', log_interval: int = 10,
+              keep_in_mem=False, early_stop=None, **args):
 
+        """
         :param steps: how many optimizer steps to train (also, means how many batches)
         :param check_point: after how many checkpoints to
         :param batch_size: how many target tokens in batch max ( = max_len * num_sentences)
         :param check_pt_callback: function to call back after checkpt
         :param fine_tune: should the fine tune corpus be used instead of training corpus
         :param dec_bos_cut: copy the first time step of input as decoder's BOS
-        :param keep_models: how many to checkpts to keep
+        :param keep_models: how many checkpts to keep
+        :param keep_in_mem: keep training data in memory
+        :param early_stop: {patience: N validations, by: loss, enabled: True}
         :param args: any extra args
         :return:
         """
         log_resources = args.pop('log_resources', False)
+        log_embedding = args.pop('log_embedding', False)
+        split_ratio = args.pop('split_ratio', 0.)
+        dynamic_epoch = args.pop('dynamic_epoch', False)
         assert log_interval > 0
+
+        # Gradient accumulation
+        opt_steps = steps
+        batches = steps * self.grad_accum_interval
+        start_batch = self.start_step * self.grad_accum_interval
+        check_point = check_point * self.grad_accum_interval
+        if isinstance(batch_size, int):
+            max_toks, max_sents = batch_size, float('inf')
+        else:
+            max_toks, max_sents = batch_size
         if args:
             # no extra args. let user know if an extra arg is passed
             raise Exception(f" Found extra args: {args}")
-        log.info(f'Going to train for {steps} steps (from {self.start_step} steps);'
+        log.info(f'Going to train for {opt_steps} optimizer steps over {batches} batches'
+                 f' (from {self.start_step} steps);'
                  f' batch_size={batch_size} toks; sort_by={sort_by};'
                  f' check point size:{check_point}; fine_tune={fine_tune};'
                  f' dec_bos_cut={dec_bos_cut}')
-        if self.n_gpus > 1:
-            batch_size *= self.n_gpus
-            log.info(f"# GPUs = {self.n_gpus}, batch_size is set to {batch_size}")
 
-        if steps <= self.start_step:
+        distr = DistribTorch.instance()
+        if batches <= start_batch:
             raise Exception(f'The model was already trained to {self.start_step} steps. '
                             f'Please increase the steps or clear the existing models')
-        train_data = self.exp.get_train_data(batch_size=batch_size, steps=steps - self.start_step,
-                                             sort_by=sort_by, batch_first=True, fine_tune=fine_tune)
-        val_data = self.exp.get_val_data(batch_size, shuffle=False, batch_first=True,
-                                         sort_desc=False)
+
+        train_data = self.exp.get_train_data(
+            batch_size=batch_size, steps=batches - start_batch, sort_by=sort_by, batch_first=True,
+            fine_tune=fine_tune, keep_in_mem=keep_in_mem, split_ratio=split_ratio, dynamic_epoch=dynamic_epoch
+        )
+        val_data = None
+        if distr.is_global_main:
+            val_data = self.exp.get_val_data(batch_size=max_toks, shuffle=False, batch_first=True,
+                                             sort_desc=False)
 
         train_state = TrainerState(self.model, check_point=check_point)
         train_state.train_mode(True)
         unsaved_state = False
         cuda_available = torch.cuda.is_available()
-        with tqdm(train_data, initial=self.start_step, total=steps, unit='batch',
-                  dynamic_ncols=True) as data_bar:
+
+        batch_count = -1
+        stopper = None
+        early_stopped = False   # or converged
+        if early_stop:
+            stopper = EarlyStopper(cur_step=self.start_step, **early_stop)
+
+        with tqdm(train_data, initial=start_batch, total=batches, unit='batch',
+                  dynamic_ncols=True, disable=not distr.is_global_main) as data_bar:
             for batch in data_bar:
-                self.model.zero_grad()
-                batch = batch.to(device)
+                batch_count += 1
+                take_step = (batch_count % self.grad_accum_interval) == 0
+
+               # if update_interval == 0:
+               #     self.model.zero_grad()
+
+                #  if not dataparallel, then move
+                if self.n_gpus <= 1:
+                    batch = batch.to(device)
                 num_toks = batch.y_toks
                 x_seqs = batch.x_seqs
                 if dec_bos_cut:
                     bos_step = x_seqs[:, :1]
                     x_seqs = x_seqs[:, 1:]
                 else:
-                    bos_step = torch.full((len(batch), 1), fill_value=Batch.bos_val,
-                                          dtype=torch.long, device=device)
-                x_mask = (x_seqs != batch.pad_value).unsqueeze(1)
+                    bos_step = torch.full((len(batch), 1), fill_value=batch.bos_val,
+                                          dtype=torch.long, device=batch.y_seqs.device)
+
+                # Prep masks
+                x_mask = (x_seqs != batch.pad_val).unsqueeze(1)
                 y_seqs_with_bos = torch.cat([bos_step, batch.y_seqs], dim=1)
-                y_mask = Batch.make_target_mask(y_seqs_with_bos)
-                out = self.model(x_seqs, y_seqs_with_bos, x_mask, y_mask)
-                # [Batch x Time x D]
-                # skip the last time step (the one with EOS as input)
-                out = out[:, :-1, :]
-                # assumption:  y_seqs has EOS, and not BOS
-                loss = self.loss_func(out, batch.y_seqs, num_toks, True)
+                y_mask = batch.make_autoreg_mask(y_seqs_with_bos)
+
+                with autocast(enabled=dtorch.fp16):
+                    # [Batch x Time x D]
+                    out = self.model(x_seqs, y_seqs_with_bos, x_mask, y_mask)
+
+                    # skip the last time step (the one with EOS as input)
+                    out = out[:, :-1, :]
+
+                    # assumption:  y_seqs has EOS, and not BOS
+                    loss = self.loss_func(out, batch.y_seqs, num_toks, train_mode=True,
+                                          take_step=take_step)
+
+                if stopper and take_step:
+                    stopper.step()
+                # Log
                 unsaved_state = True
                 if self.opt.curr_step % log_interval == 0:
                     self.tbd.add_scalars('training', {'step_loss': loss,
@@ -715,30 +793,46 @@ class TransformerTrainer(SteppedTrainer):
                         self._log_resources(batch)
 
                 progress_msg, is_check_pt = train_state.step(num_toks, loss)
-                progress_msg += f', LR={self.opt.curr_lr:g}'
-
+                progress_msg += f', LR={self.opt.curr_lr:0.8f}'
                 data_bar.set_postfix_str(progress_msg, refresh=False)
                 del batch
 
+                # Save checkpoint
                 if is_check_pt:
                     train_loss = train_state.reset()
-                    train_state.train_mode(False)
-                    val_loss = self.run_valid_epoch(val_data, dec_bos_cut=dec_bos_cut)
-                    self.make_check_point(train_loss, val_loss=val_loss, keep_models=keep_models)
-                    if check_pt_callback:
-                        check_pt_callback(model=self.model,
-                                          step=self.opt.curr_step,
-                                          train_loss=train_loss)
-                    train_state.train_mode(True)
+                    log.info(f"Chkpt Train loss={train_loss}; Runs validation? {distr.is_global_main}")
+                    if distr.is_global_main:
+                        train_state.train_mode(False)
+                        with torch.no_grad():
+                            val_loss = self.run_valid_epoch(val_data, dec_bos_cut=dec_bos_cut)
+                            self.make_check_point(train_loss, val_loss=val_loss, keep_models=keep_models,
+                                                  log_embedding=log_embedding)
+                            if check_pt_callback:
+                                check_pt_callback(model=self.model,
+                                                  step=self.opt.curr_step,
+                                                  train_loss=train_loss)
+                        train_state.train_mode(True)
+
+                        if stopper:
+                            stopper.validation(val_loss)
+                            if stopper.is_stop():
+                                log.info(f"Stopping at {stopper.cur_step} because {stopper.by}"
+                                         f" didnt improve over {stopper.patience} checkpoints")
+                                early_stopped = True
+                                break
                     unsaved_state = False
                     gc.collect()
+                    distr.barrier()
 
         # End of training
-        if unsaved_state:
+        if unsaved_state and distr.is_global_main:
             train_loss = train_state.reset()
             train_state.train_mode(False)
             val_loss = self.run_valid_epoch(val_data, dec_bos_cut=dec_bos_cut)
             self.make_check_point(train_loss, val_loss=val_loss, keep_models=keep_models)
+
+        distr.barrier()
+        return early_stopped
 
     def _log_resources(self, batch):
         self.tbd.add_scalars('resources_mem',
@@ -755,47 +849,30 @@ class TransformerTrainer(SteppedTrainer):
 
 
 def __test_model__():
-    from rtg.dummy import DummyExperiment
-    vocab_size = 30
-    args = {
-        'src_vocab': vocab_size,
-        'tgt_vocab': vocab_size,
+    model_args = {
         'enc_layers': 0,
         'dec_layers': 4,
         'hid_size': 64,
         'ff_size': 64,
         'n_heads': 4,
-        'activation': 'gelu'
+        'activation': 'relu'
     }
-    if False:
-        for n, p in model.named_parameters():
-            print(n, p.shape)
 
-    from rtg.module.decoder import Decoder
+    # if you are running this in pycharm, please set Working Dir=<rtg repo base dir> for run config
+    dir = 'experiments/sample-exp'
+    exp = Experiment(work_dir=dir, read_only=True)
 
-    config = {'model_type': 'tfmnmt', 'trainer': {'init_args': {'chunk_size': 2}}}
-    exp = DummyExperiment("work.tmp.t2t", config=config, read_only=True,
-                          vocab_size=vocab_size)
-    exp.model_args = args
-    trainer = TransformerTrainer(exp=exp, warmup_steps=200)
-    decr = Decoder.new(exp, trainer.model)
+    exp.model_type = 'tfmnmt'
+    exp.model_args.update(model_args)
+    exp.optim_args[1].update(dict(criterion='smooth_kld', warmup_steps=500,
+                                  weighing={'gamma': [0.0, 0.5]}))
 
-    assert 2 == Batch.bos_val
-    src = tensor([[4, 5, 6, 7, 8, 9, 10, 11, 12, 13, Batch.eos_val, Batch.pad_value],
-                  [13, 12, 11, 10, 9, 8, 7, 6, Batch.eos_val, Batch.pad_value, Batch.pad_value,
-                   Batch.pad_value]])
-    src_lens = tensor([src.size(1)] * src.size(0))
-
-    def check_pt_callback(**args):
-        res = decr.greedy_decode(src, src_lens, max_len=12)
-        for score, seq in res:
-            log.info(f'{score:.4f} :: {seq}')
-
-    batch_size = 50
-    steps = 1000
-    check_point = 50
-    trainer.train(steps=steps, check_point=check_point, batch_size=batch_size,
-                  check_pt_callback=check_pt_callback)
+    trainer = TransformerTrainer(exp=exp, **exp.optim_args[1])
+    assert 2 == exp.tgt_vocab.bos_idx
+    batch_size = 256
+    steps = 2000
+    check_point = 200
+    trainer.train(steps=steps, check_point=check_point, batch_size=batch_size)
 
 
 if __name__ == '__main__':

@@ -1,0 +1,91 @@
+[#ddp]
+== Distributed Data Parallel (DDP)
+
+NOTE: This is a new feature to RTG and not all edge cases are tested.
+
+`rtg.distrib.launch` simplifies the use of `torch.distributed.launch` as follows:
+
+[source,bash]
+----
+$ python -m rtg.distrib.launch -h
+usage: launch.py [-h] [-N NODES] [-r NODE_RANK] [-P PROCS_PER_NODE]
+                 [-G GPUS_PER_PROC] [--master-addr MASTER_ADDR]
+                 [--master-port MASTER_PORT] [-m | --no_python]
+                 training_script ...
+
+PyTorch distributed training launch helper utilty that will spawn up multiple
+distributed processes
+
+positional arguments:
+  training_script       The full path to the single GPU training
+                        program/script to be launched in parallel, followed by
+                        all the arguments for the training script
+  training_script_args
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -N NODES, --nodes NODES
+                        The number of nodes to use for distributed training
+                        (default: 1)
+  -r NODE_RANK, --node-rank NODE_RANK
+                        The rank of the node for multi-node distributed
+                        training (default: 0)
+  -P PROCS_PER_NODE, --procs-per-node PROCS_PER_NODE
+                        The number of processes to launch on each node with
+                        one gpu each, for GPU training, this is recommended to
+                        be set to the number of GPUs in your system so that
+                        each process can be bound to a single GPU. (default:
+                        1)
+  -G GPUS_PER_PROC, --gpus-per-proc GPUS_PER_PROC
+                        Number of GPUs to assign to each process. (default: 0)
+  --master-addr MASTER_ADDR
+                        Master node (rank 0)'s address, should be either the
+                        IP address or the hostname of node 0, for single node
+                        multi-proc training, the --master_addr can simply be
+                        127.0.0.1 (default: 127.0.0.1)
+  --master-port MASTER_PORT
+                        Master node (rank 0)'s free port that needs to be used
+                        for communciation during distributed training
+                        (default: 29500)
+  -m, --module          Changes each process to interpret the launch script as
+                        a python module, executing with the same behavior
+                        as'python -m'. (default: False)
+  --no_python           Do not prepend the training script with "python" -
+                        just exec it directly. Useful when the script is not a
+                        Python script. (default: False)
+
+----
+
+**Examples**
+
+. Run on two CPU processes `-P 2` on single node `-N 1` (for testing, no GPUS `-G 0`)
++
+----
+python -m rtg.distrib.launch -N 1 -P 2 -G 0 -m rtg.pipeline  runs/005-tfm-nldb
+----
+. Run on on single node, two processes, one GPU per process: `-N 1 -P 2 -G 1`
+. Run on on two node, two processes each, one GPU per process: `-N 2 -P 2 -G 1`.
++
+[source,bash]
+----
+# on first node: rank 0
+python -m rtg.distrib.launch -N 2 -r 0 -P 2 -G 1 -m rtg.pipeline runs/005-tfm-nldb -G
+# on second node: rank 1
+python -m rtg.distrib.launch -N 2 -r 1 -P 2 -G 1 -m rtg.pipeline  runs/005-tfm-nldb -G
+----
+
+WARNING:
+
+1. Don't ever use `-G 2` or more (i.e. dont use 2 or more GPUs per process), instead use more `-P` (i.e. more processes with 1 GPU each.
+
+
+
+[#fp16]
+== FP16, Mixed Precision Training
+
+Note that `rtg-pipe -h` has `-fp16, --fp16` CLI argument flag that can be used to enable mixed precision training.
+
+[source,bash]
+----
+$ rtg-pipe <experiment-dir> --fp16
+----

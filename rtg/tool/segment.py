@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 #
-# A CLI interface to sentence piece processor
+# An interactive CLI interface to sentence piece processor
 # Author: Thamme Gowda [tg (at) isi (dot) edu] 
 # Created: 2/19/19
 

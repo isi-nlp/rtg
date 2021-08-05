@@ -1,0 +1,31 @@
+= Reader-Translator-Generator (RTG)
+USC Information Sciences Institute  Natural Language Group
+:doctype: book
+:encoding: utf-8
+:lang: en
+:toc:
+:toclevels: 3
+:sectnums:
+:sectnumlevels: 4
+:data-uri:
+:toc: left
+//injects google analytics to <head>
+:docinfo2:
+
+
+include::00-intro.adoc[]
+
+include::10-conf.yml.adoc[]
+
+include::20-clitools.adoc[]
+
+include::30-environ.adoc[]
+
+include::40-train-pro.adoc[]
+
+include::45-scaling.adoc[]
+
+include::50-serve.adoc[]
+
+include::60-develop.adoc[]
+

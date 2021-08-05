@@ -5,13 +5,13 @@
 
 import abc
 import torch
-from rtg.binmt.bicycle import BiNMT
+from rtg import log
 from rtg.module.rnnmt import RNNMT
 from rtg.lm.rnnlm import RnnLm
 from rtg.lm.tfmlm import TfmLm
 from rtg.module.tfmnmt import TransformerNMT
-from rtg.dataprep import subsequent_mask, PAD_TOK_IDX as PAD_IDX, \
-    BOS_TOK_IDX as BOS_IDX, EOS_TOK_IDX as EOS_IDX
+from rtg.data.dataset import subsequent_mask
+from rtg.data.codec import Field
 
 INTERACTIVE = False
 
@@ -19,8 +19,9 @@ INTERACTIVE = False
 # TODO: simplify the generators
 class GeneratorFactory(abc.ABC):
 
-    def __init__(self, model, **kwargs):
+    def __init__(self, model, field: Field, **kwargs):
         self.model = model
+        self.field = field
 
     @abc.abstractmethod
     def generate_next(self, past_ys):
@@ -29,8 +30,8 @@ class GeneratorFactory(abc.ABC):
 
 class Seq2SeqGenerator(GeneratorFactory):
 
-    def __init__(self, model: RNNMT, x_seqs, x_lens):
-        super().__init__(model)
+    def __init__(self, model: RNNMT, field, x_seqs, x_lens):
+        super().__init__(model, field=field)
         # [S, B, d], [S, B, d] <-- [S, B], [B]
         self.enc_outs, enc_hids = model.encode(x_seqs, x_lens, None)
         # [S, B, d]
@@ -42,34 +43,33 @@ class Seq2SeqGenerator(GeneratorFactory):
         return (log_probs, attn) if get_attn else log_probs
 
 
-class BiNMTGenerator(Seq2SeqGenerator):
-
-    def __init__(self, model: BiNMT, x_seqs, x_lens, path):
-        # pick a sub Seq2Seq model inside the BiNMT model as per the given path
-        assert path
-        super().__init__(model.paths[path], x_seqs, x_lens)
-        self.path = path
-        self.wrapper = model
-
-
 class T2TGenerator(GeneratorFactory):
 
-    def __init__(self, model: TransformerNMT, x_seqs, x_lens=None):
-        super().__init__(model)
-        self.x_mask = (x_seqs != PAD_IDX).unsqueeze(1)
+    multi_label_warned = False
+
+    def __init__(self, model: TransformerNMT, field, x_seqs, x_lens=None, multi_label=False):
+        super().__init__(model, field)
+        self.x_mask = (x_seqs != field.pad_idx).unsqueeze(1)
         self.memory = self.model.encode(x_seqs, self.x_mask)
+        self.multi_label = multi_label
+        if multi_label and not type(self).multi_label_warned:
+            log.warning(">>> Multi-label decoding mode enabled")
+            type(self).multi_label_warned = True
 
     def generate_next(self, past_ys):
         out = self.model.decode(self.memory, self.x_mask, past_ys, subsequent_mask(past_ys.size(1)))
-        log_probs = self.model.generator(out[:, -1])
+        if self.multi_label:
+            log_probs = self.model.generator(out[:, -1], score='sigmoid').log()
+        else:
+            log_probs = self.model.generator(out[:, -1], score='log_softmax')
         return log_probs
 
 
 class MTfmGenerator(GeneratorFactory):
 
-    def __init__(self, model: TransformerNMT, x_seqs, x_lens=None):
-        super().__init__(model)
-        x_mask = (x_seqs != PAD_IDX).unsqueeze(1)
+    def __init__(self, model: TransformerNMT, field, x_seqs, x_lens=None):
+        super().__init__(model, field)
+        x_mask = (x_seqs != field.pad_idx).unsqueeze(1)
         self.sent_repr = self.model.encode(x_seqs, x_mask)
 
     def generate_next(self, past_ys):
@@ -94,9 +94,9 @@ class TfmExtEembGenerator(T2TGenerator):
 class ComboGenerator(GeneratorFactory):
     from rtg.syscomb import Combo
 
-    def __init__(self, model: Combo, x_seqs, *args, **kwargs):
-        super().__init__(model)
-        self.x_mask = (x_seqs != PAD_IDX).unsqueeze(1)
+    def __init__(self, model: Combo, field, x_seqs, *args, **kwargs):
+        super().__init__(model, field)
+        self.x_mask = (x_seqs != field.pad_idx).unsqueeze(1)
         self.memory = self.model.encode(x_seqs, self.x_mask)
 
     def generate_next(self, past_ys):
@@ -107,19 +107,19 @@ class ComboGenerator(GeneratorFactory):
 
 class RnnLmGenerator(GeneratorFactory):
 
-    def __init__(self, model: RnnLm, x_seqs, x_lens):
-        super().__init__(model)
+    def __init__(self, model: RnnLm, field, x_seqs, x_lens):
+        super().__init__(model, field)
         self.dec_hids = None
         if INTERACTIVE:
             # interactive mode use input as prefix
-            n = x_seqs.shape[1] - 1 if x_seqs[0, -1] == EOS_IDX[1] else x_seqs.shape[1]
+            n = x_seqs.shape[1] - 1 if x_seqs[0, -1] == field.eos_idx else x_seqs.shape[1]
             for i in range(n):
                 self.log_probs, self.dec_hids, _ = self.model(None, x_seqs[:, i], self.dec_hids)
             self.consumed = False
 
     def generate_next(self, past_ys):
         if INTERACTIVE and not self.consumed:
-            assert past_ys[0, -1] == BOS_IDX  # we are doing it right?
+            assert past_ys[0, -1] == self.field.bos_idx  # we are doing it right?
             self.consumed = True
             return self.log_probs
 
@@ -130,8 +130,8 @@ class RnnLmGenerator(GeneratorFactory):
 
 class TfmLmGenerator(GeneratorFactory):
 
-    def __init__(self, model: TfmLm, x_seqs, x_lens):
-        super().__init__(model)
+    def __init__(self, model: TfmLm, field, x_seqs, x_lens):
+        super().__init__(model, field)
         if INTERACTIVE:
             self.x_seqs = x_seqs
             self.x_lens = x_lens

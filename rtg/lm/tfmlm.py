@@ -95,10 +95,10 @@ class TfmLmTrainer(TransformerTrainer):
                 batch = batch.to(device)
                 num_toks = batch.x_toks
                 seqs = batch.x_seqs
-                bos_step = torch.full((len(batch), 1), fill_value=Batch.bos_val, dtype=torch.long,
+                bos_step = torch.full((len(batch), 1), fill_value=batch.bos_val, dtype=torch.long,
                                       device=device)
                 seqs_with_bos = torch.cat([bos_step, seqs], dim=1)
-                seq_mask = Batch.make_target_mask(seqs_with_bos)
+                seq_mask = batch.make_autoreg_mask(seqs_with_bos)
                 out = self.model(seqs_with_bos, seq_mask, gen_probs=False)
                 # [Batch x Time x D]
                 # skip the last time step (the one with EOS as input)
@@ -145,10 +145,10 @@ class TfmLmTrainer(TransformerTrainer):
                 batch = batch.to(device)
                 num_toks = batch.x_toks
                 seqs = batch.x_seqs
-                bos_step = torch.full((len(batch), 1), fill_value=Batch.bos_val, dtype=torch.long,
-                                      device=device)
+                bos_step = torch.full((len(batch), 1), fill_value=self.exp.tgt_vocab.bos_idx,
+                                      dtype=torch.long, device=device)
                 seqs_with_bos = torch.cat([bos_step, batch.x_seqs], dim=1)
-                seq_mask = Batch.make_target_mask(seqs_with_bos)
+                seq_mask = batch.make_autoreg_mask(seqs_with_bos)
                 out = self.model(seqs_with_bos, seq_mask, gen_probs=False)
                 # [Batch x Time x D]
                 # skip the last time step (the one with EOS as input)

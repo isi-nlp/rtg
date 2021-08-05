@@ -1,25 +1,29 @@
-import abc
 import time
 import traceback
 from io import StringIO
-from collections import OrderedDict
 from typing import List, Tuple, Type, Dict, Any, Optional, Iterator
 from pathlib import Path
 import math
 from dataclasses import dataclass, field
+import warnings
+import sys
+import os
 
 import torch
 from torch import nn as nn
 
 from rtg import TranslationExperiment as Experiment
 from rtg import log, device, my_tensor as tensor, debug_mode
-from rtg.dataprep import PAD_TOK, BOS_TOK, EOS_TOK
 from rtg.module.generator import GeneratorFactory
-from rtg.dataprep import Field
+from rtg.data.dataset import Field
 from rtg.registry import factories, generators
 
 Hypothesis = Tuple[float, List[int]]
 StrHypothesis = Tuple[float, str]
+
+if not sys.warnoptions:
+    warnings.simplefilter("default") # Change the filter in this process
+    os.environ["PYTHONWARNINGS"] = "default" # Also affect subprocesses
 
 
 def load_models(models: List[Path], exp: Experiment):
@@ -28,22 +32,9 @@ def load_models(models: List[Path], exp: Experiment):
         assert model_path.exists()
         log.info(f"Load Model {i}: {model_path} ")
         chkpt = torch.load(str(model_path), map_location=device)
-        model = instantiate_model(chkpt)
+        model = exp.load_model_with_state(chkpt)
         res.append(model)
     return res
-
-
-def instantiate_model(checkpt_state, exp=None):
-    chkpt = checkpt_state
-    state = chkpt['model_state']
-    model_type = chkpt['model_type']
-    model_args = chkpt['model_args']
-    # Dummy experiment wrapper
-    factory = factories[model_type]
-    model = factory(exp=exp, **model_args)[0]
-    model.load_state_dict(state)
-    log.info(f"Successfully restored the model state of : {model_type}")
-    return model
 
 
 class ReloadEvent(Exception):
@@ -59,6 +50,7 @@ class ReloadEvent(Exception):
 
 @dataclass
 class DecoderBatch:
+
     idxs: List[int] = field(default_factory=list)  # index in the file, for restoring the order
     srcs: List[str] = field(default_factory=list)
     seqs: List[str] = field(default_factory=list)  # processed srcs
@@ -67,6 +59,7 @@ class DecoderBatch:
     line_count = 0
     tok_count = 0
     max_len = 0
+    max_len_buffer = 0   # Some extra buffer for target size; eg: tgt_len = 50 + src_len
 
     def add(self, idx, src, ref, seq, id):
         self.idxs.append(idx)
@@ -80,7 +73,7 @@ class DecoderBatch:
 
     @property
     def padded_tok_count(self):
-        return self.max_len * self.line_count
+        return ( self.max_len + self.max_len_buffer ) * self.line_count
 
     def as_tensors(self, device):
         seqs = torch.zeros(self.line_count, self.max_len, device=device,
@@ -92,7 +85,8 @@ class DecoderBatch:
         return seqs, lens
 
     @classmethod
-    def from_lines(cls, lines: Iterator[str], batch_size: int, vocab: Field, sort=True, max_src_len=0):
+    def from_lines(cls, lines: Iterator[str], batch_size: int, vocab: Field, sort=True,
+                   max_src_len=0, max_len_buffer=0):
         """
         Note: this changes the order based on sequence length if sort=True
         :param lines: stream of input lines
@@ -129,20 +123,19 @@ class DecoderBatch:
             buffer = sorted(buffer, reverse=True, key=lambda x: len(x[3]))  # sort by length of seq
 
         batch = cls()
+        batch.max_len_buffer = max_len_buffer
         for idx, src, ref, seq, _id in buffer:
             batch.add(idx=idx, src=src, ref=ref, seq=seq, id=_id)
             if batch.padded_tok_count >= batch_size:
                 yield batch
                 batch = cls()
+                batch.max_len_buffer = max_len_buffer
 
         if batch.line_count > 0:
             yield batch
 
 
 class Decoder:
-    pad_val = PAD_TOK[1]
-    bos_val = BOS_TOK[1]
-    eos_val = EOS_TOK[1]
     default_beam_size = 5
 
     def __init__(self, model, gen_factory: Type[GeneratorFactory], exp: Experiment, gen_args=None,
@@ -152,47 +145,16 @@ class Decoder:
         self.gen_factory = gen_factory
         self.debug = debug
         self.gen_args = gen_args if gen_args is not None else {}
+        self.pad_val = exp.tgt_vocab.pad_idx
+        self.bos_val = exp.tgt_vocab.bos_idx
+        self.eos_val = exp.tgt_vocab.eos_idx
+
         self.dec_bos_cut = self.exp.config.get('trainer', {}).get('dec_bos_cut', False)
         (log.info if self.dec_bos_cut else log.debug)(f"dec_bos_cut={self.dec_bos_cut}")
 
     def generator(self, x_seqs, x_lens):
-        return self.gen_factory(self.model, x_seqs=x_seqs, x_lens=x_lens, **self.gen_args)
-
-    @staticmethod
-    def average_states(state_dict: OrderedDict, *state_dicts: OrderedDict):
-        w = 1.0 / (1 + len(state_dicts))
-        if state_dicts:
-            key_set = set(state_dict.keys())
-            assert all(key_set == set(st.keys()) for st in state_dicts)
-            for key in key_set:
-                state_dict[key] *= w
-                for st in state_dicts:
-                    state_dict[key] += w * st[key]
-        return state_dict
-
-    @staticmethod
-    def _checkpt_to_model_state(checkpt_path: str):
-        state = torch.load(checkpt_path, map_location=device)
-        if 'model_state' in state:
-            state = state['model_state']
-        return state
-
-    @staticmethod
-    def maybe_ensemble_state(exp, model_paths: Optional[List[str]], ensemble: int = 1):
-        if model_paths and len(model_paths) == 1:
-            log.info(f" Restoring state from requested model {model_paths[0]}")
-            return Decoder._checkpt_to_model_state(model_paths[0])
-        elif not model_paths and ensemble <= 1:
-            model_path, _ = exp.get_best_known_model()
-            log.info(f" Restoring state from best known model: {model_path}")
-            return Decoder._checkpt_to_model_state(model_path)
-        else:
-            if not model_paths:
-                # Average
-                model_paths = exp.list_models()[:ensemble]
-            log.info(f"Averaging {len(model_paths)} model states :: {model_paths}")
-            states = [Decoder._checkpt_to_model_state(mp) for mp in model_paths]
-            return Decoder.average_states(*states)
+        return self.gen_factory(self.model, field=self.exp.tgt_vocab,
+                                x_seqs=x_seqs, x_lens=x_lens, **self.gen_args)
 
     @classmethod
     def combo_new(cls, exp: Experiment, model_paths: List[str], weights: List[float]):
@@ -224,7 +186,7 @@ class Decoder:
         if model is None:
             factory = factories[model_type]
             model = factory(exp=exp, **exp.model_args)[0]
-            state = cls.maybe_ensemble_state(exp, model_paths=model_paths, ensemble=ensemble)
+            state = exp.maybe_ensemble_state(model_paths=model_paths, ensemble=ensemble)
             model.load_state_dict(state)
             log.info("Successfully restored the model state.")
         elif isinstance(model, nn.DataParallel):
@@ -232,6 +194,10 @@ class Decoder:
 
         model = model.eval().to(device=device)
         generator = generators[model_type]
+        if exp.optim_args[1] and exp.optim_args[1].get('criterion') == 'binary_cross_entropy':
+            log.info("((Going to decode in multi-label mode))")
+            gen_args = gen_args or {}
+            gen_args['multi_label'] = True
         return cls(model, generator, exp, gen_args)
 
     def greedy_decode(self, x_seqs, x_lens, max_len, **args) -> List[Hypothesis]:
@@ -308,7 +274,7 @@ class Decoder:
         """
         args = dict((k, v) for k, v in args.items() if v is not None)
         if args:
-            log.warn(f"Ignored args: {args} . To remove this message simply remove the args")
+            warnings.warn(f"Ignored args: {args}. To remove this message simply remove the args")
         assert beam_size >= num_hyp
         device = x_seqs.device
         batch_size = x_seqs.size(0)
@@ -336,7 +302,7 @@ class Decoder:
             if actives.sum() == 0:  # all sequences Ended
                 break
             # [Batch x Beams x Vocab] <-- [Batch x Beams x Time]
-            flat_ys = ys.view(batch_size * beam_size, -1)
+            flat_ys = ys.contiguous().view(batch_size * beam_size, -1)
             log_prob = gen.generate_next(flat_ys)  # ys upto current time step
             log_prob = log_prob.view(batch_size, beam_size, -1)
 
@@ -345,7 +311,7 @@ class Decoder:
                 # we need to pick the top k beams from a single beam
                 # How? mask out all beams, except the first beam
                 beam_mask = torch.full((batch_size, beam_size, 1), fill_value=1, device=device,
-                                       dtype=torch.uint8)
+                                       dtype=torch.bool)
                 beam_mask[:, 0, :] = 0
                 log_prob.masked_fill_(mask=beam_mask, value=float('-inf'))
 
@@ -522,7 +488,7 @@ class Decoder:
 
                     print_state = True
                 elif line.startswith(":path"):
-                    self.gen_args['path'] = line.replace(':path', '').replace('=').strip()
+                    self.gen_args['path'] = line.replace(':path', '').replace('=', '').strip()
                     print_state = True
                 elif line.startswith(":models"):
                     for i, mod_path in enumerate(self.exp.list_models()):
@@ -565,7 +531,8 @@ class Decoder:
                  f"batch_size={batch_size} max_src_len={max_src_len}")
 
         batches: Iterator[DecoderBatch] = DecoderBatch.from_lines(
-            inp, batch_size=batch_size, vocab=self.inp_vocab, max_src_len=max_src_len)
+            inp, batch_size=batch_size, vocab=self.inp_vocab, max_src_len=max_src_len,
+            max_len_buffer=args.get('max_len', 1))
 
         def _decode_all():
             buffer = []

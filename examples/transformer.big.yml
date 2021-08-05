@@ -1,8 +1,9 @@
 model_args:
-  dropout: 0.3
   ff_size: 4096
   hid_size: 1024
   n_heads: 16
+  attn_dropout: 0.1
+  dropout: 0.3
   enc_layers: 6
   dec_layers: 6
   src_vocab: 8000
@@ -19,6 +20,8 @@ optim:
     lr: 0.2
     warmup_steps: 8000
     constant: 2
+    criterion: smooth_kld  # multi label classification, binary decision per class
+    # all options "cross_entropy", "smooth_kld", "binary_cross_entropy", "triplet_loss"
   name: ADAM
 prep:
   max_types: 8000
@@ -59,6 +62,7 @@ tester:
 trainer:
   init_args:
     chunk_size: 10
+    grad_accum: 1    # How many batches to accumulate gradients over
   batch_size: 2600
   check_point: 1000
   keep_models: 10

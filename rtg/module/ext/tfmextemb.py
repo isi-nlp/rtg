@@ -8,10 +8,12 @@ from rtg.module.tfmnmt import (
     Encoder, EncoderLayer, PositionwiseFeedForward, Decoder, DecoderLayer, Embeddings, Generator)
 from torch import nn
 from rtg import TranslationExperiment as Experiment, log
-from rtg.dataprep import PAD_TOK_IDX as padding_idx
 import inspect
 import torch
 import copy
+from rtg.data.codec import Field
+
+padding_idx = Field.pad_idx
 
 
 class TfmExtEmbNMT(TransformerNMT):

@@ -7,7 +7,14 @@ import torch
 from rtg import log
 import inspect
 import shutil
+import os
 from datetime import datetime
+import atexit
+from typing import Tuple
+import resource
+import sys
+import numpy as np
+from itertools import zip_longest
 
 
 # Size of each element in tensor
@@ -36,7 +43,7 @@ def log_tensor_sizes(writer=log.info, min_size=1024):
     def is_tensor(obj):
         if torch.is_tensor(obj):
             return True
-        try:    # some native objects raise exceptions
+        try:  # some native objects raise exceptions
             return hasattr(obj, 'data') and torch.is_tensor(obj.data)
         except:
             return False
@@ -44,7 +51,7 @@ def log_tensor_sizes(writer=log.info, min_size=1024):
     tensors = filter(is_tensor, gc.get_objects())
     stats = ((reduce(op.mul, obj.size()) if len(obj.size()) > 0 else 0,
               obj.type(), tuple(obj.size()), hex(id(obj))) for obj in tensors)
-    stats = ((n*tensor_size[typ], n, typ, *blah) for n, typ, *blah in stats)
+    stats = ((n * tensor_size[typ], n, typ, *blah) for n, typ, *blah in stats)
     stats = (x for x in stats if x[0] > min_size)
     sorted_stats = sorted(stats, key=lambda x: x[0])
 
@@ -80,8 +87,8 @@ def get_my_args(exclusions=None):
     :return: dictionary of {arg_name: argv_value} s
     """
     _, _, _, args = inspect.getargvalues(inspect.currentframe().f_back)
-    for excl in ['self', 'cls'] + (exclusions or []):
-        if excl in  args:
+    for excl in ['self', 'cls', '__class__'] + (exclusions or []):
+        if excl in args:
             del args[excl]
     return args
 
@@ -98,13 +105,14 @@ class IO:
 
     def __enter__(self):
 
-        if self.path.name.endswith(".gz"):   # gzip mode
+        if self.path.name.endswith(".gz"):  # gzip mode
             self.fd = gzip.open(self.path, self.mode, encoding=self.encoding, errors=self.errors)
         else:
             if 'b' in self.mode:  # binary mode doesnt take encoding or errors
                 self.fd = self.path.open(self.mode)
             else:
-                self.fd = self.path.open(self.mode, encoding=self.encoding, errors=self.errors)
+                self.fd = self.path.open(self.mode, encoding=self.encoding, errors=self.errors,
+                                         newline='\n')
         return self.fd
 
     def __exit__(self, _type, value, traceback):
@@ -119,13 +127,20 @@ class IO:
         return cls(path, ('a' if append else 'w') + ('t' if text else 'b'))
 
     @classmethod
-    def get_lines(cls, path, col=0, delim='\t', line_mapper=None):
+    def get_lines(cls, path, col=0, delim='\t', line_mapper=None, newline_fix=True):
         with cls.reader(path) as inp:
+            if newline_fix and delim != '\r':
+                inp = (line.replace('\r', '') for line in inp)
             if col >= 0:
                 inp = (line.split(delim)[col].strip() for line in inp)
             if line_mapper:
                 inp = (line_mapper(line) for line in inp)
             yield from inp
+
+    @classmethod
+    def get_liness(cls, *paths, **kwargs):
+        for path in paths:
+            yield from cls.get_lines(path, **kwargs)
 
     @classmethod
     def write_lines(cls, path: Path, text):
@@ -137,11 +152,10 @@ class IO:
                 out.write('\n')
 
     @classmethod
-    def copy_file(cls, src: Path, dest: Path):
-        assert src.resolve() != dest.resolve()
+    def copy_file(cls, src: Path, dest: Path, follow_symlinks=True):
         log.info(f"Copy {src} → {dest}")
-        with IO.reader(src) as inp, IO.writer(dest) as out:
-            shutil.copyfileobj(inp, out)
+        assert src.resolve() != dest.resolve()
+        shutil.copy2(str(src), str(dest), follow_symlinks=follow_symlinks)
 
     @classmethod
     def maybe_backup(cls, file: Path):
@@ -150,3 +164,86 @@ class IO:
             dest = file.with_suffix(f'.{time}')
             log.info(f"Backup {file} → {dest}")
             file.rename(dest)
+
+    @classmethod
+    def safe_delete(cls, path: Path):
+        try:
+            if path.exists():
+                if path.is_file():
+                    log.info(f"Delete file {path}")
+                    path.unlink()
+                elif path.is_dir():
+                    log.info(f"Delete dir {path}")
+                    path.rmdir()
+                else:
+                    log.warning(f"Coould not delete {path}")
+        except:
+            log.exception(f"Error while clearning up {path}")
+
+    @classmethod
+    def maybe_tmpfs(cls, file: Path):
+        """
+        Optionally copies a file to tmpfs that maybe fast.
+        :param file: input file to be copied to
+        :return:  file that maybe on tmp fs
+        """
+        tmp_dir = os.environ.get('RTG_TMP')
+        if tmp_dir:
+            tmp_dir = Path(tmp_dir)
+            usr_dir = str(Path('~/').expanduser())
+            new_path = str(file.absolute()).replace(usr_dir, '').lstrip('/')
+            tmp_file = tmp_dir / new_path
+            tmp_file.parent.mkdir(parents=True, exist_ok=True)
+            if file.exists():
+                assert file.is_file()
+                cls.copy_file(file, tmp_file)
+            file = tmp_file
+            atexit.register(cls.safe_delete, tmp_file)
+        return file
+
+    @classmethod
+    def parallel_read(cls, file1, file2, *files, tokrs=None):
+        inputs = [file1, file2] + (files or [])
+        if tokrs:
+            assert len(tokrs) == len(inputs)
+        readers = [IO.reader(f).__enter__() for f in inputs]
+        try:
+            for rec in zip_longest(*readers):
+                assert all(x is not None for x in rec)
+                if tokrs:
+                    rec = [tokr(x) for tokr, x in zip(tokrs, rec)]
+                yield rec
+        finally:
+            for r in readers:
+                try:
+                    r.close()
+                except:
+                    pass
+
+def max_RSS(who=resource.RUSAGE_SELF) -> Tuple[int, str]:
+    """Gets memory usage of current process, maximum so far.
+    Maximum so far, since the system call API doesnt provide "current"
+    :returns (int, str)
+       int is a value from getrusage().ru_maxrss
+       str is human friendly value (best attempt to add right units)
+    """
+    mem = resource.getrusage(who).ru_maxrss
+    h_mem = mem
+    if 'darwin' in sys.platform:  # "man getrusage 2" says we get bytes
+        h_mem /= 10 ** 3  # bytes to kilo
+    unit = 'KB'
+    if h_mem >= 10 ** 3:
+        h_mem /= 10 ** 3  # kilo to mega
+        unit = 'MB'
+    return mem, f'{int(h_mem)}{unit}'
+
+
+def maybe_compress(arr, frugal=False):
+    # python list wastes a lot of memory: references to each item, and int is 28 bytes
+    if isinstance(arr[0], int):
+        return np.array(arr, dtype=np.int32 if frugal else np.int64)
+    elif isinstance(arr[0], float):
+        return np.array(arr, dtype=np.float32 if frugal else np.float64)
+    else:
+        # fall back to basic list of python
+        return np.array(arr, dtype=object)

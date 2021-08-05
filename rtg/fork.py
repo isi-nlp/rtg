@@ -3,15 +3,15 @@
 # Author: Thamme Gowda [tg (at) isi (dot) edu] 
 # Created: 2019-05-25
 
+# This tool is useful for forking an experiment
 
 import argparse
-import sys
 from rtg import log, TranslationExperiment as Experiment
 from pathlib import Path
-from rtg.utils import get_my_args, IO
+from rtg.utils import IO
 
 
-def fork_experiment(from_exp: Path, to_exp: Path, conf: bool, vocab: bool, data: bool):
+def fork_experiment(from_exp: Path, to_exp: Path, conf: bool, vocab: bool, data: bool, code: bool):
     assert from_exp.exists()
     log.info(f'Fork: {str(from_exp)} → {str(to_exp)}')
     if not to_exp.exists():
@@ -33,9 +33,16 @@ def fork_experiment(from_exp: Path, to_exp: Path, conf: bool, vocab: bool, data:
         to_data_dir.symlink_to(from_data_dir.resolve())
         (to_exp / '_PREPARED').touch(exist_ok=True)
     if not data and vocab: # just the vocab
-
         Experiment(from_exp, read_only=True).copy_vocabs(
             Experiment(to_exp, config={'Not': 'Empty'}, read_only=True))
+
+    if code:
+        for f in ['rtg.zip', 'githead']:
+            src = from_exp / f
+            if not src.exists():
+                log.warning(f"File Not Found: {src}")
+                continue
+            IO.copy_file(src, to_exp / f)
 
 
 def add_on_off_conf(parser, name:str, help, dest=None, default=True):
@@ -46,15 +53,22 @@ def add_on_off_conf(parser, name:str, help, dest=None, default=True):
                        help=f'Negation of --{name}', default=not default)
 
 
-if __name__ == '__main__':
-    p = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    p.add_argument('from_exp', type=Path, help="From experiment")
-    p.add_argument('to_exp', type=Path, help="To experiment")
+def main():
+    p = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+                                description="fork an experiment.")
+    p.add_argument('from_exp', metavar='EXP_DIR', type=Path,
+                   help="From experiment. Should be valid experiment dir")
+    p.add_argument('to_exp',  metavar='TO_DIR', type=Path,
+                   help="To experiment. This will be created.")
     add_on_off_conf(p, 'conf', help='Copy config: from/conf.yml → to/conf.yml', default=True)
     add_on_off_conf(p, 'data', help='Link data dir . This includes vocab.', default=True)
     add_on_off_conf(p, 'vocab', help='copy vocabularies. dont use it with --data', default=False)
+    add_on_off_conf(p, 'code', help='copy source code.', default=True)
     args = vars(p.parse_args())
     print(args)
     fork_experiment(**args)
 
+
+if __name__ == '__main__':
+    main()
 

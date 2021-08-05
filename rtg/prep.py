@@ -3,9 +3,8 @@
 import argparse
 from pathlib import Path
 
-from rtg.exp import TranslationExperiment
-
-piece_types = ('unigram', 'bpe', 'char', 'word')
+from rtg import TranslationExperiment, log
+from rtg.exp import load_conf
 
 
 def parse_args():
@@ -20,9 +19,21 @@ def main():
     args = parse_args()
     conf_file: Path = args.conf_file if args.conf_file else args.work_dir / 'conf.yml'
     assert conf_file.exists()
-    exp = TranslationExperiment(args.work_dir, config=conf_file)
-    return exp.pre_process()
+    ExpFactory = TranslationExperiment
+    is_big = load_conf(conf_file).get('spark', {})
+    if is_big:
+        log.info("Big experiment mode enabled; checking pyspark backend")
+        try:
+            import pyspark
+            log.info("pyspark is available")
+        except:
+            log.warning("unable to import pyspark. Please do 'pip install pyspark' and run again")
+            raise
+        from rtg.big.exp import BigTranslationExperiment
+        ExpFactory = BigTranslationExperiment
 
+    exp = ExpFactory(args.exp, config=conf_file, read_only=False)
+    return exp.pre_process()
 
 if __name__ == '__main__':
     main()

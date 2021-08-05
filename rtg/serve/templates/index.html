@@ -1,0 +1,78 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<h1>{% block title %} Reader Translator Generator {% endblock %}</h1>
+
+<div class="container">
+  <div class="row">
+    <div class="col-6 alert alert-primary">
+      <form id="source-form" action="./translate">
+        <div class="form-group row">
+          <textarea id="source_txt" name="source" rows="6" class="form-control form-control-lg form-control-plaintext"
+                    placeholder="Source Text Here..."></textarea>
+        </div>
+        <button type="submit" class="btn btn-primary float-right">Translate→</button>
+      </form>
+    </div>
+
+    <div class="col-6 alert alert-success">
+      <div class="form-group row">
+        <textarea id='target' rows="6" class="form-control form-control-lg form-control-plaintext"
+                  placeholder="Translation (to-appear)"></textarea>
+      </div>
+      <div id="loading-progress" style="display: none;" class="spinner-border text-success float-left" role="status">
+        <span class="sr-only">Loading...</span>
+      </div>
+      <button type="submit" class="btn btn-primary float-right btn-success" onclick="copyToClipboard()">Copy to Clipboard</button>
+      </div>
+  </div>
+</div>
+
+<script >
+
+  function copyToClipboard() {
+    var $temp = $("<input>");
+    $("body").append($temp);
+    $temp.val($("#target").text()).select();
+    document.execCommand("copy");
+    $temp.remove();
+    console.log("Copied.. ")
+}
+
+window.onload = function() {
+  $(document).ajaxStart(function(){
+       $("#loading-progress").show();
+   });
+
+   $(document).ajaxStop(function(){
+      $("#loading-progress").hide();
+  });
+
+  $("#source-form").submit(function(event) {
+    event.preventDefault();
+    var $form = $(this),
+    url = $form.attr('action');
+    source = $('#source_txt').val().split('\n')
+
+    data = JSON.stringify({'source': source })
+    console.log(data);
+
+    var posting = $.ajax(url, {
+      data : data,
+      contentType : 'application/json',
+      type : 'POST'
+      });
+
+    posting.done(function(data) {
+        $('#target').text(data.translation.join('\n'));
+    });
+    posting.fail(function() {
+      alert("Something went wrong🤒! Check console logs.")
+      $('#target').text('');
+    });
+  });
+
+}
+</script>
+
+{% endblock %}

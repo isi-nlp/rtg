@@ -1,5 +1,5 @@
-data
-work
+/data
+/work
 dummy/
 .idea
 **.pyc.
@@ -29,3 +29,6 @@ wheels/
 .installed.cfg
 *.egg
 MANIFEST
+/runs/
+/tests/test-data/
+/.data/

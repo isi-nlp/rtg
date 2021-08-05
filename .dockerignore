@@ -1,0 +1,10 @@
+# ignore all
+**
+# except these
+!/setup.py
+!/README.md
+!/LICENSE
+!/rtg/**
+!/examples/**
+!/experiments/**
+

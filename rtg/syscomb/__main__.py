@@ -8,7 +8,7 @@ from pathlib import Path
 from rtg.syscomb import SysCombTrainer
 
 
-if __name__ == '__main__':
+def main():
     p = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     p.add_argument('experiment', type=Path, help='Path to experiment directory')
     p.add_argument('models', nargs='+', help="Path to models", type=Path)
@@ -18,3 +18,7 @@ if __name__ == '__main__':
     assert len(args['models']) > 1, 'At least two models should be given for system combination'
     trainer = SysCombTrainer(models=args.pop('models'), exp=args.pop('experiment'))
     trainer.train(**args)
+
+
+if __name__ == '__main__':
+    main()
