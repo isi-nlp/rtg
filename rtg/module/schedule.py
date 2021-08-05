@@ -4,6 +4,7 @@
 # Created: 4/26/21
 from dataclasses import dataclass
 
+from rtg import log
 from rtg.registry import register, SCHEDULE
 from torch import optim
 
@@ -49,14 +50,22 @@ class ScheduledOptimizer:
 
     def __post_init__(self):
         self._step = self.start_step
+        self._rate = -1
+        if self.schedule is None:
+            log.warning("Learning rate schedule is not configured; letting optimizer handle itself")
 
     def step(self, closure=None):
         "Update parameters and rate"
         self._step += 1
-        rate = self.schedule.rate(step=self._step)
-        for p in self.optimizer.param_groups:
-            p['lr'] = rate
-        self._rate = rate
+        if self.schedule is not None:
+            rate = self.schedule.rate(step=self._step)
+            for p in self.optimizer.param_groups:
+                p['lr'] = rate
+            self._rate = rate
+        else:  # extract learning rate from optimizer
+            for param_group in self.optimizer.param_groups:
+                self._rate = param_group['lr']
+                break
         self.optimizer.step(closure=closure)
 
     @property
