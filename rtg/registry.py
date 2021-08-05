@@ -9,7 +9,6 @@ import re
 from enum import Enum
 from dataclasses import dataclass
 from typing import Any, Dict, Type
-from rtg.exp import BaseExperiment
 
 from rtg import log
 from torch import optim
@@ -26,10 +25,7 @@ class ModelSpec:
     Model: Any
     Trainer: Any
     Generator: Any
-    Experiment: Type[BaseExperiment]
-
-    def experiment(self, work_dir, *args, **kwargs):
-        return self.Experiment(work_dir, *args, **kwargs)
+    Experiment: Type['BaseExperiment']
 
 ####
 MODEL = 'model'
@@ -120,7 +116,9 @@ def __register_all():
         'rtg.lm.rnnlm',
         'rtg.lm.tfmlm',
         'rtg.emb.word2vec',
-        'rtg.emb.tfmcls'
+        'rtg.emb.tfmcls',
+        'rtg.module.criterion',
+        'rtg.module.schedule',
     ]
     for name in modules:
         import_module(name)
@@ -129,6 +127,7 @@ def __register_all():
         log.info(f"{k} :: {list(v.keys())}")
 
 if __name__ == '__main__':
+    from rtg.exp import BaseExperiment
     # a simple test case
     @register(MODEL)
     class MyModel:

@@ -12,10 +12,13 @@ import torch
 import hashlib
 import portalocker
 
+import rtg
 from rtg import log, yaml, device
 from rtg.data.dataset import (TSVData, BatchIterable, LoopingIterable, SqliteFile, GenerativeBatchIterable)
 from rtg.data.codec import Field, SPField, NLField, PretrainMatchField
 from rtg.utils import IO, line_count
+from rtg.registry import CRITERION, OPTIMIZER, SCHEDULE, MODEL
+from rtg.schema import config_checks
 
 
 seeded = False
@@ -44,6 +47,7 @@ class BaseExperiment:
         if isinstance(config, str) or isinstance(config, Path):
             config = load_conf(config)
         self.config = config if config else load_conf(self._config_file)
+        config_checks(self.config)
         self.codec_name = self.config.get('prep', {}).get('codec_lib', 'sentpiece')  # with default
         codec_libs = {'sentpiece': SPField,
                       'nlcodec': NLField,
@@ -233,26 +237,6 @@ class BaseExperiment:
         self.config['model_args'] = model_args
 
     @property
-    def optim_args(self) -> Tuple[Optional[str], Dict]:
-        """
-        Gets optimizer args from file
-        :return: optimizer args if exists or None otherwise
-        """
-        opt_conf = self.config.get('optim')
-        if opt_conf:
-            return opt_conf.get('name'), opt_conf.get('args')
-        else:
-            return None, {}
-
-    @optim_args.setter
-    def optim_args(self, optim_args: Tuple[str, Dict]):
-        """
-        set optimizer args
-        """
-        name, args = optim_args
-        self.config['optim'].update({'name': name, 'args': args})
-
-    @property
     def shared_vocab(self) -> Field:
         return self.shared_field
 
@@ -367,6 +351,28 @@ class BaseExperiment:
         log.info(f"Successfully restored the model state of : {model_type}")
         return model
 
+    def get_conf_component(self, kind, extra_args=None):
+        """ Creates a component such as schedule, criterion, optimizer based on config"""
+        from rtg.registry import registry
+        assert kind in registry, f'component {kind} is unknown; valid: {registry.keys()}'
+        if not kind in self.config:
+            log.warning(f"{kind} not found in config; skipping")
+            return None
+        name, args = self.config[kind]['name'], self.config[kind].get('args') or {}
+        assert name in registry[kind], f'{kind}={name} is invalid; valid: {registry[kind].keys()}'
+        factory = registry[kind][name]
+        extra_args = extra_args or {}
+        log.info(f"creating {kind} {name} with args {args}")
+        return factory(**extra_args, **args)
+
+    def get_criterion(self, extra_args=None):
+        return self.get_conf_component(CRITERION, extra_args=extra_args)
+
+    def get_schedule(self):
+        return self.get_conf_component(SCHEDULE)
+
+    def get_optimizer(self, params):
+        return self.get_conf_component(OPTIMIZER, extra_args=dict(params=params))
 
 class TranslationExperiment(BaseExperiment):
 
@@ -816,6 +822,12 @@ class TranslationExperiment(BaseExperiment):
             args['tgt_vocab'] = len(self.tgt_vocab) if self.tgt_vocab else 0
 
         self.config['updated_at'] = datetime.now().isoformat()
+        if 'rtg_version' not in self.config:
+            self.config['rtg_version'] = {}
+        version = self.config['rtg_version']
+        if version.get('last_worked', None) != rtg.__version__:
+            version['previous'] =  version.get('last_worked')
+            version['last_worked'] = rtg.__version__
         self.store_config()
 
     def train(self, args=None):
@@ -845,9 +857,7 @@ class TranslationExperiment(BaseExperiment):
                 f"Already trained upto {last_step}; Requested: train={train_steps}, finetune={finetune_steps} Skipped")
             return
         from .registry import MODELS
-        spec = MODELS[self.model_type]
-        name, optim_args = self.optim_args
-        trainer = spec.Trainer(self, optim=name, **optim_args)
+        trainer = MODELS[self.model_type].Trainer(self)
         if last_step < train_steps:  # regular training
             stopped = trainer.train(fine_tune=False, **run_args)
             if not self.read_only:

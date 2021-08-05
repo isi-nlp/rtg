@@ -1,6 +1,12 @@
-# v0.5.1 : WIP
+# v0.6.0 : WIP
 
+- Redesign of registry; using decorators to register all modules
+- `optim` block is split into `optimizer` `schedule` and `criterion; as a result, **this version is not backward compatible with prior versions** Refer to migration guide
+  - `NoamOpt` replaced with `ScheduledOptimizer` which takes scheduler and optimizer objects which are independently configurable from conf.yml
+    
+- Add transformer sequence classification model: `tfmcls`, supports initialization from pretrained NMT (picks encoder layers, source embeddings, and source vocabs from NMT experiment)
 - Add `rtg-params` command that shows trainable parameters in model (layer wise as well as total)
+ 
 
 
 # v0.5.0 : 20210329

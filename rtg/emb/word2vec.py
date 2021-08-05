@@ -148,8 +148,8 @@ class DataReader:
 
 class CBOWTrainer(SteppedTrainer):
 
-    def __init__(self, *args, model_factory=CBOW.make_model, **kwargs):
-        super().__init__(*args, model_factory=model_factory, **kwargs)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         assert isinstance(self.model, CBOW)  # type check
         self.model: CBOW = self.model   # type ann
         self.loss_func = nn.NLLLoss()

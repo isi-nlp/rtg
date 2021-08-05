@@ -430,11 +430,8 @@ class PositionalEncoding(nn.Module):
 class TransformerTrainer(SteppedTrainer):
 
     def __init__(self, exp: Experiment,
-                 model: Optional['TransformerNMT'] = None,
-                 optim: str = 'ADAM',
-                 model_factory=None,
-                 **optim_args):
-        super().__init__(exp, model, model_factory=model_factory, optim=optim, **optim_args)
+                 model: Optional['TransformerNMT'] = None, model_factory=None):
+        super().__init__(exp=exp, model=model, model_factory=model_factory)
         trainer_args = self.exp.config.get('trainer', {}).get('init_args', {})
         chunk_size = trainer_args.get('chunk_size', -1)
         self.grad_accum_interval = trainer_args.get('grad_accum', 1)
@@ -852,33 +849,3 @@ class ChunkedLossCompute(SimpleLossFunction):
         else:
             return total
 
-
-def __test_model__():
-    model_args = {
-        'enc_layers': 0,
-        'dec_layers': 4,
-        'hid_size': 64,
-        'ff_size': 64,
-        'n_heads': 4,
-        'activation': 'relu'
-    }
-
-    # if you are running this in pycharm, please set Working Dir=<rtg repo base dir> for run config
-    dir = 'experiments/sample-exp'
-    exp = Experiment(work_dir=dir, read_only=True)
-
-    exp.model_type = 'tfmnmt'
-    exp.model_args.update(model_args)
-    exp.optim_args[1].update(dict(criterion='smooth_kld', warmup_steps=500,
-                                  weighing={'gamma': [0.0, 0.5]}))
-
-    trainer = TransformerTrainer(exp=exp, **exp.optim_args[1])
-    assert 2 == exp.tgt_vocab.bos_idx
-    batch_size = 256
-    steps = 2000
-    check_point = 200
-    trainer.train(steps=steps, check_point=check_point, batch_size=batch_size)
-
-
-if __name__ == '__main__':
-    __test_model__()

@@ -96,8 +96,8 @@ class RnnLm(SeqDecoder, LangModel):
 
 class RnnLmTrainer(SteppedTrainer):
 
-    def __init__(self, exp: Experiment, model: RnnLm=None, model_factory=RnnLm.make_model, **optim_args):
-        super().__init__(exp=exp, model=model, model_factory=model_factory, **optim_args)
+    def __init__(self, exp: Experiment, model: RnnLm=None, model_factory=RnnLm.make_model):
+        super().__init__(exp=exp, model=model, model_factory=model_factory)
 
     def simple_loss_func(self, log_probs, seq_lens, tot_toks=None, max_seq_len=None,
                     train_mode: bool=True) -> float:

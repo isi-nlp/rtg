@@ -91,9 +91,6 @@ class TfmLm(LangModel):
 
 class TfmLmTrainer(TransformerTrainer):
 
-    def __init__(self, *args, model_factory=TfmLm.make_model, **kwargs):
-        super().__init__(*args, model_factory=model_factory, **kwargs)
-        self.model: TfmLm = self.model  # type annotation
 
     def run_valid_epoch(self, data_iter: BatchIterable) -> float:
         start = time.time()
@@ -139,10 +136,10 @@ class TfmLmTrainer(TransformerTrainer):
         side = 'tgt'  # TODO: this should be inferrable or configurable instead of hardcoded
 
         train_data = self.exp.get_mono_data('train', side, batch_size=batch_size,
-                                            batch_first=True, sort_dec=False,
+                                            batch_first=True, sort_desc=False,
                                             num_batches=rem_steps, shuffle=True)
         val_data = self.exp.get_mono_data('valid', side, batch_size=batch_size,
-                                          batch_first=True, sort_dec=False)
+                                          batch_first=True, sort_desc=False)
 
         train_state = TrainerState(self.model, check_point=check_point)
         train_state.train_mode(True)

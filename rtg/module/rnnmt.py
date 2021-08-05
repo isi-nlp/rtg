@@ -444,7 +444,7 @@ class RNNMT(NMTModel):
 
     @classmethod
     def make_trainer(cls, *args, **kwargs):
-        return SteppedRNNMTTrainer(*args, **kwargs)
+        return SteppedRNNMTTrainer(*args, model_factory=cls.make_model, **kwargs)
 
     @classmethod
     def make_generator(cls, *args, **kwargs):
@@ -478,11 +478,8 @@ class SimpleLossFunction:
 
 class SteppedRNNMTTrainer(SteppedTrainer):
 
-    def __init__(self, exp: Experiment,
-                 model: Optional[RNNMT] = None,
-                 optim: str = 'ADAM',
-                 **optim_args):
-        super().__init__(exp, model, model_factory=RNNMT.make_model, optim=optim, **optim_args)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self.loss_func = SimpleLossFunction(optim=self.opt)
 
     def run_valid_epoch(self, data_iter: BatchIterable) -> float:

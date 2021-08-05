@@ -7,7 +7,7 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 import abc
-#from rtg.registry import CRITERION, register
+from rtg.registry import CRITERION, register
 
 
 class Criterion(nn.Module, abc.ABC):
@@ -25,10 +25,10 @@ class Criterion(nn.Module, abc.ABC):
         self.input_type = input_type
 
 
-#@register(kind=CRITERION, name="cross_entropy")
+@register(kind=CRITERION, name="cross_entropy")
 class CrossEntropy(Criterion):
 
-    def __init__(self, pad_idx):
+    def __init__(self, pad_idx: int):
         super().__init__(input_type='logits', pad_idx=pad_idx)
         self.xent_loss = nn.CrossEntropyLoss(reduction='none')
 
@@ -46,14 +46,14 @@ class CrossEntropy(Criterion):
         return per_tok_loss
 
 
-#@register(kind=CRITERION, name="binary_cross_entropy")
+@register(kind=CRITERION, name="binary_cross_entropy")
 class BinaryCrossEntropy(Criterion):
 
-    def __init__(self, pad_idx, smoothing=0.1):
-        assert 0 <= smoothing < 1
+    def __init__(self, pad_idx: int, label_smoothing=0.1):
+        assert 0 <= label_smoothing < 1
         super().__init__(input_type='logits', pad_idx=pad_idx)
         self.bce_loss = nn.BCEWithLogitsLoss(reduction='none')
-        self.smoothing = smoothing
+        self.smoothing = label_smoothing
 
     def forward(self, logits, targets, mask_pad=True):
         # logits: [B x V] targets: [B]
@@ -75,21 +75,21 @@ class BinaryCrossEntropy(Criterion):
         return per_tok_loss
 
 
-#@register(kind=CRITERION, name="smooth_kld")
+@register(kind=CRITERION, name="smooth_kld")
 class SmoothKLD(Criterion):
     """
     Label smoothing
     """
 
-    def __init__(self, vocab_size: int, pad_idx: int, smoothing: float = 0.1):
+    def __init__(self, pad_idx: int, n_classes: int, label_smoothing: float = 0.1):
         super().__init__(input_type='log_softmax', pad_idx=pad_idx)
-        self.size = vocab_size
-        assert 0.0 <= smoothing <= 1.0
+        self.size = n_classes
+        assert 0.0 <= label_smoothing <= 1.0
 
         # want elementwise_mean but due to padded tokens, we do the division ourselves
         self.criterion = nn.KLDivLoss(reduction='none')
-        self.fill_val = smoothing / (vocab_size - 2)  # exclude 2  = padding, and expected word
-        self.confidence = 1.0 - smoothing
+        self.fill_val = label_smoothing / (n_classes - 2)  # exclude 2  = padding, and expected word
+        self.confidence = 1.0 - label_smoothing
 
     def forward(self, x, target, mask_pad=True):
         # 'x' is log probabilities, originally [B, T, V], but here [B.T, V]
@@ -113,12 +113,12 @@ class SmoothKLD(Criterion):
         return loss
 
 
-#@register(kind=CRITERION, name="triplet_loss")
+@register(kind=CRITERION, name="triplet_loss")
 class TripletLoss(Criterion):
     # Note: Triplet loss doesnt work fully yet; it sorta works and then overfits
 
-    def __init__(self, embedding, pad_idx,  margin: float = 0., neg_region: float = 0.05,
-                 mode: str = 'dot', neg_sampling: str = 'random'):
+    def __init__(self, pad_idx: int, embedding: nn.Embedding, margin: float = 0.,
+                 neg_region: float = 0.05, mode: str = 'dot', neg_sampling: str = 'random'):
         # TODO: whats the right margin?
         super().__init__(input_type='embedding', pad_idx=pad_idx)
         self.embedding = embedding
@@ -177,17 +177,18 @@ class TripletLoss(Criterion):
         return triplet_loss
 
 
-#@register(kind=CRITERION, name="smooth_kld_and_triplet_loss")
+@register(kind=CRITERION, name="smooth_kld_and_triplet_loss")
 class SmoothKLDAndTripletLoss(Criterion):
 
-    def __init__(self, embedding, pad_idx, margin: float = 0., neg_region: float = 0.05,
-                 mode: str = 'dot', neg_sampling: str = 'random',
-                 smoothing: float = 0.1, alpha: float = 1.0):
+    def __init__(self, pad_idx: int, embedding: nn.Embedding, margin: float = 0.,
+                 neg_region: float = 0.05, mode: str = 'dot', neg_sampling: str = 'random',
+                 label_smoothing: float = 0.1, alpha: float = 1.0):
         super().__init__(input_type='identity')
         self.embeddings = embedding.weight
-        self.smoothKLD = SmoothKLD(embedding.weight.shape[0], smoothing=smoothing, pad_idx=pad_idx)
-        self.tripletLoss = TripletLoss(embedding, margin=margin, neg_region=neg_region, mode=mode,
-                                       neg_sampling=neg_sampling, pad_idx=pad_idx)
+        self.smoothKLD = SmoothKLD(n_classes=embedding.weight.shape[0],
+                                   label_smoothing=label_smoothing, pad_idx=pad_idx)
+        self.tripletLoss = TripletLoss(embedding=embedding, margin=margin, neg_region=neg_region,
+                                       mode=mode, neg_sampling=neg_sampling, pad_idx=pad_idx)
         self.alpha = alpha
 
     def forward(self, x, targets, mask_pad=True):
