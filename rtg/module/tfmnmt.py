@@ -17,7 +17,6 @@ from tqdm import tqdm
 
 from rtg import device, log, TranslationExperiment as Experiment
 from rtg.utils import get_my_args
-from rtg.utils import get_my_args
 from rtg.data.dataset import BatchIterable
 from rtg.module import NMTModel
 from rtg.module.trainer import TrainerState, SteppedTrainer, EarlyStopper
@@ -26,7 +25,6 @@ from torch.optim.optimizer import Optimizer
 from dataclasses import dataclass
 from sacrebleu import corpus_bleu
 from rtg.distrib import DistribTorch
-
 
 dtorch = DistribTorch.instance()
 
@@ -271,70 +269,14 @@ class AbstractTransformerNMT(NMTModel, ABC):
                    exp: Experiment = None):
         raise NotImplementedError()
 
-
-class TransformerNMT(AbstractTransformerNMT):
-    """
-    A standard Encoder-Decoder Transformer architecture.
-    """
-    # Factories; looks a bit complicated, but very useful if child classes want to customize these.
-    GeneratorFactory = Generator
-    EncoderLayerFactory = EncoderLayer
-    DecoderLayerFactory = DecoderLayer
-    EncoderFactory = Encoder
-    DecoderFactory = Decoder
-
-    def __init__(self, encoder: Encoder, decoder: Decoder,
-                 src_embed, tgt_embed,
-                 generator: Optional[Generator], tgt_vocab=None):
-        super().__init__(encoder=encoder, decoder=decoder,
-                         src_embed=src_embed, tgt_embed=tgt_embed,
-                         generator=generator, tgt_vocab=tgt_vocab)
-
-    @property
-    def model_type(self):
-        return 'tfmnmt'
-
-    @classmethod
-    def make_model(cls, src_vocab, tgt_vocab, enc_layers=6, dec_layers=6, hid_size=512,
-                   ff_size=2048,
-                   n_heads=8, attn_bias=True, attn_dropout=0.1, dropout=0.2, activation='relu',
-                   tied_emb='three-way', exp: Experiment = None):
-        "Helper: Construct a model from hyper parameters."
-
-        # get all args for reconstruction at a later phase
-        args = get_my_args(exclusions=['cls', 'exp'])
-        assert activation in {'relu', 'elu', 'gelu'}
-        log.info(f"Make model, Args={args}")
-        c = copy.deepcopy
-        attn = MultiHeadedAttention(n_heads, hid_size, dropout=attn_dropout, bias=attn_bias)
-        ff = PositionwiseFeedForward(hid_size, ff_size, dropout, activation=activation)
-
-        if enc_layers == 0:
-            log.warning("Zero encoder layers!")
-        encoder = cls.EncoderFactory(cls.EncoderLayerFactory(hid_size, c(attn), c(ff), dropout),
-                                     enc_layers)
-
-        assert dec_layers > 0
-        decoder = cls.DecoderFactory(
-            cls.DecoderLayerFactory(hid_size, c(attn), c(attn), c(ff), dropout), dec_layers)
-
-        src_emb = nn.Sequential(Embeddings(hid_size, src_vocab),
-                                PositionalEncoding(hid_size, dropout))
-        tgt_emb = nn.Sequential(Embeddings(hid_size, tgt_vocab),
-                                PositionalEncoding(hid_size, dropout))
-        generator = cls.GeneratorFactory(hid_size, tgt_vocab)
-
-        model = cls(encoder, decoder, src_emb, tgt_emb, generator)
-
-        if tied_emb:
-            model.tie_embeddings(tied_emb)
-
-        model.init_params()
-        return model, args
-
     @classmethod
     def make_trainer(cls, *args, **kwargs):
-        return TransformerTrainer(*args, **kwargs)
+        return TransformerTrainer(*args, model_factory=cls.make_model, **kwargs)
+
+    @classmethod
+    def make_generator(cls, *args, **kwargs):
+        from rtg.module.generator import T2TGenerator
+        return T2TGenerator(*args, **kwargs)
 
 
 class SublayerConnection(nn.Module):
@@ -485,90 +427,11 @@ class PositionalEncoding(nn.Module):
         return self.dropout(x)
 
 
-@dataclass
-class SimpleLossFunction:
-    """
-    A simple loss function that computes the loss using the criterion given
-    """
-    generator: Generator
-    criterion: Criterion
-    opt: Optimizer
-
-    def __call__(self, x_feats, y_seqs, normalizer, train_mode=True, take_step=True, get_out=False):
-        # B x T x D --> B x T x V
-        x_probs = self.generator(x_feats, score=self.criterion.input_type)
-        scores = x_probs.contiguous().view(-1, x_probs.size(-1))  # B x T x V --> B.T x V
-        truth = y_seqs.contiguous().view(-1)  # B x T --> B.T
-        loss = self.criterion(scores, truth).sum() / normalizer
-
-        if train_mode:  # don't do this for validation set
-            dtorch.backward(loss)
-            if take_step:
-                dtorch.step(self.opt)
-        result = loss.item()
-        if get_out:
-            result = (result, x_probs.argmax(dim=-1))
-        return result
-
-
-@dataclass
-class ChunkedLossCompute(SimpleLossFunction):
-    chunk_size: int = 10
-
-    def __call__(self, y_feats, y_seqs, normalizer: Union[int, float],
-                 train_mode=True, chunk_size=None, take_step=True, get_out=False):
-        """
-
-        :param y_feats:
-        :param y_seqs:
-        :param normalizer:
-        :param train_mode: Should the gradients be propagated
-        :param chunk_size:  Chunk  size along the time dim
-        :param take_step: should the optimizer.step() be called
-        :param get_out: should the best outputs be returned
-        :return: total_loss if get_outs=False (default)
-                (total_loss, outputs) if get_out=True
-        """
-        chunk_size = chunk_size or self.chunk_size
-        assert chunk_size > 0
-        total = 0
-        _y_feats = y_feats.detach().clone()
-        _y_feats.requires_grad = True  # yet collect grads
-        out_chunks = []
-        for i in range(0, _y_feats.shape[1], chunk_size):
-            # grad network is cut here
-            chunked_feats = _y_feats[:, i:i + chunk_size]
-            chunked_dist = self.generator(chunked_feats, score=self.criterion.input_type)
-            if get_out:
-                top_idxs = chunked_dist.argmax(dim=-1) # # B x C x V -> B x C
-                out_chunks.append(top_idxs)
-            # B x C x V -> B.C x V
-            chunked_dist = chunked_dist.contiguous().view(-1, chunked_dist.shape[-1])
-            chunked_ys = y_seqs[:, i:i + chunk_size].contiguous().view(-1)  # B x C -> B.C
-            loss = self.criterion(chunked_dist, chunked_ys).sum() / normalizer
-            total += loss.detach().item()
-            if train_mode:
-                dtorch.backward(loss)
-        if train_mode:
-            out_grad = _y_feats.grad.data
-            y_feats.backward(gradient=out_grad)
-            if take_step:
-                dtorch.step(optimizer=self.opt)
-        if get_out:
-            outs = torch.cat(out_chunks, dim=1)
-            return total, outs
-        else:
-            return total
-
-
 class TransformerTrainer(SteppedTrainer):
 
     def __init__(self, exp: Experiment,
-                 model: Optional[TransformerNMT] = None,
-                 optim: str = 'ADAM',
-                 model_factory=TransformerNMT.make_model,
-                 **optim_args):
-        super().__init__(exp, model, model_factory=model_factory, optim=optim, **optim_args)
+                 model: Optional['TransformerNMT'] = None, model_factory=None):
+        super().__init__(exp=exp, model=model, model_factory=model_factory)
         trainer_args = self.exp.config.get('trainer', {}).get('init_args', {})
         chunk_size = trainer_args.get('chunk_size', -1)
         self.grad_accum_interval = trainer_args.get('grad_accum', 1)
@@ -848,32 +711,141 @@ class TransformerTrainer(SteppedTrainer):
                               }, self.opt.curr_step)
 
 
-def __test_model__():
-    model_args = {
-        'enc_layers': 0,
-        'dec_layers': 4,
-        'hid_size': 64,
-        'ff_size': 64,
-        'n_heads': 4,
-        'activation': 'relu'
-    }
+from rtg.registry import register, MODEL
+@register(MODEL, name='tfmnmt')
+class TransformerNMT(AbstractTransformerNMT):
+    """
+    A standard Encoder-Decoder Transformer architecture.
+    """
+    # Factories; looks a bit complicated, but very useful if child classes want to customize these.
+    GeneratorFactory = Generator
+    EncoderLayerFactory = EncoderLayer
+    DecoderLayerFactory = DecoderLayer
+    EncoderFactory = Encoder
+    DecoderFactory = Decoder
 
-    # if you are running this in pycharm, please set Working Dir=<rtg repo base dir> for run config
-    dir = 'experiments/sample-exp'
-    exp = Experiment(work_dir=dir, read_only=True)
+    def __init__(self, encoder: Encoder, decoder: Decoder,
+                 src_embed, tgt_embed,
+                 generator: Optional[Generator], tgt_vocab=None):
+        super().__init__(encoder=encoder, decoder=decoder,
+                         src_embed=src_embed, tgt_embed=tgt_embed,
+                         generator=generator, tgt_vocab=tgt_vocab)
 
-    exp.model_type = 'tfmnmt'
-    exp.model_args.update(model_args)
-    exp.optim_args[1].update(dict(criterion='smooth_kld', warmup_steps=500,
-                                  weighing={'gamma': [0.0, 0.5]}))
+    @property
+    def model_type(self):
+        return 'tfmnmt'
 
-    trainer = TransformerTrainer(exp=exp, **exp.optim_args[1])
-    assert 2 == exp.tgt_vocab.bos_idx
-    batch_size = 256
-    steps = 2000
-    check_point = 200
-    trainer.train(steps=steps, check_point=check_point, batch_size=batch_size)
+    @classmethod
+    def make_model(cls, src_vocab, tgt_vocab, enc_layers=6, dec_layers=6, hid_size=512,
+                   ff_size=2048,
+                   n_heads=8, attn_bias=True, attn_dropout=0.1, dropout=0.2, activation='relu',
+                   tied_emb='three-way', exp: Experiment = None):
+        "Helper: Construct a model from hyper parameters."
+
+        # get all args for reconstruction at a later phase
+        args = get_my_args(exclusions=['cls', 'exp'])
+        assert activation in {'relu', 'elu', 'gelu'}
+        log.info(f"Make model, Args={args}")
+        c = copy.deepcopy
+        attn = MultiHeadedAttention(n_heads, hid_size, dropout=attn_dropout, bias=attn_bias)
+        ff = PositionwiseFeedForward(hid_size, ff_size, dropout, activation=activation)
+
+        if enc_layers == 0:
+            log.warning("Zero encoder layers!")
+        encoder = cls.EncoderFactory(cls.EncoderLayerFactory(hid_size, c(attn), c(ff), dropout),
+                                     enc_layers)
+
+        assert dec_layers > 0
+        decoder = cls.DecoderFactory(
+            cls.DecoderLayerFactory(hid_size, c(attn), c(attn), c(ff), dropout), dec_layers)
+
+        src_emb = nn.Sequential(Embeddings(hid_size, src_vocab),
+                                PositionalEncoding(hid_size, dropout))
+        tgt_emb = nn.Sequential(Embeddings(hid_size, tgt_vocab),
+                                PositionalEncoding(hid_size, dropout))
+        generator = cls.GeneratorFactory(hid_size, tgt_vocab)
+
+        model = cls(encoder, decoder, src_emb, tgt_emb, generator)
+
+        if tied_emb:
+            model.tie_embeddings(tied_emb)
+
+        model.init_params()
+        return model, args
 
 
-if __name__ == '__main__':
-    __test_model__()
+@dataclass
+class SimpleLossFunction:
+    """
+    A simple loss function that computes the loss using the criterion given
+    """
+    generator: Generator
+    criterion: Criterion
+    opt: Optimizer
+
+    def __call__(self, x_feats, y_seqs, normalizer, train_mode=True, take_step=True, get_out=False):
+        # B x T x D --> B x T x V
+        x_probs = self.generator(x_feats, score=self.criterion.input_type)
+        scores = x_probs.contiguous().view(-1, x_probs.size(-1))  # B x T x V --> B.T x V
+        truth = y_seqs.contiguous().view(-1)  # B x T --> B.T
+        loss = self.criterion(scores, truth).sum() / normalizer
+
+        if train_mode:  # don't do this for validation set
+            dtorch.backward(loss)
+            if take_step:
+                dtorch.step(self.opt)
+        result = loss.item()
+        if get_out:
+            result = (result, x_probs.argmax(dim=-1))
+        return result
+
+
+@dataclass
+class ChunkedLossCompute(SimpleLossFunction):
+    chunk_size: int = 10
+
+    def __call__(self, y_feats, y_seqs, normalizer: Union[int, float],
+                 train_mode=True, chunk_size=None, take_step=True, get_out=False):
+        """
+
+        :param y_feats:
+        :param y_seqs:
+        :param normalizer:
+        :param train_mode: Should the gradients be propagated
+        :param chunk_size:  Chunk  size along the time dim
+        :param take_step: should the optimizer.step() be called
+        :param get_out: should the best outputs be returned
+        :return: total_loss if get_outs=False (default)
+                (total_loss, outputs) if get_out=True
+        """
+        chunk_size = chunk_size or self.chunk_size
+        assert chunk_size > 0
+        total = 0
+        _y_feats = y_feats.detach().clone()
+        _y_feats.requires_grad = True  # yet collect grads
+        out_chunks = []
+        for i in range(0, _y_feats.shape[1], chunk_size):
+            # grad network is cut here
+            chunked_feats = _y_feats[:, i:i + chunk_size]
+            chunked_dist = self.generator(chunked_feats, score=self.criterion.input_type)
+            if get_out:
+                top_idxs = chunked_dist.argmax(dim=-1) # # B x C x V -> B x C
+                out_chunks.append(top_idxs)
+            # B x C x V -> B.C x V
+            chunked_dist = chunked_dist.contiguous().view(-1, chunked_dist.shape[-1])
+            chunked_ys = y_seqs[:, i:i + chunk_size].contiguous().view(-1)  # B x C -> B.C
+            loss = self.criterion(chunked_dist, chunked_ys).sum() / normalizer
+            total += loss.detach().item()
+            if train_mode:
+                dtorch.backward(loss)
+        if train_mode:
+            out_grad = _y_feats.grad.data
+            y_feats.backward(gradient=out_grad)
+            if take_step:
+                dtorch.step(optimizer=self.opt)
+        if get_out:
+            outs = torch.cat(out_chunks, dim=1)
+            return total, outs
+        else:
+            return total
+

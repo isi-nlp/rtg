@@ -65,7 +65,7 @@ def test_tfmcls_model():
     # tmp_dir = tempfile.mkdtemp()
     tmp_dir = Path('tmp.dbpedia-exp')
     config = load_conf('experiments/transformer.classifier.yml')
-    exp = registry[MODEL]['tfmcls'].experiment(tmp_dir, config=config, read_only=False)
+    exp = registry[MODEL]['tfmcls'].Experiment(tmp_dir, config=config, read_only=False)
     exp.config['trainer'].update(dict(steps=50, check_point=25))
     # exp.config['prep']['num_samples'] = 0
     Pipeline(exp).run(run_tests=False)

@@ -35,23 +35,27 @@ model_args: # model construction args
   tgt_vocab: 8000
   tied_emb: three-way  # choices: null, one-way, two-way, three-way
 model_type: tfmnmt  # model type. tfmnmt is the transformer NMT model
-optim:
-  name: ADAM
+optimizer:
+  name: adam
   args:
-    criterion: smooth_kld  # other choices: "cross_entropy", "binary_cross_entropy",
-                           #                "smooth_kld_and_triplet_loss",
-                           #                "triplet_loss" (doesn't converge alone)
     betas:
-      - 0.9
-      - 0.98
+    - 0.9
+    - 0.98
     eps: 1.0e-09
-    label_smoothing: 0.1
-    lr: 0.2
-    warmup_steps: 8000
+    lr: 0.1
+
+schedule:
+  name: noam
+  args:
     constant: 2
-    inv_sqrt: false        # False = default NoamOpt learning rate schedule
-    amsgrad: false
-    weight_decay: 0
+    warmup: 8000
+    model_dim: 512
+
+criterion:
+  name: smooth_kld    #options "cross_entropy", "smooth_kld", "binary_cross_entropy", "triplet_loss"
+  args:
+    label_smoothing: 0.1
+
 prep: # data preparation
   max_types: 8000  # maximum number of types in vocab ; if shared_vocab=false, set max_src_types and max_tgt_types separately
   pieces: bpe   # choices: bpe, char, word, unigram  from google/sentencepiece
@@ -119,21 +123,22 @@ Note: When `inv_sqrt: false`, `lr` does nothing. When `inv_sqrt: true`, `constan
 An alternative optimizer may look like:
 [source,yaml]
 ----
-optim:
-  name: ADAMW
+optimizer:
+  name: adamw
   args:
-    criterion: smooth_kld_and_triplet_loss
     betas:
-      - 0.9
-      - 0.98
-    eps: 1.0e-08
-    label_smoothing: 0.1
-    lr: 0.0005
-    warmup_steps: 4000
-    constant: 2           # Does nothing if inv_sqrt==True
-    inv_sqrt: true        # If truem lr should be under 0.005
-    amsgrad: true
-    weight_decay: 1e-3    # Use ADAMW if weight decay != 0
+    - 0.9
+    - 0.98
+    eps: 1.0e-09
+    lr: 0.0005   # this doesnt matter, see "schedule"
+    weight_decay: 1e-3
+
+schedule:
+  name: inverse_sqrt
+  args:
+    warmup: 4000
+    peak_lr: 0.0005
+
 ----
 
 [#conf-finetune]
@@ -200,8 +205,8 @@ Or alternatively, explicitly mention the parts of the model needs to be trained 
 Here is an example -- comment or remove the parts that you wish to freeze in the below 6 layer network.
 [source,yaml]
 ----
-optim:
-  name: ADAM
+optimizer:
+  name: adam
   args:
     ....# the usual args for optimizer
   trainable:  # trainable parameter
@@ -212,7 +217,7 @@ optim:
     - 'encoder:0,1,2,3,4,5'  # the numbers are layer indices starting from 0
     - 'decoder:0,1,2,3,4,5'  # the numbers are layer indices starting from 0
 ----
-TODO: add support for `exclude` logic ie. include everything else except the mentioned.
+TODO: add support for `exclude` logic i.e., include everything else except the mentioned.
 
 This feature is supported only in `AbstractTransformerNMT` and all of its children.
 If you are adding a new `NMTModel` or customising this feature, please override `get_trainable_parameters(self, include, exclude)` function to support this feature.

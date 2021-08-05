@@ -23,6 +23,28 @@ optim:
     criterion: binary_cross_entropy  # multi label classification, binary decision per class
     # all options "cross_entropy", "smooth_kld", "binary_cross_entropy", "triplet_loss"
   name: ADAM
+optimizer:
+  name: adam
+  args:
+    betas:
+    - 0.9
+    - 0.98
+    eps: 1.0e-09
+    lr: 0.1
+
+schedule:
+  name: noam
+  args:
+    constant: 2
+    warmup: 8000
+    model_dim: 512
+
+criterion:
+  name: binary_cross_entropy    #options "cross_entropy", "smooth_kld", "binary_cross_entropy", "triplet_loss"
+  args:
+    label_smoothing: 0.1
+
+
 prep: # data preparation
   max_types: 8000  # maximum number of types in vocab ; if shared_vocab=false, set max_src_types and max_tgt_types separately instead of this one
   pieces: bpe   # choices: bpe, char, word, unigram  from google/sentencepiece

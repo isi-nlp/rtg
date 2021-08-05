@@ -331,10 +331,8 @@ class ClassifierTrainer(SteppedTrainer):
 
     def __init__(self, exp: ClassificationExperiment,
                  model: Optional[TransformerClassifier] = None,
-                 optim: str = 'ADAM',
-                 model_factory=TransformerClassifier.make_model,
-                 **optim_args):
-        super().__init__(exp, model, model_factory=model_factory, optim=optim, **optim_args)
+                 model_factory=TransformerClassifier.make_model):
+        super().__init__(exp, model, model_factory=model_factory)
         self.exp: ClassificationExperiment = exp
         assert isinstance(self.core_model, TransformerClassifier), \
             f'Expected an instance of TransformerClassifier; but found {type(self.core_model)}'

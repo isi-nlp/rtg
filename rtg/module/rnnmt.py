@@ -12,6 +12,7 @@ from rtg.data.dataset import Batch, BatchIterable, padded_sequence_mask
 from rtg.data.codec import Field
 from rtg.module import NMTModel
 from rtg.module.trainer import TrainerState, SteppedTrainer
+from rtg.registry import register, MODEL
 
 PAD_IDX = Field.pad_idx  #
 
@@ -293,6 +294,7 @@ class Seq2SeqBridge(nn.Module):
         return enc_outs, enc_hids
 
 
+@register(MODEL, 'rnnmt')
 class RNNMT(NMTModel):
 
     def __init__(self, enc: SeqEncoder, dec: SeqDecoder, bridge: Seq2SeqBridge = None):
@@ -440,6 +442,14 @@ class RNNMT(NMTModel):
         model.init_params()
         return model, args
 
+    @classmethod
+    def make_trainer(cls, *args, **kwargs):
+        return SteppedRNNMTTrainer(*args, model_factory=cls.make_model, **kwargs)
+
+    @classmethod
+    def make_generator(cls, *args, **kwargs):
+        from rtg.module.generator import Seq2SeqGenerator
+        return Seq2SeqGenerator(*args, **kwargs)
 
 def aeq(*items):
     for i in items[1:]:
@@ -468,11 +478,8 @@ class SimpleLossFunction:
 
 class SteppedRNNMTTrainer(SteppedTrainer):
 
-    def __init__(self, exp: Experiment,
-                 model: Optional[RNNMT] = None,
-                 optim: str = 'ADAM',
-                 **optim_args):
-        super().__init__(exp, model, model_factory=RNNMT.make_model, optim=optim, **optim_args)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self.loss_func = SimpleLossFunction(optim=self.opt)
 
     def run_valid_epoch(self, data_iter: BatchIterable) -> float:

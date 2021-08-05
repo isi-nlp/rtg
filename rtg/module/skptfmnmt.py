@@ -10,6 +10,7 @@ import torch.nn as nn
 from abc import ABC
 from typing import List, Optional
 
+from rtg.registry import register, MODEL
 from rtg.module import tfmnmt as tfm
 from rtg.utils import get_my_args
 from rtg import TranslationExperiment as Experiment, log
@@ -52,6 +53,7 @@ class SkipDecoder(tfm.Decoder):
         return self.norm(x)
 
 
+@register(MODEL, name='skptfmnmt')
 class SkipTransformerNMT(tfm.AbstractTransformerNMT, ABC):
     """
     A standard Encoder-Decoder Transformer architecture.
@@ -110,14 +112,6 @@ class SkipTransformerNMT(tfm.AbstractTransformerNMT, ABC):
         return model, args
 
 
-class SKPTransformerTrainer(tfm.TransformerTrainer):
-
-    def __init__(self, *args, model_factory=SkipTransformerNMT.make_model, **kwargs):
-        super().__init__(*args, model_factory=model_factory, **kwargs)
-        assert isinstance(self.model, SkipTransformerNMT) or \
-            (isinstance(self.model, nn.DataParallel) and isinstance(self.model.module, SkipTransformerNMT))
-
-
 def __test_model__():
     from rtg.data.dummy import DummyExperiment
     from rtg import Batch, my_tensor as tensor
@@ -154,7 +148,7 @@ def __test_model__():
     exp = DummyExperiment("work.tmp.skptfmnmt", config=config, read_only=True,
                           vocab_size=vocab_size)
     exp.model_args = args
-    trainer = SKPTransformerTrainer(exp=exp, warmup_steps=200, **config['optim']['args'])
+    trainer = SkipTransformerNMT.make_trainer(exp=exp, warmup_steps=200, **config['optim']['args'])
     decr = Decoder.new(exp, trainer.model)
 
     assert 2 == Batch.bos_val

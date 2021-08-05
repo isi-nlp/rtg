@@ -1,7 +1,7 @@
 from abc import ABCMeta, abstractmethod
 import torch
 import torch.nn as nn
-from rtg import log
+from rtg.exp import log, BaseExperiment, TranslationExperiment
 
 
 class Model(nn.Module):
@@ -72,12 +72,18 @@ class Model(nn.Module):
             return list(self.parameters())   # default include all
 
 
-class NMTModel(Model, metaclass=ABCMeta):
-    """"
-    base class for all Sequence to sequence (NMT) models
-    """
+class LangModel(Model, metaclass=ABCMeta):
+    """base class for all models that generate sequence"""
+    experiment_type = BaseExperiment
 
     @classmethod
     @abstractmethod
     def make_generator(cls, *args, **kwargs):
         raise NotImplementedError
+
+
+class NMTModel(LangModel, metaclass=ABCMeta):
+    """"
+    base class for all Sequence to sequence (NMT) models
+    """
+    experiment_type = TranslationExperiment
