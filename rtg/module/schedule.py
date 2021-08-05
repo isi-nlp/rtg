@@ -59,14 +59,18 @@ class ScheduledOptimizer:
         self._step += 1
         if self.schedule is not None:
             rate = self.schedule.rate(step=self._step)
-            for p in self.optimizer.param_groups:
+            for p in self.param_groups:
                 p['lr'] = rate
             self._rate = rate
         else:  # extract learning rate from optimizer
-            for param_group in self.optimizer.param_groups:
+            for param_group in self.param_groups:
                 self._rate = param_group['lr']
                 break
         self.optimizer.step(closure=closure)
+
+    @property
+    def param_groups(self):
+        return self.optimizer.param_groups
 
     @property
     def curr_step(self):
