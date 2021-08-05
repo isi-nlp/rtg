@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="generator" content="Asciidoctor 2.0.12">
+<meta name="generator" content="Asciidoctor 2.0.15">
 <meta name="author" content="USC Information Sciences Institute Natural Language Group">
 <title>Reader-Translator-Generator (RTG)</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Open+Sans:300,300italic,400,400italic,600,600italic%7CNoto+Serif:400,400italic,700,700italic%7CDroid+Sans+Mono:400,700">
@@ -95,9 +95,6 @@ dl dd{margin-bottom:1.25em}
 abbr,acronym{text-transform:uppercase;font-size:90%;color:rgba(0,0,0,.8);border-bottom:1px dotted #ddd;cursor:help}
 abbr{text-transform:none}
 blockquote{margin:0 0 1.25em;padding:.5625em 1.25em 0 1.1875em;border-left:1px solid #ddd}
-blockquote cite{display:block;font-size:.9375em;color:rgba(0,0,0,.6)}
-blockquote cite::before{content:"\2014 \0020"}
-blockquote cite a,blockquote cite a:visited{color:rgba(0,0,0,.6)}
 blockquote,blockquote p{line-height:1.6;color:rgba(0,0,0,.85)}
 @media screen and (min-width:768px){h1,h2,h3,#toctitle,.sidebarblock>.content>.title,h4,h5,h6{line-height:1.2}
 h1{font-size:2.75em}
@@ -262,7 +259,7 @@ pre.pygments .lineno::before{content:"";margin-right:-.125em}
 .quoteblock.excerpt>blockquote,.quoteblock .quoteblock{padding:0 0 .25em 1em;border-left:.25em solid #dddddf}
 .quoteblock.excerpt,.quoteblock .quoteblock{margin-left:0}
 .quoteblock.excerpt blockquote,.quoteblock.excerpt p,.quoteblock .quoteblock blockquote,.quoteblock .quoteblock p{color:inherit;font-size:1.0625rem}
-.quoteblock.excerpt .attribution,.quoteblock .quoteblock .attribution{color:inherit;text-align:left;margin-right:0}
+.quoteblock.excerpt .attribution,.quoteblock .quoteblock .attribution{color:inherit;font-size:.85rem;text-align:left;margin-right:0}
 p.tableblock:last-child{margin-bottom:0}
 td.tableblock>.content{margin-bottom:1.25em;word-wrap:anywhere}
 td.tableblock>.content>:last-child{margin-bottom:-1.25em}
@@ -525,11 +522,22 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <li><a href="#ddp">8. Distributed Data Parallel (DDP)</a></li>
 <li><a href="#fp16">9. FP16, Mixed Precision Training</a></li>
 <li><a href="#scaling-big">10. Scaling to Big Datasets Using PySpark</a></li>
-<li><a href="#_rtg_serve">11. RTG Serve</a></li>
+<li><a href="#_rtg_serve">11. RTG Serve</a>
+<ul class="sectlevel2">
+<li><a href="#_flask_installation">11.1. Flask Installation</a></li>
+<li><a href="#_running">11.2. Running</a></li>
+</ul>
+</li>
 <li><a href="#dev-env">12. Development Environment:</a>
 <ul class="sectlevel2">
 <li><a href="#_run_tests">12.1. Run Tests</a></li>
 <li><a href="#_adding_a_new_model">12.2. Adding a new model</a></li>
+</ul>
+</li>
+<li><a href="#_migration_from_v0_5_0_or_earlier_to_0_6_0">13. Migration from v0.5.0 or earlier to 0.6.0</a>
+<ul class="sectlevel2">
+<li><a href="#_learning_rate_schedule">13.1. Learning rate schedule</a></li>
+<li><a href="#_criterion">13.2. Criterion</a></li>
 </ul>
 </li>
 </ul>
@@ -920,23 +928,27 @@ such as BPE/char/words, and vocabulary size.</p>
   <span style="color:#606">tgt_vocab</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">8000</span></span>
   <span style="color:#606">tied_emb</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">three-way</span></span>  <span style="color:#777"># choices: null, one-way, two-way, three-way</span>
 <span style="color:#606">model_type</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">tfmnmt</span></span>  <span style="color:#777"># model type. tfmnmt is the transformer NMT model</span>
-<span style="color:#606">optim</span>:
-  <span style="color:#606">name</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">ADAM</span></span>
+<span style="color:#606">optimizer</span>:
+  <span style="color:#606">name</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">adam</span></span>
   <span style="color:#606">args</span>:
-    <span style="color:#606">criterion</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">smooth_kld</span></span>  <span style="color:#777"># other choices: &quot;cross_entropy&quot;, &quot;binary_cross_entropy&quot;,</span>
-                           <span style="color:#777">#                &quot;smooth_kld_and_triplet_loss&quot;,</span>
-                           <span style="color:#777">#                &quot;triplet_loss&quot; (doesn't converge alone)</span>
     <span style="color:#606">betas</span>:
-      - <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">0.9</span></span>
-      - <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">0.98</span></span>
+    - <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">0.9</span></span>
+    - <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">0.98</span></span>
     <span style="color:#606">eps</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">1.0e-09</span></span>
-    <span style="color:#606">label_smoothing</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">0.1</span></span>
-    <span style="color:#606">lr</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">0.2</span></span>
-    <span style="color:#606">warmup_steps</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">8000</span></span>
+    <span style="color:#606">lr</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">0.1</span></span>
+
+<span style="color:#606">schedule</span>:
+  <span style="color:#606">name</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">noam</span></span>
+  <span style="color:#606">args</span>:
     <span style="color:#606">constant</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">2</span></span>
-    <span style="color:#606">inv_sqrt</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">false</span></span>        <span style="color:#777"># False = default NoamOpt learning rate schedule</span>
-    <span style="color:#606">amsgrad</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">false</span></span>
-    <span style="color:#606">weight_decay</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">0</span></span>
+    <span style="color:#606">warmup</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">8000</span></span>
+    <span style="color:#606">model_dim</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">512</span></span>
+
+<span style="color:#606">criterion</span>:
+  <span style="color:#606">name</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">smooth_kld</span></span>    <span style="color:#777">#options &quot;cross_entropy&quot;, &quot;smooth_kld&quot;, &quot;binary_cross_entropy&quot;, &quot;triplet_loss&quot;</span>
+  <span style="color:#606">args</span>:
+    <span style="color:#606">label_smoothing</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">0.1</span></span>
+
 <span style="color:#606">prep</span>: <span style="color:#777"># data preparation</span>
   <span style="color:#606">max_types</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">8000</span></span>  <span style="color:#777"># maximum number of types in vocab ; if shared_vocab=false, set max_src_types and max_tgt_types separately</span>
   <span style="color:#606">pieces</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">bpe</span></span>   <span style="color:#777"># choices: bpe, char, word, unigram  from google/sentencepiece</span>
@@ -1010,21 +1022,21 @@ since weight decay is different in optimizers with variable step sizes.</p>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="yaml"><span style="color:#606">optim</span>:
-  <span style="color:#606">name</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">ADAMW</span></span>
+<pre class="CodeRay highlight"><code data-lang="yaml"><span style="color:#606">optimizer</span>:
+  <span style="color:#606">name</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">adamw</span></span>
   <span style="color:#606">args</span>:
-    <span style="color:#606">criterion</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">smooth_kld_and_triplet_loss</span></span>
     <span style="color:#606">betas</span>:
-      - <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">0.9</span></span>
-      - <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">0.98</span></span>
-    <span style="color:#606">eps</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">1.0e-08</span></span>
-    <span style="color:#606">label_smoothing</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">0.1</span></span>
-    <span style="color:#606">lr</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">0.0005</span></span>
-    <span style="color:#606">warmup_steps</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">4000</span></span>
-    <span style="color:#606">constant</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">2</span></span>           <span style="color:#777"># Does nothing if inv_sqrt==True</span>
-    <span style="color:#606">inv_sqrt</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">true</span></span>        <span style="color:#777"># If truem lr should be under 0.005</span>
-    <span style="color:#606">amsgrad</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">true</span></span>
-    <span style="color:#606">weight_decay</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">1e-3</span></span>    <span style="color:#777"># Use ADAMW if weight decay != 0</span></code></pre>
+    - <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">0.9</span></span>
+    - <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">0.98</span></span>
+    <span style="color:#606">eps</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">1.0e-09</span></span>
+    <span style="color:#606">lr</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">0.0005</span></span>   <span style="color:#777"># this doesnt matter, see &quot;schedule&quot;</span>
+    <span style="color:#606">weight_decay</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">1e-3</span></span>
+
+<span style="color:#606">schedule</span>:
+  <span style="color:#606">name</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">inverse_sqrt</span></span>
+  <span style="color:#606">args</span>:
+    <span style="color:#606">warmup</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">4000</span></span>
+    <span style="color:#606">peak_lr</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">0.0005</span></span></code></pre>
 </div>
 </div>
 </div>
@@ -1105,8 +1117,8 @@ Or alternatively, explicitly mention the parts of the model needs to be trained 
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="yaml"><span style="color:#606">optim</span>:
-  <span style="color:#606">name</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">ADAM</span></span>
+<pre class="CodeRay highlight"><code data-lang="yaml"><span style="color:#606">optimizer</span>:
+  <span style="color:#606">name</span>: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">adam</span></span>
   <span style="color:#606">args</span>:
     <span style="color:#F00;background-color:#FAA">....# the usual args for optimizer</span>
   <span style="color:#606">trainable</span>:  <span style="color:#777"># trainable parameter</span>
@@ -1119,7 +1131,7 @@ Or alternatively, explicitly mention the parts of the model needs to be trained 
 </div>
 </div>
 <div class="paragraph">
-<p>TODO: add support for <code>exclude</code> logic ie. include everything else except the mentioned.</p>
+<p>TODO: add support for <code>exclude</code> logic i.e., include everything else except the mentioned.</p>
 </div>
 <div class="paragraph">
 <p>This feature is supported only in <code>AbstractTransformerNMT</code> and all of its children.
@@ -2059,6 +2071,19 @@ The multi-node spark distributed mode is not tested. (But it might work out of t
 <div class="paragraph">
 <p>RTG model can be served using Flask Server.</p>
 </div>
+<div class="sect2">
+<h3 id="_flask_installation">11.1. Flask Installation</h3>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="commandline">$ pip install rtg[serve]</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Flask has its own set of dependencies unrelated to the core functionality, hence, not installed when installing <code>rtg</code>.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_running">11.2. Running</h3>
 <div class="listingblock">
 <div class="content">
 <pre class="CodeRay highlight"><code data-lang="commandline">$ python -m rtg.serve -h  # rtg-serve
@@ -2162,6 +2187,7 @@ stats = 127.0.0.1:9191</code></pre>
 </div>
 </div>
 </div>
+</div>
 <div class="sect1">
 <h2 id="dev-env">12. Development Environment:</h2>
 <div class="sectionbody">
@@ -2187,13 +2213,6 @@ It can be installed using <code>pip install pytest</code></p>
 </li>
 </ol>
 </div>
-<div class="quoteblock">
-<blockquote>
-<div class="paragraph">
-<p>TODO: add more tests to <code>tests</code> directory.</p>
-</div>
-</blockquote>
-</div>
 <div class="paragraph">
 <p>IDE Setup:</p>
 </div>
@@ -2213,49 +2232,183 @@ It can be installed using <code>pip install pytest</code></p>
 <p>Go to <a href="../rtg/module/"><code>rtg.module</code></a> and create a new <code>.py</code> file</p>
 </li>
 <li>
-<p>Create a class say <code>MyModel</code> that extends either <a href="../rtg/module/<em>init</em>.py"><code>NMTModel</code> or <code>Model</code></a></p>
+<p>Create a class say <code>MyModel</code> that extends either <a href="../rtg/module/<em>init</em>.py"><code>NMTModel</code> or <code>LangModel</code> or <code>Model</code></a> depending on its type</p>
 <div class="olist arabic">
 <ol class="arabic">
 <li>
-<p>it should implement required methods including  <code>make_model(cls, &#8230;&#8203;)</code> and property <code>model_type</code></p>
+<p>it should implement required methods including  <code>make_model(cls, &#8230;&#8203;)</code>, <code>make_trainer</code>  and property <code>model_type</code>; And also <code>make_generator</code> for generation models such as NMT and LangModel</p>
 </li>
 <li>
-<p>Note down the identifier that is returned in <code>model_type</code>; It should be unique</p>
+<p><code>make_model</code> is a model factory, used to create an instance of model. This would be unique to your model.</p>
 </li>
 <li>
-<p>refer to <a href="../rtg/module/tfmnmt.py"><code>tfmnmt</code></a></p>
+<p><code>make_trainer</code> is a trainer factory, used for creating a trainer. Often, one of the existing (e.g. parent) model&#8217;s trainer would be sufficient, but if your model requires a different training strategy or has different training API, then you may want to create a new one.</p>
+</li>
+<li>
+<p><code>generators</code> used by decoder, to run model in eval model</p>
+</li>
+<li>
+<p>refer to <a href="../rtg/module/tfmnmt.py"><code>tfmnmt</code></a> for an example</p>
 </li>
 </ol>
 </div>
 </li>
 <li>
 <p>register the <code>model_type</code>  in the <a href="../rtg/registry.py"><code>registry.py</code></a></p>
+</li>
+</ol>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="python"><span style="color:#080;font-weight:bold">from</span> <span style="color:#B44;font-weight:bold">rtg.registery</span> <span style="color:#080;font-weight:bold">import</span> <span style="color:#B44;font-weight:bold">register</span>, <span style="color:#B44;font-weight:bold">MODEL</span>
+<span style="color:#080;font-weight:bold">from</span> <span style="color:#B44;font-weight:bold">rtg.module</span> <span style="color:#080;font-weight:bold">import</span> <span style="color:#B44;font-weight:bold">NMTModel</span>
+
+<span style="color:#B0B">@register</span>(kind=MODEL,name=<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">'</span><span style="color:#D20">newnmt</span><span style="color:#710">'</span></span>)
+<span style="color:#080;font-weight:bold">class</span> <span style="color:#B06;font-weight:bold">NewNMTModel</span>(NMTModel):
+
+    <span style="color:#B0B">@classmethod</span>
+    <span style="color:#080;font-weight:bold">def</span> <span style="color:#06B;font-weight:bold">make_model</span>(cls, exp, *args, **kwargs):
+        <span style="color:#080;font-weight:bold">pass</span>
+
+    <span style="color:#B0B">@classmethod</span>
+    <span style="color:#080;font-weight:bold">def</span> <span style="color:#06B;font-weight:bold">make_trainer</span>(cls, *args, **kwargs):
+        <span style="color:#080;font-weight:bold">pass</span>
+
+    <span style="color:#B0B">@classmethod</span>
+    <span style="color:#080;font-weight:bold">def</span> <span style="color:#06B;font-weight:bold">make_generator</span>(cls, *args, **kwargs):
+        <span style="color:#080;font-weight:bold">pass</span></code></pre>
+</div>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<div class="title">Note</div>
+</td>
+<td class="content">
+If your model is similar to existing model and match most of its API, you should reuse one of those trainers and generators.
+</td>
+</tr>
+</table>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_migration_from_v0_5_0_or_earlier_to_0_6_0">13. Migration from v0.5.0 or earlier to 0.6.0</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The optimizer block got a big update in 0.5.0, as a result it is not backward compatible.</p>
+</div>
+<div class="listingblock">
+<div class="title">Old config, prior to 0.6.0:</div>
+<div class="content">
+<pre>optim:
+  args:
+    betas:
+    - 0.9
+    - 0.98
+    eps: 1.0e-09
+    label_smoothing: 0.1
+    lr: 0.1
+    warmup_steps: 4000
+    amsgrad: false
+    weight_decay: 0
+    criterion: smooth_kld
+    inv_sqrt: false
+    constant: 2
+  name: ADAM</pre>
+</div>
+</div>
+<div class="listingblock">
+<div class="title">New config</div>
+<div class="content">
+<pre>optimizer:
+  name: adam
+  args:
+    betas:
+    - 0.9
+    - 0.98
+    eps: 1.0e-09
+    lr: 0.1
+
+schedule:
+  name: noam
+  args:
+    constant: 2
+    warmup: 4000
+    model_dim: 512
+
+criterion:
+  name: smooth_kld
+  args:
+    label_smoothing: 0.1</pre>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_learning_rate_schedule">13.1. Learning rate schedule</h3>
 <div class="olist arabic">
 <ol class="arabic">
 <li>
-<p><code>factories</code> used to create an instance of model. This would be unique to your model.</p>
+<p><code>noam</code> with args:</p>
+<div class="ulist">
+<ul>
+<li>
+<p>warmup</p>
 </li>
 <li>
-<p><code>trainers</code> used to decide what trainer to use.</p>
+<p>constant</p>
 </li>
 <li>
-<p><code>generators</code> used by decoder</p>
+<p>model_dim</p>
+</li>
+</ul>
+</div>
 </li>
 <li>
-<p>If your model is similar to existing model and match most of its API, you should reuse one of those
-trainers and generators.</p>
+<p><code>inverse_sqrt</code> with args:</p>
+<div class="ulist">
+<ul>
+<li>
+<p>warmup</p>
 </li>
-</ol>
+<li>
+<p>peark_lr</p>
+</li>
+</ul>
 </div>
 </li>
 </ol>
 </div>
-<div class="quoteblock">
-<blockquote>
-<div class="paragraph">
-<p>TODO: simplify this; use decorators to register directly from class</p>
 </div>
-</blockquote>
+<div class="sect2">
+<h3 id="_criterion">13.2. Criterion</h3>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p><code>cross_entropy</code></p>
+<div class="ulist">
+<ul>
+<li>
+<p>label smoothing not implemented yet, FIXME: support label smoothing</p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p><code>smooth_kld</code></p>
+<div class="ulist">
+<ul>
+<li>
+<p><code>label_smoothing</code></p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>Other (experimental): <code>binary_cross_entropy</code>, <code>triplet_loss</code></p>
+</li>
+</ol>
 </div>
 </div>
 </div>
@@ -2263,7 +2416,7 @@ trainers and generators.</p>
 </div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2020-10-05 18:05:51 -0700
+Last updated 2021-08-05 08:42:51 -0700
 </div>
 </div>
 </body>

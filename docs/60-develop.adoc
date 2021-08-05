@@ -8,12 +8,9 @@ It can be installed using `pip install pytest`
 
 All tests should be run from the root dir of the project.
 
-
 1. Run all tests, with minimal outputs: `python -m pytest`
 2. Run all tests and also see STDOUT/STDERR `python -m pytest -s`
 3.  Run a specific test such as `python -m pytest  -s -k 'test_pipeline_transformer'`
-
-> TODO: add more tests to `tests` directory.
 
 IDE Setup:
 
@@ -23,18 +20,39 @@ IDE Setup:
 === Adding a new model
 
 1. Go to link:../rtg/module/[`rtg.module`] and create a new `.py` file
-2. Create a class say `MyModel` that extends either link:../rtg/module/__init__.py[`NMTModel` or `Model`]
-  . it should implement required methods including  `make_model(cls, ...)` and property `model_type`
-  . Note down the identifier that is returned in `model_type`; It should be unique
-  . refer to link:../rtg/module/tfmnmt.py[`tfmnmt`]
-3. register the `model_type`  in the link:../rtg/registry.py[`registry.py`]
-. `factories` used to create an instance of model. This would be unique to your model.
-. `trainers` used to decide what trainer to use.
-. `generators` used by decoder
-. If your model is similar to existing model and match most of its API, you should reuse one of those
-trainers and generators.
+2. Create a class say `MyModel` that extends either link:../rtg/module/__init__.py[`NMTModel` or `LangModel` or `Model`] depending on its type
+  . it should implement required methods including  `make_model(cls, ...)`, `make_trainer`  and property `model_type`; And also `make_generator` for generation models such as NMT and LangModel
+  . `make_model` is a model factory, used to create an instance of model. This would be unique to your model.
 
-> TODO: simplify this; use decorators to register directly from class
+  . `make_trainer` is a trainer factory, used for creating a trainer. Often, one of the existing (e.g. parent) model's trainer would be sufficient, but if your model requires a different training strategy or has different training API, then you may want to create a new one.
+  . `generators` used by decoder, to run model in eval model
+  . refer to link:../rtg/module/tfmnmt.py[`tfmnmt`] for an example
+3. register the `model_type`  in the link:../rtg/registry.py[`registry.py`]
+
+[source,python]
+----
+from rtg.registery import register, MODEL
+from rtg.module import NMTModel
+
+@register(kind=MODEL,name='newnmt')
+class NewNMTModel(NMTModel):
+
+    @classmethod
+    def make_model(cls, exp, *args, **kwargs):
+        pass
+
+    @classmethod
+    def make_trainer(cls, *args, **kwargs):
+        pass
+
+    @classmethod
+    def make_generator(cls, *args, **kwargs):
+        pass
+
+----
+
+NOTE: If your model is similar to existing model and match most of its API, you should reuse one of those trainers and generators.
+
 
 
 

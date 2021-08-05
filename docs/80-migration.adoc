@@ -49,7 +49,7 @@ criterion:
 ----
 
 
-== Learning rate schedule
+=== Learning rate schedule
 
 . `noam` with args:
   * warmup
@@ -60,7 +60,7 @@ criterion:
   * warmup
   * peark_lr
 
-== Criterion
+=== Criterion
 . `cross_entropy`
    * label smoothing not implemented yet, FIXME: support label smoothing
 . `smooth_kld`
