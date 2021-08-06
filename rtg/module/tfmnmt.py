@@ -839,10 +839,14 @@ class ChunkedLossCompute(SimpleLossFunction):
             if train_mode:
                 dtorch.backward(loss)
         if train_mode:
-            out_grad = _y_feats.grad.data
-            y_feats.backward(gradient=out_grad)
-            if take_step:
-                dtorch.step(optimizer=self.opt)
+            if _y_feats.grad is None:
+                # this might happen if all chunks yield NaN and backward was skipped
+                log.warning(".backward() skipped because there are no gradients")
+            else:
+                out_grad = _y_feats.grad.data
+                y_feats.backward(gradient=out_grad)
+                if take_step:
+                    dtorch.step(optimizer=self.opt)
         if get_out:
             outs = torch.cat(out_chunks, dim=1)
             return total, outs

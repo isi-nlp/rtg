@@ -105,7 +105,7 @@ class DistribTorch:
     def backward(self, loss):
         if torch.isnan(loss):
             log.warning('loss is nan; backward() skipped')
-            return
+            return True
         if self.fp16:
             loss = self._scaler.scale(loss)
             # to apply norm: TODO: unscale gradients ; refer to docs
