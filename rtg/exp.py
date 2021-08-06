@@ -434,20 +434,25 @@ class TranslationExperiment(BaseExperiment):
 
         xt_args = dict(no_split_toks=args.get('no_split_toks'),
                        char_coverage=args.get('char_coverage', 0))
+        min_co_ev = args.get('min_co_ev', None)
         if args.get('shared_vocab'):  # shared vocab
             corpus = [args[key] for key in ['train_src', 'train_tgt', 'mono_src', 'mono_tgt']
                       if args.get(key)]
             self.shared_field = self._make_vocab("shared", self._shared_field_file, args['pieces'],
-                                                 args['max_types'], corpus=corpus, **xt_args)
+                                                 args['max_types'], corpus=corpus,
+                                                 min_co_ev=min_co_ev, **xt_args)
         else:  # separate vocabularies
             src_corpus = [args[key] for key in ['train_src', 'mono_src'] if args.get(key)]
+            src_min_co_ev = args.get('src_min_co_ev', min_co_ev)
+            tgt_min_co_ev = args.get('tgt_min_co_ev', min_co_ev)
             self.src_field = self._make_vocab("src", self._src_field_file, args['pieces'],
-                                              args['max_src_types'], corpus=src_corpus, **xt_args)
-
+                                              args['max_src_types'], corpus=src_corpus,
+                                              min_co_ev=src_min_co_ev, **xt_args)
             # target vocabulary
             tgt_corpus = [args[key] for key in ['train_tgt', 'mono_tgt'] if args.get(key)]
             self.tgt_field = self._make_vocab("src", self._tgt_field_file, args['pieces'],
-                                              args['max_tgt_types'], corpus=tgt_corpus, **xt_args)
+                                              args['max_tgt_types'], corpus=tgt_corpus,
+                                              min_co_ev=tgt_min_co_ev, **xt_args)
 
         train_file = self.train_db
 
