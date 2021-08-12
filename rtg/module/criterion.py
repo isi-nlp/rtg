@@ -5,6 +5,7 @@
 
 import torch
 from torch import nn
+from torch import Tensor
 import torch.nn.functional as F
 import abc
 from rtg.registry import CRITERION, register
@@ -25,25 +26,203 @@ class Criterion(nn.Module, abc.ABC):
         self.input_type = input_type
 
 
+def smooth_labels(labels, n_labels, smooth_rate, weight=None):
+    """
+    :param labels: labels [N] where each item is in range {0, 1, 2,... C-1}
+    :param n_labels: total number of classes
+    :param smooth_rate: the magnitude of smoothing
+    :param weight: distribute epsilon as per the weights
+    :return:
+    """
+    assert len(labels.shape) == 1
+    assert labels.max() < n_labels
+    assert 0 <= labels.min()
+    assert 0 <= smooth_rate <= 1
+
+    N = len(labels)
+    labels = labels.view(N, 1)
+    device = labels.device
+    if weight is None:
+        # take out epsilon and distribute evenly to all but one
+        fill_value = smooth_rate / (n_labels - 1)
+        # expand [N] -> [N, C]
+        full = torch.full([N, n_labels], fill_value=fill_value, dtype=torch.float, device=device)
+        full.scatter_(1, labels.type(torch.int64), 1 - smooth_rate)
+    else:
+        assert len(weight) == n_labels
+        weight = weight.to(device)
+        full = (weight * smooth_rate).expand(N, n_labels)  # [C] -> [N, C]
+        peaks = torch.full([N, 1], fill_value=1 - smooth_rate, dtype=torch.float, device=device)
+        #peaks = torch.tensor(1 - epsilon, device=device).expand(N, 1)  # [N, 1]
+        full.scatter_add_(1, labels, peaks)  # inplace add
+    return full
+
+
+
+def dense_cross_entropy(input: Tensor, target: Tensor, reduction=None, mask_out=None, weight=None,
+                        input_type='logits') -> Tensor:
+    """
+    :param input: input tensor, see input_type
+    :param target: probability distribution of labels
+    :param reduction: what reduction to perform
+    :param mask_out: optional boolean tensor same shape as input and target.
+        True positions results in exclusion of item-class loss from total loss
+    :param weight: optional float tensor, whose items are multiplied with item-class before
+        calling reduce operations on result. shape of weight should be broadcastable to input.
+        See https://pytorch.org/docs/stable/notes/broadcasting.html
+        e.g. input is [N, C] implies batch has N items and C classes
+          weight of [N, C] => weight for each item-class pair
+          weight of [N, 1] => weight for each item, all classes have same weight
+          weight of [1, C] => weight for each class, all items have same weight
+    :param: input_type: to specify what kind of values are in tensor.
+             Valid options are: logits, probs, log_probs
+    :return:
+    """
+    assert reduction in ('per_item', 'per_class', 'none', None, 'sum', 'micro', 'macro')
+    N, C = input.shape
+    #target is dense; i.e not one-hot
+    assert input.shape == target.shape,  f'input shape: {input.shape}, target is {target.shape}'
+    if mask_out is not None:
+        assert mask_out.shape in [(N, C), (1, C), (N, 1)],\
+            f'input: {input.shape} and mask_out: {mask_out.shape} are not broadcastable'
+    if weight is not None:
+        assert weight.shape in [(N, C), (1, C), (N, 1)],\
+            f'input: {input.shape} weight: {weight.shape} are not broadcastable'
+
+    if input_type == 'log_probs':
+        log_probs = input
+    elif input_type == 'probs':
+        log_probs = input.log()   # TODO: handle log zero
+    elif input_type == 'logits':
+        log_probs = input.log_softmax(dim=1)
+    else:
+        raise Exception(f'input_type={input_type} unknown; know: logits, probs, log_probs')
+
+    tot_items, tot_classes = N, C
+    #[N, C] :  -y_c * log(p_c)
+    table = -torch.mul(target, log_probs)  # loss per item-class
+    if mask_out is not None:   # overwrite positions with mask=True to zero
+        table.masked_fill_(mask_out, value=0.0)
+        if mask_out.shape == (N, 1): # [N, 1] => sum items are excluded e.g. pad tokens
+            tot_items -= mask_out.sum()
+    if weight is not None:
+        table.mul_(weight) # assumption: weight is broadcastable
+
+    if reduction in (None, 'none'):
+        return table
+    elif reduction == 'per_item':
+        return table.sum(dim=1)
+    elif reduction == 'per_class':
+        return table.sum(dim=0)
+    elif reduction == 'sum':
+        return table.sum()
+    elif reduction == 'micro':
+        # micro: first get loss per_item (get rid of class dim), and average over items
+        return table.sum(dim=1).sum() / tot_items
+    elif reduction == 'macro':
+        # micro: first get loss per_class, normalize as per their frequencies and then sum
+        eps = 1e-9   # to avoid divide by zero
+        target_per_class = target.sum(dim=0) + eps
+        input_per_class = table.sum(dim=0)
+        per_class_normalized = input_per_class / target_per_class
+        return per_class_normalized.sum()
+    else:
+        raise ValueError(f'reduce={reduction} not supported')
+
+
+
 @register(kind=CRITERION, name="cross_entropy")
 class CrossEntropy(Criterion):
 
-    def __init__(self, pad_idx: int):
+    def __init__(self, pad_idx: int, label_smoothing=0., reducion='micro'):
         super().__init__(input_type='logits', pad_idx=pad_idx)
-        self.xent_loss = nn.CrossEntropyLoss(reduction='none')
+        assert 0 <= label_smoothing <= 1
+        self.label_smoothing = label_smoothing
+        assert reducion in ('micro', 'macro')
+        self.reduction = reducion
+        if reducion == 'macro':
+            assert self.label_smoothing > 0., 'reduce=macro requires label_smoothing > 0'
+        #self.xent_loss = nn.CrossEntropyLoss(reduction='none')
 
-    def forward(self, logits, targets, mask_pad=True):
-        # logits: [B x V] targets: [B]
-        assert targets.shape[0] == logits.shape[0]
-
-        per_tok_loss = self.xent_loss(logits, targets)
+    def forward(self, inputs, targets, mask_pad=True):
+        # logits: [N x C] targets: [N]
+        N, C = inputs.shape
+        assert targets.shape[0] == inputs.shape[0]
+        mask_out = None
         if mask_pad:
-            pad_mask = targets == self.pad_idx
-            per_tok_loss.masked_fill_(mask=pad_mask, value=0.)
+            mask_out = (targets == self.pad_idx).unsqueeze(1) # [N] -> [N, 1]
+        if self.label_smoothing > 0:
+            dense_targets = smooth_labels(labels=targets, n_labels=C, smooth_rate=self.label_smoothing)
+        else:
+            dense_targets = torch.full([N, C], fill_value=0.0, dtype=torch.float,
+                                       device=inputs.device)
+            dense_targets.scatter_(1, targets.type(torch.int64), 1.0)
 
-        #num_toks = batch_size - pad_mask.sum()
-        #mean_loss = per_tok_loss.sum() / num_toks
-        return per_tok_loss
+        weight = self.get_weight(inputs, targets)
+        loss = dense_cross_entropy(input=inputs, target=dense_targets, reduction=self.reduction,
+                                   weight=weight, mask_out=mask_out, input_type=self.input_type)
+        return loss
+
+    def get_weights(self, inputs, targets):
+        return None  # nothing interesting here yet
+
+
+class MaskableSmoothableCriterion(Criterion):
+
+    def __init__(self, pad_idx, input_type='logits', label_smoothing=0.0, reduction='micro'):
+        super(MaskableSmoothableCriterion, self).__init__(pad_idx=pad_idx, input_type=input_type)
+        self.label_smoothing = label_smoothing
+        self.reduction = reduction
+
+    def forward(self, inputs, targets, mask_pad=True, reduce=None):
+        N, C = inputs.shape
+        reduce = reduce or self.reduction
+        assert targets.shape[0] == inputs.shape[0]
+        mask_out = None
+        if mask_pad:
+            mask_out = (targets == self.pad_idx).unsqueeze(1)  # [N] -> [N, 1]
+        if self.label_smoothing > 0.0:
+            dense_targets = smooth_labels(labels=targets, n_labels=C, smooth_rate=self.label_smoothing)
+        else:
+            dense_targets = torch.full([N, C], fill_value=0.0, dtype=torch.float,
+                                       device=inputs.device)
+            dense_targets.scatter_(1, targets.type(torch.int64), 1.0)
+        loss = dense_cross_entropy(input=inputs, target=targets, reduction=reduce, mask_out=mask_out,
+                                   input_type=self.input_type)
+        return loss
+
+
+@register(kind=CRITERION, name="focal_loss")
+class FocalLoss(Criterion):
+
+    def __init__(self, pad_idx: int, label_smoothing=0., reduction='micro', gamma=0.0):
+        super(FocalLoss, self).__init__(pad_idx=pad_idx, input_type='probs')
+        self.gamma = gamma
+        self.label_smoothing = label_smoothing
+        self.reduction = reduction
+        assert gamma >= 0.0
+
+    def forward(self, inputs, targets, mask_pad=True):
+        probs = inputs
+        N, C = probs.shape
+        assert targets.shape[0] == probs.shape[0]
+        mask_out = None
+        if mask_pad:
+            mask_out = (targets == self.pad_idx).unsqueeze(1)  # [N] -> [N, 1]
+        if self.label_smoothing > 0:
+            dense_targets = smooth_labels(labels=targets, n_labels=C, smooth_rate=self.label_smoothing)
+        else:
+            dense_targets = torch.full([N, C], fill_value=0.0, dtype=torch.float,
+                                       device=probs.device)
+            dense_targets.scatter_(1, targets.type(torch.int64), 1.0)
+        weight = None
+        if self.gamma > 0.0:
+            probs = inputs.softmax(dim=1)
+            weight = (1 - probs).pow(self.gamma)
+
+        loss = dense_cross_entropy(input=probs, target=dense_targets, reduction=self.reduction,
+                                   weight=weight, mask_out=mask_out, input_type=self.input_type)
+        return loss
 
 
 @register(kind=CRITERION, name="binary_cross_entropy")
