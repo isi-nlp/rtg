@@ -97,7 +97,56 @@ stats = 127.0.0.1:9191
 
 Note that `<path-to-exp-dir>` is expected to be a valid path to Experiment dir, it maybe obtained using `rtg-export` tool.
 
+== Pre-process and post-process
 
+The input/source text given to the API must be pre-processed in the same settings as the preprocessing during training phase. So, we offer configurations to match preprocessing:
 
+* `src_pre_proc`:  List of transformations to be used on source text before giving to model (e.g. tokenizer, lowercase)
+* `tgt_pre_proc`: List of transformations to be used on target text before giving to model (e.g. tokenizer, lowercase)
+* `tgt_post_proc`: List of transformations to be used on target text produced by model (e.g. detokenizer, removal of unk)
 
+The following transformations are built into RTG, so you may simply use their name:
+[source,python]
+----
+transformers  = {
+    'no_op': lambda x: x,
+    'space_tok': lambda x: ' '.join(x.strip().split()),  # removes extra white spaces
+    'space_detok': lambda toks: ' '.join(toks),
+    'moses_tok': partial(MosesTokenizer().tokenize, escape=False, return_str=True,
+                         aggressive_dash_splits=True,
+                         protected_patterns=MosesTokenizer.WEB_PROTECTED_PATTERNS),
+    'moses_detok': partial(MosesDetokenizer().detokenize, return_str=True, unescape=True),
+    'moses_truecase': partial(MosesTruecaser().truecase, return_str=True),
+    'lowercase': lambda x: x.lower(),
+    'drop_unk': lambda x: x.replace('<unk>', ''),
+    'html_unescape': html.unescape,
+    'punct_norm': MosesPunctNormalizer().normalize
+}
+----
+When no arguments are given to `{src_pre,tgt_pre,tgt_prop}_proc` are missing, we use the same sensible defaults.
+[source, yaml]
+----
+src_pre_proc:
+  - html_unescape
+  - punct_norm
+  - moses_tok
+tgt_post_proc:
+  - moses_detok
+  - drop_unk
+----
 
+You may also use shell command line, including unix pipes, by prefixing your command with "#!". In addition, you may mix shell commands with known (pythonic) transforms. Example:
+
+[source,yaml]
+----
+prep:
+  src_pre_proc:
+    - "#!/path/to/normalizer.perl | /path/to/tokenizer.py --lang deu"
+    - lowercase
+  tgt_post_proc:
+    - drop_unk
+    - moses_detok
+----
+
+NOTE:
+  `{src,tgt}_pre_proc` and `tgt_post_proc` are only used by REST API as of now. rtg.decode and rtg.prep do not yet to use these transformer.

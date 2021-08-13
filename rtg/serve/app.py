@@ -4,16 +4,75 @@ Serves an RTG model using Flask HTTP server
 """
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 
-from flask import Flask, request, jsonify, render_template, url_for, send_from_directory, Blueprint
+from flask import Flask, request, jsonify, render_template, send_from_directory, Blueprint
 import torch
 import os
-from html import unescape
+import html
 from sacremoses import MosesTokenizer, MosesDetokenizer, MosesPunctNormalizer, MosesTruecaser
+from functools import partial
 
 from rtg import TranslationExperiment as Experiment
 from rtg.module.decoder import Decoder
+from rtg.utils import shell_pipe
+
 
 torch.set_grad_enabled(False)
+
+transformers  = {
+    'no_op': lambda x: x,
+    'space_tok': lambda x: ' '.join(x.strip().split()),  # removes extra white spaces
+    'space_detok': lambda toks: ' '.join(toks),
+    'moses_tok': partial(MosesTokenizer().tokenize, escape=False, return_str=True,
+                         aggressive_dash_splits=True,
+                         protected_patterns=MosesTokenizer.WEB_PROTECTED_PATTERNS),
+    'moses_detok': partial(MosesDetokenizer().detokenize, return_str=True, unescape=True),
+    'moses_truecase': partial(MosesTruecaser().truecase, return_str=True),
+    'lowercase': lambda x: x.lower(),
+    'drop_unk': lambda x: x.replace('<unk>', ''),
+    'html_unescape': html.unescape,
+    'punct_norm': MosesPunctNormalizer().normalize
+}
+
+
+class TextTransform:
+
+    def __init__(self, chain):
+        self.chain = chain
+        #self.pipeline = [transformers[key] for key in chain]
+
+    def __call__(self, text):
+        res = text
+        for stage in self.chain:
+            res = stage(res)
+        return res
+
+    @classmethod
+    def make(cls, names):
+        chain = []
+        for name in names:
+            if name.startswith("#!"): # shell
+                cmd_line = name[2:].strip()
+                chain.append(partial(shell_pipe, cmd_line=cmd_line))
+            elif name in transformers:
+                chain.append(transformers[name])
+            else:
+                raise Exception(f'Text transformer "{name}" unknown; Known: {transformers.keys()}'
+                                f'\n Also, you may use shell commandline prefixing the hasbang "#!"'
+                                f'\nExample: "#!tokenizer.perl"'
+                                f'\n    "#!/path/to/tokenizer.perl -en | sed \'/<old>/<new>/\'"')
+
+    # preprocessor used for 500 Eng
+    @classmethod
+    def recommended(cls) -> ('TextTransform', 'TextTransform'):
+        pre_proc = cls.make(names=['html_unescape', 'punct_norm', 'moses_tok'])
+        post_proc = cls.make(names=['moses_detok', 'drop_unk'])
+        return pre_proc, post_proc
+
+    @classmethod
+    def basic(cls) -> ('TextTransform', 'TextTransform'):
+        pre_proc = cls.make(names=['space_tok'])
+        post_proc = cls.make(names=['space_detok', 'drop_unk'])
+        return pre_proc, post_proc
 
 
 class RtgIO:
@@ -35,7 +94,7 @@ class RtgIO:
     def pre_process(self, text):
         # Any pre-processing on input
         if self.html_unesc:
-            text = unescape(text)
+            text = html.unescape(text)
         if self.punct_normalize:
             text = self.punct_normr.normalize(text)
         if self.tokenize:
@@ -57,12 +116,12 @@ class RtgIO:
         #    text = self.true_caser.truecase(text, return_str=True)
         return text
 
+
 exp = None
 app = Flask(__name__)
 app.config['JSON_AS_ASCII'] = False
 
-bp = Blueprint('burritos', __name__,
-                        template_folder='templates')
+bp = Blueprint('burritos', __name__, template_folder='templates')
 
 @bp.route('/')
 def index():
@@ -78,7 +137,13 @@ def attach_translate_route(cli_args):
     exp = Experiment(cli_args.pop("exp_dir"), read_only=True)
     dec_args = exp.config.get("decoder") or exp.config["tester"].get("decoder", {})
     decoder = Decoder.new(exp, ensemble=dec_args.pop("ensemble", 1))
-    dataprep = RtgIO(exp=exp)
+    src_prep, tgt_postp = TextTransform.recommended()
+    src_prep_chain = exp.config.get('prep', {}).get('src_pre_proc', None)
+    tgt_postp_chain = exp.config.get('prep', {}).get('tgt_post_proc', None)
+    if src_prep_chain:
+        src_prep = TextTransform.make(names=src_prep_chain)
+    if tgt_postp_chain:
+        tgt_postp = TextTransform.make(names=tgt_postp_chain)
 
     @bp.route("/translate", methods=["POST", "GET"])
     def translate():
@@ -92,11 +157,11 @@ def attach_translate_route(cli_args):
                 sources = [sources]
         if not sources:
             return "Please submit parameter 'source'", 400
-        sources = [dataprep.pre_process(sent) for sent in sources]
+        sources = [src_prep(sent) for sent in sources]
         translations = []
         for source in sources:
             translated = decoder.decode_sentence(source, **dec_args)[0][1]
-            translated = dataprep.post_process(translated.split())
+            translated = tgt_postp(translated.split())
             translations.append(translated)
 
         res = dict(source=sources, translation=translations)

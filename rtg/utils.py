@@ -14,6 +14,7 @@ from typing import Tuple
 import resource
 import sys
 import numpy as np
+import subprocess
 
 
 # Size of each element in tensor
@@ -228,3 +229,17 @@ def maybe_compress(arr, frugal=False):
     else:
         # fall back to basic list of python
         return np.array(arr, dtype=object)
+
+
+def shell_pipe(cmd_line, input, cwd=None):
+    with subprocess.Popen(cmd_line, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                          shell=True, text=True, cwd=cwd) as proc:
+        try:
+            proc.stdin.write(f'{input}')
+            proc.stdin.close()
+            proc.wait()
+            output = proc.stdout.read()
+            proc.stdout.close()
+            return output
+        finally:
+            proc.terminate()
