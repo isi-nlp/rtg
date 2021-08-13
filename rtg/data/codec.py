@@ -13,7 +13,6 @@ from rtg import log, yaml
 from sentencepiece import SentencePieceProcessor, SentencePieceTrainer
 
 from rtg.utils import IO
-from functools import lru_cache
 
 Array = np.ndarray
 
@@ -27,13 +26,16 @@ class Field(metaclass=ABCMeta):
     reserved_toks = [pad_tok, unk_tok, bos_tok, eos_tok, cls_tok]
     reserved_idxs = [pad_idx, unk_idx, bos_idx, eos_idx, cls_idx]
 
+    def __init__(self):
+        self.class_names = None
+
     @classmethod
     def reserved(cls):
         return list(zip(cls.reserved_toks, cls.reserved_idxs))
 
     @abstractmethod
     def encode_as_ids(self, text, add_bos, add_eos, split_ratio: Optional[float] = 0.) -> Array:
-        pass
+        raise NotImplementedError
 
     @abstractmethod
     def decode_ids(self, ids, trunc_eos):
@@ -43,19 +45,19 @@ class Field(metaclass=ABCMeta):
         :param trunc_eos: skip everything after first EOS token in sequence
         :return:
         """
-        pass
+        raise NotImplementedError
 
     @abstractmethod
     def tokenize(self, text):
-        pass
+        raise NotImplementedError
 
     @abstractmethod
     def detokenize(self, tokens):
-        pass
+        raise NotImplementedError
 
     @abstractmethod
     def __len__(self):
-        pass
+        raise NotImplementedError
 
     @staticmethod
     @abstractmethod
@@ -71,7 +73,7 @@ class Field(metaclass=ABCMeta):
         :param no_split_toks: Don't split these tokens
         :return:
         """
-        pass
+        raise NotImplementedError
 
     def shrink_vocab(self, files: List, min_freq:int, save_at: Path) -> List[int]:
         """
@@ -94,6 +96,7 @@ class SPField(SentencePieceProcessor, Field):
     def __init__(self, path: str):
         super().__init__()
         assert self.load(path)
+        self.class_names = [self.IdToPiece(i) for i in range(len(self))]
 
     def encode_as_ids(self, text: str, add_bos=False, add_eos=False, split_ratio=0.) -> Array:
         assert split_ratio == 0, 'SentencePiece doesnt support SWR, ' \
@@ -175,9 +178,11 @@ class NLField(Field):
         self.codec: EncoderScheme = load_scheme(path)
         self.vocab: List[Type] = self.codec.table
         log.info(f'Loaded {len(self.codec)} types from {path}')
-        for tok, idx in self.reserved():  # reserved are reserved
-            # Todo swap it with nlcodec.Reserved
-            assert self.vocab[idx].name == tok
+        if self.codec.name not in ('class',):  # except in classification field
+            for tok, idx in self.reserved():  # reserved are reserved
+                # Todo swap it with nlcodec.Reserved
+                assert self.vocab[idx].name == tok
+        self.class_names = [t.name for t in self.vocab]
 
     def encode_as_ids(self, text: str, add_bos=False, add_eos=False, split_ratio=0.) -> Array:
         if self.codec.name == "bpe" and split_ratio > 0:
@@ -213,7 +218,7 @@ class NLField(Field):
     @classmethod
     def train(cls, model_type: str, vocab_size: int, model_path: str, files: List[str],
               no_split_toks: Optional[List[str]] = None, char_coverage: float = 0,
-              dedup=True, spark=None):
+              dedup=True, spark=None, min_co_ev=None):
         """
         :param model_type: word, char, bpe
         :param vocab_size: vocabulary size
@@ -221,11 +226,14 @@ class NLField(Field):
         :param files: text for creating vcabulary
         :param no_split_toks:
         :param char_coverage: character coverage (0, 1]. value <= 0 => default coverage
+        :param min_co_ev: (for BPE only) minimum co-evidence for subword merges
         :return:
         """
         assert not no_split_toks, 'not supported in nlcodec yet'
         from nlcodec import learn_vocab, term_freq
         kwargs = dict(char_coverage=char_coverage) if char_coverage > 0 else {}
+        if min_co_ev:
+            kwargs["min_co_ev"] = min_co_ev
         if not spark:
             inp = IO.get_liness(*files)
         else:
@@ -286,6 +294,7 @@ class PretrainMatchField(Field):
             assert self.tok2idx[tok] == idx
             assert self.idx2tok[idx] == tok
         self.new_idx2old_idx = {new_idx: old_idx for tok, (new_idx, old_idx) in data['mapping'].items()}
+        self.class_names = self.idx2tok
 
     @classmethod
     def load_hub_model(cls, model_id):

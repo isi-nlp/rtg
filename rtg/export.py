@@ -5,7 +5,7 @@
 from rtg.exp import TranslationExperiment as Experiment
 from dataclasses import dataclass
 from pathlib import Path
-from rtg.module.decoder import instantiate_model, Decoder
+from rtg.module.decoder import Decoder
 from rtg import log, device, yaml
 from rtg.utils import IO
 import datetime
@@ -39,12 +39,12 @@ class ExperimentExporter:
         chkpt_state = torch.load(model_paths[0], map_location=device)
         if ensemble > 1:
             log.info("Averaging them ...")
-            avg_state = Decoder.average_states(model_paths)
+            avg_state = self.exp.average_states(model_paths)
             chkpt_state = dict(model_state=avg_state,
                                model_type=chkpt_state['model_type'],
                                model_args=chkpt_state['model_args'])
         log.info("Instantiating it ...")
-        model = instantiate_model(checkpt_state=chkpt_state, exp=self.exp)
+        model = self.exp.load_model_with_state(checkpt_state=chkpt_state)
         log.info(f"Exporting to {target}")
         to_exp = Experiment(target, config=self.exp.config)
         to_exp.persist_state()
@@ -79,7 +79,6 @@ class ExperimentExporter:
 
         if self.exp._trained_flag.exists():
             IO.copy_file(self.exp._trained_flag, to_exp._trained_flag)
-        
 
 
 def add_boolean(parser, name, help, dest=None, default=True):

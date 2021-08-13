@@ -17,6 +17,7 @@ from tqdm import tqdm
 
 from rtg import device, log, TranslationExperiment as Experiment
 from rtg.utils import get_my_args
+from rtg.utils import get_my_args
 from rtg.data.dataset import BatchIterable
 from rtg.module import NMTModel
 from rtg.module.trainer import TrainerState, SteppedTrainer, EarlyStopper
