@@ -39,7 +39,7 @@ setuptools.setup(
         'tensorboard >= 2.2.1',
         'tqdm >= 4.45.0',
         'mosestokenizer >= 1.0.0',
-        'nlcodec >= 0.3.1',
+        'nlcodec >= 0.4.0-dev',
         'torch >= 1.6.0',
         'sacremoses-xt >= 0.0.44',
         'portalocker >= 2.0.0',

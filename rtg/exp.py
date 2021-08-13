@@ -9,11 +9,14 @@ import time
 
 import numpy as np
 import torch
+import hashlib
+import portalocker
 
-from rtg import log, yaml
+from rtg import log, yaml, device
 from rtg.data.dataset import (TSVData, BatchIterable, LoopingIterable, SqliteFile, GenerativeBatchIterable)
 from rtg.data.codec import Field, SPField, NLField, PretrainMatchField
 from rtg.utils import IO, line_count
+
 
 seeded = False
 
@@ -73,6 +76,10 @@ class BaseExperiment:
 
         self.shared_field = self.Field(str(self._shared_field_file)) \
             if self._shared_field_file.exists() else None
+
+    @property
+    def problem_type(self):
+        raise NotImplementedError
 
     def maybe_seed(self):
         global seeded
@@ -195,7 +202,6 @@ class BaseExperiment:
         :return: Tuple[Optional[Path], step_num:int]
         """
         models = self.list_models(sort=sort, desc=desc)
-        print(models)
         if models:
             name = models[0].name.replace('.pkl', '').replace('.txt.gz', '')
             step, train_score, valid_score = name.split('_')[-3:]
@@ -259,6 +265,111 @@ class BaseExperiment:
                 return p
         return None
 
+    def pre_process(self, args=None, force=False):
+        if self.has_prepared() and not force:
+            log.warning("Already prepared")
+            return
+        args = args if args else self.config['prep']
+        if 'parent' in self.config:
+            self.inherit_parent()
+
+        if 'same_data' in args:
+            data = Path(args['same_data']) / 'data'
+            assert data.exists()
+            log.info(f"Reusing prepared data dir from {data}")
+            if self.data_dir.exists():
+                if self.data_dir.is_symlink():
+                    self.data_dir.unlink()
+                else:
+                    self.data_dir.rename('data.bak')
+            self.data_dir.symlink_to(data.resolve(), target_is_directory=True)
+            self.reload()
+            self._prepared_flag.touch()
+
+    def inherit_parent(self):
+        raise NotImplemented()
+
+    def train(self, args=None):
+        raise NotImplementedError()
+
+    def reload(self):
+        exp = type(self)(self.work_dir, read_only=self.read_only)
+        self.__dict__ = exp.__dict__
+
+    @classmethod
+    def _checkpt_to_model_state(cls, checkpt_path: Union[str, Path]):
+        state = torch.load(checkpt_path, map_location=device)
+        if 'model_state' in state:
+            state = state['model_state']
+        return state
+
+    @classmethod
+    def average_states(cls, model_paths: List[Path]):
+        assert model_paths, 'at least one model checkpoint should be given. Check your directory'
+        for i, mp in enumerate(model_paths):
+            next_state = cls._checkpt_to_model_state(mp)
+            if i < 1:
+                state_dict = next_state
+                key_set = set(state_dict.keys())
+            else:
+                # noinspection PyUnboundLocalVariable
+                assert key_set == set(next_state.keys())
+                for key in key_set:     # Running average
+                    state_dict[key] = (i*state_dict[key] + next_state[key]) / (i + 1)
+        return state_dict
+
+    def maybe_ensemble_state(self, model_paths: Optional[List[str]], ensemble: int = 1):
+        if model_paths and len(model_paths) == 1:
+            log.info(f" Restoring state from requested model {model_paths[0]}")
+            return self._checkpt_to_model_state(model_paths[0])
+        elif not model_paths and ensemble <= 1:
+            model_path, _ = self.get_best_known_model()
+            log.info(f" Restoring state from best known model: {model_path}")
+            return self._checkpt_to_model_state(model_path)
+        else:
+            if not model_paths:
+                # Average last n models
+                model_paths = self.list_models(sort='step', desc=True)[:ensemble]
+            digest = hashlib.md5(";".join(str(p) for p in model_paths).encode('utf-8')).hexdigest()
+            cache_file = self.model_dir / f'avg_state{len(model_paths)}_{digest}.pkl'
+            lock_file = cache_file.with_suffix('.lock')
+            MAX_TIMEOUT = 1 * 60 * 60  # 1 hour
+            with portalocker.Lock(lock_file, 'w', timeout=MAX_TIMEOUT) as fh:
+                # check if downloaded by  other parallel process
+                if lock_file.exists() and cache_file.exists():
+                    log.info(f"Cache exists: reading from {cache_file}")
+                    state = self._checkpt_to_model_state(cache_file)
+                else:
+                    log.info(f"Averaging {len(model_paths)} model states :: {model_paths}")
+                    state = self.average_states(model_paths)
+                    if len(model_paths) > 1:
+                        log.info(f"Caching the averaged state at {cache_file}")
+                        torch.save(state, str(cache_file))
+            return state
+        
+    def load_model(self, model_paths=None, ensemble=1):
+        from rtg.registry import factories
+        factory = factories[self.model_type]
+        model = factory(exp=self, **self.model_args)[0]
+        state = self.maybe_ensemble_state(model_paths=model_paths, ensemble=ensemble)
+        errors = model.load_state_dict(state)
+        log.info(f"{errors}")
+        return model
+
+    def load_model_with_state(self, checkpt_state):
+        from rtg.registry import factories
+        chkpt = checkpt_state
+        state = chkpt['model_state']
+        model_type = chkpt['model_type']
+        model_args = chkpt['model_args']
+        # Dummy experiment wrapper
+        factory = factories[model_type]
+        model = factory(exp=self, **model_args)[0]
+        errors = model.load_state_dict(state)
+        log.info(f"{errors}")
+        log.info(f"Successfully restored the model state of : {model_type}")
+        return model
+
 
 class TranslationExperiment(BaseExperiment):
 
@@ -289,6 +400,11 @@ class TranslationExperiment(BaseExperiment):
             self.mono_valid_tgt = self.data_dir / 'mono.valid.tgt.gz'
 
         self.parent_model_state = self.data_dir / 'parent_model_state.pt'
+
+    @property
+    def problem_type(self):
+        from rtg.registry import ProblemType
+        return ProblemType.TRANSLATION
 
     def reload_vocabs(self):
         self.src_field, self.tgt_field, self.shared_field = [
@@ -352,7 +468,8 @@ class TranslationExperiment(BaseExperiment):
         TSVData.write_parallel_recs(samples, self.samples_file)
 
     def _make_vocab(self, name: str, vocab_file: Path, model_type: str, vocab_size: int,
-                    corpus: List, no_split_toks: List[str] = None, char_coverage=0) -> Field:
+                    corpus: List, no_split_toks: List[str] = None, char_coverage=0,
+                    min_co_ev=None) -> Field:
         """
         Construct vocabulary file
         :param name: name : src, tgt or shared -- for the sake of logging
@@ -375,8 +492,11 @@ class TranslationExperiment(BaseExperiment):
 
         flat_uniq_corpus = list(flat_uniq_corpus)
         log.info(f"Going to build {name} vocab from files")
+        xt_args = {}
+        if min_co_ev:
+            xt_args["min_co_ev"] = min_co_ev
         return self.Field.train(model_type, vocab_size, str(vocab_file), flat_uniq_corpus,
-                                no_split_toks=no_split_toks, char_coverage=char_coverage)
+                                no_split_toks=no_split_toks, char_coverage=char_coverage, **xt_args)
 
     def pre_process_mono(self, args):
         xt_args = dict(no_split_toks=args.get('no_split_toks'),
@@ -453,7 +573,10 @@ class TranslationExperiment(BaseExperiment):
             args[src_key], args[tgt_key], args['truncate'], args['src_len'], args['tgt_len'],
             src_tokenizer=partial(self.src_vocab.encode_as_ids, split_ratio=split_ratio),
             tgt_tokenizer=partial(self.tgt_vocab.encode_as_ids, split_ratio=split_ratio))
-        if any([out_file.name.endswith(suf) for suf in ('.db', '.db.tmp')]):
+        if any([out_file.name.endswith(suf) for suf in ('.nldb', '.nldb.tmp')]):
+            from nlcodec.db import MultipartDb
+            MultipartDb.create(path=out_file, recs=parallel_recs, field_names=('x', 'y'))
+        elif any([out_file.name.endswith(suf) for suf in ('.db', '.db.tmp')]):
             SqliteFile.write(out_file, records=parallel_recs)
         else:
             TSVData.write_parallel_recs(parallel_recs, out_file)
@@ -591,7 +714,7 @@ class TranslationExperiment(BaseExperiment):
 
     def inherit_parent(self):
         parent = self.config['parent']
-        parent_exp = TranslationExperiment(parent['experiment'], read_only=True)
+        parent_exp = type(self)(parent['experiment'], read_only=True)
         log.info(f"Parent experiment: {parent_exp.work_dir}")
         parent_exp.has_prepared()
         vocab_sepc = parent.get('vocab')
@@ -626,8 +749,7 @@ class TranslationExperiment(BaseExperiment):
             ensemble = model_sepc.get('ensemble', 1)
             model_paths = parent_exp.list_models(sort='step', desc=True)[:ensemble]
             log.info(f"Averaging {len(model_paths)} checkpoints of parent model: \n{model_paths}")
-            from rtg.module.decoder import Decoder
-            avg_state = Decoder.average_states(model_paths=model_paths)
+            avg_state = self.average_states(model_paths=model_paths)
             log.info(f"Saving parent model's state to {self.parent_model_state}")
             torch.save(avg_state, self.parent_model_state)
 
@@ -664,36 +786,16 @@ class TranslationExperiment(BaseExperiment):
 
 
     def pre_process(self, args=None, force=False):
+        args = args or self.config['prep']
+        super(TranslationExperiment, self).pre_process(args, )
         if self.has_prepared() and not force:
             log.warning("Already prepared")
             return
-        args = args if args else self.config['prep']
-        if 'parent' in self.config:
-            self.inherit_parent()
 
-        if 'same_data' in args:
-            data = Path(args['same_data']) / 'data'
-            assert data.exists()
-            log.info(f"Reusing prepared data dir from {data}")
-            if self.data_dir.exists():
-                if self.data_dir.is_symlink():
-                    self.data_dir.unlink()
-                else:
-                    self.data_dir.rename('data.bak')
-            self.data_dir.symlink_to(data.resolve(), target_is_directory=True)
-            self.reload_vocabs()
+        if self._unsupervised:
+            self.pre_process_mono(args)
         else:
-            vocabs = args.get('vocabs')
-            if vocabs:
-                parent = TranslationExperiment(vocabs, read_only=True)
-                parent.copy_vocabs(self)
-                self.shared_field, self.src_field, self.tgt_field = [
-                    self.Field(str(f)) if f.exists() else None
-                    for f in (self._shared_field_file, self._src_field_file, self._tgt_field_file)]
-            if self._unsupervised:
-                self.pre_process_mono(args)
-            else:
-                self.pre_process_parallel(args)
+            self.pre_process_parallel(args)
 
         self.maybe_pre_process_embeds()
         # update state on disk
@@ -789,7 +891,7 @@ class TranslationExperiment(BaseExperiment):
 
     def get_train_data(self, batch_size:  Union[int, Tuple[int,int]], steps: int = 0, sort_by='eq_len_rand_batch',
                        batch_first=True, shuffle=False, fine_tune=False, keep_in_mem=False,
-                       split_ratio: float = 0., dynamic_epoch=False):
+                       split_ratio: float = 0., dynamic_epoch=False, y_is_cls=False):
 
         data_path = self.train_db if self.train_db.exists() else self.train_file
         if fine_tune:
@@ -802,6 +904,7 @@ class TranslationExperiment(BaseExperiment):
         if split_ratio > 0:
             data_path = IO.maybe_tmpfs(data_path)
             train_file = data_path.with_suffix('.db.tmp')
+            assert not y_is_cls, 'Not supported feature'
             file_creator = partial(self.file_creator, train_file=train_file, split_ratio=split_ratio)
             train_data = GenerativeBatchIterable(
                 file_creator=file_creator, batches=steps, batch_size=batch_size, field=self.tgt_vocab,
@@ -810,7 +913,7 @@ class TranslationExperiment(BaseExperiment):
         else:
             data = BatchIterable(
                 data_path=data_path, batch_size=batch_size, field=self.tgt_vocab, sort_by=sort_by,
-                batch_first=batch_first, shuffle=shuffle, **self._get_batch_args())
+                batch_first=batch_first, shuffle=shuffle, y_is_cls=y_is_cls, **self._get_batch_args())
             train_data = LoopingIterable(data, steps)
 
         return train_data
@@ -822,7 +925,7 @@ class TranslationExperiment(BaseExperiment):
         return train_file
 
     def get_val_data(self, batch_size: Union[int, Tuple[int,int]], sort_desc=False, batch_first=True,
-                     shuffle=False):
+                     shuffle=False, y_is_cls=False):
         raw_path = None
         prep = self.config.get('prep', {})
         if 'valid_src' in prep and 'valid_tgt' in prep:
@@ -830,7 +933,8 @@ class TranslationExperiment(BaseExperiment):
 
         return BatchIterable(self.valid_file, batch_size=batch_size, sort_desc=sort_desc,
                              batch_first=batch_first, shuffle=shuffle, field=self.tgt_vocab,
-                             keep_in_mem=True, raw_path=raw_path, **self._get_batch_args())
+                             keep_in_mem=True, raw_path=raw_path, y_is_cls=y_is_cls,
+                             **self._get_batch_args())
 
     def get_combo_data(self, batch_size: int, steps: int = 0, sort_desc=False, batch_first=True,
                        shuffle=False):
@@ -846,9 +950,6 @@ class TranslationExperiment(BaseExperiment):
             data = LoopingIterable(data, steps)
         return data
 
-    def reload(self):
-        exp = type(self)(self.work_dir, read_only=self.read_only)
-        self.__dict__ = exp.__dict__
 
     def copy_vocabs(self, other):
         """
