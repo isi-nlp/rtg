@@ -271,6 +271,9 @@ class AbstractTransformerNMT(NMTModel, ABC):
                    exp: Experiment = None):
         raise NotImplementedError()
 
+    def make_generator(cls, *args, **kwargs):
+        from .generator import T2TGenerator
+        return T2TGenerator(*args, **kwargs)
 
 class TransformerNMT(AbstractTransformerNMT):
     """

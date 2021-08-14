@@ -55,7 +55,6 @@ An example POST request:
 ----
 [source,json]
 ----
-
 {
   "source": [
     "Comment allez-vous?",
@@ -99,7 +98,7 @@ Note that `<path-to-exp-dir>` is expected to be a valid path to Experiment dir, 
 
 == Pre-process and post-process
 
-The input/source text given to the API must be pre-processed in the same settings as the preprocessing during training phase. So, we offer configurations to match preprocessing:
+The input/source text given to the API must be pre-processed in the same settings as the preprocessing during training phase. So, we offer configurations to match the preprocessing:
 
 * `src_pre_proc`:  List of transformations to be used on source text before giving to model (e.g. tokenizer, lowercase)
 * `tgt_pre_proc`: List of transformations to be used on target text before giving to model (e.g. tokenizer, lowercase)
@@ -123,7 +122,8 @@ transformers  = {
     'punct_norm': MosesPunctNormalizer().normalize
 }
 ----
-When no arguments are given to `{src_pre,tgt_pre,tgt_prop}_proc` are missing, we use the same sensible defaults.
+When no arguments are given to `{src_pre,tgt_pre,tgt_prop}_proc` are missing, we use the same sensible defaults (same as the ones used in https://aclanthology.org/2021.acl-demo.37/.)
+
 [source, yaml]
 ----
 src_pre_proc:
@@ -148,5 +148,20 @@ prep:
     - moses_detok
 ----
 
+.Disabling pre- and post- processing
+ * You may permanently disable preprocessing and post processing using
+
+[source,yaml]
+----
+prep:
+  src_pre_proc:
+    - no_op
+  tgt_post_proc:
+    - no_op
+----
+* Or, temporarily, add `prep=false` argument `http://localhost:6060/translate\?prep\=false`
+
 NOTE:
-  `{src,tgt}_pre_proc` and `tgt_post_proc` are only used by REST API as of now. rtg.decode and rtg.prep do not yet to use these transformer.
+  `{src,tgt}_pre_proc` and `tgt_post_proc` are only used by REST API as of now. rtg.decode and rtg.prep do not yet to use pre- and post- text transformers.
+
+

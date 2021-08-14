@@ -60,6 +60,7 @@ class TextTransform:
                                 f'\n Also, you may use shell commandline prefixing the hasbang "#!"'
                                 f'\nExample: "#!tokenizer.perl"'
                                 f'\n    "#!/path/to/tokenizer.perl -en | sed \'/<old>/<new>/\'"')
+        return cls(chain=chain)
 
     # preprocessor used for 500 Eng
     @classmethod
@@ -133,7 +134,7 @@ def favicon():
     return send_from_directory(os.path.join(bp.root_path, 'static', 'favicon'), 'favicon.ico')
 
 def attach_translate_route(cli_args):
-    global exp
+    global exp, src_prep, tgt_postp
     exp = Experiment(cli_args.pop("exp_dir"), read_only=True)
     dec_args = exp.config.get("decoder") or exp.config["tester"].get("decoder", {})
     decoder = Decoder.new(exp, ensemble=dec_args.pop("ensemble", 1))
@@ -156,12 +157,15 @@ def attach_translate_route(cli_args):
             if isinstance(sources, str):
                 sources = [sources]
         if not sources:
-            return "Please submit parameter 'source'", 400
-        sources = [src_prep(sent) for sent in sources]
+            return "Please submit 'source' parameter", 400
+        prep = request.args.get('prep', "True").lower() in ("true", "yes", "y", "t")
+        if prep:
+            sources = [src_prep(sent) for sent in sources]
         translations = []
         for source in sources:
             translated = decoder.decode_sentence(source, **dec_args)[0][1]
-            translated = tgt_postp(translated.split())
+            if prep:
+                translated = tgt_postp(translated.split())
             translations.append(translated)
 
         res = dict(source=sources, translation=translations)
