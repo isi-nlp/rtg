@@ -1,6 +1,8 @@
 # v0.5.1 : WIP
 
 - Add `rtg-params` command that shows trainable parameters in model (layer wise as well as total)
+- `rtg.serve` supports flexible transformations on source (pre processing) and target (post processing)
+- Travis build configured to auto run tests 
 
 
 # v0.5.0 : 20210329
