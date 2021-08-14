@@ -52,14 +52,14 @@ class TextTransform:
         for name in names:
             if name.startswith("#!"): # shell
                 cmd_line = name[2:].strip()
-                chain.append(partial(shell_pipe, cmd_line=cmd_line))
+                chain.append(lambda x: shell_pipe(cmd_line=cmd_line, input=x))
             elif name in transformers:
                 chain.append(transformers[name])
             else:
                 raise Exception(f'Text transformer "{name}" unknown; Known: {transformers.keys()}'
                                 f'\n Also, you may use shell commandline prefixing the hasbang "#!"'
-                                f'\nExample: "#!tokenizer.perl"'
-                                f'\n    "#!/path/to/tokenizer.perl -en | sed \'/<old>/<new>/\'"')
+                                f'\nExample: #!tokenizer.perl'
+                                f'\n    #!/path/to/tokenizer.perl -en | sed \'/<old>/<new>/\'')
         return cls(chain=chain)
 
     # preprocessor used for 500 Eng
