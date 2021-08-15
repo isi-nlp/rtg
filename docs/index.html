@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="generator" content="Asciidoctor 2.0.12">
+<meta name="generator" content="Asciidoctor 2.0.15">
 <meta name="author" content="USC Information Sciences Institute Natural Language Group">
 <title>Reader-Translator-Generator (RTG)</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Open+Sans:300,300italic,400,400italic,600,600italic%7CNoto+Serif:400,400italic,700,700italic%7CDroid+Sans+Mono:400,700">
@@ -95,9 +95,6 @@ dl dd{margin-bottom:1.25em}
 abbr,acronym{text-transform:uppercase;font-size:90%;color:rgba(0,0,0,.8);border-bottom:1px dotted #ddd;cursor:help}
 abbr{text-transform:none}
 blockquote{margin:0 0 1.25em;padding:.5625em 1.25em 0 1.1875em;border-left:1px solid #ddd}
-blockquote cite{display:block;font-size:.9375em;color:rgba(0,0,0,.6)}
-blockquote cite::before{content:"\2014 \0020"}
-blockquote cite a,blockquote cite a:visited{color:rgba(0,0,0,.6)}
 blockquote,blockquote p{line-height:1.6;color:rgba(0,0,0,.85)}
 @media screen and (min-width:768px){h1,h2,h3,#toctitle,.sidebarblock>.content>.title,h4,h5,h6{line-height:1.2}
 h1{font-size:2.75em}
@@ -262,7 +259,7 @@ pre.pygments .lineno::before{content:"";margin-right:-.125em}
 .quoteblock.excerpt>blockquote,.quoteblock .quoteblock{padding:0 0 .25em 1em;border-left:.25em solid #dddddf}
 .quoteblock.excerpt,.quoteblock .quoteblock{margin-left:0}
 .quoteblock.excerpt blockquote,.quoteblock.excerpt p,.quoteblock .quoteblock blockquote,.quoteblock .quoteblock p{color:inherit;font-size:1.0625rem}
-.quoteblock.excerpt .attribution,.quoteblock .quoteblock .attribution{color:inherit;text-align:left;margin-right:0}
+.quoteblock.excerpt .attribution,.quoteblock .quoteblock .attribution{color:inherit;font-size:.85rem;text-align:left;margin-right:0}
 p.tableblock:last-child{margin-bottom:0}
 td.tableblock>.content{margin-bottom:1.25em;word-wrap:anywhere}
 td.tableblock>.content>:last-child{margin-bottom:-1.25em}
@@ -525,11 +522,17 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <li><a href="#ddp">8. Distributed Data Parallel (DDP)</a></li>
 <li><a href="#fp16">9. FP16, Mixed Precision Training</a></li>
 <li><a href="#scaling-big">10. Scaling to Big Datasets Using PySpark</a></li>
-<li><a href="#_rtg_serve">11. RTG Serve</a></li>
-<li><a href="#dev-env">12. Development Environment:</a>
+<li><a href="#_rtg_serve">11. RTG Serve</a>
 <ul class="sectlevel2">
-<li><a href="#_run_tests">12.1. Run Tests</a></li>
-<li><a href="#_adding_a_new_model">12.2. Adding a new model</a></li>
+<li><a href="#_flask_installation">11.1. Flask Installation</a></li>
+<li><a href="#_running">11.2. Running</a></li>
+</ul>
+</li>
+<li><a href="#_pre_process_and_post_process">12. Pre-process and post-process</a></li>
+<li><a href="#dev-env">13. Development Environment:</a>
+<ul class="sectlevel2">
+<li><a href="#_run_tests">13.1. Run Tests</a></li>
+<li><a href="#_adding_a_new_model">13.2. Adding a new model</a></li>
 </ul>
 </li>
 </ul>
@@ -2059,6 +2062,19 @@ The multi-node spark distributed mode is not tested. (But it might work out of t
 <div class="paragraph">
 <p>RTG model can be served using Flask Server.</p>
 </div>
+<div class="sect2">
+<h3 id="_flask_installation">11.1. Flask Installation</h3>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="commandline">$ pip install rtg[serve]</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Flask has its own set of dependencies unrelated to the core functionality, hence, not installed when installing <code>rtg</code>.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_running">11.2. Running</h3>
 <div class="listingblock">
 <div class="content">
 <pre class="CodeRay highlight"><code data-lang="commandline">$ python -m rtg.serve -h  # rtg-serve
@@ -2162,11 +2178,110 @@ stats = 127.0.0.1:9191</code></pre>
 </div>
 </div>
 </div>
+</div>
 <div class="sect1">
-<h2 id="dev-env">12. Development Environment:</h2>
+<h2 id="_pre_process_and_post_process">12. Pre-process and post-process</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The input/source text given to the API must be pre-processed in the same settings as the preprocessing during training phase. So, we offer configurations to match the preprocessing:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>src_pre_proc</code>:  List of transformations to be used on source text before giving to model (e.g. tokenizer, lowercase)</p>
+</li>
+<li>
+<p><code>tgt_pre_proc</code>: List of transformations to be used on target text before giving to model (e.g. tokenizer, lowercase)</p>
+</li>
+<li>
+<p><code>tgt_post_proc</code>: List of transformations to be used on target text produced by model (e.g. detokenizer, removal of unk)</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>The following transformations are built into RTG, so you may simply use their name:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="python">transformers  = {
+    <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">'</span><span style="color:#D20">no_op</span><span style="color:#710">'</span></span>: <span style="color:#080;font-weight:bold">lambda</span> x: x,
+    <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">'</span><span style="color:#D20">space_tok</span><span style="color:#710">'</span></span>: <span style="color:#080;font-weight:bold">lambda</span> x: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">'</span><span style="color:#D20"> </span><span style="color:#710">'</span></span>.join(x.strip().split()),  <span style="color:#777"># removes extra white spaces</span>
+    <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">'</span><span style="color:#D20">space_detok</span><span style="color:#710">'</span></span>: <span style="color:#080;font-weight:bold">lambda</span> toks: <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">'</span><span style="color:#D20"> </span><span style="color:#710">'</span></span>.join(toks),
+    <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">'</span><span style="color:#D20">moses_tok</span><span style="color:#710">'</span></span>: partial(MosesTokenizer().tokenize, escape=<span style="color:#069">False</span>, return_str=<span style="color:#069">True</span>,
+                         aggressive_dash_splits=<span style="color:#069">True</span>,
+                         protected_patterns=MosesTokenizer.WEB_PROTECTED_PATTERNS),
+    <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">'</span><span style="color:#D20">moses_detok</span><span style="color:#710">'</span></span>: partial(MosesDetokenizer().detokenize, return_str=<span style="color:#069">True</span>, unescape=<span style="color:#069">True</span>),
+    <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">'</span><span style="color:#D20">moses_truecase</span><span style="color:#710">'</span></span>: partial(MosesTruecaser().truecase, return_str=<span style="color:#069">True</span>),
+    <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">'</span><span style="color:#D20">lowercase</span><span style="color:#710">'</span></span>: <span style="color:#080;font-weight:bold">lambda</span> x: x.lower(),
+    <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">'</span><span style="color:#D20">drop_unk</span><span style="color:#710">'</span></span>: <span style="color:#080;font-weight:bold">lambda</span> x: x.replace(<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">'</span><span style="color:#D20">&lt;unk&gt;</span><span style="color:#710">'</span></span>, <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">'</span><span style="color:#710">'</span></span>),
+    <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">'</span><span style="color:#D20">html_unescape</span><span style="color:#710">'</span></span>: html.unescape,
+    <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">'</span><span style="color:#D20">punct_norm</span><span style="color:#710">'</span></span>: MosesPunctNormalizer().normalize
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>When no arguments are given to <code>{src_pre,tgt_pre,tgt_prop}_proc</code> are missing, we use the same sensible defaults (same as the ones used in <a href="https://aclanthology.org/2021.acl-demo.37/" class="bare">https://aclanthology.org/2021.acl-demo.37/</a>.)</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="yaml"><span style="color:#606">src_pre_proc</span>:
+  - <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">html_unescape</span></span>
+  - <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">punct_norm</span></span>
+  - <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">moses_tok</span></span>
+<span style="color:#606">tgt_post_proc</span>:
+  - <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">moses_detok</span></span>
+  - <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">drop_unk</span></span></code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>You may also use shell command line, including unix pipes, by prefixing your command with "#!". In addition, you may mix shell commands with known (pythonic) transforms. Example:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="yaml"><span style="color:#606">prep</span>:
+  <span style="color:#606">src_pre_proc</span>:
+    - <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">#!/path/to/normalizer.perl | /path/to/tokenizer.py --lang deu</span><span style="color:#710">&quot;</span></span>
+    - <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">lowercase</span></span>
+  <span style="color:#606">tgt_post_proc</span>:
+    - <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">drop_unk</span></span>
+    - <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">moses_detok</span></span></code></pre>
+</div>
+</div>
+<div class="ulist">
+<div class="title">Disabling pre- and post- processing</div>
+<ul>
+<li>
+<p>You may permanently disable preprocessing and post processing using</p>
+</li>
+</ul>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="yaml"><span style="color:#606">prep</span>:
+  <span style="color:#606">src_pre_proc</span>:
+    - <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">no_op</span></span>
+  <span style="color:#606">tgt_post_proc</span>:
+    - <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#D20">no_op</span></span></code></pre>
+</div>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Or, temporarily, add <code>prep=false</code> argument <code><a href="http://localhost:6060/translate\?prep\=false" class="bare">http://localhost:6060/translate\?prep\=false</a></code></p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>NOTE:
+  <code>{src,tgt}_pre_proc</code> and <code>tgt_post_proc</code> are only used by REST API as of now. rtg.decode and rtg.prep do not yet to use pre- and post- text transformers.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="dev-env">13. Development Environment:</h2>
 <div class="sectionbody">
 <div class="sect2">
-<h3 id="_run_tests">12.1. Run Tests</h3>
+<h3 id="_run_tests">13.1. Run Tests</h3>
 <div class="paragraph">
 <p>Test cases are done using the <a href="https://docs.pytest.org/en/latest/"><code>pytest</code></a> framework.
 It can be installed using <code>pip install pytest</code></p>
@@ -2206,7 +2321,7 @@ It can be installed using <code>pip install pytest</code></p>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_adding_a_new_model">12.2. Adding a new model</h3>
+<h3 id="_adding_a_new_model">13.2. Adding a new model</h3>
 <div class="olist arabic">
 <ol class="arabic">
 <li>
@@ -2263,7 +2378,7 @@ trainers and generators.</p>
 </div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2020-10-05 18:05:51 -0700
+Last updated 2021-08-12 10:55:57 -0700
 </div>
 </div>
 </body>
