@@ -43,7 +43,8 @@ setuptools.setup(
         'torch >= 1.8.0',
         'sacremoses >= 0.0.45',
         'portalocker >= 2.0.0',
-        'torchtext >= 0.10.0'
+        'torchtext >= 0.10.0',
+        'pyspark >= 3.0.0'
     ],
     extra_requires={
         'big': ['pyspark >= 3.0'],
