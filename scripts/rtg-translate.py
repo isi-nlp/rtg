@@ -12,7 +12,7 @@ import json
 
 
 log.basicConfig(level=log.INFO)
-DEF_API = "https://localhost:6060/translate"
+DEF_API = "http://localhost:6060/translate"
 DEF_BATCHSIZE = 10
 
 class RTGClient:
