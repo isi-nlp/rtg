@@ -17,7 +17,7 @@ optimizer:
     - 0.9
     - 0.98
     eps: 1.0e-09
-    lr: 0.2
+    lr: 0.1
 
 schedule:
   name: noam
@@ -27,7 +27,7 @@ schedule:
     model_dim: 512
 
 criterion:
-  name: smooth_kld
+  name: smooth_kld    #options "cross_entropy", "smooth_kld", "binary_cross_entropy", "triplet_loss"
   args:
     label_smoothing: 0.1
 
@@ -37,32 +37,47 @@ prep: # data preparation
   shared_vocab: true  # true means same vocab for src and tgt, false means different vocabs
   src_len: 256   # longer sentences, decision is made as per 'truncate={true,false}'
   tgt_len: 256
+  train_src: data/train.src   # training data
+  train_tgt: data/train.tgt
   truncate: true   # what to do with longer sentences: if true truncate at src_len or tgt_len; if false filter away
-  train_src: experiments/sample-data/sampl.test.fr.tok
-  train_tgt: experiments/sample-data/sampl.test.en.tok
-  valid_src: experiments/sample-data/sampl.valid.fr.tok
-  valid_tgt: experiments/sample-data/sampl.valid.en.tok
+  valid_src: data/valid.src
+  valid_tgt: data/valid.tgt
   mono_src: []  # monolingual data for learning vocab or BPE
   mono_tgt: []
 tester:
   decoder:
-    beam_size: 4
-    batch_size: 12000  # this is for 1 beam; effective_batch_size = batch_size / beam_size
-    lp_alpha: 0.0     # length penalty
+    tune:  # If this block is missing, then tuner will not be run, and some default values are picked from the code
+      trials: 6  # number of random trials, in addition to "suggested" values
+      tune_src: data/valid.src  # dataset for tuning
+      tune_ref: data/valid.tgt
+      beam_size: [1, 4, 8]    # pool of values for beam_size
+      ensemble: [1, 5, 10]
+      lp_alpha: [0.0, 0.4, 0.6, 1.0]
+      suggested:  # list of suggested values for beam_size, ensemble, lp_alpha
+        - 1, 1, 0.0
+        - 4, 1, 0.0
+        - 4, 1, 0.6
+        - 1, 5, 0.0
+        - 4, 5, 0.0
+        - 4, 5, 0.6
+        - 1, 10, 0.0
+        - 4, 10, 0.0
+        - 4, 10, 0.6
   suit:  # suit of tests to run after the training
-    # name of test and list of src.tok, ref files (ref should be unmodified)
-    valid:
-      - experiments/sample-data/sampl.valid.fr.tok
-      - experiments/sample-data/sampl.valid.en     # reference, unmodified -- not tokenized
-    test:
-      - experiments/sample-data/sampl.test.fr.tok
-      - experiments/sample-data/sampl.test.en     # reference, unmodified -- not tokenized
+    valid:  # name of test and list of src.tok, ref files (ref should be unmodified)
+    - data/valid.src
+    - data/valid.tgt
+  # in case we want to use external de tokenizer. interface:: $detokenizer < $out > out.detok
+  # by default it uses moses-tokenizer python wrapper to perl script
+  # detokenizer: cut -f1 | python -m rtg.tool.unicode_fix -l hi -d | perl scripts/indic-tok.perl -d
 trainer:
   init_args:
     chunk_size: 10   # generation in chunks of time steps to reduce memory consumption
+    grad_accum: 1    # How many batches to accumulate gradients over
   batch_size: 4200   # not exceeding these many tokens (including paddings). in tensor2tensor it is mean batch size
   check_point: 1000  # how often to checkpoint?
   keep_models: 10   # how many checkpoints to keep on disk (small enough to save disk, large enough for checkpt averaging
   steps: 200000   # how many steps to train
+  keep_in_mem: True
 updated_at: '2019-03-09T21:15:33.707183'
 seed: 12345  # fix the manual seed of pytorch + cuda + numpy + python_stdlib RNGs.  Remove/comment this to disable

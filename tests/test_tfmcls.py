@@ -2,21 +2,16 @@
 #
 # Author: Thamme Gowda [tg (at) isi (dot) edu] 
 # Created: 6/15/21
-from rtg.emb import tfmcls
-from rtg.registry import log
-import subprocess
+import random
+from pathlib import Path
 
 from torchtext.datasets import DBpedia
-from pathlib import Path
-import random
+
 import rtg
-from rtg.registry import registry, MODEL
-import pytest
-from rtg.pipeline import Pipeline, Experiment
-import tempfile
 from rtg.exp import load_conf
-import torch
-import shutil
+from rtg.pipeline import Pipeline
+from rtg.registry import log
+from rtg.registry import registry, MODEL
 from . import sanity_check_experiment
 
 
@@ -72,6 +67,3 @@ def test_tfmcls_model():
     sanity_check_experiment(exp, samples=False, shared_vocab=False)
     print(f"Cleaning up {tmp_dir}")
     # shutil.rmtree(tmp_dir, ignore_errors=True)
-
-
-
