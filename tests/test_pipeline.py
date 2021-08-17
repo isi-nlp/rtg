@@ -8,6 +8,7 @@ import tempfile
 from rtg.exp import load_conf
 import torch
 import shutil
+from io import StringIO
 from . import sanity_check_experiment
 
 
@@ -19,6 +20,16 @@ def test_prepared_pipeline():
 
 
 def test_pipeline_transformer():
+
+    def _run_decode(exp_dir, sentences):
+        assert isinstance(sentences, list)
+        from rtg.decode import main as decode_cli
+        buffer = StringIO()
+        decode_cli(exp_dir=exp_dir, input=[sentences], output=[buffer], skip_check=True, max_src_len=200)
+        lines = buffer.getvalue().splitlines()
+        buffer.close()
+        return lines
+
     for codec_lib in ['sentpiece', 'nlcodec']:
         tmp_dir = tempfile.mkdtemp()
         config = load_conf('experiments/transformer.test.yml')
@@ -30,6 +41,9 @@ def test_pipeline_transformer():
         Pipeline(exp).run(run_tests=False)
         sanity_check_experiment(exp)
         print(f"Cleaning up {tmp_dir}")
+        src_sents = ["hello there", "this is a test"]
+        output = _run_decode(exp_dir=tmp_dir, sentences=src_sents)
+        assert len(src_sents) == len(output)
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
@@ -109,6 +123,7 @@ def test_freeze_pipeline():
     exp.config['optim']['trainable'] = trainable
     pipe = Pipeline(exp)
     pipe.run(run_tests=False)
+
 
 if __name__ == '__main__':
     from multiprocessing import freeze_support
