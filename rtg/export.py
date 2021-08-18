@@ -5,7 +5,7 @@
 from rtg.exp import TranslationExperiment as Experiment
 from dataclasses import dataclass
 from pathlib import Path
-from rtg.module.decoder import Decoder
+
 from rtg import log, device, yaml
 from rtg.utils import IO
 import datetime
@@ -14,6 +14,7 @@ import os
 import torch
 import time
 import argparse
+
 
 @dataclass
 class ExperimentExporter:
@@ -79,6 +80,7 @@ class ExperimentExporter:
 
         if self.exp._trained_flag.exists():
             IO.copy_file(self.exp._trained_flag, to_exp._trained_flag)
+
 
 def add_boolean(parser, name, help, dest=None, default=True):
     group = parser.add_mutually_exclusive_group()

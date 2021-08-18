@@ -47,23 +47,10 @@ prep:
   mono_tgt: []
 tester:
   decoder:
-    tune:
-      trials: 6
-      tune_src: data/valid.src
-      tune_ref: data/valid.tgt
-      beam_size: [1, 4, 8]
-      ensemble: [1, 5, 10]
-      lp_alpha: [0.0, 0.6]
-      suggested:
-        - 1, 1, 0.0
-        - 4, 1, 0.0
-        - 4, 1, 0.6
-        - 1, 5, 0.0
-        - 4, 5, 0.0
-        - 4, 5, 0.6
-        - 1, 10, 0.0
-        - 4, 10, 0.0
-        - 4, 10, 0.6
+    beam_size: 4
+    batch_size: 12000  # this is for 1 beam; effective_batch_size = batch_size / beam_size
+    lp_alpha: 0.0     # length penalty
+    max_len: 50
   suite:
     valid:
     - data/valid.src

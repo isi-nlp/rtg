@@ -10,7 +10,7 @@ from pathlib import Path
 from rtg import log
 from rtg.exp import load_conf
 from rtg.module.decoder import Decoder
-from rtg.registry import registry, MODEL, Model as Spec
+from rtg.registry import registry, MODEL
 from rtg.emb.tfmcls import ClassificationExperiment
 from rtg.exp import TranslationExperiment
 
@@ -72,6 +72,7 @@ def decode_mt(exp, **cli_args):
         except:
             log.exception(f"Decode failed for {inp}")
 
+
 def predict_cls(exp: ClassificationExperiment, **cli_args):
     conf_args = copy.copy(exp.config.get('tester', {}))
     batch_size = cli_args.get('batch_size', None) or conf_args.get('batch_size', None)
@@ -90,16 +91,18 @@ def predict_cls(exp: ClassificationExperiment, **cli_args):
         log.info(f"Wrote to {out_stream}")
     log.info("===All done!===")
 
-def main():
+
+def main(**args):
     # No grads required for decode
     torch.set_grad_enabled(False)
-    cli_args = parse_args()
+    cli_args = args or parse_args()
     exp_dir = Path(cli_args.pop('exp_dir'))
     conf = load_conf(exp_dir / 'conf.yml')
     assert conf.get('model_type')
-    assert conf['model_type'] in registry[MODEL]
-    spec: Spec = registry[MODEL][conf['model_type']]
-    exp = spec.Experiment(exp_dir, config=conf, read_only=True)
+    exp_factory = TranslationExperiment
+    if conf['model_type'] in registry[MODEL]:
+        exp_factory = registry[MODEL][conf['model_type']].Experiment
+    exp = exp_factory(exp_dir, config=conf, read_only=True)
     if isinstance(exp, ClassificationExperiment):
         predict_cls(exp, **cli_args)
     else:
