@@ -64,7 +64,7 @@ tester:
         - 1, 10, 0.0
         - 4, 10, 0.0
         - 4, 10, 0.6
-  suit:
+  suite:
     valid:
     - data/valid.src
     - data/valid.tgt

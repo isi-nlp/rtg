@@ -34,7 +34,7 @@ prep:
   valid_src: data/valid.src
   valid_tgt: data/valid.tgt
 tester:
-  suit:
+  suite:
     valid:
     - data/valid.src
     - data/valid.tgt

@@ -58,7 +58,6 @@ def smooth_labels(labels, n_labels, smooth_rate, weight=None):
     return full
 
 
-
 def dense_cross_entropy(input: Tensor, target: Tensor, reduction=None, mask_out=None, weight=None,
                         input_type='logits') -> Tensor:
     """
@@ -130,19 +129,17 @@ def dense_cross_entropy(input: Tensor, target: Tensor, reduction=None, mask_out=
         raise ValueError(f'reduce={reduction} not supported')
 
 
-
 @register(kind=CRITERION, name="cross_entropy")
 class CrossEntropy(Criterion):
 
-    def __init__(self, pad_idx: int, label_smoothing=0., reducion='micro'):
+    def __init__(self, pad_idx: int, label_smoothing=0., reduction='micro'):
         super().__init__(input_type='logits', pad_idx=pad_idx)
         assert 0 <= label_smoothing <= 1
         self.label_smoothing = label_smoothing
-        assert reducion in ('micro', 'macro')
-        self.reduction = reducion
-        if reducion == 'macro':
+        assert reduction in ('micro', 'macro')
+        self.reduction = reduction
+        if reduction == 'macro':
             assert self.label_smoothing > 0., 'reduce=macro requires label_smoothing > 0'
-        #self.xent_loss = nn.CrossEntropyLoss(reduction='none')
 
     def forward(self, inputs, targets, mask_pad=True):
         # logits: [N x C] targets: [N]
@@ -158,7 +155,7 @@ class CrossEntropy(Criterion):
                                        device=inputs.device)
             dense_targets.scatter_(1, targets.type(torch.int64), 1.0)
 
-        weight = self.get_weight(inputs, targets)
+        weight = self.get_weights(inputs, targets)
         loss = dense_cross_entropy(input=inputs, target=dense_targets, reduction=self.reduction,
                                    weight=weight, mask_out=mask_out, input_type=self.input_type)
         return loss

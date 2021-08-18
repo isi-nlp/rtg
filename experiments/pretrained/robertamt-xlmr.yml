@@ -45,7 +45,7 @@ tester:
     beam_size: 4
     batch_size: 12000  # this is for 1 beam; effective_batch_size = batch_size / beam_size
     lp_alpha: 0.0     # length penalty
-  suit:
+  suite:
     valid:
       - experiments/sample-data/sampl.valid.fr.tok
       - experiments/sample-data/sampl.valid.en     # reference, unmodified -- not tokenized
