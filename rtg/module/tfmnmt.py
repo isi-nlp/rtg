@@ -273,6 +273,9 @@ class AbstractTransformerNMT(NMTModel, ABC):
         from .generator import T2TGenerator
         return T2TGenerator(*args, **kwargs)
 
+    def make_trainer(cls, *args, **kwargs):
+        return TransformerTrainer(*args, model_factory=cls.make_model, **kwargs)
+
 
 class TransformerNMT(AbstractTransformerNMT):
     """

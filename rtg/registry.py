@@ -52,6 +52,7 @@ registry = {
     CRITERION: CRITERIA,
 }
 
+
 def snake_case(word):
     """
     Converts a word (from CamelCase) to snake Case
