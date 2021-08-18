@@ -269,10 +269,12 @@ class AbstractTransformerNMT(NMTModel, ABC):
                    exp: Experiment = None):
         raise NotImplementedError()
 
+    @classmethod
     def make_generator(cls, *args, **kwargs):
         from .generator import T2TGenerator
         return T2TGenerator(*args, **kwargs)
 
+    @classmethod
     def make_trainer(cls, *args, **kwargs):
         return TransformerTrainer(*args, model_factory=cls.make_model, **kwargs)
 
@@ -298,10 +300,6 @@ class TransformerNMT(AbstractTransformerNMT):
     @property
     def model_type(self):
         return 'tfmnmt'
-
-    @classmethod
-    def make_trainer(cls, *args, **kwargs):
-        return TransformerTrainer(*args, model_factory=cls.make_model, **kwargs)
 
 
 class SublayerConnection(nn.Module):
