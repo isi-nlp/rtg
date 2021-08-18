@@ -41,7 +41,9 @@ class Generator(nn.Module):
     scores = {
         'logits': lambda x, dim=None: x,
         'softmax': F.softmax,
+        'probs': F.softmax,
         'log_softmax': F.log_softmax,
+        'log_probs': F.log_softmax,
         'sigmoid': lambda x, dim=None: x.sigmoid(),
         'embedding': None,
         'identity': None
