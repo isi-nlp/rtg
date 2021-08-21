@@ -164,31 +164,6 @@ class CrossEntropy(Criterion):
         return None  # nothing interesting here yet
 
 
-class MaskableSmoothableCriterion(Criterion):
-
-    def __init__(self, pad_idx, input_type='logits', label_smoothing=0.0, reduction='micro'):
-        super(MaskableSmoothableCriterion, self).__init__(pad_idx=pad_idx, input_type=input_type)
-        self.label_smoothing = label_smoothing
-        self.reduction = reduction
-
-    def forward(self, inputs, targets, mask_pad=True, reduce=None):
-        N, C = inputs.shape
-        reduce = reduce or self.reduction
-        assert targets.shape[0] == inputs.shape[0]
-        mask_out = None
-        if mask_pad:
-            mask_out = (targets == self.pad_idx).unsqueeze(1)  # [N] -> [N, 1]
-        if self.label_smoothing > 0.0:
-            dense_targets = smooth_labels(labels=targets, n_labels=C, smooth_rate=self.label_smoothing)
-        else:
-            dense_targets = torch.full([N, C], fill_value=0.0, dtype=torch.float,
-                                       device=inputs.device)
-            dense_targets.scatter_(1, targets.type(torch.int64), 1.0)
-        loss = dense_cross_entropy(input=inputs, target=targets, reduction=reduce, mask_out=mask_out,
-                                   input_type=self.input_type)
-        return loss
-
-
 @register(kind=CRITERION, name="focal_loss")
 class FocalLoss(Criterion):
 
@@ -374,3 +349,65 @@ class SmoothKLDAndTripletLoss(Criterion):
 
         # Must sum here to match sizes
         return sKLD.sum() + self.alpha * tLoss.sum()
+
+
+@register(kind=CRITERION, name="tversky_loss")
+class TverskyLoss(Criterion):
+
+    def __init__(self, pad_idx: int, reduction='micro', alpha=0.5, beta=0.5, gamma=0.0,
+                 additive_smoothing=1, label_smoothing=0.0):
+        super(TverskyLoss, self).__init__(pad_idx=pad_idx, input_type='probs')
+        self.alpha = alpha
+        self.beta = beta
+        self.gamma = gamma
+        self.reduction = reduction
+        self.additive_smoothing = additive_smoothing
+        self.label_smoothing = label_smoothing
+
+    def forward(self, inputs, targets, mask_pad=True):
+        probs = inputs
+        N, C = probs.shape
+        assert targets.shape[0] == probs.shape[0]
+        mask_out = None
+        if mask_pad:
+            mask_out = (targets == self.pad_idx).unsqueeze(1)  # [N] -> [N, 1]
+        if self.label_smoothing > 0:
+            dense_targets = smooth_labels(labels=targets, n_labels=C, smooth_rate=self.label_smoothing)
+        else:
+            dense_targets = torch.full([N, C], fill_value=0.0, dtype=torch.float,
+                                       device=probs.device)
+            dense_targets.scatter_(1, targets.type(torch.int64), 1.0)
+        weight = None
+        if self.gamma > 0.0:
+            probs = inputs.softmax(dim=1)
+            weight = (1 - probs).pow(self.gamma)
+
+        loss = dense_cross_entropy(input=probs, target=dense_targets, reduction=self.reduction,
+                                   weight=weight, mask_out=mask_out, input_type=self.input_type)
+        return loss
+
+    @classmethod
+    def tversky_loss(cls, input: Tensor, target: Tensor, reduction='micro', mask_out=None, weight=None,
+                     smoothing=0.001, alpha=1, beta=1):
+        assert input.shape == target.shape, f'{input.shape} == {target.shape}?'
+        assert len(input.shape) == 2   # two dims: [Batch, Classes]
+        assert reduction == 'micro', f'reduction={reduction} is not supported; only micro is supported as of now'
+        assert weight is None, f'weight is not supported as of now'
+        if mask_out is not None:
+            input = torch.masked_fill(input, mask=mask_out, value=0.0)
+            target = torch.masked_fill(target, mask=mask_out, value=0.0)
+
+        # y: target p: input  both are distributions
+        # intersection = y . p   ; batch dot product
+        intersection = torch.mul(target, input).sum(dim=1)  # [N, C] [N, C] --> [N]
+        # false_pos = (1-y) . p  ; batch dot product
+        false_pos = torch.mul(1-target, input).sum(dim=1)   # [N, C] [N, C] --> [N]
+        # false_neg = y . (1-p)
+        false_neg = torch.mul(target, 1-input).sum(dim=1)   # [N, C] [N, C] --> [N]
+
+        similarity = (smoothing + intersection) /\
+                     (smoothing + intersection + alpha * false_pos + beta * false_neg)   # [N]
+        loss = 1 - similarity     # [N]
+        loss = loss.mean()        # [N] --> [1]
+        return loss
+
