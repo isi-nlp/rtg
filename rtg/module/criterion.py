@@ -141,7 +141,7 @@ class CrossEntropy(Criterion):
         super().__init__(input_type='logits', pad_idx=pad_idx)
         assert 0 <= label_smoothing <= 1
         self.label_smoothing = label_smoothing
-        assert reduction in ('micro', 'macro')
+        assert reduction in ('micro', 'macro', 'macro+micro', 'micro+macro')
         self.reduction = reduction
         if reduction == 'macro':
             assert self.label_smoothing > 0., 'reduce=macro requires label_smoothing > 0'
