@@ -457,9 +457,7 @@ class TransformerTrainer(SteppedTrainer):
     def __init__(self, exp: Experiment,
                  model: Optional['TransformerNMT'] = None, model_factory=None):
         super().__init__(exp=exp, model=model, model_factory=model_factory)
-        trainer_args = self.exp.config.get('trainer', {}).get('init_args', {})
-        chunk_size = trainer_args.get('chunk_size', -1)
-        self.grad_accum_interval = trainer_args.get('grad_accum', 1)
+        self.grad_accum_interval = self.init_args.get('grad_accum', 1)
         assert self.grad_accum_interval > 0
 
         if self.n_gpus > 1:  # Multi GPU mode
@@ -467,6 +465,7 @@ class TransformerTrainer(SteppedTrainer):
                             f" or set single GPU by: export CUDA_VISIBLE_DEVICES=0 ")
 
         generator = self.core_model.generator
+        chunk_size = self.init_args.get('chunk_size', -1)
         if not chunk_size or chunk_size < 1:
             self.loss_func = SimpleLossFunction(generator=generator, criterion=self.criterion,
                                                 opt=self.opt)

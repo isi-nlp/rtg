@@ -40,6 +40,7 @@ class DistribTorch:
     # singleton instance; lazy initialization
     _instance: ClassVar['DistribTorch'] = None
     _model: nn.Module = None
+    _clip_grad_max_norm = None
 
     def setup(self):
         log.info("DistribTorch setup()")
@@ -55,13 +56,18 @@ class DistribTorch:
         return self
 
     def enable_fp16(self):
-        if not self.fp16:   # conditional import
+        if not self.fp16:
             self.fp16 = True
             self._scaler = GradScaler(enabled=self.fp16)
             log.info("Enabling FP16  /Automatic Mixed Precision training")
         else:
             log.warning(" fp16 is already enabled")
-            
+
+    def clip_grad_norm(self, max_norm):
+        assert max_norm
+        log.info(f"Gradient clipping max_norm={max_norm}")
+        self._clip_grad_max_norm = max_norm
+
     def close(self):
         if self._is_backend_ready:
             log.warning("destroying distributed backend")
@@ -81,8 +87,7 @@ class DistribTorch:
         if self.world_size > 1:
             if not self._is_backend_ready:
                 self.setup()
-            self._model = module
-            #return torch.nn.parallel.DistributedDataParallel(module)
+        self._model = module
         return module    # don't wrap
 
     @property
@@ -123,6 +128,14 @@ class DistribTorch:
         if self.is_distributed:
             self.average_gradients(self._model)
             #TODO: Maybe we dont need to average every step ?
+
+        if self._clip_grad_max_norm:
+            if self.fp16:
+                # Unscales the gradients of optimizer's assigned params in-place
+                self._scaler.unscale_(optimizer)
+            # Since the gradients of optimizer's assigned params are unscaled, clips as usual:
+            torch.nn.utils.clip_grad_norm_(self._model.parameters(), self._clip_grad_max_norm)
+
         if self.fp16:
             self._scaler.step(optimizer)
             self._scaler.update()

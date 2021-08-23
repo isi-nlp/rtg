@@ -253,6 +253,9 @@ class SteppedTrainer:
         self.last_step = -1
         self.exp = exp
         optim_state = None
+        self.init_args = self.exp.config.get('trainer', {}).get('init_args', {})
+        if 'clip_grad_norm' in self.init_args:
+            dtorch.clip_grad_norm(self.init_args['clip_grad_norm'])
         if model:
             self.model = model
         else:
