@@ -79,6 +79,7 @@ def dense_cross_entropy(input: Tensor, target: Tensor, reduction=None, mask_out=
     """
     assert reduction in ('per_item', 'per_class', 'none', None, 'sum', 'micro', 'macro')
     N, C = input.shape
+    infinitesimal = 1e-9  # to avoid divide by zero
     #target is dense; i.e not one-hot
     assert input.shape == target.shape,  f'input shape: {input.shape}, target is {target.shape}'
     if mask_out is not None:
@@ -91,21 +92,23 @@ def dense_cross_entropy(input: Tensor, target: Tensor, reduction=None, mask_out=
     if input_type == 'log_probs':
         log_probs = input
     elif input_type == 'probs':
-        log_probs = input.log()   # TODO: handle log zero
+        # adding small num to avoid zeros
+        log_probs = (input + infinitesimal).log()
     elif input_type == 'logits':
         log_probs = input.log_softmax(dim=1)
     else:
         raise Exception(f'input_type={input_type} unknown; know: logits, probs, log_probs')
 
     tot_items, tot_classes = N, C
-    #[N, C] :  -y_c * log(p_c)
-    table = -torch.mul(target, log_probs)  # loss per item-class
+    # [N, C] :  -y_c * log(p_c)
+    table = -torch.mul(target, log_probs)  # loss per item per class
     if mask_out is not None:   # overwrite positions with mask=True to zero
         table.masked_fill_(mask_out, value=0.0)
-        if mask_out.shape == (N, 1): # [N, 1] => sum items are excluded e.g. pad tokens
+        if mask_out.shape == (N, 1):     # [N, 1] => sum items are excluded e.g. pad tokens
             tot_items -= mask_out.sum()
+    assert tot_items > 0, f'tot_items should be positive; N={N}, C={C}, |mask_out|={mask_out.sum()}'
     if weight is not None:
-        table.mul_(weight) # assumption: weight is broadcastable
+        table.mul_(weight)       # assumption: weight is broadcastable
 
     if reduction in (None, 'none'):
         return table
@@ -120,8 +123,7 @@ def dense_cross_entropy(input: Tensor, target: Tensor, reduction=None, mask_out=
         return table.sum(dim=1).sum() / tot_items
     elif reduction == 'macro':
         # micro: first get loss per_class, normalize as per their frequencies and then sum
-        eps = 1e-9   # to avoid divide by zero
-        target_per_class = target.sum(dim=0) + eps
+        target_per_class = target.sum(dim=0) + infinitesimal
         input_per_class = table.sum(dim=0)
         per_class_normalized = input_per_class / target_per_class
         return per_class_normalized.sum()
