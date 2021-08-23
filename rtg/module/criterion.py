@@ -77,7 +77,6 @@ def dense_cross_entropy(input: Tensor, target: Tensor, reduction=None, mask_out=
              Valid options are: logits, probs, log_probs
     :return:
     """
-    assert reduction in ('per_item', 'per_class', 'none', None, 'sum', 'micro', 'macro')
     N, C = input.shape
     infinitesimal = 1e-9  # to avoid divide by zero
     #target is dense; i.e not one-hot
@@ -127,6 +126,10 @@ def dense_cross_entropy(input: Tensor, target: Tensor, reduction=None, mask_out=
         input_per_class = table.sum(dim=0)
         per_class_normalized = input_per_class / target_per_class
         return per_class_normalized.sum()
+    elif reduction == 'macro+micro' or reduction == 'micro+macro':
+        micro = table.sum(dim=1).sum() / tot_items
+        macro = (table.sum(dim=0) / (target.sum(dim=0) + infinitesimal)).sum()
+        return macro + micro
     else:
         raise ValueError(f'reduce={reduction} not supported')
 
