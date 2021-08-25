@@ -493,7 +493,6 @@ class TransformerTrainer(SteppedTrainer):
             for i, batch in enumerate(data_bar):
                 if self.n_gpus <= 1:
                     batch = batch.to(device)
-                num_toks = batch.y_toks
                 x_seqs = batch.x_seqs
                 if do_bleu and not bool(batch.y_raw):
                     log.warning("BLEU is not possible; raw sentences are not set to validation batches")
@@ -517,8 +516,7 @@ class TransformerTrainer(SteppedTrainer):
                 # skip the last time step (the one with EOS as input)
                 out = out[:, :-1, :]
                 # assumption:  y_seqs has EOS, and not BOS
-                loss = self.loss_func(out, batch.y_seqs, num_toks, train_mode=False,
-                                      get_out=do_bleu)
+                loss = self.loss_func(out, batch.y_seqs, train_mode=False, get_out=do_bleu)
                 if do_bleu:
                     loss, outs = loss
                     outs = outs.tolist()
@@ -527,11 +525,11 @@ class TransformerTrainer(SteppedTrainer):
                         hyps.append(hyp)
 
                 total_loss += loss
-                total_tokens += num_toks
+                total_tokens += batch.y_toks
                 num_batches += 1
                 elapsed = time.time() - start
                 data_bar.set_postfix_str(
-                    f'Loss:{loss:.4f}, {int(num_toks / elapsed)}toks/s', refresh=False)
+                    f'Loss:{loss:.4f}, {int(batch.y_toks / elapsed)}toks/s', refresh=False)
 
                 start = time.time()
                 data_bar.update(len(batch))
@@ -557,7 +555,7 @@ class TransformerTrainer(SteppedTrainer):
             num_toks = batch.y_toks
             out = self.model(batch.x_seqs, batch.y_seqs, batch.x_mask, batch.y_mask)
             # skip the BOS token in  batch.y_seqs
-            loss = self.loss_func(out, batch.y_seqs_nobos, num_toks)
+            loss = self.loss_func(out, batch.y_seqs_nobos)
             tokens += num_toks
             if abs(loss) < abs(stop_loss):
                 log.info(f"Stopping early at iter {i}.. Loss = {loss:.4f}")
@@ -643,7 +641,6 @@ class TransformerTrainer(SteppedTrainer):
                 #  if not dataparallel, then move
                 if self.n_gpus <= 1:
                     batch = batch.to(device)
-                num_toks = batch.y_toks
                 x_seqs = batch.x_seqs
                 if dec_bos_cut:
                     bos_step = x_seqs[:, :1]
@@ -665,7 +662,7 @@ class TransformerTrainer(SteppedTrainer):
                     out = out[:, :-1, :]
 
                     # assumption:  y_seqs has EOS, and not BOS
-                    loss = self.loss_func(out, batch.y_seqs, num_toks, train_mode=True,
+                    loss = self.loss_func(out, batch.y_seqs, train_mode=True,
                                           take_step=take_step)
 
                 if stopper and take_step:
@@ -679,7 +676,7 @@ class TransformerTrainer(SteppedTrainer):
                     if log_resources and cuda_available:
                         self._log_resources(batch)
 
-                progress_msg, is_check_pt = train_state.step(num_toks, loss)
+                progress_msg, is_check_pt = train_state.step(batch.y_toks, loss)
                 progress_msg += f', LR={self.opt.curr_lr:0.8f}'
                 data_bar.set_postfix_str(progress_msg, refresh=False)
                 del batch
@@ -807,12 +804,12 @@ class SimpleLossFunction:
     criterion: Criterion
     opt: Optimizer
 
-    def __call__(self, x_feats, y_seqs, normalizer, train_mode=True, take_step=True, get_out=False):
+    def __call__(self, x_feats, y_seqs, train_mode=True, take_step=True, get_out=False):
         # B x T x D --> B x T x V
         x_probs = self.generator(x_feats, score=self.criterion.input_type)
         scores = x_probs.contiguous().view(-1, x_probs.size(-1))  # B x T x V --> B.T x V
         truth = y_seqs.contiguous().view(-1)  # B x T --> B.T
-        loss = self.criterion(scores, truth).sum() / normalizer
+        loss = self.criterion(scores, truth)
 
         if train_mode:  # don't do this for validation set
             dtorch.backward(loss)
@@ -828,8 +825,7 @@ class SimpleLossFunction:
 class ChunkedLossCompute(SimpleLossFunction):
     chunk_size: int = 10
 
-    def __call__(self, y_feats, y_seqs, normalizer: Union[int, float],
-                 train_mode=True, chunk_size=None, take_step=True, get_out=False):
+    def __call__(self, y_feats, y_seqs, train_mode=True, chunk_size=None, take_step=True, get_out=False):
         """
 
         :param y_feats:
@@ -848,20 +844,24 @@ class ChunkedLossCompute(SimpleLossFunction):
         _y_feats = y_feats.detach().clone()
         _y_feats.requires_grad = True  # yet collect grads
         out_chunks = []
+        count = 0
         for i in range(0, _y_feats.shape[1], chunk_size):
+            count += 1
             # grad network is cut here
             chunked_feats = _y_feats[:, i:i + chunk_size]
             chunked_dist = self.generator(chunked_feats, score=self.criterion.input_type)
             if get_out:
-                top_idxs = chunked_dist.argmax(dim=-1) # # B x C x V -> B x C
+                top_idxs = chunked_dist.argmax(dim=-1)   # B x C x V -> B x C
                 out_chunks.append(top_idxs)
             # B x C x V -> B.C x V
             chunked_dist = chunked_dist.contiguous().view(-1, chunked_dist.shape[-1])
             chunked_ys = y_seqs[:, i:i + chunk_size].contiguous().view(-1)  # B x C -> B.C
-            loss = self.criterion(chunked_dist, chunked_ys).sum() / normalizer
+            # FIXME: normalization is improper with chunking and micro or macro reduction
+            loss = self.criterion(chunked_dist, chunked_ys)
             total += loss.detach().item()
             if train_mode:
                 dtorch.backward(loss)
+        total /= count
         if train_mode:
             if _y_feats.grad is None:
                 # this might happen if all chunks yield NaN and backward was skipped
@@ -876,4 +876,3 @@ class ChunkedLossCompute(SimpleLossFunction):
             return total, outs
         else:
             return total
-

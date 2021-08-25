@@ -14,7 +14,7 @@ from rtg.registry import CRITERION, register
 class Criterion(nn.Module, abc.ABC):
     """Base class for Criterion functions"""
 
-    def __init__(self, input_type: str, pad_idx: int):
+    def __init__(self, input_type: str, pad_idx: int, reduction='micro'):
         """
         :param input_type: what type of input is expected?
             example: logits, softmax, log_softmax, signmoid
@@ -24,9 +24,10 @@ class Criterion(nn.Module, abc.ABC):
         super().__init__()
         self.pad_idx = pad_idx
         self.input_type = input_type
+        self.reduction = reduction
 
 
-def smooth_labels(labels, n_labels, smooth_rate, weight=None):
+def smooth_labels(labels, n_labels, smooth_rate, pad_cls_idx=-1, weight=None):
     """
     :param labels: labels [N] where each item is in range {0, 1, 2,... C-1}
     :param n_labels: total number of classes
@@ -44,25 +45,28 @@ def smooth_labels(labels, n_labels, smooth_rate, weight=None):
     device = labels.device
     if weight is None:
         # take out epsilon and distribute evenly to all but one
-        fill_value = smooth_rate / (n_labels - 1)
+
+        fill_value = smooth_rate / (n_labels - (2 if pad_cls_idx >= 0 else 1))
         # expand [N] -> [N, C]
         full = torch.full([N, n_labels], fill_value=fill_value, dtype=torch.float, device=device)
         full.scatter_(1, labels.type(torch.int64), 1 - smooth_rate)
+        if pad_cls_idx >= 0:
+            full[:, pad_cls_idx] = 0
     else:
         assert len(weight) == n_labels
         weight = weight.to(device)
         full = (weight * smooth_rate).expand(N, n_labels)  # [C] -> [N, C]
         peaks = torch.full([N, 1], fill_value=1 - smooth_rate, dtype=torch.float, device=device)
-        #peaks = torch.tensor(1 - epsilon, device=device).expand(N, 1)  # [N, 1]
+        # peaks = torch.tensor(1 - epsilon, device=device).expand(N, 1)  # [N, 1]
         full.scatter_add_(1, labels, peaks)  # inplace add
     return full
 
 
-def dense_cross_entropy(input: Tensor, target: Tensor, reduction=None, mask_out=None, weight=None,
+def dense_cross_entropy_old(inputs: Tensor, targets: Tensor, reduction=None, mask_out=None, weight=None,
                         input_type='logits') -> Tensor:
     """
-    :param input: input tensor, see input_type
-    :param target: probability distribution of labels
+    :param inputs: input tensor, see input_type
+    :param targets: probability distribution of labels
     :param reduction: what reduction to perform
     :param mask_out: optional boolean tensor same shape as input and target.
         True positions results in exclusion of item-class loss from total loss
@@ -77,30 +81,31 @@ def dense_cross_entropy(input: Tensor, target: Tensor, reduction=None, mask_out=
              Valid options are: logits, probs, log_probs
     :return:
     """
-    N, C = input.shape
+    N, C = inputs.shape
     infinitesimal = 1e-9  # to avoid divide by zero
     #target is dense; i.e not one-hot
-    assert input.shape == target.shape,  f'input shape: {input.shape}, target is {target.shape}'
+    assert inputs.shape == targets.shape, f'input shape: {inputs.shape}, target is {targets.shape}'
     if mask_out is not None:
         assert mask_out.shape in [(N, C), (1, C), (N, 1)],\
-            f'input: {input.shape} and mask_out: {mask_out.shape} are not broadcastable'
+            f'input: {inputs.shape} and mask_out: {mask_out.shape} are not broadcastable'
     if weight is not None:
         assert weight.shape in [(N, C), (1, C), (N, 1)],\
-            f'input: {input.shape} weight: {weight.shape} are not broadcastable'
+            f'input: {inputs.shape} weight: {weight.shape} are not broadcastable'
 
     if input_type == 'log_probs':
-        log_probs = input
+        log_probs = inputs
     elif input_type == 'probs':
         # adding small num to avoid zeros
-        log_probs = (input + infinitesimal).log()
+        log_probs = (inputs + infinitesimal).log()
     elif input_type == 'logits':
-        log_probs = input.log_softmax(dim=1)
+        log_probs = inputs.log_softmax(dim=1)
     else:
         raise Exception(f'input_type={input_type} unknown; know: logits, probs, log_probs')
 
     tot_items, tot_classes = N, C
     # [N, C] :  -y_c * log(p_c)
-    table = -torch.mul(target, log_probs)  # loss per item per class
+    #table = -torch.mul(targets, log_probs)  # loss per item per class
+    table = torch.kl_div(inputs, targets)
     if mask_out is not None:   # overwrite positions with mask=True to zero
         table.masked_fill_(mask_out, value=0.0)
         if mask_out.shape == (N, 1):     # [N, 1] => sum items are excluded e.g. pad tokens
@@ -109,7 +114,7 @@ def dense_cross_entropy(input: Tensor, target: Tensor, reduction=None, mask_out=
     if weight is not None:
         table.mul_(weight)       # assumption: weight is broadcastable
 
-    if reduction in (None, 'none'):
+    if reduction is None or reduction == 'none':
         return table
     elif reduction == 'per_item':
         return table.sum(dim=1)
@@ -122,28 +127,81 @@ def dense_cross_entropy(input: Tensor, target: Tensor, reduction=None, mask_out=
         return table.sum(dim=1).sum() / tot_items
     elif reduction == 'macro':
         # micro: first get loss per_class, normalize as per their frequencies and then sum
-        target_per_class = target.sum(dim=0) + infinitesimal
+        target_per_class = targets.sum(dim=0) + infinitesimal
         input_per_class = table.sum(dim=0)
         per_class_normalized = input_per_class / target_per_class
         return per_class_normalized.sum()
     elif reduction == 'macro+micro' or reduction == 'micro+macro':
         micro = table.sum(dim=1).sum() / tot_items
-        macro = (table.sum(dim=0) / (target.sum(dim=0) + infinitesimal)).sum()
+        macro = (table.sum(dim=0) / (targets.sum(dim=0) + infinitesimal)).sum()
         return macro + micro
     else:
         raise ValueError(f'reduce={reduction} not supported')
 
 
+def dense_cross_entropy(inputs: Tensor, targets: Tensor, reduction='none', mask_out=None, weight=None,
+                        input_type='log_probs', infinitesimal=1e-5) -> Tensor:
+    assert input_type == 'log_probs'
+    assert inputs.shape == targets.shape
+    tot_items, tot_classes = inputs.shape
+    losses = torch.kl_div(input=inputs, target=targets)
+    if mask_out is not None:
+        losses.masked_fill_(mask_out, value=0.0)
+        if mask_out.shape == (tot_items, 1):     # [N, 1] => sum items are excluded e.g. pad tokens
+            tot_items -= mask_out.sum()
+    assert tot_items > 0, f'tot_items should be positive; input={inputs.shape}, |mask_out|={mask_out.sum()}'
+    if weight is not None:
+        losses.mul_(weight)       # assumption: weight is broadcastable
+
+    if reduction == 'none':
+        return losses
+    if reduction == 'micro':
+        # micro: first get loss per_item (get rid of class dim), and average over items
+        return losses.sum(dim=1).sum() / tot_items
+    elif reduction == 'macro':
+        # micro: first get loss per_class, normalize as per their frequencies and then sum
+        target_mass_per_class = targets.sum(dim=0) + infinitesimal
+        # KL div per item (i.e. sum of each row in table) is guaranteed to be positive,
+        # however per-item-per-class (i.e. each cell in the table) is not guaranteed to +ve
+        loss_per_class = losses.abs().sum(dim=0)
+        assert loss_per_class.shape == target_mass_per_class.shape
+        loss_per_class_normalized = loss_per_class / target_mass_per_class
+        return loss_per_class_normalized.mean()
+    elif reduction == 'macro+micro':
+        micro = losses.sum(dim=1).sum() / tot_items
+        macro = (losses.abs().sum(dim=0) / (targets.sum(dim=0) + infinitesimal)).mean()
+        return macro + micro
+    else:
+        raise ValueError(f'reduce={reduction} not supported; try: none micro macro macro+micro')
+
+
+@register(kind=CRITERION, name="vanilla_cross_entropy")
+class VanillaCrossEntropy(Criterion):
+
+    def __init__(self, pad_idx: int, input_type='log_probs'):
+        super().__init__(input_type=input_type, pad_idx=pad_idx, reduction='micro')
+
+    def forward(self, inputs, targets, mask_pad=True):
+        # logits: [N x C] targets: [N]
+        assert targets.shape[0] == inputs.shape[0]
+        losses = F.cross_entropy(input=inputs, target=targets, reduction='none')
+        tot_items = targets.shape[0]
+        if mask_pad:
+            mask_out = targets.eq(self.pad_idx)
+            losses.masked_fill_(mask_out, 0)
+            tot_items -= mask_out.sum()
+        return losses.sum() / tot_items
+
+
 @register(kind=CRITERION, name="cross_entropy")
 class CrossEntropy(Criterion):
 
-    def __init__(self, pad_idx: int, label_smoothing=0., reduction='micro'):
-        super().__init__(input_type='logits', pad_idx=pad_idx)
+    def __init__(self, pad_idx: int, label_smoothing=0., reduction='micro', input_type='log_probs'):
+        super().__init__(input_type=input_type, pad_idx=pad_idx, reduction=reduction)
         assert 0 <= label_smoothing <= 1
         self.label_smoothing = label_smoothing
-        assert reduction in ('micro', 'macro', 'macro+micro', 'micro+macro')
-        self.reduction = reduction
-        if reduction == 'macro':
+        assert reduction in ('micro', 'macro', 'macro+micro')
+        if 'macro' in reduction:
             assert self.label_smoothing > 0., 'reduce=macro requires label_smoothing > 0'
 
     def forward(self, inputs, targets, mask_pad=True):
@@ -156,50 +214,35 @@ class CrossEntropy(Criterion):
         if self.label_smoothing > 0:
             dense_targets = smooth_labels(labels=targets, n_labels=C, smooth_rate=self.label_smoothing)
         else:
-            dense_targets = torch.full([N, C], fill_value=0.0, dtype=torch.float,
-                                       device=inputs.device)
-            dense_targets.scatter_(1, targets.type(torch.int64), 1.0)
-
+            dense_targets = torch.full([N, C], fill_value=0.0, dtype=torch.float, device=inputs.device)
+            dense_targets.scatter_(1, targets.unsqueeze(1).type(torch.int64), 1.0)
         weight = self.get_weights(inputs, targets)
-        loss = dense_cross_entropy(input=inputs, target=dense_targets, reduction=self.reduction,
+        return self.dense_forward(inputs, targets=dense_targets, mask_out=mask_out, weight=weight)
+
+    def dense_forward(self, inputs, targets, mask_out, weight):
+        return dense_cross_entropy(inputs=inputs, targets=targets, reduction=self.reduction,
                                    weight=weight, mask_out=mask_out, input_type=self.input_type)
-        return loss
 
     def get_weights(self, inputs, targets):
         return None  # nothing interesting here yet
 
 
 @register(kind=CRITERION, name="focal_loss")
-class FocalLoss(Criterion):
+class FocalLoss(CrossEntropy):
 
     def __init__(self, pad_idx: int, label_smoothing=0., reduction='micro', gamma=0.0):
-        super(FocalLoss, self).__init__(pad_idx=pad_idx, input_type='probs')
-        self.gamma = gamma
-        self.label_smoothing = label_smoothing
-        self.reduction = reduction
+        super(FocalLoss, self).__init__(pad_idx=pad_idx, label_smoothing=label_smoothing, reduction=reduction,
+                                        input_type='log_probs')
         assert gamma >= 0.0
+        self.gamma = gamma
 
-    def forward(self, inputs, targets, mask_pad=True):
-        probs = inputs
-        N, C = probs.shape
-        assert targets.shape[0] == probs.shape[0]
-        mask_out = None
-        if mask_pad:
-            mask_out = (targets == self.pad_idx).unsqueeze(1)  # [N] -> [N, 1]
-        if self.label_smoothing > 0:
-            dense_targets = smooth_labels(labels=targets, n_labels=C, smooth_rate=self.label_smoothing)
-        else:
-            dense_targets = torch.full([N, C], fill_value=0.0, dtype=torch.float,
-                                       device=probs.device)
-            dense_targets.scatter_(1, targets.type(torch.int64), 1.0)
+    def get_weights(self, inputs, targets):
         weight = None
-        if self.gamma > 0.0:
-            probs = inputs.softmax(dim=1)
-            weight = (1 - probs).pow(self.gamma)
-
-        loss = dense_cross_entropy(input=probs, target=dense_targets, reduction=self.reduction,
-                                   weight=weight, mask_out=mask_out, input_type=self.input_type)
-        return loss
+        if self.input_type == 'probs':
+            weight = (1 - inputs).pow(self.gamma)
+        elif self.input_type == 'probs':
+            weight = (1 - torch.exp(inputs)).pow(self.gamma)
+        return weight
 
 
 @register(kind=CRITERION, name="binary_cross_entropy")
@@ -217,7 +260,7 @@ class BinaryCrossEntropy(Criterion):
         targets = targets.unsqueeze(1)
 
         truth_full = torch.full_like(logits, fill_value=self.smoothing, requires_grad=False)
-        #truth_full = torch.zeros_like(logits, requires_grad=False)
+        # truth_full = torch.zeros_like(logits, requires_grad=False)
         truth_full.scatter_(1, targets, 1)
 
         per_time_per_class_loss = self.bce_loss(logits, truth_full)
@@ -225,8 +268,8 @@ class BinaryCrossEntropy(Criterion):
             pad_mask = targets == self.pad_idx
             per_time_per_class_loss.masked_fill_(mask=pad_mask, value=0.)
 
-        #num_toks = batch_size - pad_mask.sum()
-        #mean_loss = per_tok_loss.sum() / num_toks
+        # num_toks = batch_size - pad_mask.sum()
+        # mean_loss = per_tok_loss.sum() / num_toks
         per_tok_loss = per_time_per_class_loss.sum(dim=-1)
         return per_tok_loss
 
@@ -238,12 +281,9 @@ class SmoothKLD(Criterion):
     """
 
     def __init__(self, pad_idx: int, n_classes: int, label_smoothing: float = 0.1):
-        super().__init__(input_type='log_softmax', pad_idx=pad_idx)
+        super().__init__(input_type='log_softmax', pad_idx=pad_idx, reduction='micro')
         self.size = n_classes
         assert 0.0 <= label_smoothing <= 1.0
-
-        # want elementwise_mean but due to padded tokens, we do the division ourselves
-        self.criterion = nn.KLDivLoss(reduction='none')
         self.fill_val = label_smoothing / (n_classes - 2)  # exclude 2  = padding, and expected word
         self.confidence = 1.0 - label_smoothing
 
@@ -257,15 +297,17 @@ class SmoothKLD(Criterion):
         smooth_truth = torch.full_like(x, fill_value=self.fill_val, requires_grad=False)
         smooth_truth[:, self.pad_idx] = 0
         smooth_truth.scatter_(1, target, self.confidence)
-
+        tot_toks = x.shape[0]
         if mask_pad:
             mask = target.eq(self.pad_idx)
             smooth_truth.masked_fill_(mask, 0)
             # note: x is log probs, smooth_truth is just probs
             # D (P || Q) = - \sum p(x) log[q(x)/p(x)]
             # mask is done by setting p(x)=0 for pad toks
-
-        loss = self.criterion(x, smooth_truth)
+            tot_toks -= mask.sum()
+        loss_per_item = F.kl_div(x, smooth_truth, reduction='none')
+        # micro reduction
+        loss = loss_per_item.sum() / tot_toks
         return loss
 
 
@@ -361,11 +403,10 @@ class TverskyLoss(Criterion):
 
     def __init__(self, pad_idx: int, reduction='micro', alpha=0.5, beta=0.5, gamma=0.0,
                  additive_smoothing=1, label_smoothing=0.0):
-        super(TverskyLoss, self).__init__(pad_idx=pad_idx, input_type='probs')
+        super(TverskyLoss, self).__init__(pad_idx=pad_idx, input_type='probs', reduction=reduction)
         self.alpha = alpha
         self.beta = beta
         self.gamma = gamma
-        self.reduction = reduction
         self.additive_smoothing = additive_smoothing
         self.label_smoothing = label_smoothing
 
@@ -387,7 +428,7 @@ class TverskyLoss(Criterion):
             probs = inputs.softmax(dim=1)
             weight = (1 - probs).pow(self.gamma)
 
-        loss = dense_cross_entropy(input=probs, target=dense_targets, reduction=self.reduction,
+        loss = dense_cross_entropy(inputs=probs, targets=dense_targets, reduction=self.reduction,
                                    weight=weight, mask_out=mask_out, input_type=self.input_type)
         return loss
 
@@ -415,4 +456,3 @@ class TverskyLoss(Criterion):
         loss = 1 - similarity     # [N]
         loss = loss.mean()        # [N] --> [1]
         return loss
-
