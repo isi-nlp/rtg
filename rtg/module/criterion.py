@@ -2,13 +2,19 @@
 #
 # Author: Thamme Gowda [tg (at) isi (dot) edu] 
 # Created: 2020-01-23
-
+from typing import Union
 import torch
 from torch import nn
 from torch import Tensor
 import torch.nn.functional as F
 import abc
 from rtg.registry import CRITERION, register
+from rtg import log
+
+
+def batch_dot(a, b):
+    """Computes dot product in batch mode"""
+    return torch.mul(a, b).sum(dim=-1)
 
 
 class Criterion(nn.Module, abc.ABC):
@@ -38,14 +44,14 @@ def smooth_labels(labels, n_labels, smooth_rate, pad_cls_idx=-1, weight=None):
     assert len(labels.shape) == 1
     assert labels.max() < n_labels
     assert 0 <= labels.min()
+    assert 0 <= labels.min()
     assert 0 <= smooth_rate <= 1
 
     N = len(labels)
     labels = labels.view(N, 1)
     device = labels.device
     if weight is None:
-        # take out epsilon and distribute evenly to all but one
-
+        # take out epsilon and distribute evenly to all but one; exclude pad_idx
         fill_value = smooth_rate / (n_labels - (2 if pad_cls_idx >= 0 else 1))
         # expand [N] -> [N, C]
         full = torch.full([N, n_labels], fill_value=fill_value, dtype=torch.float, device=device)
@@ -407,6 +413,8 @@ class TverskyLoss(Criterion):
         self.alpha = alpha
         self.beta = beta
         self.gamma = gamma
+        if gamma > 0.0:
+            log.warning(">>>>> gamma, ɣ > 0,  is not well tested;")
         self.additive_smoothing = additive_smoothing
         self.label_smoothing = label_smoothing
 
@@ -417,42 +425,42 @@ class TverskyLoss(Criterion):
         mask_out = None
         if mask_pad:
             mask_out = (targets == self.pad_idx).unsqueeze(1)  # [N] -> [N, 1]
-        if self.label_smoothing > 0:
+        if self.label_smoothing > 0.0:
             dense_targets = smooth_labels(labels=targets, n_labels=C, smooth_rate=self.label_smoothing)
         else:
-            dense_targets = torch.full([N, C], fill_value=0.0, dtype=torch.float,
-                                       device=probs.device)
+            dense_targets = torch.full([N, C], fill_value=0.0, dtype=torch.float, device=probs.device)
             dense_targets.scatter_(1, targets.type(torch.int64), 1.0)
         weight = None
         if self.gamma > 0.0:
             probs = inputs.softmax(dim=1)
             weight = (1 - probs).pow(self.gamma)
 
-        loss = dense_cross_entropy(inputs=probs, targets=dense_targets, reduction=self.reduction,
-                                   weight=weight, mask_out=mask_out, input_type=self.input_type)
+        loss = self.tversky_loss(inputs=inputs, target=dense_targets, reduction=self.reduction, mask_out=mask_out,
+                                 weight=weight, smoothing=self.additive_smoothing, alpha=self.alpha, beta=self.beta)
         return loss
 
     @classmethod
-    def tversky_loss(cls, input: Tensor, target: Tensor, reduction='micro', mask_out=None, weight=None,
-                     smoothing=0.001, alpha=1, beta=1):
-        assert input.shape == target.shape, f'{input.shape} == {target.shape}?'
-        assert len(input.shape) == 2   # two dims: [Batch, Classes]
-        assert reduction == 'micro', f'reduction={reduction} is not supported; only micro is supported as of now'
+    def tversky_loss(cls, inputs: Tensor, target: Tensor, reduction='micro', mask_out=None, weight=None,
+                     smoothing=1, alpha: Union[int, float] = 1, beta: Union[int, float] = 1):
+        assert inputs.shape == target.shape, f'{inputs.shape} == {target.shape}?'
+        assert len(inputs.shape) == 2   # two dims: [Batch, Classes]
         assert weight is None, f'weight is not supported as of now'
+        assert reduction == 'micro', f'reduction={reduction} is not supported; only micro is supported as of now'
         if mask_out is not None:
-            input = torch.masked_fill(input, mask=mask_out, value=0.0)
+            inputs = torch.masked_fill(inputs, mask=mask_out, value=0.0)
             target = torch.masked_fill(target, mask=mask_out, value=0.0)
 
         # y: target p: input  both are distributions
         # intersection = y . p   ; batch dot product
-        intersection = torch.mul(target, input).sum(dim=1)  # [N, C] [N, C] --> [N]
+        intersection = batch_dot(target, inputs)   # [N, C] [N, C] --> [N]
         # false_pos = (1-y) . p  ; batch dot product
-        false_pos = torch.mul(1-target, input).sum(dim=1)   # [N, C] [N, C] --> [N]
+        false_pos = batch_dot(1-target, inputs)    # [N, C] [N, C] --> [N]
         # false_neg = y . (1-p)
-        false_neg = torch.mul(target, 1-input).sum(dim=1)   # [N, C] [N, C] --> [N]
+        false_neg = batch_dot(target, 1-inputs)    # [N, C] [N, C] --> [N]
 
         similarity = (smoothing + intersection) /\
                      (smoothing + intersection + alpha * false_pos + beta * false_neg)   # [N]
-        loss = 1 - similarity     # [N]
-        loss = loss.mean()        # [N] --> [1]
+        loss = 1 - similarity            # [N]
+        total_items = loss.shape[0] - mask_out.sum()
+        loss = loss.sum() / total_items          # [N] --> [1]
         return loss
