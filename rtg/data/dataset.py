@@ -9,6 +9,7 @@ from typing import List, Iterator, Tuple, Union, Iterable, Dict, Any, Optional
 import torch
 from tqdm import tqdm
 import numpy as np
+import time
 
 from rtg import log, device, cpu_device
 from rtg.data.codec import Field
@@ -626,6 +627,8 @@ class BatchIterable(Iterable[Batch]):
                 with in_mem_file.open('wb') as wrt:
                     pickle.dump(self.data, wrt)
         log.info(f'Batch Size = {batch_size} toks, sort_by={sort_by}')
+        self.n_reads = 0
+        self.last_read_start = 0
 
     def read_all(self):
         batch = []
@@ -687,7 +690,11 @@ class BatchIterable(Iterable[Batch]):
         # every pass introduces some randomness
         batches = self._make_eq_len_batch_ids()
         self.n_batches = len(batches)
-        log.info(f"length sorted random batches = {len(batches)}. Shuffling🔀...")
+        if time.time() - self.last_read_start  > 2 * 60:
+            # Avoid frequent log messages; give 2 min gap
+            self.last_read_start = time.time()
+            self.n_reads += 1
+            log.info(f"Reading data {self.n_reads}: eq_len_rand_batches = {len(batches)}. Shuffling🔀...")
         if not batches:
             raise Exception(f'Found no training data. Please check config and {self.data_path}')
         random.shuffle(batches)

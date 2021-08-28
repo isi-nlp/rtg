@@ -677,7 +677,7 @@ class TransformerTrainer(SteppedTrainer):
                         self._log_resources(batch)
 
                 progress_msg, is_check_pt = train_state.step(batch.y_toks, loss)
-                progress_msg += f', LR={self.opt.curr_lr:0.8f}'
+                progress_msg += f', Loss={loss:g} LR={self.opt.curr_lr:0.8f}'
                 data_bar.set_postfix_str(progress_msg, refresh=False)
                 del batch
 
