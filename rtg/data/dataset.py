@@ -690,11 +690,10 @@ class BatchIterable(Iterable[Batch]):
         # every pass introduces some randomness
         batches = self._make_eq_len_batch_ids()
         self.n_batches = len(batches)
-        if time.time() - self.last_read_start  > 2 * 60:
+        if time.time() - self.last_read_start > 2 * 60:
             # Avoid frequent log messages; give 2 min gap
             self.last_read_start = time.time()
-            self.n_reads += 1
-            log.info(f"Reading data {self.n_reads}: eq_len_rand_batches = {len(batches)}. Shuffling🔀...")
+            log.info(f"Reading data {self.n_reads + 1} sth time; eq_len batches={len(batches)}. Shuffling🔀...")
         if not batches:
             raise Exception(f'Found no training data. Please check config and {self.data_path}')
         random.shuffle(batches)
@@ -704,6 +703,7 @@ class BatchIterable(Iterable[Batch]):
             # batch = [Example(r['x'], r.get('y')) for r in batch]
             yield Batch(batch, sort_dec=self.sort_desc, batch_first=self.batch_first,
                         field=self.field, device=self.device, y_is_cls=self.y_is_cls)
+        self.n_reads += 1
 
     def __iter__(self) -> Iterator[Batch]:
         if self.sort_by == 'eq_len_rand_batch':
