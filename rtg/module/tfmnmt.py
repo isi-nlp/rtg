@@ -825,12 +825,14 @@ class SimpleLossFunction:
 class ChunkedLossCompute(SimpleLossFunction):
     chunk_size: int = 10
 
+    def __post_init__(self):
+        if self.criterion.reduction == 'macro':
+            raise Exception('ChunkedLoss doesnt support reduction=macro; set chunk_size=0 to disable ChunkedLoss')
+
     def __call__(self, y_feats, y_seqs, train_mode=True, chunk_size=None, take_step=True, get_out=False):
         """
-
         :param y_feats:
         :param y_seqs:
-        :param normalizer:
         :param train_mode: Should the gradients be propagated
         :param chunk_size:  Chunk  size along the time dim
         :param take_step: should the optimizer.step() be called
@@ -856,7 +858,7 @@ class ChunkedLossCompute(SimpleLossFunction):
             # B x C x V -> B.C x V
             chunked_dist = chunked_dist.contiguous().view(-1, chunked_dist.shape[-1])
             chunked_ys = y_seqs[:, i:i + chunk_size].contiguous().view(-1)  # B x C -> B.C
-            # FIXME: normalization is improper with chunking and micro or macro reduction
+            # FIXME: normalization is improper with chunking and macro reduction
             loss = self.criterion(chunked_dist, chunked_ys)
             total += loss.detach().item()
             if train_mode:
