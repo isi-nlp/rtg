@@ -58,7 +58,7 @@ class TrainerState:
 
     def progress_bar_msg(self):
         elapsed = time.time() - self.start
-        return f'Loss:{self.running_loss():.4f},' \
+        return f'runLoss:{self.running_loss():.4f},' \
                f' {int(self.total_toks / elapsed)}{self.unit}/s'
 
     def is_check_point(self):
