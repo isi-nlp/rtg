@@ -2,7 +2,7 @@
 #
 # Author: Thamme Gowda [tg (at) isi (dot) edu] 
 # Created: 2020-01-23
-from typing import Union
+from typing import Union, Optional
 import torch
 from torch import nn
 from torch import Tensor
@@ -14,7 +14,12 @@ from rtg import log
 
 def batch_dot(a, b):
     """Computes dot product in batch mode"""
-    return torch.mul(a, b).sum(dim=-1)
+
+    # return torch.mul(a, b).sum(dim=-1)
+    assert a.shape == b.shape
+    n_items, n_dims = a.shape
+    result = torch.bmm(b.view(n_items, 1, n_dims), b.view(n_items, n_dims, 1))
+    return result.squeeze_(1).squeeze_(1)
 
 
 class Criterion(nn.Module, abc.ABC):
@@ -33,31 +38,32 @@ class Criterion(nn.Module, abc.ABC):
         self.reduction = reduction
 
 
-def smooth_labels(labels, n_labels, smooth_rate, pad_cls_idx=-1, weight=None):
+def smooth_labels(labels, n_labels, smooth_rate, ignore_idx=-1, weight=None):
     """
     :param labels: labels [N] where each item is in range {0, 1, 2,... C-1}
     :param n_labels: total number of classes
     :param smooth_rate: the magnitude of smoothing
     :param weight: distribute epsilon as per the weights
+    :param ignore_idx: ignore this index (e.g. padding)
     :return:
     """
     assert len(labels.shape) == 1
     assert labels.max() < n_labels
     assert 0 <= labels.min()
     assert 0 <= labels.min()
-    assert 0 <= smooth_rate <= 1
+    assert 0 <= smooth_rate < 1
 
     N = len(labels)
     labels = labels.view(N, 1)
     device = labels.device
     if weight is None:
         # take out epsilon and distribute evenly to all but one; exclude pad_idx
-        fill_value = smooth_rate / (n_labels - (2 if pad_cls_idx >= 0 else 1))
+        fill_value = smooth_rate / (n_labels - (2 if ignore_idx >= 0 else 1))
         # expand [N] -> [N, C]
         full = torch.full([N, n_labels], fill_value=fill_value, dtype=torch.float, device=device)
         full.scatter_(1, labels.type(torch.int64), 1 - smooth_rate)
-        if pad_cls_idx >= 0:
-            full[:, pad_cls_idx] = 0
+        if ignore_idx >= 0:
+            full[:, ignore_idx] = 0.0
     else:
         assert len(weight) == n_labels
         weight = weight.to(device)
@@ -66,6 +72,16 @@ def smooth_labels(labels, n_labels, smooth_rate, pad_cls_idx=-1, weight=None):
         # peaks = torch.tensor(1 - epsilon, device=device).expand(N, 1)  # [N, 1]
         full.scatter_add_(1, labels, peaks)  # inplace add
     return full
+
+
+def get_dense_targets(labels, n_labels, label_smoothing, ignore_idx=-1, weight=None):
+    if label_smoothing > 0.0:
+        dense_targets = smooth_labels(labels=labels, n_labels=n_labels, smooth_rate=label_smoothing,
+                                      ignore_idx=ignore_idx, weight=weight)
+    else:
+        assert weight is None, 'weight is supported only if label_smoothing > 0'
+        dense_targets = F.one_hot(labels, num_classes=n_labels).float().to(labels.device)
+    return dense_targets
 
 
 def dense_cross_entropy_old(inputs: Tensor, targets: Tensor, reduction=None, mask_out=None, weight=None,
@@ -216,12 +232,9 @@ class CrossEntropy(Criterion):
         assert targets.shape[0] == inputs.shape[0]
         mask_out = None
         if mask_pad:
-            mask_out = (targets == self.pad_idx).unsqueeze(1) # [N] -> [N, 1]
-        if self.label_smoothing > 0:
-            dense_targets = smooth_labels(labels=targets, n_labels=C, smooth_rate=self.label_smoothing)
-        else:
-            dense_targets = torch.full([N, C], fill_value=0.0, dtype=torch.float, device=inputs.device)
-            dense_targets.scatter_(1, targets.unsqueeze(1).type(torch.int64), 1.0)
+            mask_out = (targets == self.pad_idx).unsqueeze(1)       # [N] -> [N, 1]
+        dense_targets = get_dense_targets(labels=targets, n_labels=C, label_smoothing=self.label_smoothing,
+                                          ignore_idx=self.pad_idx)
         weight = self.get_weights(inputs, targets)
         return self.dense_forward(inputs, targets=dense_targets, mask_out=mask_out, weight=weight)
 
@@ -424,43 +437,100 @@ class TverskyLoss(Criterion):
         assert targets.shape[0] == probs.shape[0]
         mask_out = None
         if mask_pad:
-            mask_out = (targets == self.pad_idx).unsqueeze(1)  # [N] -> [N, 1]
-        if self.label_smoothing > 0.0:
-            dense_targets = smooth_labels(labels=targets, n_labels=C, smooth_rate=self.label_smoothing)
-        else:
-            dense_targets = torch.full([N, C], fill_value=0.0, dtype=torch.float, device=probs.device)
-            dense_targets.scatter_(1, targets.type(torch.int64), 1.0)
+            mask_out = (targets == self.pad_idx)  # [N] -> [N, 1]
+        dense_targets = get_dense_targets(labels=targets, n_labels=C, label_smoothing=self.label_smoothing,
+                                          ignore_idx=self.pad_idx)
         weight = None
         if self.gamma > 0.0:
             probs = inputs.softmax(dim=1)
             weight = (1 - probs).pow(self.gamma)
 
-        loss = self.tversky_loss(inputs=inputs, target=dense_targets, reduction=self.reduction, mask_out=mask_out,
+        loss = self.tversky_loss(inputs=inputs, targets=dense_targets, reduction=self.reduction, mask_out=mask_out,
                                  weight=weight, smoothing=self.additive_smoothing, alpha=self.alpha, beta=self.beta)
         return loss
 
     @classmethod
-    def tversky_loss(cls, inputs: Tensor, target: Tensor, reduction='micro', mask_out=None, weight=None,
+    def tversky_loss(cls, inputs: Tensor, targets: Tensor, reduction='micro', mask_out=None, weight=None,
                      smoothing=1, alpha: Union[int, float] = 1, beta: Union[int, float] = 1):
-        assert inputs.shape == target.shape, f'{inputs.shape} == {target.shape}?'
+        assert inputs.shape == targets.shape, f'{inputs.shape} == {targets.shape}?'
         assert len(inputs.shape) == 2   # two dims: [Batch, Classes]
         assert weight is None, f'weight is not supported as of now'
         assert reduction == 'micro', f'reduction={reduction} is not supported; only micro is supported as of now'
-        if mask_out is not None:
-            inputs = torch.masked_fill(inputs, mask=mask_out, value=0.0)
-            target = torch.masked_fill(target, mask=mask_out, value=0.0)
+        # if mask_out is not None:
+            # inputs.masked_fill_(mask=mask_out, value=0.0)
+            # target.masked_fill_(mask=mask_out, value=0.0)
 
         # y: target p: input  both are distributions
-        # intersection = y . p   ; batch dot product
-        intersection = batch_dot(target, inputs)   # [N, C] [N, C] --> [N]
-        # false_pos = (1-y) . p  ; batch dot product
-        false_pos = batch_dot(1-target, inputs)    # [N, C] [N, C] --> [N]
+        # intersection = y . p     ; batch dot product
+        intersection = batch_dot(targets, inputs)   # [N, C] [N, C] --> [N]
+        """
+        # false_pos = (1-y) . p    ; batch dot product
+        false_pos = batch_dot(1-targets, inputs)    # [N, C] [N, C] --> [N]
         # false_neg = y . (1-p)
-        false_neg = batch_dot(target, 1-inputs)    # [N, C] [N, C] --> [N]
+        false_neg = batch_dot(targets, 1-inputs)    # [N, C] [N, C] --> [N]
 
         similarity = (smoothing + intersection) /\
                      (smoothing + intersection + alpha * false_pos + beta * false_neg)   # [N]
-        loss = 1 - similarity            # [N]
-        total_items = loss.shape[0] - mask_out.sum()
+        """
+        # jaccard similarity   #[N]
+        similarity = intersection / (inputs.sum(dim=-1) + targets.sum(dim=-1) - intersection)
+
+        loss = 1 - similarity                     # [N]
+        total_items = inputs.shape[0]
+        if mask_out is not None:
+            loss.masked_fill_(mask_out, value=0.0)
+            total_items -= mask_out.sum()        # exclude these items
         loss = loss.sum() / total_items          # [N] --> [1]
+        return loss
+
+
+@register(kind=CRITERION, name="dice_loss")
+class DiceLoss(Criterion):
+
+    def __init__(self, pad_idx: int, reduction='micro', gamma=0.0, additive_smoothing=1, label_smoothing=0.0,
+                 squared_denominator=False):
+        super().__init__(pad_idx=pad_idx, input_type='logits', reduction=reduction)
+        if gamma > 0.0:
+            log.warning(">>>>> gamma, ɣ > 0,  is not well tested;")
+        self.gamma = gamma
+        self.squared_denominator = squared_denominator
+        self.additive_smoothing = additive_smoothing
+        self.label_smoothing = label_smoothing
+
+    def forward(self, inputs, targets, mask_pad=True):
+        probs = inputs.softmax(dim=1)
+        N, C = probs.shape
+        assert targets.shape[0] == probs.shape[0]
+        mask_in = None
+        if mask_pad:
+            mask_in = (targets != self.pad_idx).unsqueeze(1).float()        # [N] -> [N, 1]
+        dense_targets = get_dense_targets(labels=targets, n_labels=C, label_smoothing=self.label_smoothing,
+                                          ignore_idx=self.pad_idx)
+        weight = None
+        if self.gamma > 0.0:
+            weight = (1 - probs).pow(self.gamma)
+        loss = self.dice_loss(inputs=inputs, targets=dense_targets, mask_in=mask_in, weight=weight)
+        return loss
+
+    def dice_loss(self, inputs: Tensor, targets: Tensor, mask_in=None, weight=None):
+        assert inputs.shape == targets.shape, f'{inputs.shape} == {targets.shape}?'
+        assert len(inputs.shape) == 2   # two dims: [Batch, Classes]
+        assert weight is None, f'weight is not supported as of now'
+        assert self.reduction == 'micro', f'reduction={self.reduction} is not supported; only micro is supported now'
+        # y: target p: input  both are distributions
+        # intersection = y . p     ; batch dot product
+        intersection = torch.mul(targets, inputs).sum(dim=-1)   # [N, C] [N, C] --> [N]
+        total_items = inputs.shape[0]
+        if mask_in is not None:
+            inputs = inputs * mask_in
+            targets = targets * mask_in
+            total_items = mask_in.sum()
+        numerator = 2 * intersection + self.additive_smoothing
+        if self.squared_denominator:
+            denominator = inputs.pow(2).sum(dim=-1) + targets.pow(2).sum(dim=-1)  # [N]
+        else:
+            denominator = inputs.sum(dim=-1) + targets.sum(dim=-1)       # [N]
+        similarity = numerator / (numerator + denominator)
+        loss = 1 - similarity                # [N]
+        loss = loss.sum() / total_items      # [N] --> [1]
         return loss

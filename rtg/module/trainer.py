@@ -33,7 +33,7 @@ class TrainerState:
     total_loss: float = 0.0
     steps: int = 0
     start: float = time.time()
-    unit:str = 'tok'
+    unit: str = 'tok'
 
     def running_loss(self):
         return self.total_loss / self.steps if self.steps > 0 else float('inf')
@@ -54,12 +54,13 @@ class TrainerState:
         self.steps += 1
         self.total_toks += toks
         self.total_loss += loss
-        return self.progress_bar_msg(), self.is_check_point()
+        return self.progress_bar_msg(itLoss=f'{loss:g}'), self.is_check_point()
 
-    def progress_bar_msg(self):
+    def progress_bar_msg(self, **kwargs):
+        extra = ' '.join(f'{k}={v}' for k, v in kwargs.items())
         elapsed = time.time() - self.start
-        return f'runLoss:{self.running_loss():.4f},' \
-               f' {int(self.total_toks / elapsed)}{self.unit}/s'
+        return f'avgLoss:{self.running_loss():.4f},' \
+               f' {int(self.total_toks / elapsed)}{self.unit}/s {extra}'
 
     def is_check_point(self):
         return self.steps == self.check_point
