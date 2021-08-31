@@ -185,13 +185,13 @@ def dense_cross_entropy(inputs: Tensor, targets: Tensor, reduction='none', mask_
         target_mass_per_class = targets.sum(dim=0) + infinitesimal
         # KL div per item (i.e. sum of each row in table) is guaranteed to be positive,
         # however per-item-per-class (i.e. each cell in the table) is not guaranteed to +ve
-        loss_per_class = losses.abs().sum(dim=0)
+        loss_per_class = losses.pow(2).sum(dim=0)
         assert loss_per_class.shape == target_mass_per_class.shape
         loss_per_class_normalized = loss_per_class / target_mass_per_class
         return loss_per_class_normalized.mean()
     elif reduction == 'macro+micro':
         micro = losses.sum(dim=1).sum() / tot_items
-        macro = (losses.abs().sum(dim=0) / (targets.sum(dim=0) + infinitesimal)).mean()
+        macro = (losses.pow(2).sum(dim=0) / (targets.sum(dim=0) + infinitesimal)).mean()
         return macro + micro
     else:
         raise ValueError(f'reduce={reduction} not supported; try: none micro macro macro+micro')
@@ -534,3 +534,4 @@ class DiceLoss(Criterion):
         loss = 1 - similarity                # [N]
         loss = loss.sum() / total_items      # [N] --> [1]
         return loss
+
