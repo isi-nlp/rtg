@@ -24,6 +24,7 @@ def batch_dot(a, b):
 
 class Criterion(nn.Module, abc.ABC):
     """Base class for Criterion functions"""
+    infinitesimal = 1e-8
 
     def __init__(self, input_type: str, pad_idx: int, reduction='micro'):
         """
@@ -85,7 +86,7 @@ def get_dense_targets(labels, n_labels, label_smoothing, ignore_idx=-1, weight=N
 
 
 def dense_cross_entropy_old(inputs: Tensor, targets: Tensor, reduction=None, mask_out=None, weight=None,
-                        input_type='logits') -> Tensor:
+                            input_type='logits') -> Tensor:
     """
     :param inputs: input tensor, see input_type
     :param targets: probability distribution of labels
@@ -105,13 +106,13 @@ def dense_cross_entropy_old(inputs: Tensor, targets: Tensor, reduction=None, mas
     """
     N, C = inputs.shape
     infinitesimal = 1e-9  # to avoid divide by zero
-    #target is dense; i.e not one-hot
+    # target is dense; i.e not one-hot
     assert inputs.shape == targets.shape, f'input shape: {inputs.shape}, target is {targets.shape}'
     if mask_out is not None:
-        assert mask_out.shape in [(N, C), (1, C), (N, 1)],\
+        assert mask_out.shape in [(N, C), (1, C), (N, 1)], \
             f'input: {inputs.shape} and mask_out: {mask_out.shape} are not broadcastable'
     if weight is not None:
-        assert weight.shape in [(N, C), (1, C), (N, 1)],\
+        assert weight.shape in [(N, C), (1, C), (N, 1)], \
             f'input: {inputs.shape} weight: {weight.shape} are not broadcastable'
 
     if input_type == 'log_probs':
@@ -126,15 +127,15 @@ def dense_cross_entropy_old(inputs: Tensor, targets: Tensor, reduction=None, mas
 
     tot_items, tot_classes = N, C
     # [N, C] :  -y_c * log(p_c)
-    #table = -torch.mul(targets, log_probs)  # loss per item per class
+    # table = -torch.mul(targets, log_probs)  # loss per item per class
     table = torch.kl_div(inputs, targets)
-    if mask_out is not None:   # overwrite positions with mask=True to zero
+    if mask_out is not None:  # overwrite positions with mask=True to zero
         table.masked_fill_(mask_out, value=0.0)
-        if mask_out.shape == (N, 1):     # [N, 1] => sum items are excluded e.g. pad tokens
+        if mask_out.shape == (N, 1):  # [N, 1] => sum items are excluded e.g. pad tokens
             tot_items -= mask_out.sum()
     assert tot_items > 0, f'tot_items should be positive; N={N}, C={C}, |mask_out|={mask_out.sum()}'
     if weight is not None:
-        table.mul_(weight)       # assumption: weight is broadcastable
+        table.mul_(weight)  # assumption: weight is broadcastable
 
     if reduction is None or reduction == 'none':
         return table
@@ -162,18 +163,18 @@ def dense_cross_entropy_old(inputs: Tensor, targets: Tensor, reduction=None, mas
 
 
 def dense_cross_entropy(inputs: Tensor, targets: Tensor, reduction='none', mask_out=None, weight=None,
-                        input_type='log_probs', infinitesimal=1e-5) -> Tensor:
+                        input_type='log_probs', infinitesimal=1e-8) -> Tensor:
     assert input_type == 'log_probs'
     assert inputs.shape == targets.shape
     tot_items, tot_classes = inputs.shape
     losses = torch.kl_div(input=inputs, target=targets)
     if mask_out is not None:
         losses.masked_fill_(mask_out, value=0.0)
-        if mask_out.shape == (tot_items, 1):     # [N, 1] => sum items are excluded e.g. pad tokens
+        if mask_out.shape == (tot_items, 1):  # [N, 1] => sum items are excluded e.g. pad tokens
             tot_items -= mask_out.sum()
     assert tot_items > 0, f'tot_items should be positive; input={inputs.shape}, |mask_out|={mask_out.sum()}'
     if weight is not None:
-        losses.mul_(weight)       # assumption: weight is broadcastable
+        losses.mul_(weight)  # assumption: weight is broadcastable
 
     if reduction == 'none':
         return losses
@@ -200,13 +201,15 @@ def dense_cross_entropy(inputs: Tensor, targets: Tensor, reduction='none', mask_
 @register(kind=CRITERION, name="vanilla_cross_entropy")
 class VanillaCrossEntropy(Criterion):
 
-    def __init__(self, pad_idx: int, input_type='log_probs'):
+    def __init__(self, pad_idx: int, input_type='log_probs', exp=None):
         super().__init__(input_type=input_type, pad_idx=pad_idx, reduction='micro')
+        self.exp = exp
+        self.weight = None
 
     def forward(self, inputs, targets, mask_pad=True):
         # logits: [N x C] targets: [N]
         assert targets.shape[0] == inputs.shape[0]
-        losses = F.cross_entropy(input=inputs, target=targets, reduction='none')
+        losses = F.cross_entropy(input=inputs, target=targets, reduction='none', weight=self.weight)
         tot_items = targets.shape[0]
         if mask_pad:
             mask_out = targets.eq(self.pad_idx)
@@ -232,15 +235,13 @@ class CrossEntropy(Criterion):
         assert targets.shape[0] == inputs.shape[0]
         mask_out = None
         if mask_pad:
-            mask_out = (targets == self.pad_idx).unsqueeze(1)       # [N] -> [N, 1]
+            mask_out = (targets == self.pad_idx).unsqueeze(1)  # [N] -> [N, 1]
         dense_targets = get_dense_targets(labels=targets, n_labels=C, label_smoothing=self.label_smoothing,
                                           ignore_idx=self.pad_idx)
         weight = self.get_weights(inputs, targets)
-        return self.dense_forward(inputs, targets=dense_targets, mask_out=mask_out, weight=weight)
-
-    def dense_forward(self, inputs, targets, mask_out, weight):
-        return dense_cross_entropy(inputs=inputs, targets=targets, reduction=self.reduction,
-                                   weight=weight, mask_out=mask_out, input_type=self.input_type)
+        return dense_cross_entropy(inputs=inputs, targets=dense_targets, reduction=self.reduction,
+                                   weight=weight, mask_out=mask_out, input_type=self.input_type,
+                                   infinitesimal=self.infinitesimal)
 
     def get_weights(self, inputs, targets):
         return None  # nothing interesting here yet
@@ -259,7 +260,7 @@ class FocalLoss(CrossEntropy):
         weight = None
         if self.input_type == 'probs':
             weight = (1 - inputs).pow(self.gamma)
-        elif self.input_type == 'probs':
+        elif self.input_type == 'log_probs':
             weight = (1 - torch.exp(inputs)).pow(self.gamma)
         return weight
 
@@ -366,20 +367,20 @@ class TripletLoss(Criterion):
 
     def forward(self, x, targets):
         # x: [B x D]   targets:[B]
-        anchors = x      # [B x D]
+        anchors = x  # [B x D]
         pos_embs = self.embedding(targets)  # [B x D]
         if self.neg_sampling == 'random':
-            neg_ids = torch.randint_like(targets, low=self.pad_idx+1, high=self.vocab_size)  # [B]
+            neg_ids = torch.randint_like(targets, low=self.pad_idx + 1, high=self.vocab_size)  # [B]
         elif self.neg_sampling == 'hard':
-            candidates = torch.einsum('bd,vd->bv', anchors, self.embeddings)    # [B, V]
-            mask = candidates.new_full(candidates.shape, False, dtype=torch.bool) # [B, V]
+            candidates = torch.einsum('bd,vd->bv', anchors, self.embeddings)  # [B, V]
+            mask = candidates.new_full(candidates.shape, False, dtype=torch.bool)  # [B, V]
             mask.scatter_(dim=1, index=targets.view(-1, 1), value=True)
             candidates = candidates.masked_fill(mask, -1)
             c, indexes = torch.sort(candidates)
-            neg_ids = indexes[:, -self.hard_neg_region].contiguous().view(-1)  #[B]
+            neg_ids = indexes[:, -self.hard_neg_region].contiguous().view(-1)  # [B]
         else:
             raise Exception(self.neg_sampling + ' not supported')
-        neg_embs = self.embedding(neg_ids)   # [B x D]
+        neg_embs = self.embedding(neg_ids)  # [B x D]
 
         if self.mode == 'l2':
             triplet_loss = self.distance(anchors, pos_embs) - self.distance(anchors, neg_embs) + self.margin
@@ -417,73 +418,6 @@ class SmoothKLDAndTripletLoss(Criterion):
         return sKLD.sum() + self.alpha * tLoss.sum()
 
 
-@register(kind=CRITERION, name="tversky_loss")
-class TverskyLoss(Criterion):
-
-    def __init__(self, pad_idx: int, reduction='micro', alpha=0.5, beta=0.5, gamma=0.0,
-                 additive_smoothing=1, label_smoothing=0.0):
-        super(TverskyLoss, self).__init__(pad_idx=pad_idx, input_type='probs', reduction=reduction)
-        self.alpha = alpha
-        self.beta = beta
-        self.gamma = gamma
-        if gamma > 0.0:
-            log.warning(">>>>> gamma, ɣ > 0,  is not well tested;")
-        self.additive_smoothing = additive_smoothing
-        self.label_smoothing = label_smoothing
-
-    def forward(self, inputs, targets, mask_pad=True):
-        probs = inputs
-        N, C = probs.shape
-        assert targets.shape[0] == probs.shape[0]
-        mask_out = None
-        if mask_pad:
-            mask_out = (targets == self.pad_idx)  # [N] -> [N, 1]
-        dense_targets = get_dense_targets(labels=targets, n_labels=C, label_smoothing=self.label_smoothing,
-                                          ignore_idx=self.pad_idx)
-        weight = None
-        if self.gamma > 0.0:
-            probs = inputs.softmax(dim=1)
-            weight = (1 - probs).pow(self.gamma)
-
-        loss = self.tversky_loss(inputs=inputs, targets=dense_targets, reduction=self.reduction, mask_out=mask_out,
-                                 weight=weight, smoothing=self.additive_smoothing, alpha=self.alpha, beta=self.beta)
-        return loss
-
-    @classmethod
-    def tversky_loss(cls, inputs: Tensor, targets: Tensor, reduction='micro', mask_out=None, weight=None,
-                     smoothing=1, alpha: Union[int, float] = 1, beta: Union[int, float] = 1):
-        assert inputs.shape == targets.shape, f'{inputs.shape} == {targets.shape}?'
-        assert len(inputs.shape) == 2   # two dims: [Batch, Classes]
-        assert weight is None, f'weight is not supported as of now'
-        assert reduction == 'micro', f'reduction={reduction} is not supported; only micro is supported as of now'
-        # if mask_out is not None:
-            # inputs.masked_fill_(mask=mask_out, value=0.0)
-            # target.masked_fill_(mask=mask_out, value=0.0)
-
-        # y: target p: input  both are distributions
-        # intersection = y . p     ; batch dot product
-        intersection = batch_dot(targets, inputs)   # [N, C] [N, C] --> [N]
-        """
-        # false_pos = (1-y) . p    ; batch dot product
-        false_pos = batch_dot(1-targets, inputs)    # [N, C] [N, C] --> [N]
-        # false_neg = y . (1-p)
-        false_neg = batch_dot(targets, 1-inputs)    # [N, C] [N, C] --> [N]
-
-        similarity = (smoothing + intersection) /\
-                     (smoothing + intersection + alpha * false_pos + beta * false_neg)   # [N]
-        """
-        # jaccard similarity   #[N]
-        similarity = intersection / (inputs.sum(dim=-1) + targets.sum(dim=-1) - intersection)
-
-        loss = 1 - similarity                     # [N]
-        total_items = inputs.shape[0]
-        if mask_out is not None:
-            loss.masked_fill_(mask_out, value=0.0)
-            total_items -= mask_out.sum()        # exclude these items
-        loss = loss.sum() / total_items          # [N] --> [1]
-        return loss
-
-
 @register(kind=CRITERION, name="dice_loss")
 class DiceLoss(Criterion):
 
@@ -499,11 +433,12 @@ class DiceLoss(Criterion):
 
     def forward(self, inputs, targets, mask_pad=True):
         probs = inputs.softmax(dim=1)
+        #probs = inputs.sigmoid()
         N, C = probs.shape
         assert targets.shape[0] == probs.shape[0]
         mask_in = None
         if mask_pad:
-            mask_in = (targets != self.pad_idx).unsqueeze(1).float()        # [N] -> [N, 1]
+            mask_in = (targets != self.pad_idx).unsqueeze(1).float()  # [N] -> [N, 1]
         dense_targets = get_dense_targets(labels=targets, n_labels=C, label_smoothing=self.label_smoothing,
                                           ignore_idx=self.pad_idx)
         weight = None
@@ -514,12 +449,12 @@ class DiceLoss(Criterion):
 
     def dice_loss(self, inputs: Tensor, targets: Tensor, mask_in=None, weight=None):
         assert inputs.shape == targets.shape, f'{inputs.shape} == {targets.shape}?'
-        assert len(inputs.shape) == 2   # two dims: [Batch, Classes]
+        assert len(inputs.shape) == 2  # two dims: [Batch, Classes]
         assert weight is None, f'weight is not supported as of now'
         assert self.reduction == 'micro', f'reduction={self.reduction} is not supported; only micro is supported now'
         # y: target p: input  both are distributions
         # intersection = y . p     ; batch dot product
-        intersection = torch.mul(targets, inputs).sum(dim=-1)   # [N, C] [N, C] --> [N]
+        intersection = torch.mul(targets, inputs).sum(dim=-1)  # [N, C] [N, C] --> [N]
         total_items = inputs.shape[0]
         if mask_in is not None:
             inputs = inputs * mask_in
@@ -529,9 +464,47 @@ class DiceLoss(Criterion):
         if self.squared_denominator:
             denominator = inputs.pow(2).sum(dim=-1) + targets.pow(2).sum(dim=-1)  # [N]
         else:
-            denominator = inputs.sum(dim=-1) + targets.sum(dim=-1)       # [N]
+            denominator = inputs.sum(dim=-1) + targets.sum(dim=-1)  # [N]
         similarity = numerator / (numerator + denominator)
-        loss = 1 - similarity                # [N]
-        loss = loss.sum() / total_items      # [N] --> [1]
+        loss = 1 - similarity  # [N]
+        loss = loss.sum() / total_items  # [N] --> [1]
         return loss
 
+
+@register(kind=CRITERION, name="squared_error")
+class SquaredError(Criterion):
+
+    def __init__(self, pad_idx: int, label_smoothing: float = 0.1, reduction='micro'):
+        super().__init__(input_type='probs', pad_idx=pad_idx, reduction=reduction)
+        self.label_smoothing = label_smoothing
+        assert 0.0 <= label_smoothing <= 1.0
+        assert reduction in ('micro', 'macro')
+
+    def forward(self, x, target, mask_pad=True):
+        # 'x' is log probabilities, originally [B, T, V], but here [B.T, V]
+        # 'target' is expected word Ids, originally [B, T] but here [B.T]
+        assert x.shape[0] == target.shape[0]
+        n_labels = x.shape[1]
+        smooth_truth = smooth_labels(labels=target, n_labels=n_labels, smooth_rate=self.label_smoothing,
+                                     ignore_idx=self.pad_idx)
+        tot_toks = x.shape[0]
+        if mask_pad:
+            mask = target.eq(self.pad_idx).unsqueeze(1)
+            smooth_truth.masked_fill_(mask, 0)
+            x = x.masked_fill(mask, 0)
+            tot_toks -= mask.sum()
+        assert tot_toks > 0
+        dist_sq = (x - smooth_truth).pow(2)
+        loss_per_item_per_cls = dist_sq
+        if self.reduction == 'micro':
+            loss_per_item = loss_per_item_per_cls.sum(dim=1)  # sum along rows
+            loss = loss_per_item.sum() / tot_toks
+        elif self.reduction == 'macro':
+            mass_per_cls = smooth_truth.sum(dim=0) + self.infinitesimal
+            loss_per_cls = loss_per_item_per_cls.sum(dim=0)  # sum along rows
+            loss_per_cls /= mass_per_cls + self.infinitesimal
+            return loss_per_cls.sum() / n_labels
+        else:
+            raise Exception(f'Reduction {self.reduction} not supported; try micro or macro')
+
+        return loss
