@@ -2,7 +2,6 @@
 #
 # Author: Thamme Gowda [tg (at) isi (dot) edu] 
 # Created: 2020-01-23
-from typing import Union, Optional
 import torch
 from torch import nn
 from torch import Tensor

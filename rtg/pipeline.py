@@ -75,6 +75,7 @@ class Pipeline:
         detok_file = inp.with_suffix('.detok')
         with inp.open() as lines, detok_file.open('w') as out:
             for line in lines:
+                line = line.split('\t')[0]
                 out.write(post_proc(line) + '\n')
         return detok_file
 

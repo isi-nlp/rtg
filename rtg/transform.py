@@ -6,14 +6,22 @@ from sacremoses import MosesTokenizer, MosesDetokenizer, MosesPunctNormalizer, M
 from functools import partial
 from rtg.utils import shell_pipe
 
+moses_detokr = MosesDetokenizer()
+
+
+def moses_detok(text):
+    assert isinstance(text, str)
+    return moses_detokr.detokenize(text.split(), return_str=True, unescape=True)
+
+
 text_transformers = {
     'no_op': lambda x: x,
     'space_tok': lambda x: ' '.join(x.strip().split()),  # removes extra white spaces
-    'space_detok': lambda toks: ' '.join(toks),
+    'space_detok': lambda toks: ' '.join(toks.split()),  # removes extra white spaces
     'moses_tok': partial(MosesTokenizer().tokenize, escape=False, return_str=True,
                          aggressive_dash_splits=True,
                          protected_patterns=MosesTokenizer.WEB_PROTECTED_PATTERNS),
-    'moses_detok': partial(MosesDetokenizer().detokenize, return_str=True, unescape=True),
+    'moses_detok': moses_detok,
     'moses_truecase': partial(MosesTruecaser().truecase, return_str=True),
     'lowercase': lambda x: x.lower(),
     'drop_unk': lambda x: x.replace('<unk>', ''),
@@ -33,9 +41,6 @@ class TextTransform:
         for stage in self.chain:
             res = stage(res)
         return res
-
-    def map(self, texts):
-        yield from (self(text) for text in texts)
 
     @classmethod
     def make(cls, names):

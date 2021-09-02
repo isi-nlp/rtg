@@ -57,7 +57,7 @@ def attach_translate_route(cli_args):
         for source in sources:
             translated = decoder.decode_sentence(source, **dec_args)[0][1]
             if prep:
-                translated = tgt_postp(translated.split())
+                translated = tgt_postp(translated)
             translations.append(translated)
 
         res = dict(source=sources, translation=translations)

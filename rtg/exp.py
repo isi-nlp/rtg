@@ -795,7 +795,6 @@ class TranslationExperiment(BaseExperiment):
             torch.save(avg_state, self.parent_model_state)
             self.persist_state()  # this will fix src_vocab and tgt_vocab of model_args conf
 
-
     def pre_process(self, args=None, force=False):
         args = args or self.config['prep']
         super(TranslationExperiment, self).pre_process(args, )

@@ -486,7 +486,7 @@ class TransformerTrainer(SteppedTrainer):
         total_tokens = 0
         total_loss = 0.0
         num_batches = 0
-        hyps, refs = [], []  # BLEU
+        hyps_raw, hyps, refs = [], [], []  # BLEU
         model = self.core_model
         assert not model.training
         tgt_post_proc = self.exp.get_post_transform(side='tgt')
@@ -521,6 +521,7 @@ class TransformerTrainer(SteppedTrainer):
                 outs = outs.tolist()
                 for out in outs:
                     hyp = self.exp.tgt_vocab.decode_ids(out, trunc_eos=True)
+                    hyps_raw.append(hyp)
                     hyp = tgt_post_proc(hyp)   # detok, drop unk
                     hyps.append(hyp)
 
@@ -549,14 +550,19 @@ class TransformerTrainer(SteppedTrainer):
             'chrf2': chrf2.score
         }
         self.tbd.add_scalars('validn_metrics', metrics, self.opt.curr_step)
-        path = self.exp.model_dir / 'validation.metrics.tsv'
-        write_header = not path.exists()
-        with path.open('a') as out:
-            if write_header:
-                header = ['step'] + list(metrics.keys())
-                out.write('\t'.join(header) + '\n')
-            rec = [self.opt.curr_step] + list(metrics.values())
-            out.write('\t'.join(f'{v:g}' for v in rec) + '\n')
+        if not self.exp.read_only:
+            path = self.exp.model_dir / 'validation.metrics.tsv'
+            write_header = not path.exists()
+            with path.open('a') as out:
+                if write_header:
+                    header = ['step'] + list(metrics.keys())
+                    out.write('\t'.join(header) + '\n')
+                rec = [self.opt.curr_step] + list(metrics.values())
+                out.write('\t'.join(f'{v:g}' for v in rec) + '\n')
+            path = self.exp.model_dir / 'validations' / f'{self.opt.curr_step:05d}.out'
+            path.parent.mkdir(exist_ok=True)
+            path.write_text("\n".join(hyps_raw))
+            path.with_suffix(".out.detok").write_text("\n".join(hyps))
         return metrics
 
     def overfit_batch(self, batch, max_iters=100, stop_loss=0.01):
