@@ -1021,7 +1021,8 @@ class TranslationExperiment(BaseExperiment):
         return data
 
     def get_class_freqs(self):
-        train_data = self.get_train_data(batch_size=2000, steps=0)
+        batch_size = self.config.get('trainer', {}).get('batch_size', 2000)
+        train_data = self.get_train_data(batch_size=batch_size, steps=-1, shuffle=False)
         freq_file = self.data_dir / 'class.freqs.tsv'
         vocab = self.tgt_vocab
 
