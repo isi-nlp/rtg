@@ -5,7 +5,7 @@ import math
 import time
 import gc
 from abc import ABC
-from typing import Callable, Optional, Union
+from typing import Callable, Optional, Union, Dict
 import traceback
 
 import torch
@@ -23,8 +23,9 @@ from rtg.module.trainer import TrainerState, SteppedTrainer, EarlyStopper
 from rtg.module.criterion import Criterion
 from torch.optim.optimizer import Optimizer
 from dataclasses import dataclass
-from sacrebleu import corpus_bleu
+from sacrebleu import corpus_bleu, corpus_chrf
 from rtg.distrib import DistribTorch
+
 
 dtorch = DistribTorch.instance()
 
@@ -349,8 +350,8 @@ def attention(query, key, value, mask=None, dropout=None):
         # Now, if you got this, take a moment to thank http://nlp.seas.harvard.edu/rush.html
         # for devising this concise code. I needed a lot of time to understand how this code works!
         #
-        #scores = scores.masked_fill(mask == 0, -1e9)
-        low_val = -2**15 if dtorch.fp16 else -1e9
+        # scores = scores.masked_fill(mask == 0, -1e9)
+        low_val = -2 ** 15 if dtorch.fp16 else -1e9
         scores = scores.masked_fill(mask == 0, low_val)
     p_attn = F.softmax(scores, dim=-1)  # [BatchSize x Heads x Time=SeqLen x SeqLen ]
     if dropout is not None:
@@ -466,6 +467,7 @@ class TransformerTrainer(SteppedTrainer):
 
         generator = self.core_model.generator
         chunk_size = self.init_args.get('chunk_size', -1)
+
         if not chunk_size or chunk_size < 1:
             self.loss_func = SimpleLossFunction(generator=generator, criterion=self.criterion,
                                                 opt=self.opt)
@@ -474,32 +476,32 @@ class TransformerTrainer(SteppedTrainer):
             self.loss_func = ChunkedLossCompute(generator=generator, criterion=self.criterion,
                                                 opt=self.opt, chunk_size=chunk_size)
 
-    def run_valid_epoch(self, data_iter: BatchIterable, dec_bos_cut=False, do_bleu=True):
+    def run_valid_epoch(self, data_iter: BatchIterable, dec_bos_cut=False) -> Dict[str, float]:
         """
         :param data_iter: data iterator
         :param dec_bos_cut: cut first step of input as first step of decoder
-        :return: loss value
+        :return: dictionary of metrics including loss, bleu
         """
         start = time.time()
         total_tokens = 0
         total_loss = 0.0
         num_batches = 0
-        hyps, refs = [], []   # BLEU
+        hyps, refs = [], []  # BLEU
         model = self.core_model
         assert not model.training
+        tgt_post_proc = self.exp.get_post_transform(side='tgt')
+        do_bleu = True
         with tqdm(data_iter, total=data_iter.num_items,
                   unit='sentence', dynamic_ncols=True) as data_bar:
-            # TODO: BLEU1
             for i, batch in enumerate(data_bar):
                 if self.n_gpus <= 1:
                     batch = batch.to(device)
                 x_seqs = batch.x_seqs
-                if do_bleu and not bool(batch.y_raw):
-                    log.warning("BLEU is not possible; raw sentences are not set to validation batches")
-                    do_bleu = False
-                if do_bleu:
+                if bool(batch.y_raw):
                     refs.extend(batch.y_raw)
-
+                else:
+                    raise Exception(f'Validation references (un tokenized) are required for BLEU '
+                                    f' but not set in conf.yml')
                 if dec_bos_cut:
                     bos_step = x_seqs[:, :1]
                     x_seqs = x_seqs[:, 1:]
@@ -516,13 +518,12 @@ class TransformerTrainer(SteppedTrainer):
                 # skip the last time step (the one with EOS as input)
                 out = out[:, :-1, :]
                 # assumption:  y_seqs has EOS, and not BOS
-                loss = self.loss_func(out, batch.y_seqs, train_mode=False, get_out=do_bleu)
-                if do_bleu:
-                    loss, outs = loss
-                    outs = outs.tolist()
-                    for out in outs:
-                        hyp = self.exp.tgt_vocab.decode_ids(out)
-                        hyps.append(hyp)
+                loss, outs = self.loss_func(out, batch.y_seqs, train_mode=False, get_out=do_bleu)
+                outs = outs.tolist()
+                for out in outs:
+                    hyp = self.exp.tgt_vocab.decode_ids(out, trunc_eos=True)
+                    hyp = tgt_post_proc(hyp)   # detok, drop unk
+                    hyps.append(hyp)
 
                 total_loss += loss
                 total_tokens += batch.y_toks
@@ -530,19 +531,34 @@ class TransformerTrainer(SteppedTrainer):
                 elapsed = time.time() - start
                 data_bar.set_postfix_str(
                     f'Loss:{loss:.4f}, {int(batch.y_toks / elapsed)}toks/s', refresh=False)
-
                 start = time.time()
                 data_bar.update(len(batch))
 
-        score = total_loss / num_batches
-        if do_bleu:
-            # this is non standard BLEU: greedy(beam=1), tokenized with whatever was used for training
-            bleu = corpus_bleu(hyps, [refs], tokenize='none', force=True)
-            log.info(f'\n {bleu.format()}')
-            data = {f'P{i+1}':p for i, p in enumerate(bleu.precisions)}
-            data['bleu']=  bleu.score
-            self.tbd.add_scalars('validn_greedytokbleu', data, self.opt.curr_step)
-        return score
+        avg_loss = total_loss / num_batches
+        assert len(hyps) == len(refs)
+        # this is non standard BLEU: greedy(beam=1), tokenized with whatever was used for training
+        bleu = corpus_bleu(hyps, [refs])
+        chrf2 = corpus_chrf(hyps, [refs], order=2)
+        log.info(f'\n\t{bleu.format()}\n\t{chrf2.format()}')
+        metrics = {
+            'loss': avg_loss,
+            'bleu': bleu.score,
+            'bleu_1gm_prec': bleu.precisions[0],
+            'bleu_2gm_prec': bleu.precisions[1],
+            'bleu_3gm_prec': bleu.precisions[2],
+            'bleu_4gm_prec': bleu.precisions[3],
+            'chrf2': chrf2.score
+        }
+        self.tbd.add_scalars('validn_metrics', metrics, self.opt.curr_step)
+        path = self.exp.model_dir / 'validation.metrics.tsv'
+        write_header = not path.exists()
+        with path.open('a') as out:
+            if write_header:
+                header = ['step'] + list(metrics.keys())
+                out.write('\t'.join(header) + '\n')
+            rec = [self.opt.curr_step] + list(metrics.values())
+            out.write('\t'.join(f'{v:g}' for v in rec) + '\n')
+        return metrics
 
     def overfit_batch(self, batch, max_iters=100, stop_loss=0.01):
         """
@@ -625,9 +641,11 @@ class TransformerTrainer(SteppedTrainer):
 
         batch_count = -1
         stopper = None
-        early_stopped = False   # or converged
+        early_stopped = False  # or converged
         if early_stop:
             stopper = EarlyStopper(cur_step=self.start_step, **early_stop)
+        if not stopper or not stopper.enabled:
+            log.warning("Early stopping is not enabled")
 
         with tqdm(train_data, initial=start_batch, total=batches, unit='batch',
                   dynamic_ncols=True, disable=not distr.is_global_main) as data_bar:
@@ -635,8 +653,8 @@ class TransformerTrainer(SteppedTrainer):
                 batch_count += 1
                 take_step = (batch_count % self.grad_accum_interval) == 0
 
-               # if update_interval == 0:
-               #     self.model.zero_grad()
+                # if update_interval == 0:
+                #     self.model.zero_grad()
 
                 #  if not dataparallel, then move
                 if self.n_gpus <= 1:
@@ -688,7 +706,8 @@ class TransformerTrainer(SteppedTrainer):
                     if distr.is_global_main:
                         train_state.train_mode(False)
                         with torch.no_grad():
-                            val_loss = self.run_valid_epoch(val_data, dec_bos_cut=dec_bos_cut)
+                            val_metrics = self.run_valid_epoch(val_data, dec_bos_cut=dec_bos_cut)
+                            val_loss = val_metrics['loss']
                             self.make_check_point(train_loss, val_loss=val_loss, keep_models=keep_models,
                                                   log_embedding=log_embedding)
                             if check_pt_callback:
@@ -698,7 +717,9 @@ class TransformerTrainer(SteppedTrainer):
                         train_state.train_mode(True)
 
                         if stopper:
-                            stopper.validation(val_loss)
+                            score = val_metrics.get(stopper.by, None)
+                            assert score is not None, f'early stop by {stopper.by} is invalid; try {val_metrics.keys()}'
+                            stopper.validation(score)
                             if stopper.is_stop():
                                 log.info(f"Stopping at {stopper.cur_step} because {stopper.by}"
                                          f" didnt improve over {stopper.patience} checkpoints")
@@ -733,6 +754,8 @@ class TransformerTrainer(SteppedTrainer):
 
 
 from rtg.registry import register, MODEL
+
+
 @register(MODEL, name='tfmnmt')
 class TransformerNMT(AbstractTransformerNMT):
     """
@@ -853,7 +876,7 @@ class ChunkedLossCompute(SimpleLossFunction):
             chunked_feats = _y_feats[:, i:i + chunk_size]
             chunked_dist = self.generator(chunked_feats, score=self.criterion.input_type)
             if get_out:
-                top_idxs = chunked_dist.argmax(dim=-1)   # B x C x V -> B x C
+                top_idxs = chunked_dist.argmax(dim=-1)  # B x C x V -> B x C
                 out_chunks.append(top_idxs)
             # B x C x V -> B.C x V
             chunked_dist = chunked_dist.contiguous().view(-1, chunked_dist.shape[-1])

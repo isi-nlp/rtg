@@ -938,13 +938,17 @@ class TranslationExperiment(BaseExperiment):
                                    out_file=train_file, split_ratio=split_ratio, **kwargs)
         return train_file
 
-    def get_val_data(self, batch_size: Union[int, Tuple[int,int]], sort_desc=False, batch_first=True,
+    def get_val_data(self, batch_size: Union[int, Tuple[int, int]], sort_desc=False, batch_first=True,
                      shuffle=False, y_is_cls=False):
-        raw_path = None
         prep = self.config.get('prep', {})
-        if 'valid_src' in prep and 'valid_tgt' in prep:
-            raw_path = prep['valid_src'], prep['valid_tgt']
-
+        raw_tgt = prep.get('valid_tgt_raw', None)
+        if not raw_tgt:
+            raise Exception('Config value prep.valid_tgt_raw is required. It should have path to a file'
+                            ' having raw (unmodified) target file, to be used for computing BLEU.')
+        raw_src = prep.get('valid_src_raw', prep.get('valid_src'))
+        for path in (raw_src, raw_tgt):
+            assert Path(path).exists(), f'File at {path} does not exist; it is required'
+        raw_path = Path(raw_src), Path(raw_tgt)
         return BatchIterable(self.valid_file, batch_size=batch_size, sort_desc=sort_desc,
                              batch_first=batch_first, shuffle=shuffle, field=self.tgt_vocab,
                              keep_in_mem=True, raw_path=raw_path, y_is_cls=y_is_cls,
@@ -958,8 +962,7 @@ class TranslationExperiment(BaseExperiment):
         combo_file = IO.maybe_tmpfs(self.combo_file)
         data = BatchIterable(
             combo_file, batch_size=batch_size, sort_desc=sort_desc, field=self.tgt_vocab,
-            batch_first=batch_first, shuffle=shuffle, **self._get_batch_args()
-        )
+            batch_first=batch_first, shuffle=shuffle, **self._get_batch_args())
         if steps > 0:
             data = LoopingIterable(data, steps)
         return data

@@ -14,7 +14,7 @@ from dataclasses import dataclass
 import torch
 import random
 from collections import defaultdict
-from mosestokenizer import MosesDetokenizer
+
 from sacrebleu import corpus_bleu, BLEUScore
 import inspect
 import copy
@@ -70,40 +70,12 @@ class Pipeline:
                 assert Path(conf['prep']['finetune_src']).exists()
                 assert Path(conf['prep']['finetune_tgt']).exists()
 
-    def moses_detokenize(self, inp: Path, out: Path, col=0, lang='en', post_op=None):
-        log.info(f"detok : {inp} --> {out}")
-        tok_lines = IO.get_lines(inp, col=col, line_mapper=lambda x: x.split())
-        # TODO: replace with sacremoses
-        with MosesDetokenizer(lang=lang) as detok:
-            detok_lines = (detok(tok_line) for tok_line in tok_lines)
-            if post_op:
-                detok_lines = (post_op(line) for line in detok_lines)
-            IO.write_lines(out, detok_lines)
-
-    @classmethod
-    def shell_pipe(cls, cmd_line, inp, out):
-        """
-
-        :param cmd_line: shell commandlines
-        :param inp: input file, to read records
-        :param out:  output file to store records
-        :return:
-        """
-        log.info("Shell cmd:: {cmd_line}")
-        with IO.reader(inp) as rdr, IO.writer(out) as wtr:
-            proc = subprocess.Popen(cmd_line, stdin=rdr, stdout=wtr, shell=True)
-            proc.wait()
-        log.info("Shell cmd:: Done")
-
     def detokenize(self, inp: Path):
-
-        ext_detokenizer = self.exp.config.get('tester', {}).get('detokenizer')
-        if ext_detokenizer:
-            detok_file = inp.with_suffix('.detok')
-            self.shell_pipe(cmd_line=ext_detokenizer, inp=inp, out=detok_file)
-        else:
-            detok_file = inp.with_suffix('.mosesdetok')
-            self.moses_detokenize(inp, out=detok_file, col=0)
+        post_proc = self.exp.get_post_transform(side='tgt')
+        detok_file = inp.with_suffix('.detok')
+        with inp.open() as lines, detok_file.open('w') as out:
+            for line in lines:
+                out.write(post_proc(line) + '\n')
         return detok_file
 
     def evaluate_file(self, detok_hyp: Path, ref: Union[Path, List[str]], lowercase=True) -> float:

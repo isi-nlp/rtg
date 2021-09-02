@@ -5,6 +5,16 @@
     
 - Add transformer sequence classification model: `tfmcls`, supports initialization from pretrained NMT (picks encoder layers, source embeddings, and source vocabs from NMT experiment)
 - Add `rtg-params` command that shows trainable parameters in model (layer wise as well as total)
+- TextTransform moved inside Experiment
+  - Integrated into rtg.pipeline as well as into validation metrics
+- validation on detokenized bleu, chrf, etc is now supported 
+  - `valid_tgt_raw` is now required
+- Criterion:
+  - Sparse and Dense CrossEntropy
+    - Weighted Cross Entropy, with label smoothing
+  - Dice Loss (WIP)
+  - Squared Error
+
 
 # v0.5.1 : 20210814
 - `rtg.serve` supports flexible transformations on source (pre processing) and target (post processing)

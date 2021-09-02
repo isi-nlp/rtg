@@ -73,6 +73,7 @@ class EarlyStopper:
     """
     enabled: bool = True
     by: str = 'loss'
+    minimize: bool = True
     patience: int = 15
     min_steps: int = 0
     cur_step: int = 0
@@ -87,14 +88,8 @@ class EarlyStopper:
         if self.enabled:
             assert self.patience > 0, f'early_stop.patience > 0 ? given={self.patience}'
             assert 1 <= self.buf <= self.patience
-            log.info(f"Early Stop Enabled;")
-
-        if self.by in {'loss'}:
-            self.minimizing = True
-        elif self.by in {'bleu', 'accuracy'}:
-            self.minimizing = False  # maximizing
-        else:
-            raise Exception(f'{self.by} is not supported')
+            goal = "minimize" if self.minimizing else "maximize"
+            log.info(f"Early stopping enabled; {goal} {self.by}; patience {self.patience}")
 
     def step(self):
         self.cur_step += 1
@@ -254,7 +249,7 @@ class SteppedTrainer:
         cri_conf = self.exp.config[CRITERION]
         cri_name, cri_args = cri_conf['name'], cri_conf.get('args') or {}
         assert cri_name in CRITERIA, f'Criterion {cri_name} unknown; known={CRITERIA.keys()}'
-        xt_args = dict(pad_idx = self.exp.tgt_vocab.pad_idx)
+        xt_args = dict(exp=self.exp)
         if cri_name == 'smooth_kld':
             xt_args['n_classes'] = self.core_model.vocab_size
         elif cri_name == 'triplet_loss' or cri_name == 'smooth_kld_and_triplet_loss':
