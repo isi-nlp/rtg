@@ -490,7 +490,6 @@ class TransformerTrainer(SteppedTrainer):
         model = self.core_model
         assert not model.training
         tgt_post_proc = self.exp.get_post_transform(side='tgt')
-        do_bleu = True
         with tqdm(data_iter, total=data_iter.num_items,
                   unit='sentence', dynamic_ncols=True) as data_bar:
             for i, batch in enumerate(data_bar):
@@ -518,7 +517,7 @@ class TransformerTrainer(SteppedTrainer):
                 # skip the last time step (the one with EOS as input)
                 out = out[:, :-1, :]
                 # assumption:  y_seqs has EOS, and not BOS
-                loss, outs = self.loss_func(out, batch.y_seqs, train_mode=False, get_out=do_bleu)
+                loss, outs = self.loss_func(out, batch.y_seqs, train_mode=False, get_out=True)
                 outs = outs.tolist()
                 for out in outs:
                     hyp = self.exp.tgt_vocab.decode_ids(out, trunc_eos=True)
@@ -537,7 +536,7 @@ class TransformerTrainer(SteppedTrainer):
         avg_loss = total_loss / num_batches
         assert len(hyps) == len(refs)
         # this is non standard BLEU: greedy(beam=1), tokenized with whatever was used for training
-        bleu = corpus_bleu(hyps, [refs])
+        bleu = corpus_bleu(hyps, [refs], lowercase=True)
         chrf2 = corpus_chrf(hyps, [refs], order=2)
         log.info(f'\n\t{bleu.format()}\n\t{chrf2.format()}')
         metrics = {
