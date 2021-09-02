@@ -15,7 +15,6 @@ from rtg import log, device, cpu_device
 from rtg.data.codec import Field
 from rtg.utils import IO, line_count, get_my_args, max_RSS, maybe_compress
 
-
 Array = np.ndarray
 RawRecord = Tuple[str, str]
 TokRawRecord = Tuple[List[str], List[str]]
@@ -34,7 +33,7 @@ class IdExample:
         self.x_raw: Optional[str] = None
         self.y_raw: Optional[str] = None
 
-    def val_exists_at(self, side, pos: int, exist: bool, val:int):
+    def val_exists_at(self, side, pos: int, exist: bool, val: int):
         assert side == 'x' or side == 'y'
         assert pos == 0 or pos == -1
         seq = self.x if side == 'x' else self.y
@@ -42,7 +41,7 @@ class IdExample:
             if seq[pos] != val:
                 if pos == 0:
                     seq = np.append(np.int32(val), seq)
-                else: # pos = -1
+                else:  # pos = -1
                     seq = np.append(seq, np.int32(val))
                 # update
                 if side == 'x':
@@ -51,7 +50,6 @@ class IdExample:
                     self.y = seq
         else:  # should not have val at pos
             assert seq[pos] != val
-
 
     def __getitem__(self, key):
         if key == 'x_len':
@@ -62,12 +60,12 @@ class IdExample:
             return getattr(self, key)
 
 
-
 class NLDbExample(IdExample):
     """
     # NLDd has (id, x, y) where as here (x, y, id) ; I think NLDb is doing correctly
     """
     __slots__ = 'x', 'y', 'id'
+
     def __init__(self, id, x, y):
         super().__init__(x, y, id)
 
@@ -204,6 +202,7 @@ class TokenizerTask:
                 record = None
         return record
 
+
 class InMemoryData:
 
     def __init__(self, stream: Iterator[IdExample]):
@@ -309,7 +308,7 @@ class SqliteFile(Iterable[IdExample]):
                     if self.db_version < 1:
                         val = pickle.loads(val)  # unmarshall
                         val = np.array(val, dtype=np.int32)
-                    else: # version 1 and above
+                    else:  # version 1 and above
                         val = np.frombuffer(val, dtype=np.int32)
                 d[key] = val
             return d
@@ -488,7 +487,7 @@ class Batch:
         if self.has_y:
             if y_is_cls:
                 ys = torch.full(size=(self._len,), fill_value=self.pad_val,
-                                    dtype=torch.long, device=device)
+                                dtype=torch.long, device=device)
                 for i, ex in enumerate(batch):
                     y = ex.y
                     if hasattr(y, '__len__'):
@@ -550,9 +549,9 @@ class Batch:
 class BatchIterable(Iterable[Batch]):
 
     # This should have been called as Dataset
-    def __init__(self, data_path: Union[str, Path], batch_size:Union[int, Tuple[int,int]], field: Field,
+    def __init__(self, data_path: Union[str, Path], batch_size: Union[int, Tuple[int, int]], field: Field,
                  sort_desc: bool = False, batch_first: bool = True, shuffle: bool = False,
-                 sort_by: str = None, keep_in_mem=False, raw_path: Tuple[Path]=None,
+                 sort_by: str = None, keep_in_mem=False, raw_path: Tuple[Path, Path] = None,
                  device=cpu_device, y_is_cls=False, **kwargs):
         """
         Iterator for reading training data in batches
@@ -565,7 +564,7 @@ class BatchIterable(Iterable[Batch]):
         """
         self.field = field
         self.sort_desc = sort_desc
-        
+
         if isinstance(batch_size, int):
             self.max_toks, self.max_sents = batch_size, batch_size
         else:
@@ -580,7 +579,7 @@ class BatchIterable(Iterable[Batch]):
             data_path = Path(data_path)
 
         assert data_path.exists(), f'Invalid State: Training data doesnt exist;' \
-            f' Please remove _PREPARED and rerun.'
+                                   f' Please remove _PREPARED and rerun.'
         self.data_path = data_path
 
         if any([data_path.name.endswith(suf) for suf in ('.nldb', '.nldb.tmp')]):
@@ -611,7 +610,7 @@ class BatchIterable(Iterable[Batch]):
                     self.data = pickle.load(rdr)
             else:
                 self.data = InMemoryData(self.data)
-                if raw_path:         # raw data for logging
+                if raw_path:  # raw data for logging
                     src_raw, tgt_raw = raw_path[0], raw_path[1]
                     log.info(f"Reading raw from src:{src_raw} tgt:{tgt_raw}")
                     raw_data = list(TSVData.read_raw_parallel_lines(src_raw, tgt_raw))
@@ -621,7 +620,7 @@ class BatchIterable(Iterable[Batch]):
                             self.data.data[idx].y_raw = tgt
                     else:
                         log.warning(f'Raw={len(raw_data)}, but bin={len(self.data)} segs '
-                            f'Try setting prep.truncate=true to truncate instead of skip of recs.')
+                                    f'Try setting prep.truncate=true to truncate instead of skip of recs.')
                         log.warning("This disables BLEU logging on validation")
                 log.info(f"saving in-memory to {in_mem_file}")
                 with in_mem_file.open('wb') as wrt:

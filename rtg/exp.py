@@ -6,11 +6,13 @@ from pathlib import Path
 from functools import partial
 from typing import Optional, Dict, List, Tuple, Union, Any
 import time
+from collections import Counter
 
 import numpy as np
 import torch
 import hashlib
 import portalocker
+import tqdm
 
 import rtg
 from rtg import log, yaml, device
@@ -373,6 +375,7 @@ class BaseExperiment:
 
     def get_optimizer(self, params):
         return self.get_conf_component(OPTIMIZER, extra_args=dict(params=params))
+
 
 class TranslationExperiment(BaseExperiment):
 
@@ -900,7 +903,7 @@ class TranslationExperiment(BaseExperiment):
                 [('src_len', 'max_src_len'), ('tgt_len', 'max_tgt_len'), ('truncate', 'truncate')]
                 if ik in prep_args}
 
-    def get_train_data(self, batch_size:  Union[int, Tuple[int,int]], steps: int = 0, sort_by='eq_len_rand_batch',
+    def get_train_data(self, batch_size:  Union[int, Tuple[int, int]], steps: int = 0, sort_by='eq_len_rand_batch',
                        batch_first=True, shuffle=False, fine_tune=False, keep_in_mem=False,
                        split_ratio: float = 0., dynamic_epoch=False, y_is_cls=False):
 
@@ -922,13 +925,13 @@ class TranslationExperiment(BaseExperiment):
                 dynamic_epoch=dynamic_epoch, batch_first=batch_first, shuffle=shuffle, sort_by=sort_by,
                 **self._get_batch_args())
         else:
-            data = BatchIterable(
+            train_data = BatchIterable(
                 data_path=data_path, batch_size=batch_size, field=self.tgt_vocab, sort_by=sort_by,
                 batch_first=batch_first, shuffle=shuffle, y_is_cls=y_is_cls, **self._get_batch_args())
-            train_data = LoopingIterable(data, steps)
-
+            # default, read data once completely, if steps > 0, truncate or loop depending on steps and data size
+            if steps > 0:
+                train_data = LoopingIterable(train_data, steps)
         return train_data
-
 
     def file_creator(self, train_file, split_ratio, *args, **kwargs):
         self._pre_process_parallel(*args, src_key='train_src', tgt_key='train_tgt',
@@ -960,7 +963,6 @@ class TranslationExperiment(BaseExperiment):
         if steps > 0:
             data = LoopingIterable(data, steps)
         return data
-
 
     def copy_vocabs(self, other):
         """
@@ -1014,3 +1016,47 @@ class TranslationExperiment(BaseExperiment):
         if num_batches > 0:
             data = LoopingIterable(data, num_batches)
         return data
+
+    def get_class_freqs(self):
+        train_data = self.get_train_data(batch_size=2000, steps=0)
+        freq_file = self.data_dir / 'class.freqs.tsv'
+        vocab = self.tgt_vocab
+
+        if not freq_file.exists():
+            stats = Counter()
+            for batch in tqdm.tqdm(train_data):
+                for seq in batch.y_seqs.tolist():
+                    stats.update(seq)
+            if vocab.pad_idx >= 0:
+                stats[vocab.pad_idx] = 0
+
+            with freq_file.open('w', encoding='utf-8') as out:
+                for i in range(len(vocab)):
+                    name = vocab.class_names[i]
+                    freq = stats.get(i, 0)
+                    out.write(f'{i}\t{name}\t{freq}\n')
+
+        with freq_file.open('r') as lines:
+            recs = (line.split('\t') for line in lines)
+            recs = [(int(r[0]), r[1], int(r[2])) for r in recs]
+            return recs
+
+    def get_pre_transform(self, side: str):
+        assert side in ('src', 'tgt')
+        from rtg.transform import TextTransform
+        conf_chain = self.config.get('prep', {}).get(f'{side}_pre_proc', None)
+        if conf_chain:
+            transform = TextTransform.make(names=conf_chain)
+        else:
+            transform = TextTransform.recommended_pre()
+        return transform
+
+    def get_post_transform(self, side: str):
+        assert side in ('src', 'tgt')
+        from rtg.transform import TextTransform
+        conf_chain = self.config.get('prep', {}).get(f'{side}_post_proc', None)
+        if conf_chain:
+            transform = TextTransform.make(names=conf_chain)
+        else:
+            transform = TextTransform.recommended_post()
+        return transform
