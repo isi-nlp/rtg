@@ -242,7 +242,7 @@ class SparseCrossEntropy(Criterion):
                     weight = prop_constant / freqs
                 elif self.weight_by == 'inv_sqrt_freq':
                     weight = torch.sqrt(prop_constant) / freqs.sqrt()
-                elif self.weight_by == 'inv_log_sqrt':
+                elif self.weight_by == 'inv_log_freq':
                     weight = torch.log(prop_constant) / freqs.log()
                 else:
                     raise Exception(f'{self.weight_by} is not supported')
