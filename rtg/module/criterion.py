@@ -235,19 +235,20 @@ class SparseCrossEntropy(Criterion):
                 cls_freqs = self.exp.get_class_freqs()
                 assert len(cls_freqs) == n_classes
                 freqs = [f for idx, c, f in cls_freqs]
+                assert all(f >= 0 for f in freqs), 'frequency cannot be negative, but some are found to be negative'
                 freqs = torch.tensor(freqs)
-                prop_constant = freqs.max()
+                high = freqs.max()
                 if self.weight_by == 'inv_freq':
-                    weight = prop_constant / freqs
+                    weight = high / freqs
                 elif self.weight_by == 'inv_sqrt_freq':
-                    weight = torch.sqrt(prop_constant) / freqs.sqrt()
+                    weight = torch.sqrt(high) / freqs.sqrt()
                 elif self.weight_by == 'inv_log_freq':
-                    weight = torch.log(prop_constant) / freqs.log()
+                    weight = torch.log(high) / freqs.log()
                 else:
                     raise Exception(f'{self.weight_by} is not supported')
-                bad_pos = weight.isnan() | weight.isinf()
-
-                weight.masked_fill_(bad_pos, weight.min())
+                min_weight = 1.0
+                bad_pos = weight.isnan() | weight.isinf() | (weight < min_weight)
+                weight.masked_fill_(bad_pos, min_weight)
                 if self.eos_idx >= 0:
                     weight[self.eos_idx] = weight.max()
                 assert len(weight) == len(cls_freqs)
@@ -264,6 +265,7 @@ class SparseCrossEntropy(Criterion):
                 assert len(weights) == inputs.shape[1]
                 self._weight = torch.tensor(weights, dtype=inputs.dtype, device=inputs.device)
 
+        assert (self._weight < 0).sum() == 0, 'weight cannot be negative'
         return self._weight
 
 
