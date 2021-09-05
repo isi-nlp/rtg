@@ -11,34 +11,28 @@ from rtg.registry import CRITERION, register
 from rtg import log
 from rtg.exp import TranslationExperiment as Experiment
 from pathlib import Path
-
-
-def batch_dot(a, b):
-    """Computes dot product in batch mode"""
-
-    # return torch.mul(a, b).sum(dim=-1)
-    assert a.shape == b.shape
-    n_items, n_dims = a.shape
-    result = torch.bmm(b.view(n_items, 1, n_dims), b.view(n_items, n_dims, 1))
-    return result.squeeze_(1).squeeze_(1)
+import math
 
 
 class Criterion(nn.Module, abc.ABC):
     """Base class for Criterion functions"""
     infinitesimal = 1e-8
 
-    def __init__(self, input_type: str, exp: Experiment, reduction='micro'):
+    def __init__(self, input_type: str, exp: Experiment, reduction='micro', step: int = 0):
         """
         :param input_type: what type of input is expected?
             example: logits, softmax, log_softmax, signmoid
             This choice should be compatible with Generator.forward(x, score=xxx)
-        :param pad_idx: index of padding
         """
         super().__init__()
         self.exp = exp
+        self._step = step
         self.pad_idx = self.exp.tgt_vocab.pad_idx
         self.input_type = input_type
         self.reduction = reduction
+
+    def step(self):
+        self._step += 1
 
 
 def smooth_labels(labels, n_labels, smooth_rate, ignore_idx=-1, weight=None):
@@ -203,18 +197,40 @@ def dense_cross_entropy(inputs: Tensor, targets: Tensor, reduction='none', mask_
 @register(kind=CRITERION, name="sparse_cross_entropy")
 class SparseCrossEntropy(Criterion):
 
-    def __init__(self, exp: Experiment, input_type='log_probs', weight=None, reduction='micro'):
-        super().__init__(input_type=input_type, exp=exp, reduction=reduction)
-        self.exp = exp
+    def __init__(self, *args, input_type='log_probs', weight=None, weight_calm_time=2, **kwargs):
+        super().__init__(*args, input_type=input_type, **kwargs)
         self.weight_by = weight
         self._weight = None
-        self.eos_idx = exp.tgt_vocab.eos_idx
+        # self.eos_idx = exp.tgt_vocab.eos_idx
+        self.weight_calm_time = weight_calm_time
+        if self.weight_by:
+            # log 1 is 0; so it must be greater than 1
+            assert self.weight_calm_time > 1, f'weight_calm_time must be greater than 1, given {self.weight_calm_time}'
+            log.info(f"weight activation is after {self.weight_calm_time} updates")
+            """
+            visualization: https://www.desmos.com/calculator/gbeiw5q9jh 
+                exp(-(1 - log(c)/c)^(t-c))
+            """
+        self._temperature = 0
+
+    @property
+    def temperature(self):
+        t = self._step
+        c = self.weight_calm_time
+        assert t >= 0
+        assert c >= 1
+        self._temperature = math.exp(-(1 - math.log(c)/c) ** (t-c))
+        assert 0 <= self._temperature <= 1, f'temperature={self._temperature} is not in [0, 1]'
+        if t % 500 == 0:
+            log.info(f"\tThe temperature at time={t} is {self._temperature:g}")
+        return self._temperature
 
     def forward(self, inputs, targets, mask_pad=True):
         # logits: [N x C] targets: [N]
         assert self.reduction == 'micro'
         assert targets.shape[0] == inputs.shape[0]
         weights = self.get_weights(inputs=inputs, targets=targets)
+
         losses = F.cross_entropy(input=inputs, target=targets, reduction='none', weight=weights)
         tot_items = targets.shape[0]
         if mask_pad:
@@ -223,7 +239,7 @@ class SparseCrossEntropy(Criterion):
             tot_items -= mask_out.sum()
         return losses.sum() / tot_items
 
-    def get_weights(self, inputs, targets=None):
+    def get_weights(self, inputs, targets=None, tempered=True):
         n_classes = inputs.shape[1]
         if not self.weight_by:
             return None  # nothing interesting here yet
@@ -249,8 +265,8 @@ class SparseCrossEntropy(Criterion):
                 min_weight = 1.0
                 bad_pos = weight.isnan() | weight.isinf() | (weight < min_weight)
                 weight.masked_fill_(bad_pos, min_weight)
-                if self.eos_idx >= 0:
-                    weight[self.eos_idx] = weight.max()
+                # if self.eos_idx >= 0:
+                #    weight[self.eos_idx] = weight.max()
                 assert len(weight) == len(cls_freqs)
                 with wt_file.open('w', encoding='utf-8', errors='replace') as out:
                     for (idx, cls_name, freq), wt in zip(cls_freqs, weight):
@@ -266,20 +282,20 @@ class SparseCrossEntropy(Criterion):
                 self._weight = torch.tensor(weights, dtype=inputs.dtype, device=inputs.device)
 
         assert (self._weight < 0).sum() == 0, 'weight cannot be negative'
+        if tempered:
+            self._weight.pow(self.temperature)
         return self._weight
 
 
 @register(kind=CRITERION, name="dense_cross_entropy")
 class DenseCrossEntropy(SparseCrossEntropy):
 
-    def __init__(self, exp: Experiment, label_smoothing=0., reduction='micro',
-                 input_type='log_probs', weight=None):
-        super().__init__(input_type=input_type, reduction=reduction, exp=exp, weight=weight)
+    def __init__(self, *args, label_smoothing=0., **kwargs):
+        super().__init__(*args, **kwargs)
         assert 0 <= label_smoothing <= 1
-        self.exp = exp
         self.label_smoothing = label_smoothing
-        assert reduction in ('micro', 'macro', 'macro+micro')
-        if 'macro' in reduction:
+        assert self.reduction in ('micro', 'macro', 'macro+micro')
+        if 'macro' in self.reduction:
             assert self.label_smoothing > 0., 'reduce=macro requires label_smoothing > 0'
 
     def forward(self, inputs, targets, mask_pad=True):
@@ -300,9 +316,8 @@ class DenseCrossEntropy(SparseCrossEntropy):
 @register(kind=CRITERION, name="focal_loss")
 class FocalLoss(DenseCrossEntropy):
 
-    def __init__(self, exp: Experiment, label_smoothing=0., reduction='micro', gamma=0.0):
-        super(FocalLoss, self).__init__(exp=exp, reduction=reduction, label_smoothing=label_smoothing,
-                                        input_type='log_probs')
+    def __init__(self, *args, gamma=0.0, **kwargs):
+        super(FocalLoss, self).__init__(*args, input_type='log_probs', **kwargs)
         assert gamma >= 0.0
         self.gamma = gamma
 
@@ -352,7 +367,7 @@ class SmoothKLD(Criterion):
     Label smoothing
     """
 
-    def __init__(self, exp: Experiment, n_classes: int, label_smoothing: float = 0.1):
+    def __init__(self, exp: Experiment, n_classes: int, label_smoothing: float = 0.1, step=0):
         super().__init__(input_type='log_softmax', exp=exp, reduction='micro')
         self.size = n_classes
         assert 0.0 <= label_smoothing <= 1.0
@@ -388,7 +403,7 @@ class TripletLoss(Criterion):
     # Note: Triplet loss doesnt work fully yet; it sorta works and then overfits
 
     def __init__(self, exp: Experiment, embedding: nn.Embedding, margin: float = 0.,
-                 neg_region: float = 0.05, mode: str = 'dot', neg_sampling: str = 'random'):
+                 neg_region: float = 0.05, mode: str = 'dot', neg_sampling: str = 'random', step=0):
         # TODO: whats the right margin?
         super().__init__(input_type='embedding', exp=exp)
         self.embedding = embedding
@@ -452,7 +467,7 @@ class SmoothKLDAndTripletLoss(Criterion):
 
     def __init__(self, exp: Experiment, embedding: nn.Embedding, margin: float = 0.,
                  neg_region: float = 0.05, mode: str = 'dot', neg_sampling: str = 'random',
-                 label_smoothing: float = 0.1, alpha: float = 1.0):
+                 label_smoothing: float = 0.1, alpha: float = 1.0, step=0):
         super().__init__(input_type='identity', exp=exp)
         self.embeddings = embedding.weight
         self.smoothKLD = SmoothKLD(n_classes=embedding.weight.shape[0],
@@ -526,11 +541,11 @@ class DiceLoss(Criterion):
 @register(kind=CRITERION, name="squared_error")
 class SquaredError(Criterion):
 
-    def __init__(self, exp: Experiment, label_smoothing: float = 0.1, reduction='micro'):
-        super().__init__(exp=exp, input_type='probs', reduction=reduction)
+    def __init__(self, *args, label_smoothing: float = 0.1, **kwargs):
+        super().__init__(*args, **kwargs)
         self.label_smoothing = label_smoothing
         assert 0.0 <= label_smoothing <= 1.0
-        assert reduction in ('micro', 'macro')
+        assert self.reduction in ('micro', 'macro')
 
     def forward(self, x, target, mask_pad=True):
         # 'x' is log probabilities, originally [B, T, V], but here [B.T, V]

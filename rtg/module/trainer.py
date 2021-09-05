@@ -249,7 +249,7 @@ class SteppedTrainer:
         cri_conf = self.exp.config[CRITERION]
         cri_name, cri_args = cri_conf['name'], cri_conf.get('args') or {}
         assert cri_name in CRITERIA, f'Criterion {cri_name} unknown; known={CRITERIA.keys()}'
-        xt_args = dict(exp=self.exp)
+        xt_args = dict(exp=self.exp, step=self.start_step)
         if cri_name == 'smooth_kld':
             xt_args['n_classes'] = self.core_model.vocab_size
         elif cri_name == 'triplet_loss' or cri_name == 'smooth_kld_and_triplet_loss':

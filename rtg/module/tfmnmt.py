@@ -843,6 +843,7 @@ class SimpleLossFunction:
             dtorch.backward(loss)
             if take_step:
                 dtorch.step(self.opt)
+                self.criterion.step()
         result = loss.item()
         if get_out:
             result = (result, x_probs.argmax(dim=-1))
@@ -901,6 +902,7 @@ class ChunkedLossCompute(SimpleLossFunction):
                 y_feats.backward(gradient=out_grad)
                 if take_step:
                     dtorch.step(optimizer=self.opt)
+                    self.criterion.step()
         if get_out:
             outs = torch.cat(out_chunks, dim=1)
             return total, outs
