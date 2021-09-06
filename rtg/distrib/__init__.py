@@ -113,8 +113,8 @@ class DistribTorch:
             return True
         if self.fp16:
             loss = self._scaler.scale(loss)
-            # to apply norm: TODO: unscale gradients ; refer to docs
-            # torch.nn.utils.clip_grad_norm_(self._amp.master_params(opt.optimizer), self.max_norm)
+        if loss < 0:
+            raise Exception('Loss is negative; looks like a numerical error (underflow or overflow?')
         loss.backward()
 
     def average_gradients(self, model):
