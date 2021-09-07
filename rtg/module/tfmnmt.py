@@ -738,7 +738,8 @@ class TransformerTrainer(SteppedTrainer):
         if unsaved_state and distr.is_global_main:
             train_loss = train_state.reset()
             train_state.train_mode(False)
-            val_loss = self.run_valid_epoch(val_data, dec_bos_cut=dec_bos_cut)
+            val_metrics = self.run_valid_epoch(val_data, dec_bos_cut=dec_bos_cut)
+            val_loss = val_metrics['loss']
             self.make_check_point(train_loss, val_loss=val_loss, keep_models=keep_models)
 
         distr.barrier()
