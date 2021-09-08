@@ -698,6 +698,8 @@ class TransformerTrainer(SteppedTrainer):
                                          self.opt.curr_step)
                     if log_resources and cuda_available:
                         self._log_resources(batch)
+                    if hasattr(self.criterion, 'temperature'):
+                        self.tbd.add_scalar('criterion_temperature', self.criterion.temperature, self.opt.curr_step)
 
                 progress_msg, is_check_pt = train_state.step(batch.y_toks, loss)
                 progress_msg += f', LR={self.opt.curr_lr:0.8f}'
@@ -818,6 +820,9 @@ class TransformerNMT(AbstractTransformerNMT):
         model = cls(encoder, decoder, src_emb, tgt_emb, generator)
 
         if tied_emb:
+            if tied_emb == 'three-way':
+                assert exp.config['prep'].get('shared'), 'tied_emb=three-way supported only if prep.shared=true;' \
+                                                         ' Fix: set model_args.tied_emb=one-way or prep.shared=true'
             model.tie_embeddings(tied_emb)
 
         model.init_params()

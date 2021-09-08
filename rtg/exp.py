@@ -389,7 +389,8 @@ class TranslationExperiment(BaseExperiment):
         self.emb_tgt_file = self.data_dir / 'emb_tgt.pt'
         self.ext_emb_src_file = self.data_dir / 'ext_emb_src.pt'  # external Embeddings
         self.ext_emb_tgt_file = self.data_dir / 'ext_emb_tgt.pt'  # external Embeddings
-
+        self.src_field = None
+        self.tgt_field = None
         self.reload_vocabs()
 
         # Either shared field  OR  individual  src and tgt fields
@@ -438,27 +439,34 @@ class TranslationExperiment(BaseExperiment):
         xt_args = dict(no_split_toks=args.get('no_split_toks'),
                        char_coverage=args.get('char_coverage', 0))
         min_co_ev = args.get('min_co_ev', None)
+        pieces = args['pieces']
         if args.get('shared_vocab'):  # shared vocab
             corpus = [args[key] for key in ['train_src', 'train_tgt', 'mono_src', 'mono_tgt']
                       if args.get(key)]
-            self.shared_field = self._make_vocab("shared", self._shared_field_file, args['pieces'],
-                                                 args['max_types'], corpus=corpus,
-                                                 min_co_ev=min_co_ev, **xt_args)
+            assert isinstance(pieces, str), f'shared vocab cant support different pieces for src, tgt;' \
+                                            f' given pieces={pieces}. Either set shared=false or pieces=<a string>'
+            self.shared_field = self._make_vocab("shared", self._shared_field_file, pieces, args['max_types'],
+                                                 corpus=corpus, min_co_ev=min_co_ev, **xt_args)
         else:  # separate vocabularies
             src_corpus = [args[key] for key in ['train_src', 'mono_src'] if args.get(key)]
             src_min_co_ev = args.get('src_min_co_ev', min_co_ev)
             tgt_min_co_ev = args.get('tgt_min_co_ev', min_co_ev)
-            self.src_field = self._make_vocab("src", self._src_field_file, args['pieces'],
-                                              args['max_src_types'], corpus=src_corpus,
+            src_pieces = tgt_pieces = pieces
+            if not isinstance(pieces, str):
+                assert len(pieces) == 2
+                src_pieces, tgt_pieces = pieces
+                log.info(f"Vocab types: src: {src_pieces} and tgt: {tgt_pieces}")
+
+            max_src_types = args.get('max_src_types')
+            max_tgt_types = args.get('max_tgt_types')
+            assert max_src_types and max_tgt_types, 'prep.{max_src_types,max_tgt_types} are required when shared=true'
+            self.src_field = self._make_vocab("src", self._src_field_file, src_pieces, max_src_types, corpus=src_corpus,
                                               min_co_ev=src_min_co_ev, **xt_args)
             # target vocabulary
             tgt_corpus = [args[key] for key in ['train_tgt', 'mono_tgt'] if args.get(key)]
-            self.tgt_field = self._make_vocab("src", self._tgt_field_file, args['pieces'],
-                                              args['max_tgt_types'], corpus=tgt_corpus,
+            self.tgt_field = self._make_vocab("src", self._tgt_field_file, tgt_pieces, max_tgt_types, corpus=tgt_corpus,
                                               min_co_ev=tgt_min_co_ev, **xt_args)
-
         train_file = self.train_db
-
         self._pre_process_parallel('train_src', 'train_tgt', out_file=train_file, args=args,
                                    line_check=False)
         self._pre_process_parallel('valid_src', 'valid_tgt', out_file=self.valid_file, args=args,

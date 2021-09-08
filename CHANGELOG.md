@@ -14,6 +14,10 @@
     - Weighted Cross Entropy, with label smoothing
   - Dice Loss (WIP)
   - Squared Error
+- vocab management
+  - `prep.pieces` originally took a string, now it can take either a `string` (i.e. same scheme for both source and target) or
+   `[string, string]` separate scheme for source and target when `shared=false`.
+  - Example: `pieces: [char, bpe]` with `shared: false` makes char pieces on source side and `bpe` pieces on target   
 
 
 # v0.5.1 : 20210814
