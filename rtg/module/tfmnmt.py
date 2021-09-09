@@ -821,8 +821,9 @@ class TransformerNMT(AbstractTransformerNMT):
 
         if tied_emb:
             if tied_emb == 'three-way':
-                assert exp.config['prep'].get('shared'), 'tied_emb=three-way supported only if prep.shared=true;' \
-                                                         ' Fix: set model_args.tied_emb=one-way or prep.shared=true'
+                assert exp.config['prep'].get('shared_vocab'),\
+                    'tied_emb=three-way supported only if prep.shared_vocab=true; Fix: set model_args.tied_emb=one-way' \
+                    ' or prep.shared_vocab=true'
             model.tie_embeddings(tied_emb)
 
         model.init_params()
