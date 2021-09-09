@@ -158,8 +158,8 @@ def dense_cross_entropy_old(inputs: Tensor, targets: Tensor, reduction=None, mas
         raise ValueError(f'reduce={reduction} not supported')
 
 
-def dense_cross_entropy(inputs: Tensor, targets: Tensor, reduction='none', mask_out=None, weight=None,
-                        input_type='log_probs', infinitesimal=1e-8) -> Tensor:
+def kl_div(inputs: Tensor, targets: Tensor, reduction='none', mask_out=None, weight=None,
+           input_type='log_probs', infinitesimal=1e-8) -> Tensor:
     assert input_type == 'log_probs'
     assert inputs.shape == targets.shape
     tot_items, tot_classes = inputs.shape
@@ -219,7 +219,7 @@ class SparseCrossEntropy(Criterion):
         c = self.weight_calm_time
         assert t >= 0
         assert c >= 1
-        self._temperature = math.exp(-(1 - math.log(c)/c) ** (t-c))
+        self._temperature = math.exp(-(1 - math.log(c) / c) ** (t - c))
         assert 0 <= self._temperature <= 1, f'temperature={self._temperature} is not in [0, 1]'
         if t % 500 == 0:
             log.info(f"\tThe temperature at time={t} is {self._temperature:g}")
@@ -287,8 +287,8 @@ class SparseCrossEntropy(Criterion):
         return self._weight
 
 
-@register(kind=CRITERION, name="dense_cross_entropy")
-class DenseCrossEntropy(SparseCrossEntropy):
+@register(kind=CRITERION, name="kl_divergence")
+class KLDivergence(SparseCrossEntropy):
 
     def __init__(self, *args, label_smoothing=0., **kwargs):
         super().__init__(*args, **kwargs)
@@ -308,13 +308,12 @@ class DenseCrossEntropy(SparseCrossEntropy):
         dense_targets = get_dense_targets(labels=targets, n_labels=C, label_smoothing=self.label_smoothing,
                                           ignore_idx=self.pad_idx)
         weight = self.get_weights(inputs, targets)
-        return dense_cross_entropy(inputs=inputs, targets=dense_targets, reduction=self.reduction,
-                                   weight=weight, mask_out=mask_out, input_type=self.input_type,
-                                   infinitesimal=self.infinitesimal)
+        return kl_div(inputs=inputs, targets=dense_targets, reduction=self.reduction, weight=weight, mask_out=mask_out,
+                      input_type=self.input_type, infinitesimal=self.infinitesimal)
 
 
 @register(kind=CRITERION, name="focal_loss")
-class FocalLoss(DenseCrossEntropy):
+class FocalLoss(KLDivergence):
 
     def __init__(self, *args, gamma=0.0, **kwargs):
         super(FocalLoss, self).__init__(*args, input_type='log_probs', **kwargs)
