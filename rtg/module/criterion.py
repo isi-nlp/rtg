@@ -197,33 +197,37 @@ def kl_div(inputs: Tensor, targets: Tensor, reduction='none', mask_out=None, wei
 @register(kind=CRITERION, name="sparse_cross_entropy")
 class SparseCrossEntropy(Criterion):
 
-    def __init__(self, *args, input_type='log_probs', weight=None, weight_calm_time=2, **kwargs):
+    def __init__(self, *args, input_type='log_probs', weight=None, weight_calm_time=0, **kwargs):
         super().__init__(*args, input_type=input_type, **kwargs)
         self.weight_by = weight
         self._weight = None
         # self.eos_idx = exp.tgt_vocab.eos_idx
         self.weight_calm_time = weight_calm_time
         if self.weight_by:
-            # log 1 is 0; so it must be greater than 1
-            assert self.weight_calm_time > 1, f'weight_calm_time must be greater than 1, given {self.weight_calm_time}'
             log.info(f"weight activation is after {self.weight_calm_time} updates")
             """
             visualization: https://www.desmos.com/calculator/gbeiw5q9jh 
                 exp(-(1 - log(c)/c)^(t-c))
             """
-        self._temperature = 0
+        self._temperature = 0   # full hot
 
     @property
     def temperature(self):
-        t = self._step
-        c = self.weight_calm_time
-        assert t >= 0
-        assert c >= 1
-        self._temperature = math.exp(-(1 - math.log(c) / c) ** (t - c))
-        assert 0 <= self._temperature <= 1, f'temperature={self._temperature} is not in [0, 1]'
-        if t % 500 == 0:
-            log.info(f"\tThe temperature at time={t} is {self._temperature:g}")
-        return self._temperature
+        # undefined at 1, so skip 1, ask for value greater than 1
+        if self.weight_calm_time < 1:
+            # hot from the start, enabled; full hot
+            self._temperature = 1
+        else:
+            assert self.weight_calm_time > 1
+            t = self._step
+            c = self.weight_calm_time
+            assert t >= 0
+            assert c >= 1
+            self._temperature = math.exp(-(1 - math.log(c) / c) ** (t - c))
+            assert 0 <= self._temperature <= 1, f'temperature={self._temperature} is not in [0, 1]'
+            if t % 500 == 0:
+                log.info(f"\tThe temperature at time={t} is {self._temperature:g}")
+            return self._temperature
 
     def forward(self, inputs, targets, mask_pad=True):
         # logits: [N x C] targets: [N]
@@ -316,18 +320,24 @@ class KLDivergence(SparseCrossEntropy):
 class FocalLoss(KLDivergence):
 
     def __init__(self, *args, gamma=0.0, **kwargs):
+        assert not kwargs.get('weight'), 'focal_loss does not accept argument "weight"; try setting "gamma" value'
         super(FocalLoss, self).__init__(*args, input_type='log_probs', **kwargs)
         assert gamma >= 0.0
         self.gamma = gamma
 
-    def get_weights(self, inputs, targets=None):
+    def get_weights(self, inputs, targets=None, tempered=True):
         if self.input_type == 'probs':
             probs = inputs
         elif self.input_type == 'log_probs':
             probs = torch.exp(inputs)
         else:
             raise Exception(f'{self.input_type} not supported')
-        weight = (1 - probs).pow(self.gamma)
+        gamma = self.gamma
+        if tempered:
+            tempr = self.temperature
+            assert 0 <= tempr <= 1
+            gamma = gamma * tempr
+        weight = (1 - probs).pow(gamma)
         return weight
 
 
