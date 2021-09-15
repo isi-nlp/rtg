@@ -698,8 +698,9 @@ class TransformerTrainer(SteppedTrainer):
                                          self.opt.curr_step)
                     if log_resources and cuda_available:
                         self._log_resources(batch)
-                    if hasattr(self.criterion, 'temperature'):
-                        self.tbd.add_scalar('criterion_temperature', self.criterion.temperature, self.opt.curr_step)
+                    cri_temp = getattr(self.criterion, 'temperature', None)
+                    if cri_temp is not None:
+                        self.tbd.add_scalar('criterion_temperature', cri_temp, self.opt.curr_step)
 
                 progress_msg, is_check_pt = train_state.step(batch.y_toks, loss)
                 progress_msg += f', LR={self.opt.curr_lr:0.8f}'

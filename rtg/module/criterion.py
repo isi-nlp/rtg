@@ -35,6 +35,37 @@ class Criterion(nn.Module, abc.ABC):
         self._step += 1
 
 
+class TemperedCriterion(Criterion):
+
+    def __init__(self, *args, weight_calm_time=0, **kwargs):
+        super(TemperedCriterion, self).__init__(*args, **kwargs)
+        # self.eos_idx = exp.tgt_vocab.eos_idx
+        self.weight_calm_time = weight_calm_time
+        log.info(f"weight activation is after {self.weight_calm_time} updates")
+        self._temperature = 0  # full hot
+
+    @property
+    def temperature(self):
+        # undefined at 1, so skip 1, ask for value greater than 1
+        if self.weight_calm_time < 1:
+            # hot from the start, enabled; full hot
+            self._temperature = 1
+        else:
+            """ visualization: https://www.desmos.com/calculator/gbeiw5q9jh 
+                   exp(-(1 - log(c)/c)^(t-c))
+            """
+            assert self.weight_calm_time > 1
+            t = self._step
+            c = self.weight_calm_time
+            assert t >= 0
+            assert c >= 1
+            self._temperature = math.exp(-(1 - math.log(c) / c) ** (t - c))
+            assert 0 <= self._temperature <= 1, f'temperature={self._temperature} is not in [0, 1]'
+            if t % 500 == 0:
+                log.info(f"\tThe temperature at time={t} is {self._temperature:g}")
+            return self._temperature
+
+
 def smooth_labels(labels, n_labels, smooth_rate, ignore_idx=-1, weight=None):
     """
     :param labels: labels [N] where each item is in range {0, 1, 2,... C-1}
@@ -195,39 +226,15 @@ def kl_div(inputs: Tensor, targets: Tensor, reduction='none', mask_out=None, wei
 
 
 @register(kind=CRITERION, name="sparse_cross_entropy")
-class SparseCrossEntropy(Criterion):
+class SparseCrossEntropy(TemperedCriterion):
 
-    def __init__(self, *args, input_type='log_probs', weight=None, weight_calm_time=0, **kwargs):
+    def __init__(self, *args, input_type='log_probs', weight=None, **kwargs):
         super().__init__(*args, input_type=input_type, **kwargs)
         self.weight_by = weight
         self._weight = None
         # self.eos_idx = exp.tgt_vocab.eos_idx
-        self.weight_calm_time = weight_calm_time
         if self.weight_by:
-            log.info(f"weight activation is after {self.weight_calm_time} updates")
-            """
-            visualization: https://www.desmos.com/calculator/gbeiw5q9jh 
-                exp(-(1 - log(c)/c)^(t-c))
-            """
-        self._temperature = 0   # full hot
-
-    @property
-    def temperature(self):
-        # undefined at 1, so skip 1, ask for value greater than 1
-        if self.weight_calm_time < 1:
-            # hot from the start, enabled; full hot
-            self._temperature = 1
-        else:
-            assert self.weight_calm_time > 1
-            t = self._step
-            c = self.weight_calm_time
-            assert t >= 0
-            assert c >= 1
-            self._temperature = math.exp(-(1 - math.log(c) / c) ** (t - c))
-            assert 0 <= self._temperature <= 1, f'temperature={self._temperature} is not in [0, 1]'
-            if t % 500 == 0:
-                log.info(f"\tThe temperature at time={t} is {self._temperature:g}")
-            return self._temperature
+            log.info(f"Weight activation is after {self.weight_calm_time} updates")
 
     def forward(self, inputs, targets, mask_pad=True):
         # logits: [N x C] targets: [N]
@@ -317,13 +324,29 @@ class KLDivergence(SparseCrossEntropy):
 
 
 @register(kind=CRITERION, name="focal_loss")
-class FocalLoss(KLDivergence):
+class FocalLoss(TemperedCriterion):
 
     def __init__(self, *args, gamma=0.0, **kwargs):
         assert not kwargs.get('weight'), 'focal_loss does not accept argument "weight"; try setting "gamma" value'
         super(FocalLoss, self).__init__(*args, input_type='log_probs', **kwargs)
         assert gamma >= 0.0
         self.gamma = gamma
+
+    def forward(self, inputs, targets, mask_pad=True):
+        # logits: [N x C] targets: [N]
+        assert self.reduction == 'micro'
+        assert targets.shape[0] == inputs.shape[0]
+        weights = self.get_weights(inputs=inputs, targets=targets)
+        losses = F.cross_entropy(input=inputs, target=targets, reduction='none')
+        tot_items = targets.shape[0]
+        assert losses.shape == weights.shape, f'Shape mis match: losses:{losses.shape} == weights:{weights.shape}'
+        losses = torch.mul(losses, weights)
+        if mask_pad:
+            mask_out = targets.eq(self.pad_idx)
+            losses.masked_fill_(mask_out, 0)
+            tot_items -= mask_out.sum()
+        assert tot_items > 0
+        return losses.sum() / tot_items
 
     def get_weights(self, inputs, targets=None, tempered=True):
         if self.input_type == 'probs':
@@ -333,12 +356,14 @@ class FocalLoss(KLDivergence):
         else:
             raise Exception(f'{self.input_type} not supported')
         gamma = self.gamma
+        label_probs = probs.gather(dim=1, index=targets.view(-1, 1))    # [N, 1]
         if tempered:
             tempr = self.temperature
             assert 0 <= tempr <= 1
             gamma = gamma * tempr
-        weight = (1 - probs).pow(gamma)
-        return weight
+        label_probs = label_probs.detach().squeeze(1)   # [N]
+        weight = (1 - label_probs).pow(gamma)
+        return weight  # [N]
 
 
 @register(kind=CRITERION, name="binary_cross_entropy")
