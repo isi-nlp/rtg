@@ -60,10 +60,10 @@ class TemperedCriterion(Criterion):
             assert t >= 0
             assert c >= 1
             self._temperature = math.exp(-(1 - math.log(c) / c) ** (t - c))
-            assert 0 <= self._temperature <= 1, f'temperature={self._temperature} is not in [0, 1]'
             if t % 500 == 0:
                 log.info(f"\tThe temperature at time={t} is {self._temperature:g}")
-            return self._temperature
+        assert 0 <= self._temperature <= 1, f'temperature={self._temperature} is not in [0, 1]'
+        return self._temperature
 
 
 def smooth_labels(labels, n_labels, smooth_rate, ignore_idx=-1, weight=None):
