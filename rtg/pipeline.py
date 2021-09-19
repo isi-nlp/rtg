@@ -15,11 +15,10 @@ import torch
 import random
 from collections import defaultdict
 
-from sacrebleu import corpus_bleu, BLEUScore
+from sacrebleu import corpus_bleu, corpus_macrof
 import inspect
 import copy
 import json
-import subprocess
 from rtg.distrib import DistribTorch
 from rtg.registry import ProblemType
 
@@ -79,18 +78,21 @@ class Pipeline:
                 out.write(post_proc(line) + '\n')
         return detok_file
 
-    def evaluate_file(self, detok_hyp: Path, ref: Union[Path, List[str]], lowercase=True) -> float:
+    def evaluate_mt_file(self, detok_hyp: Path, ref: Union[Path, List[str]], lowercase=True) -> float:
         detok_lines = list(IO.get_lines(detok_hyp))
         # takes multiple refs, but here we have only one
-        ref_liness = [IO.get_lines(ref) if isinstance(ref, Path) else ref]
-        bleu: BLEUScore = corpus_bleu(sys_stream=detok_lines, ref_streams=ref_liness,
-                                 lowercase=lowercase)
-        # this should be part of new sacrebleu  release (i sent a PR ;)
+        ref_lines = IO.get_lines(ref) if isinstance(ref, Path) else ref
+        ref_liness = [ref_lines]
+        bleu = corpus_bleu(hypotheses=detok_lines, references=ref_liness, lowercase=lowercase)
         bleu_str = bleu.format()
-        bleu_file = detok_hyp.with_name(
-            detok_hyp.name + ('.lc' if lowercase else '.oc') + '.sacrebleu')
-        log.info(f'BLEU {detok_hyp} : {bleu_str}')
+        bleu_file = detok_hyp.with_name(detok_hyp.name + ('.lc' if lowercase else '.oc') + '.sacrebleu')
+        log.info(f'{detok_hyp}: {bleu_str}')
         IO.write_lines(bleu_file, bleu_str)
+        macrof1 = corpus_macrof(hypotheses=detok_lines, references=ref_liness, lowercase=lowercase)
+        macrof1_str = macrof1.format()
+        macrof1_file = detok_hyp.with_name(detok_hyp.name + ('.lc' if lowercase else '.oc') + '.macrof1')
+        log.info(f'{detok_hyp}: {macrof1_str}')
+        IO.write_lines(macrof1_file, macrof1_str)
         return bleu.score
 
     def decode_eval_file(self, decoder, src: Union[Path, List[str]], out_file: Path,
@@ -109,7 +111,7 @@ class Pipeline:
                 decoder.decode_file(src, out, **dec_args)
         detok_hyp = self.detokenize(out_file)
         if ref:
-            return self.evaluate_file(detok_hyp, ref, lowercase=lowercase)
+            return self.evaluate_mt_file(detok_hyp, ref, lowercase=lowercase)
 
     def tune_decoder_params(self, exp: Experiment, tune_src: str, tune_ref: str, batch_size: int,
                             trials: int = 10, lowercase=True,
@@ -179,7 +181,6 @@ class Pipeline:
             # JSON keys cant be tuples, so we stringify them
             data = {str(k): v for k, v in memory.items()}
             IO.write_lines(tune_log, json.dumps(data))
-
 
     def run_classification_tests(self, exp=None, args=None):
         from rtg.emb.tfmcls import ClassificationExperiment
