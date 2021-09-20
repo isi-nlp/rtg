@@ -441,11 +441,13 @@ class TranslationExperiment(BaseExperiment):
         min_co_ev = args.get('min_co_ev', None)
         pieces = args['pieces']
         if args.get('shared_vocab'):  # shared vocab
+            assert 'max_types' in args, f'prep.max_types is required when prep.shared_vocab=true'
+            max_types = args['max_types']
             corpus = [args[key] for key in ['train_src', 'train_tgt', 'mono_src', 'mono_tgt']
                       if args.get(key)]
             assert isinstance(pieces, str), f'shared vocab cant support different pieces for src, tgt;' \
                                             f' given pieces={pieces}. Either set shared=false or pieces=<a string>'
-            self.shared_field = self._make_vocab("shared", self._shared_field_file, pieces, args['max_types'],
+            self.shared_field = self._make_vocab("shared", self._shared_field_file, pieces, max_types,
                                                  corpus=corpus, min_co_ev=min_co_ev, **xt_args)
         else:  # separate vocabularies
             src_corpus = [args[key] for key in ['train_src', 'mono_src'] if args.get(key)]
@@ -457,9 +459,10 @@ class TranslationExperiment(BaseExperiment):
                 src_pieces, tgt_pieces = pieces
                 log.info(f"Vocab types: src: {src_pieces} and tgt: {tgt_pieces}")
 
-            max_src_types = args.get('max_src_types')
-            max_tgt_types = args.get('max_tgt_types')
-            assert max_src_types and max_tgt_types, 'prep.{max_src_types,max_tgt_types} are required when shared=true'
+            max_src_types = args.get('max_src_types', args.get('max_types'))
+            max_tgt_types = args.get('max_tgt_types', args.get('max_types'))
+            assert max_src_types and max_tgt_types, 'prep.{max_src_types,max_tgt_types} are required' \
+                                                    ' when prep.shared_vocab=false'
             self.src_field = self._make_vocab("src", self._src_field_file, src_pieces, max_src_types, corpus=src_corpus,
                                               min_co_ev=src_min_co_ev, **xt_args)
             # target vocabulary
