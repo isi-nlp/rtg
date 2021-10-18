@@ -28,6 +28,8 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+.pytest_cache
+*.bak
 MANIFEST
 /runs/
 /tests/test-data/

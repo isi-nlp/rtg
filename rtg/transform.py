@@ -4,6 +4,7 @@ transformation of text
 import html
 from sacremoses import MosesTokenizer, MosesDetokenizer, MosesPunctNormalizer, MosesTruecaser
 from functools import partial
+from rtg.registry import TRANSFORM, TRANSFORMS
 from rtg.utils import shell_pipe
 
 moses_detokr = MosesDetokenizer()

@@ -8,7 +8,7 @@
 import re
 from enum import Enum
 from dataclasses import dataclass
-from typing import Any, Dict, Type
+from typing import Any, Dict, Type, Callable
 
 from rtg import log
 from torch import optim
@@ -52,11 +52,15 @@ SCHEDULES: Dict[str, Any] = {}
 CRITERION = 'criterion'
 CRITERIA: Dict[str, Any] = {}
 
+TRANSFORM = 'transform'     # pre and post processing
+TRANSFORMS: Dict[str, Callable[[str], str]] = {}   # str -> str
+
 registry = {
     MODEL: MODELS,
     OPTIMIZER: OPTIMIZERS,
     SCHEDULE: SCHEDULES,
     CRITERION: CRITERIA,
+    TRANSFORM: TRANSFORMS
 }
 
 
@@ -134,9 +138,11 @@ def __register_all():
     for k, v in registry.items():
         log.info(f"{k} :: {list(v.keys())}")
 
+
 if __name__ == '__main__':
     from rtg.exp import BaseExperiment
     # a simple test case
+
     @register(MODEL)
     class MyModel:
         model_type = 'mymodel'
