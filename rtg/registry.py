@@ -39,6 +39,13 @@ OPTIMIZERS: Dict[str, Type[optim.Optimizer]] = dict(
     adam_w=optim.AdamW,
     adadelta=optim.Adadelta,
     sparse_adam=optim.SparseAdam)
+try:
+    # this is still experimental
+    import adabound
+    OPTIMIZERS['ada_bound'] = adabound.AdaBound
+except:
+    pass
+
 SCHEDULE = 'schedule'
 SCHEDULES: Dict[str, Any] = {}
 
