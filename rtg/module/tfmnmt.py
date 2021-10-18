@@ -459,7 +459,7 @@ class TransformerTrainer(SteppedTrainer):
                  model: Optional['TransformerNMT'] = None, model_factory=None):
         super().__init__(exp=exp, model=model, model_factory=model_factory)
         self.grad_accum_interval = self.init_args.get('grad_accum', 1)
-        assert self.grad_accum_interval > 0
+        assert self.grad_accum_interval > 0, 'grad_accum should be greater than 0 '
 
         if self.n_gpus > 1:  # Multi GPU mode
             raise Exception(f"Please use: python -m rtg.distrib.launch -G {self.n_gpus} \n "

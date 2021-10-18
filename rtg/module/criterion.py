@@ -21,7 +21,7 @@ class Criterion(nn.Module, abc.ABC):
     def __init__(self, input_type: str, exp: Experiment, reduction='micro', step: int = 0):
         """
         :param input_type: what type of input is expected?
-            example: logits, softmax, log_softmax, signmoid
+            example: logits, softmax, log_softmax, sigmoid
             This choice should be compatible with Generator.forward(x, score=xxx)
         """
         super().__init__()
