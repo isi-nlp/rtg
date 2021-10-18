@@ -39,20 +39,22 @@ setuptools.setup(
         'sentencepiece >= 0.1.85',
         'tensorboard >= 2.6.0',
         'tqdm >= 4.45.0',
-        'mosestokenizer >= 1.0.0',
+        #'mosestokenizer >= 1.0.0',
         'nlcodec >= 0.4.0',
         'torch >= 1.8.0',
         'sacremoses >= 0.0.45',
         'portalocker >= 2.0.0',
         'torchtext >= 0.10.0',
-        'pyspark >= 3.0.0'
+        'pyspark >= 3.0.0',
+        'utoken >= 0.1.3',
+        'wildebeest @ git+https://github.com/uhermjakob/wildebeest.git@3bcf6f8',  # 0.7.0
     ],
     extra_requires={
         'big': ['pyspark >= 3.0'],
         'extras': ['scipy >= 1.4'],
         'serve': ['flask >= 1.1.2'],
     },
-    python_requires='>=3.7',
+    python_requires='>=3.8',
     entry_points={
         'console_scripts': [
             'rtg-pipe=rtg.pipeline:main',
