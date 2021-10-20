@@ -40,8 +40,8 @@ class TextTransform:
     def __call__(self, text, multiple=False):
         res = text
         for stage in self.chain:
-            res = stage(res)
-        return res
+            res = stage(res.strip())
+        return res.strip()
 
     @classmethod
     def make(cls, names):
