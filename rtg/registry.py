@@ -4,7 +4,7 @@
 # - Thamme Gowda [tg (at) isi (dot) edu]
 # - Lukas J. Ferrer [lferrer (at) isi (dot) edu]
 # Created: 3/9/19
-
+import json
 import re
 from enum import Enum
 from dataclasses import dataclass
@@ -134,9 +134,11 @@ def __register_all():
     ]
     for name in modules:
         import_module(name)
-    log.info(f"Registered all components; your choices are::")
+    msg = []
     for k, v in registry.items():
-        log.info(f"{k} :: {list(v.keys())}")
+        msg.append(f'{k}:\t' + ', '.join(v.keys()))
+    msg = '\n  '.join(msg)
+    log.info(f"Registered all components; your choices are ::\n  {msg}")
 
 
 if __name__ == '__main__':
