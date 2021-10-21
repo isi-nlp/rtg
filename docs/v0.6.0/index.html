@@ -437,6 +437,221 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 #footer-text{color:rgba(0,0,0,.6);font-size:.9em}}
 @media amzn-kf8{#header,#content,#footnotes,#footer{padding:0}}
 </style>
+<style>
+pre.rouge table td { padding: 5px; }
+pre.rouge table pre { margin: 0; }
+pre.rouge .cm {
+  color: #999988;
+  font-style: italic;
+}
+pre.rouge .cp {
+  color: #999999;
+  font-weight: bold;
+}
+pre.rouge .c1 {
+  color: #999988;
+  font-style: italic;
+}
+pre.rouge .cs {
+  color: #999999;
+  font-weight: bold;
+  font-style: italic;
+}
+pre.rouge .c, pre.rouge .ch, pre.rouge .cd, pre.rouge .cpf {
+  color: #999988;
+  font-style: italic;
+}
+pre.rouge .err {
+  color: #a61717;
+  background-color: #e3d2d2;
+}
+pre.rouge .gd {
+  color: #000000;
+  background-color: #ffdddd;
+}
+pre.rouge .ge {
+  color: #000000;
+  font-style: italic;
+}
+pre.rouge .gr {
+  color: #aa0000;
+}
+pre.rouge .gh {
+  color: #999999;
+}
+pre.rouge .gi {
+  color: #000000;
+  background-color: #ddffdd;
+}
+pre.rouge .go {
+  color: #888888;
+}
+pre.rouge .gp {
+  color: #555555;
+}
+pre.rouge .gs {
+  font-weight: bold;
+}
+pre.rouge .gu {
+  color: #aaaaaa;
+}
+pre.rouge .gt {
+  color: #aa0000;
+}
+pre.rouge .kc {
+  color: #000000;
+  font-weight: bold;
+}
+pre.rouge .kd {
+  color: #000000;
+  font-weight: bold;
+}
+pre.rouge .kn {
+  color: #000000;
+  font-weight: bold;
+}
+pre.rouge .kp {
+  color: #000000;
+  font-weight: bold;
+}
+pre.rouge .kr {
+  color: #000000;
+  font-weight: bold;
+}
+pre.rouge .kt {
+  color: #445588;
+  font-weight: bold;
+}
+pre.rouge .k, pre.rouge .kv {
+  color: #000000;
+  font-weight: bold;
+}
+pre.rouge .mf {
+  color: #009999;
+}
+pre.rouge .mh {
+  color: #009999;
+}
+pre.rouge .il {
+  color: #009999;
+}
+pre.rouge .mi {
+  color: #009999;
+}
+pre.rouge .mo {
+  color: #009999;
+}
+pre.rouge .m, pre.rouge .mb, pre.rouge .mx {
+  color: #009999;
+}
+pre.rouge .sa {
+  color: #000000;
+  font-weight: bold;
+}
+pre.rouge .sb {
+  color: #d14;
+}
+pre.rouge .sc {
+  color: #d14;
+}
+pre.rouge .sd {
+  color: #d14;
+}
+pre.rouge .s2 {
+  color: #d14;
+}
+pre.rouge .se {
+  color: #d14;
+}
+pre.rouge .sh {
+  color: #d14;
+}
+pre.rouge .si {
+  color: #d14;
+}
+pre.rouge .sx {
+  color: #d14;
+}
+pre.rouge .sr {
+  color: #009926;
+}
+pre.rouge .s1 {
+  color: #d14;
+}
+pre.rouge .ss {
+  color: #990073;
+}
+pre.rouge .s, pre.rouge .dl {
+  color: #d14;
+}
+pre.rouge .na {
+  color: #008080;
+}
+pre.rouge .bp {
+  color: #999999;
+}
+pre.rouge .nb {
+  color: #0086B3;
+}
+pre.rouge .nc {
+  color: #445588;
+  font-weight: bold;
+}
+pre.rouge .no {
+  color: #008080;
+}
+pre.rouge .nd {
+  color: #3c5d5d;
+  font-weight: bold;
+}
+pre.rouge .ni {
+  color: #800080;
+}
+pre.rouge .ne {
+  color: #990000;
+  font-weight: bold;
+}
+pre.rouge .nf, pre.rouge .fm {
+  color: #990000;
+  font-weight: bold;
+}
+pre.rouge .nl {
+  color: #990000;
+  font-weight: bold;
+}
+pre.rouge .nn {
+  color: #555555;
+}
+pre.rouge .nt {
+  color: #000080;
+}
+pre.rouge .vc {
+  color: #008080;
+}
+pre.rouge .vg {
+  color: #008080;
+}
+pre.rouge .vi {
+  color: #008080;
+}
+pre.rouge .nv, pre.rouge .vm {
+  color: #008080;
+}
+pre.rouge .ow {
+  color: #000000;
+  font-weight: bold;
+}
+pre.rouge .o {
+  color: #000000;
+  font-weight: bold;
+}
+pre.rouge .w {
+  color: #bbbbbb;
+}
+pre.rouge {
+  background-color: #f8f8f8;
+}
+</style>
 <!-- Global site tag (gtag.js) - Google Analytics -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=UA-172035750-1"></script>
 <script>
@@ -458,7 +673,7 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <li><a href="#_overview">1. Overview</a>
 <ul class="sectlevel2">
 <li><a href="#_features">1.1. Features</a></li>
-<li><a href="#colab-example">1.2. Quick Start using Google Colab</a></li>
+<li><a href="#colab-example">1.2. Google Colab Example</a></li>
 <li><a href="#_setup">1.3. Setup</a>
 <ul class="sectlevel3">
 <li><a href="#_development_setup">1.3.1. Development Setup:</a></li>
@@ -471,16 +686,22 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 </li>
 <li><a href="#conf">2. RTG <strong><code>conf.yml</code></strong> File</a>
 <ul class="sectlevel2">
-<li><a href="#conf-minimal">2.1. Minimal Yet Complete Config File:</a></li>
-<li><a href="#conf-early-stop">2.2. Early stop</a></li>
-<li><a href="#conf-optim">2.3. Optimizer</a></li>
-<li><a href="#conf-finetune">2.4. Fine Tuning</a></li>
-<li><a href="#conf-parent-child">2.5. Parent-Child Transfer</a></li>
-<li><a href="#conf-freeze-wt">2.6. Freezing some parts of model</a></li>
-<li><a href="#conf-share-data">2.7. Sharing Data between Experiments</a></li>
+<li><a href="#conf-minimal">2.1. Config Example:</a></li>
+<li><a href="#config-opts">2.2. Config options</a>
+<ul class="sectlevel3">
+<li><a href="#config-schedule">2.2.1. <code>schedule</code> options</a></li>
+<li><a href="#config-criterion">2.2.2. <code>criterion</code> options</a></li>
 </ul>
 </li>
-<li><a href="#conf-vocab">3. Vocabulary Preprocessing using Sentencepiece or NLCodec</a>
+<li><a href="#conf-early-stop">2.3. Early stop</a></li>
+<li><a href="#conf-optim">2.4. Optimizer</a></li>
+<li><a href="#conf-finetune">2.5. Fine Tuning</a></li>
+<li><a href="#conf-parent-child">2.6. Parent-Child Transfer</a></li>
+<li><a href="#conf-freeze-wt">2.7. Freezing some parts of model</a></li>
+<li><a href="#conf-share-data">2.8. Sharing Data between Experiments</a></li>
+</ul>
+</li>
+<li><a href="#conf-vocab">3. Vocabulary Preprocessing</a>
 <ul class="sectlevel2">
 <li><a href="#_vocabulary_types">3.1. Vocabulary Types</a></li>
 <li><a href="#_character_coverage">3.2. Character coverage</a></li>
@@ -493,61 +714,60 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <li><a href="#_decoder_memory">4.2. Decoder Memory</a></li>
 </ul>
 </li>
-<li><a href="#rtg-cli">5. RTG CLI</a>
+<li><a href="#migrate">5. Migration</a>
 <ul class="sectlevel2">
-<li><a href="#_summary">5.1. Summary:</a></li>
-<li><a href="#rtg-pipe">5.2. <code>rtg-pipe</code>:  Pipeline</a></li>
-<li><a href="#rtg-prep">5.3. <code>rtg-prep</code>:  Prepare an experiment</a></li>
-<li><a href="#rtg-train">5.4. <code>rtg-train</code> : Train a Model</a></li>
-<li><a href="#rtg-decode">5.5. <code>rtg-decode</code>: Decoder</a></li>
-<li><a href="#rtg-decode-pro">5.6. <code>rtg-decode-pro</code>: Pro Decoder</a></li>
-<li><a href="#rtg-decode-fork">5.7. <code>rtg-fork</code>: Fork an experiment</a></li>
-<li><a href="#rtg-export">5.8. <code>rtg-export</code> Export</a></li>
+<li><a href="#migrate-to-0_6">5.1. v0.5.0 or earlier to v0.6.0</a></li>
 </ul>
 </li>
-<li><a href="#_other_tools">6. Other tools:</a>
+<li><a href="#rtg-cli">6. RTG CLI</a>
 <ul class="sectlevel2">
-<li><a href="#rtg-syscomb">6.1. <code>rtg-syscomb</code> System Combiner</a></li>
-<li><a href="#rtg-perplex">6.2. Perplexity</a></li>
-<li><a href="#line-bleu">6.3. Line Bleu</a></li>
-<li><a href="#rtg-oov">6.4. OOV</a></li>
-<li><a href="#cls-imb-seq-len">6.5. Class imbalance, Sequence lengths</a></li>
+<li><a href="#_summary">6.1. Summary:</a></li>
+<li><a href="#rtg-pipe">6.2. <code>rtg-pipe</code>:  Pipeline</a></li>
+<li><a href="#rtg-prep">6.3. <code>rtg-prep</code>:  Prepare an experiment</a></li>
+<li><a href="#rtg-train">6.4. <code>rtg-train</code> : Train a Model</a></li>
+<li><a href="#rtg-decode">6.5. <code>rtg-decode</code>: Decoder</a></li>
+<li><a href="#rtg-decode-pro">6.6. <code>rtg-decode-pro</code>: Pro Decoder</a></li>
+<li><a href="#rtg-decode-fork">6.7. <code>rtg-fork</code>: Fork an experiment</a></li>
+<li><a href="#rtg-export">6.8. <code>rtg-export</code> Export</a></li>
 </ul>
 </li>
-<li><a href="#env-vars">7. Environment Variables</a>
+<li><a href="#_other_tools">7. Other tools:</a>
 <ul class="sectlevel2">
-<li><a href="#_gpus">7.1. GPUs</a></li>
-<li><a href="#_fast_temporary_filesystem">7.2. Fast Temporary FileSystem</a></li>
-<li><a href="#_number_of_cpu_cores">7.3. Number of CPU Cores</a></li>
+<li><a href="#rtg-syscomb">7.1. <code>rtg-syscomb</code> System Combiner</a></li>
+<li><a href="#rtg-perplex">7.2. Perplexity</a></li>
+<li><a href="#line-bleu">7.3. Line Bleu</a></li>
+<li><a href="#rtg-oov">7.4. OOV</a></li>
+<li><a href="#cls-imb-seq-len">7.5. Class imbalance, Sequence lengths</a></li>
 </ul>
 </li>
-<li><a href="#ddp">8. Distributed Data Parallel (DDP)</a></li>
-<li><a href="#fp16">9. FP16, Mixed Precision Training</a></li>
-<li><a href="#grad-clip">10. Gradient Clipping</a></li>
-<li><a href="#scaling-big">11. Scaling to Big Datasets Using PySpark</a></li>
-<li><a href="#_rtg_serve">12. RTG Serve</a>
+<li><a href="#env-vars">8. Environment Variables</a>
 <ul class="sectlevel2">
-<li><a href="#_flask_installation">12.1. Flask Installation</a></li>
-<li><a href="#_running">12.2. Running</a></li>
+<li><a href="#_gpus">8.1. GPUs</a></li>
+<li><a href="#_fast_temporary_filesystem">8.2. Fast Temporary FileSystem</a></li>
+<li><a href="#_number_of_cpu_cores">8.3. Number of CPU Cores</a></li>
 </ul>
 </li>
-<li><a href="#_pre_process_and_post_process">13. Pre-process and post-process</a></li>
-<li><a href="#dev-env">14. Development Environment:</a>
+<li><a href="#ddp">9. Distributed Data Parallel (DDP)</a></li>
+<li><a href="#fp16">10. FP16, Mixed Precision Training</a></li>
+<li><a href="#grad-clip">11. Gradient Clipping</a></li>
+<li><a href="#scaling-big">12. Scaling Big Using PySpark</a></li>
+<li><a href="#_rtg_serve">13. RTG Serve</a>
 <ul class="sectlevel2">
-<li><a href="#_run_tests">14.1. Run Tests</a></li>
-<li><a href="#_adding_a_new_model">14.2. Adding a new model</a></li>
+<li><a href="#_flask_installation">13.1. Flask Installation</a></li>
+<li><a href="#_running">13.2. Running</a></li>
 </ul>
 </li>
-<li><a href="#_release_instructions">15. Release instructions</a>
+<li><a href="#_pre_process_and_post_process">14. Pre-process and post-process</a></li>
+<li><a href="#dev-env">15. Development Environment:</a>
 <ul class="sectlevel2">
-<li><a href="#_steps">15.1. Steps:</a></li>
-<li><a href="#_the_pypirc_file">15.2. The <code>.pypirc</code> file</a></li>
+<li><a href="#_run_tests">15.1. Run Tests</a></li>
+<li><a href="#_adding_a_new_model">15.2. Adding a new model</a></li>
 </ul>
 </li>
-<li><a href="#migrate-to-0_6">16. Migration from v0.5.0 or earlier to v0.6.0</a>
+<li><a href="#_release_instructions">16. Release instructions</a>
 <ul class="sectlevel2">
-<li><a href="#_learning_rate_schedule">16.1. Learning rate schedule</a></li>
-<li><a href="#_criterion">16.2. Criterion</a></li>
+<li><a href="#_steps">16.1. Steps:</a></li>
+<li><a href="#_the_pypirc_file">16.2. The <code>.pypirc</code> file</a></li>
 </ul>
 </li>
 </ul>
@@ -560,8 +780,15 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <div class="paragraph">
 <p><a href="https://github.com/isi-nlp/rtg" target="_blank" rel="noopener">Reader-Translator-Generator (RTG)</a> is a Neural Machine Translation toolkit based on pytorch.</p>
 </div>
-<div class="paragraph">
+<div class="ulist">
+<ul>
+<li>
 <p><a href="versions.html" target="_blank" rel="noopener"><em>See all versions</em></a></p>
+</li>
+<li>
+<p>Demo: 500-Eng multilingual NMT: <a href="http://rtg.isi.edu/many-eng/" class="bare">rtg.isi.edu/many-eng/</a></p>
+</li>
+</ul>
 </div>
 <div class="sect2">
 <h3 id="_features">1.1. Features</h3>
@@ -615,7 +842,7 @@ hyper params&#8201;&#8212;&#8201;required to reproduce experiments.</p>
 <p>Language Modeling: RNN, Transformer</p>
 </li>
 <li>
-<p>And more ..</p>
+<p>And more &#8230;&#8203;</p>
 <div class="ulist">
 <ul>
 <li>
@@ -637,7 +864,7 @@ hyper params&#8201;&#8212;&#8201;required to reproduce experiments.</p>
 </div>
 </div>
 <div class="sect2">
-<h3 id="colab-example">1.2. Quick Start using Google Colab</h3>
+<h3 id="colab-example">1.2. Google Colab Example</h3>
 <div class="paragraph">
 <p>Use this Google Colab notebook for learning <em>how to train your NMT model with RTG</em>: <a href="https://colab.research.google.com/drive/198KbkUcCGXJXnWiM7IyEiO1Mq2hdVq8T?usp=sharing" class="bare">colab.research.google.com/drive/198KbkUcCGXJXnWiM7IyEiO1Mq2hdVq8T?usp=sharing</a></p>
 </div>
@@ -645,7 +872,7 @@ hyper params&#8201;&#8212;&#8201;required to reproduce experiments.</p>
 <div class="sect2">
 <h3 id="_setup">1.3. Setup</h3>
 <div class="paragraph">
-<p><code>rtg</code> has been published to PyPi at <a href="https://pypi.org/project/rtg/" class="bare">pypi.org/project/rtg/</a></p>
+<p><span class="image"><a class="image" href="https://badge.fury.io/py/rtg"><img src="https://badge.fury.io/py/rtg.svg" alt="PyPI version"></a></span></p>
 </div>
 <div class="listingblock">
 <div class="content">
@@ -808,20 +1035,20 @@ To view or modify the  version numbers of libraries, please go to <code>setup.py
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="highlight"><code class="language-bash" data-lang="bash"># if you wish to disable gpu, unset
-# export CUDA_VISIBLE_DEVICES=
+<pre class="rouge highlight"><code data-lang="bash"><span class="c"># if you wish to disable gpu, unset</span>
+<span class="c"># export CUDA_VISIBLE_DEVICES=</span>
 
-python -m rtg.pipeline experiments/sample-exp/
+python <span class="nt">-m</span> rtg.pipeline experiments/sample-exp/
 
-# or use CLI tool installed by pip install
+<span class="c"># or use CLI tool installed by pip install</span>
 rtg-pipe experiments/sample-exp/
 
-# or use shell script, edit it to your needs, to submit to Slurm/SGE
-scripts/rtg-pipeline.sh -d experiments/sample-exp/ -c experiments/sample-exp/conf.yml
+<span class="c"># or use shell script, edit it to your needs, to submit to Slurm/SGE</span>
+scripts/rtg-pipeline.sh <span class="nt">-d</span> experiments/sample-exp/ <span class="nt">-c</span> experiments/sample-exp/conf.yml
 
-# Then to use the model to translate something:
-# (VERY poor translation due to small training data)
-echo "Chacun voit midi à sa porte." | python -m rtg.decode experiments/sample-exp/</code></pre>
+<span class="c"># Then to use the model to translate something:</span>
+<span class="c"># (VERY poor translation due to small training data)</span>
+<span class="nb">echo</span> <span class="s2">"Chacun voit midi à sa porte."</span> | python <span class="nt">-m</span> rtg.decode experiments/sample-exp/</code></pre>
 </div>
 </div>
 <div class="paragraph">
@@ -879,7 +1106,7 @@ echo "Chacun voit midi à sa porte." | python -m rtg.decode experiments/sample-e
 </div>
 </div>
 </div>
-<div class="sect1 yml">
+<div class="sect1">
 <h2 id="conf">2. RTG <strong><code>conf.yml</code></strong> File</h2>
 <div class="sectionbody">
 <div class="paragraph">
@@ -925,103 +1152,376 @@ such as BPE/char/words, and vocabulary size.</p>
 </ul>
 </div>
 <div class="sect2">
-<h3 id="conf-minimal">2.1. Minimal Yet Complete Config File:</h3>
+<h3 id="conf-minimal">2.1. Config Example:</h3>
 <div class="listingblock">
 <div class="title">conf.yml</div>
 <div class="content">
-<pre class="highlight"><code class="language-yaml" data-lang="yaml">model_args: # model construction args
-  ff_size: 2048
-  hid_size: 512
-  n_heads: 8
-  attn_dropout: 0.1  # Use lower dropout rates for attention because it masks an entire timestep
-  dropout: 0.2
-  enc_layers: 6
-  dec_layers: 6
-  src_vocab: 8000
-  tgt_vocab: 8000
-  tied_emb: three-way  # choices: null, one-way, two-way, three-way
-model_type: tfmnmt  # model type. tfmnmt is the transformer NMT model
-optimizer:
-  name: adam
-  args:
-    betas:
-    - 0.9
-    - 0.98
-    eps: 1.0e-09
-    lr: 0.1
+<pre class="rouge highlight"><code data-lang="yaml"><span class="na">model_args</span><span class="pi">:</span> <span class="c1"># model construction args</span>
+  <span class="na">ff_size</span><span class="pi">:</span> <span class="m">2048</span>
+  <span class="na">hid_size</span><span class="pi">:</span> <span class="m">512</span>
+  <span class="na">n_heads</span><span class="pi">:</span> <span class="m">8</span>
+  <span class="na">attn_dropout</span><span class="pi">:</span> <span class="m">0.1</span>  <span class="c1"># Use lower dropout rates for attention because it masks an entire timestep</span>
+  <span class="na">dropout</span><span class="pi">:</span> <span class="m">0.2</span>
+  <span class="na">enc_layers</span><span class="pi">:</span> <span class="m">6</span>
+  <span class="na">dec_layers</span><span class="pi">:</span> <span class="m">6</span>
+  <span class="na">src_vocab</span><span class="pi">:</span> <span class="m">8000</span>
+  <span class="na">tgt_vocab</span><span class="pi">:</span> <span class="m">8000</span>
+  <span class="na">tied_emb</span><span class="pi">:</span> <span class="s">three-way</span>  <span class="c1"># choices: null, one-way, two-way, three-way</span>
+<span class="na">model_type</span><span class="pi">:</span> <span class="s">tfmnmt</span>  <span class="c1"># model type. tfmnmt is the transformer NMT model</span>
+<span class="na">optimizer</span><span class="pi">:</span>
+  <span class="na">name</span><span class="pi">:</span> <span class="s">adam</span>
+  <span class="na">args</span><span class="pi">:</span>
+    <span class="na">betas</span><span class="pi">:</span>
+    <span class="pi">-</span> <span class="m">0.9</span>
+    <span class="pi">-</span> <span class="m">0.98</span>
+    <span class="na">eps</span><span class="pi">:</span> <span class="s">1.0e-09</span>
+    <span class="na">lr</span><span class="pi">:</span> <span class="m">0.1</span>
 
-schedule:
-  name: noam
-  args:
-    constant: 2
-    warmup: 8000
-    model_dim: 512
+<span class="na">schedule</span><span class="pi">:</span>
+  <span class="na">name</span><span class="pi">:</span> <span class="s">noam</span>
+  <span class="na">args</span><span class="pi">:</span>
+    <span class="na">constant</span><span class="pi">:</span> <span class="m">2</span>
+    <span class="na">warmup</span><span class="pi">:</span> <span class="m">8000</span>
+    <span class="na">model_dim</span><span class="pi">:</span> <span class="m">512</span>
 
-criterion:
-  name: smooth_kld    #options "cross_entropy", "smooth_kld", "binary_cross_entropy", "triplet_loss"
-  args:
-    label_smoothing: 0.1
+<span class="na">criterion</span><span class="pi">:</span>
+  <span class="na">name</span><span class="pi">:</span> <span class="s">smooth_kld</span>    <span class="c1">#options "cross_entropy", "smooth_kld", "binary_cross_entropy", "triplet_loss"</span>
+  <span class="na">args</span><span class="pi">:</span>
+    <span class="na">label_smoothing</span><span class="pi">:</span> <span class="m">0.1</span>
 
-prep: # data preparation
-  max_types: 8000  # maximum number of types in vocab ; if shared_vocab=false, set max_src_types and max_tgt_types separately
-  pieces: bpe   # choices: bpe, char, word, unigram  from google/sentencepiece
-  shared_vocab: true  # true means same vocab for src and tgt, false means different vocabs
-  src_len: 256   # longer sentences, decision is made as per 'truncate={true,false}'
-  tgt_len: 256
-  truncate: true  # what to do with long sentences: if true truncate at src_len or tgt_len; if false filter away
-  train_src: wmt_data/data/de-en/europarl-v9.de-en.de.tok   # training data
-  train_tgt: wmt_data/data/de-en/europarl-v9.de-en.en.tok
-  valid_src: wmt_data/data/dev/newstest2013.de.tok
-  valid_tgt: wmt_data/data/dev/newstest2013.en.tok
-  valid_tgt_raw: wmt_data/data/dev/newstest2013.en  # unmodified; required for BLEU
-tester:
-  decoder:
-   beam_size: 4
-   batch_size: 18000   # effective size = batch_size/beam_size
-  suit:  # suit of tests to run after the training
-    newstest2013:  # name of test and list of src.tok, ref file (ref should be unmodified)
-      - wmt_data/data/dev/newstest2013.de.tok
-      - wmt_data/data/dev/newstest2013.en
-    newstest2014:  # name of test and list of src.tok, ref file (ref should be unmodified)
-      - wmt_data/data/dev/newstest2014-deen-src.de.tok
-      - wmt_data/data/dev/newstest2014-deen-ref.en
-trainer:
-  init_args:
-    chunk_size: 10   # generation in chunks of time steps to reduce memory consumption
-    grad_accum: 1     # How many batches to accumulate gradients
-  batch_size: 4200   # not exceeding these many tokens (including paddings)
-  check_point: 1000  # how often to checkpoint?
-  keep_models: 10   # how many checkpoints to keep on disk (small enough to save disk, large enough for checkpt averaging
-  steps: 200000      # how many steps to train; if early_stop is enabled, this is max steps
-  keep_in_mem: true   # keep training data in memory
-updated_at: '2019-03-09T21:15:33.707183'  # automatically updated by system
-seed: 12345  # fix the manual seed of pytorch + cuda + numpy + python_stdlib RNGs. Remove/comment this to disable</code></pre>
+<span class="na">prep</span><span class="pi">:</span> <span class="c1"># data preparation</span>
+  <span class="na">max_types</span><span class="pi">:</span> <span class="m">8000</span>  <span class="c1"># maximum number of types in vocab ; if shared_vocab=false, set max_src_types and max_tgt_types separately</span>
+  <span class="na">pieces</span><span class="pi">:</span> <span class="s">bpe</span>   <span class="c1"># choices: bpe, char, word, unigram  from google/sentencepiece</span>
+  <span class="na">shared_vocab</span><span class="pi">:</span> <span class="no">true</span>  <span class="c1"># true means same vocab for src and tgt, false means different vocabs</span>
+  <span class="na">src_len</span><span class="pi">:</span> <span class="m">256</span>   <span class="c1"># longer sentences, decision is made as per 'truncate={true,false}'</span>
+  <span class="na">tgt_len</span><span class="pi">:</span> <span class="m">256</span>
+  <span class="na">truncate</span><span class="pi">:</span> <span class="no">true</span>  <span class="c1"># what to do with long sentences: if true truncate at src_len or tgt_len; if false filter away</span>
+  <span class="na">train_src</span><span class="pi">:</span> <span class="s">wmt_data/data/de-en/europarl-v9.de-en.de.tok</span>   <span class="c1"># training data</span>
+  <span class="na">train_tgt</span><span class="pi">:</span> <span class="s">wmt_data/data/de-en/europarl-v9.de-en.en.tok</span>
+  <span class="na">valid_src</span><span class="pi">:</span> <span class="s">wmt_data/data/dev/newstest2013.de.tok</span>
+  <span class="na">valid_tgt</span><span class="pi">:</span> <span class="s">wmt_data/data/dev/newstest2013.en.tok</span>
+  <span class="na">valid_tgt_raw</span><span class="pi">:</span> <span class="s">wmt_data/data/dev/newstest2013.en</span>  <span class="c1"># unmodified; required for BLEU</span>
+<span class="na">tester</span><span class="pi">:</span>
+  <span class="na">decoder</span><span class="pi">:</span>
+   <span class="na">beam_size</span><span class="pi">:</span> <span class="m">4</span>
+   <span class="na">batch_size</span><span class="pi">:</span> <span class="m">18000</span>   <span class="c1"># effective size = batch_size/beam_size</span>
+  <span class="na">suit</span><span class="pi">:</span>  <span class="c1"># suit of tests to run after the training</span>
+    <span class="na">newstest2013</span><span class="pi">:</span>  <span class="c1"># name of test and list of src.tok, ref file (ref should be unmodified)</span>
+      <span class="pi">-</span> <span class="s">wmt_data/data/dev/newstest2013.de.tok</span>
+      <span class="pi">-</span> <span class="s">wmt_data/data/dev/newstest2013.en</span>
+    <span class="na">newstest2014</span><span class="pi">:</span>  <span class="c1"># name of test and list of src.tok, ref file (ref should be unmodified)</span>
+      <span class="pi">-</span> <span class="s">wmt_data/data/dev/newstest2014-deen-src.de.tok</span>
+      <span class="pi">-</span> <span class="s">wmt_data/data/dev/newstest2014-deen-ref.en</span>
+<span class="na">trainer</span><span class="pi">:</span>
+  <span class="na">init_args</span><span class="pi">:</span>
+    <span class="na">chunk_size</span><span class="pi">:</span> <span class="m">10</span>   <span class="c1"># generation in chunks of time steps to reduce memory consumption</span>
+    <span class="na">grad_accum</span><span class="pi">:</span> <span class="m">1</span>     <span class="c1"># How many batches to accumulate gradients</span>
+  <span class="na">batch_size</span><span class="pi">:</span> <span class="m">4200</span>   <span class="c1"># not exceeding these many tokens (including paddings)</span>
+  <span class="na">check_point</span><span class="pi">:</span> <span class="m">1000</span>  <span class="c1"># how often to checkpoint?</span>
+  <span class="na">keep_models</span><span class="pi">:</span> <span class="m">10</span>   <span class="c1"># how many checkpoints to keep on disk (small enough to save disk, large enough for checkpt averaging</span>
+  <span class="na">steps</span><span class="pi">:</span> <span class="m">200000</span>      <span class="c1"># how many steps to train; if early_stop is enabled, this is max steps</span>
+  <span class="na">keep_in_mem</span><span class="pi">:</span> <span class="no">true</span>   <span class="c1"># keep training data in memory</span>
+<span class="na">updated_at</span><span class="pi">:</span> <span class="s1">'</span><span class="s">2019-03-09T21:15:33.707183'</span>  <span class="c1"># automatically updated by system</span>
+<span class="na">seed</span><span class="pi">:</span> <span class="m">12345</span>  <span class="c1"># fix the manual seed of pytorch + cuda + numpy + python_stdlib RNGs. Remove/comment this to disable</span></code></pre>
 </div>
 </div>
 </div>
 <div class="sect2">
-<h3 id="conf-early-stop">2.2. Early stop</h3>
+<h3 id="config-opts">2.2. Config options</h3>
+<table class="tableblock frame-all grid-all fit-content">
+<caption class="title">Table 2. Summary of component choices</caption>
+<colgroup>
+<col>
+<col>
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Component</th>
+<th class="tableblock halign-left valign-top">Choices</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">model</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">tfmnmt, rnnmt, rnnlm, tfmlm, skptfmnmt, wvtfmnmt, wvskptfmnmt, tfmextembmt, robertamt, mtfmnmt, hybridmt, CBOW, tfmcls</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">optimizer</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">adam, sgd, adagrad, adam_w, adadelta, sparse_adam</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">schedule</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">noam, inverse_sqrt</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">criterion</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">sparse_cross_entropy, kl_divergence, focal_loss, binary_cross_entropy, smooth_kld, triplet_loss, smooth_kld_and_triplet_loss, dice_loss, squared_error</p></td>
+</tr>
+</tbody>
+</table>
+<div class="sect3">
+<h4 id="config-schedule">2.2.1. <code>schedule</code> options</h4>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p><code>noam</code> with args:</p>
+<div class="ulist">
+<ul>
+<li>
+<p>warmup</p>
+</li>
+<li>
+<p>constant</p>
+</li>
+<li>
+<p>model_dim</p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p><code>inverse_sqrt</code> with args:</p>
+<div class="ulist">
+<ul>
+<li>
+<p>warmup</p>
+</li>
+<li>
+<p>peak_lr</p>
+</li>
+</ul>
+</div>
+</li>
+</ol>
+</div>
+</div>
+<div class="sect3">
+<h4 id="config-criterion">2.2.2. <code>criterion</code> options</h4>
+<div class="ulist">
+<ul>
+<li>
+<p><code>smooth_kld</code>     (recommended; used since the first version of transformer)</p>
+<div class="ulist">
+<ul>
+<li>
+<p><code>label_smoothing</code>:  float : [0, 1] : optional: default=0.1</p>
+</li>
+</ul>
+</div>
+</li>
+</ul>
+</div>
+<table class="tableblock frame-all grid-all stretch">
+<caption class="title">Table 3. Args to <code>smooth_kld</code></caption>
+<colgroup>
+<col style="width: 20%;">
+<col style="width: 20%;">
+<col style="width: 20%;">
+<col style="width: 20%;">
+<col style="width: 20%;">
+</colgroup>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Name</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Type</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Range/Choices</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Required</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Default</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>label_smoothing</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>float</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>[0.0, 1.0)</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Optional</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">0.1</p></td>
+</tr>
+</tbody>
+</table>
+<div class="ulist">
+<ul>
+<li>
+<p><code>sparse_cross_entropy</code></p>
+</li>
+</ul>
+</div>
+<table class="tableblock frame-all grid-all stretch">
+<caption class="title">Table 4. Args to <code>sparse_cross_entropy</code></caption>
+<colgroup>
+<col style="width: 16.6666%;">
+<col style="width: 16.6666%;">
+<col style="width: 16.6666%;">
+<col style="width: 16.6666%;">
+<col style="width: 16.6666%;">
+<col style="width: 16.667%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Name</th>
+<th class="tableblock halign-left valign-top">Type</th>
+<th class="tableblock halign-left valign-top">Range/Choices</th>
+<th class="tableblock halign-left valign-top">Required</th>
+<th class="tableblock halign-left valign-top">Default</th>
+<th class="tableblock halign-left valign-top">Comment</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>weight</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>str</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>{inv_freq, inv_sqrt_freq, inv_log_freq}</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Optional</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">None &#8658; disable weighing</p></td>
+<td class="tableblock halign-left valign-top"></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>weight_calm_time</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>int</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">[0, )</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Optional</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">0 &#8658; disable calming;</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Applicable when <code>weight</code> is enabled</p></td>
+</tr>
+</tbody>
+</table>
+<div class="ulist">
+<ul>
+<li>
+<p><code>kl_divergence</code>   (re-implementation of <code>smooth_kld</code> with some extra features)</p>
+</li>
+</ul>
+</div>
+<table class="tableblock frame-all grid-all stretch">
+<caption class="title">Table 5. Args to <code>kl_divergence</code></caption>
+<colgroup>
+<col style="width: 20%;">
+<col style="width: 20%;">
+<col style="width: 20%;">
+<col style="width: 20%;">
+<col style="width: 20%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Name</th>
+<th class="tableblock halign-left valign-top">Type</th>
+<th class="tableblock halign-left valign-top">Range/Choices</th>
+<th class="tableblock halign-left valign-top">Required</th>
+<th class="tableblock halign-left valign-top">Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>label_smoothing</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>float</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>[0.0, 1.0)</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Optional</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">0.0 &#8658; disable label smoothing</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>weight</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>str</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>{inv_freq, inv_sqrt_freq, inv_log_freq}</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Optional</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">None &#8658; disable weighing</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>weight_calm_time</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>int</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">[0, )</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Optional</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">0 &#8658; disable calming &#8658; weights applicable from step 0</p></td>
+</tr>
+</tbody>
+</table>
+<div class="ulist">
+<ul>
+<li>
+<p><code>focal_loss</code>
+.Args to <code>focal_loss</code></p>
+</li>
+</ul>
+</div>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 20%;">
+<col style="width: 20%;">
+<col style="width: 20%;">
+<col style="width: 20%;">
+<col style="width: 20%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Name</th>
+<th class="tableblock halign-left valign-top">Type</th>
+<th class="tableblock halign-left valign-top">Range/Choices</th>
+<th class="tableblock halign-left valign-top">Required</th>
+<th class="tableblock halign-left valign-top">Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>gamma</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>float</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>[0.0, )</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Optional</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">0.0 &#8658; disable &#8658; cross entropy</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>weight_calm_time</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>int</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">[0, )</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Optional</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">0 &#8658; disable calming &#8658; weights applicable from step 0</p></td>
+</tr>
+</tbody>
+</table>
+<div class="ulist">
+<ul>
+<li>
+<p><em>Experimental loss functions:</em></p>
+<div class="ulist">
+<ul>
+<li>
+<p><code>dice_loss</code></p>
+</li>
+<li>
+<p><code>binary_cross_entropy</code></p>
+</li>
+<li>
+<p><code>triplet_loss</code></p>
+</li>
+<li>
+<p><code>squared_error</code></p>
+</li>
+</ul>
+</div>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="conf-early-stop">2.3. Early stop</h3>
 <div class="paragraph">
 <p>Add the below piece of config to <code>trainer</code> to enable early stop on convergence.</p>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="highlight"><code class="language-yaml" data-lang="yaml">trainer:
-  ....           # other args
-  steps: 100000      # steps is treated as max steps
-  checkpoint: 1000   # validate every these many steps
-  early_stop:       # remove this block to disable
-    enabled: true   # or, alternatively flip this to disable;
-    by: loss        # stop by validation loss (default); TODO: add BLEU
-    patience: 5     # how many validations to wait, to be sure of stopping; each validation is per check_point steps
-    min_steps: 8000  # minimum steps to wait before test for early stop;
-    signi_round: 3   # significant in 'by' value, used as round(value, signi_round).
-                     # e.g. round(1/3, 3) = 0.333; round(100/3, 0) = 33; round(100/3, -1) = 30.0</code></pre>
+<pre class="rouge highlight"><code data-lang="yaml"><span class="na">trainer</span><span class="pi">:</span>
+  <span class="s">....</span>           <span class="c1"># other args</span>
+  <span class="na">steps</span><span class="pi">:</span> <span class="m">100000</span>      <span class="c1"># steps is treated as max steps</span>
+  <span class="na">checkpoint</span><span class="pi">:</span> <span class="m">1000</span>   <span class="c1"># validate every these many steps</span>
+  <span class="na">early_stop</span><span class="pi">:</span>       <span class="c1"># remove this block to disable</span>
+    <span class="na">enabled</span><span class="pi">:</span> <span class="no">true</span>   <span class="c1"># or, alternatively flip this to disable;</span>
+    <span class="na">by</span><span class="pi">:</span> <span class="s">loss</span>        <span class="c1"># stop by validation loss (default); TODO: add BLEU</span>
+    <span class="na">patience</span><span class="pi">:</span> <span class="m">5</span>     <span class="c1"># how many validations to wait, to be sure of stopping; each validation is per check_point steps</span>
+    <span class="na">min_steps</span><span class="pi">:</span> <span class="m">8000</span>  <span class="c1"># minimum steps to wait before test for early stop;</span>
+    <span class="na">signi_round</span><span class="pi">:</span> <span class="m">3</span>   <span class="c1"># significant in 'by' value, used as round(value, signi_round).</span>
+                     <span class="c1"># e.g. round(1/3, 3) = 0.333; round(100/3, 0) = 33; round(100/3, -1) = 30.0</span></code></pre>
 </div>
 </div>
 </div>
 <div class="sect2">
-<h3 id="conf-optim">2.3. Optimizer</h3>
+<h3 id="conf-optim">2.4. Optimizer</h3>
 <div class="paragraph">
 <p>By default, we use the <code>ADAM</code> optimizer from
 <a href="https://arxiv.org/abs/1412.6980">Adam: A Method for Stochastic Optimization</a>.
@@ -1036,26 +1536,26 @@ since weight decay is different in optimizers with variable step sizes.</p>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="highlight"><code class="language-yaml" data-lang="yaml">optimizer:
-  name: adamw
-  args:
-    betas:
-    - 0.9
-    - 0.98
-    eps: 1.0e-09
-    lr: 0.0005   # this doesnt matter, see "schedule"
-    weight_decay: 1e-3
+<pre class="rouge highlight"><code data-lang="yaml"><span class="na">optimizer</span><span class="pi">:</span>
+  <span class="na">name</span><span class="pi">:</span> <span class="s">adamw</span>
+  <span class="na">args</span><span class="pi">:</span>
+    <span class="na">betas</span><span class="pi">:</span>
+    <span class="pi">-</span> <span class="m">0.9</span>
+    <span class="pi">-</span> <span class="m">0.98</span>
+    <span class="na">eps</span><span class="pi">:</span> <span class="s">1.0e-09</span>
+    <span class="na">lr</span><span class="pi">:</span> <span class="m">0.0005</span>   <span class="c1"># this doesnt matter, see "schedule"</span>
+    <span class="na">weight_decay</span><span class="pi">:</span> <span class="s">1e-3</span>
 
-schedule:
-  name: inverse_sqrt
-  args:
-    warmup: 4000
-    peak_lr: 0.0005</code></pre>
+<span class="na">schedule</span><span class="pi">:</span>
+  <span class="na">name</span><span class="pi">:</span> <span class="s">inverse_sqrt</span>
+  <span class="na">args</span><span class="pi">:</span>
+    <span class="na">warmup</span><span class="pi">:</span> <span class="m">4000</span>
+    <span class="na">peak_lr</span><span class="pi">:</span> <span class="m">0.0005</span></code></pre>
 </div>
 </div>
 </div>
 <div class="sect2">
-<h3 id="conf-finetune">2.4. Fine Tuning</h3>
+<h3 id="conf-finetune">2.5. Fine Tuning</h3>
 <div class="paragraph">
 <p>We define fine tuning as the act of changing the training data at certain time step in the training process.
 To enable this feature, we need to do following.</p>
@@ -1065,14 +1565,14 @@ To enable this feature, we need to do following.</p>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="highlight"><code class="language-yaml" data-lang="yaml">prep: # data preparation
-  ....
-  train_src: wmt_data/data/de-en/europarl-v9.de-en.de.tok   # training data
-  train_tgt: wmt_data/data/de-en/europarl-v9.de-en.en.tok
-  finetune_src: wmt_data/data/de-en/finetune.de-en.de.tok   # Finetuning data
-  finetune_tgt: wmt_data/data/de-en/finetune.de-en.en.tok
-  valid_src: wmt_data/data/dev/newstest2013.de.tok
-  valid_tgt: wmt_data/data/dev/newstest2013.en.tok</code></pre>
+<pre class="rouge highlight"><code data-lang="yaml"><span class="na">prep</span><span class="pi">:</span> <span class="c1"># data preparation</span>
+  <span class="s">....</span>
+  <span class="s">train_src</span><span class="err">:</span> <span class="s">wmt_data/data/de-en/europarl-v9.de-en.de.tok</span>   <span class="c1"># training data</span>
+  <span class="na">train_tgt</span><span class="pi">:</span> <span class="s">wmt_data/data/de-en/europarl-v9.de-en.en.tok</span>
+  <span class="na">finetune_src</span><span class="pi">:</span> <span class="s">wmt_data/data/de-en/finetune.de-en.de.tok</span>   <span class="c1"># Finetuning data</span>
+  <span class="na">finetune_tgt</span><span class="pi">:</span> <span class="s">wmt_data/data/de-en/finetune.de-en.en.tok</span>
+  <span class="na">valid_src</span><span class="pi">:</span> <span class="s">wmt_data/data/dev/newstest2013.de.tok</span>
+  <span class="na">valid_tgt</span><span class="pi">:</span> <span class="s">wmt_data/data/dev/newstest2013.en.tok</span></code></pre>
 </div>
 </div>
 <div class="paragraph">
@@ -1080,11 +1580,11 @@ To enable this feature, we need to do following.</p>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="highlight"><code class="language-yaml" data-lang="yaml">trainer:
-  batch_size: 12000        # training batch size
-  steps: 200000           # how many steps to train
-  finetune_steps: 300000 # fine tuning steps.
-  finetune_batch_size: 1024  # fine tuning batch_size; optional; default is training batach_size</code></pre>
+<pre class="rouge highlight"><code data-lang="yaml"><span class="na">trainer</span><span class="pi">:</span>
+  <span class="na">batch_size</span><span class="pi">:</span> <span class="m">12000</span>        <span class="c1"># training batch size</span>
+  <span class="na">steps</span><span class="pi">:</span> <span class="m">200000</span>           <span class="c1"># how many steps to train</span>
+  <span class="na">finetune_steps</span><span class="pi">:</span> <span class="m">300000</span> <span class="c1"># fine tuning steps.</span>
+  <span class="na">finetune_batch_size</span><span class="pi">:</span> <span class="m">1024</span>  <span class="c1"># fine tuning batch_size; optional; default is training batach_size</span></code></pre>
 </div>
 </div>
 <div class="paragraph">
@@ -1093,32 +1593,32 @@ for 200k-300k steps. Note that <code>finetune_steps &gt; steps</code> .</p>
 </div>
 </div>
 <div class="sect2">
-<h3 id="conf-parent-child">2.5. Parent-Child Transfer</h3>
+<h3 id="conf-parent-child">2.6. Parent-Child Transfer</h3>
 <div class="paragraph">
 <p>To initialize from another compatible model as parent, add <code>parent:</code> specification to conf.yml as shown below:</p>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="highlight"><code class="language-yaml" data-lang="yaml">model_type: tfmnmt
-model_args:
-  # will be inherited from parent  ; see parent.mode.args: true
-parent:
-  experiment: &lt;path/to/experiment/dir&gt;
-  vocab:
-    shared: shared       # for reusing the shared vocab
-    #src: src            # for separate vocabs
-    #tgt: tgt
-  shrink: true        # shrink vocabularies and embeddings to child data
-                      # specified in train_{src,tgt} and mono_{src,tgt}
-  model:
-    args: true          # update/overwrite the model_args of child with the parent
-    ensemble: 5         # how many checkpoints of parent to ensemble, to obtain initial state
-# ... rest of the config such as prep, trainer etc</code></pre>
+<pre class="rouge highlight"><code data-lang="yaml"><span class="na">model_type</span><span class="pi">:</span> <span class="s">tfmnmt</span>
+<span class="na">model_args</span><span class="pi">:</span>
+  <span class="c1"># will be inherited from parent  ; see parent.mode.args: true</span>
+<span class="na">parent</span><span class="pi">:</span>
+  <span class="na">experiment</span><span class="pi">:</span> <span class="s">&lt;path/to/experiment/dir&gt;</span>
+  <span class="na">vocab</span><span class="pi">:</span>
+    <span class="na">shared</span><span class="pi">:</span> <span class="s">shared</span>       <span class="c1"># for reusing the shared vocab</span>
+    <span class="c1">#src: src            # for separate vocabs</span>
+    <span class="c1">#tgt: tgt</span>
+  <span class="na">shrink</span><span class="pi">:</span> <span class="no">true</span>        <span class="c1"># shrink vocabularies and embeddings to child data</span>
+                      <span class="c1"># specified in train_{src,tgt} and mono_{src,tgt}</span>
+  <span class="na">model</span><span class="pi">:</span>
+    <span class="na">args</span><span class="pi">:</span> <span class="no">true</span>          <span class="c1"># update/overwrite the model_args of child with the parent</span>
+    <span class="na">ensemble</span><span class="pi">:</span> <span class="m">5</span>         <span class="c1"># how many checkpoints of parent to ensemble, to obtain initial state</span>
+<span class="c1"># ... rest of the config such as prep, trainer etc</span></code></pre>
 </div>
 </div>
 </div>
 <div class="sect2">
-<h3 id="conf-freeze-wt">2.6. Freezing some parts of model</h3>
+<h3 id="conf-freeze-wt">2.7. Freezing some parts of model</h3>
 <div class="paragraph">
 <p>Frozen weights associated to parts of network means the weights remain unmodified during the course of the training.
 It is a useful feature when the model weights are initialized from a well trained parent model.
@@ -1131,17 +1631,17 @@ Or alternatively, explicitly mention the parts of the model needs to be trained 
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="highlight"><code class="language-yaml" data-lang="yaml">optimizer:
-  name: adam
-  args:
-    ....# the usual args for optimizer
-  trainable:  # trainable parameter
-    include: # only include these and exclude everything else not listed here
-    - src_embed
-    - tgt_embed
-    - generator
-    - 'encoder:0,1,2,3,4,5'  # the numbers are layer indices starting from 0
-    - 'decoder:0,1,2,3,4,5'  # the numbers are layer indices starting from 0</code></pre>
+<pre class="rouge highlight"><code data-lang="yaml"><span class="na">optimizer</span><span class="pi">:</span>
+  <span class="na">name</span><span class="pi">:</span> <span class="s">adam</span>
+  <span class="na">args</span><span class="pi">:</span>
+    <span class="s">....# the usual args for optimizer</span>
+  <span class="na">trainable</span><span class="pi">:</span>  <span class="c1"># trainable parameter</span>
+    <span class="na">include</span><span class="pi">:</span> <span class="c1"># only include these and exclude everything else not listed here</span>
+    <span class="pi">-</span> <span class="s">src_embed</span>
+    <span class="pi">-</span> <span class="s">tgt_embed</span>
+    <span class="pi">-</span> <span class="s">generator</span>
+    <span class="pi">-</span> <span class="s1">'</span><span class="s">encoder:0,1,2,3,4,5'</span>  <span class="c1"># the numbers are layer indices starting from 0</span>
+    <span class="pi">-</span> <span class="s1">'</span><span class="s">decoder:0,1,2,3,4,5'</span>  <span class="c1"># the numbers are layer indices starting from 0</span></code></pre>
 </div>
 </div>
 <div class="paragraph">
@@ -1153,7 +1653,7 @@ If you are adding a new <code>NMTModel</code> or customising this feature, pleas
 </div>
 </div>
 <div class="sect2">
-<h3 id="conf-share-data">2.7. Sharing Data between Experiments</h3>
+<h3 id="conf-share-data">2.8. Sharing Data between Experiments</h3>
 <div class="paragraph">
 <p>In the new experiment config, add <code>same_data</code> to reference parent experiment from which the data
 should be reused for training and validation. Note that this uses the same vocabulary as parent.
@@ -1166,15 +1666,15 @@ where the forked experiment will have symbolic link to parent&#8217;s data.</p>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="highlight"><code class="language-yaml" data-lang="yaml">prep:
-  same_data: path/to/prior/experiment_dir</code></pre>
+<pre class="rouge highlight"><code data-lang="yaml"><span class="na">prep</span><span class="pi">:</span>
+  <span class="na">same_data</span><span class="pi">:</span> <span class="s">path/to/prior/experiment_dir</span></code></pre>
 </div>
 </div>
 </div>
 </div>
 </div>
 <div class="sect1">
-<h2 id="conf-vocab">3. Vocabulary Preprocessing using Sentencepiece or NLCodec</h2>
+<h2 id="conf-vocab">3. Vocabulary Preprocessing</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p><a href="https://github.com/google/sentencepiece">Google&#8217;s sentencepiece</a> is an awesome lib for
@@ -1188,9 +1688,9 @@ NLCoded can be enabled as:</p>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="highlight"><code class="language-yaml" data-lang="yaml">prep:
-  ....
-  codec_lib: nlcodec  # default is sentpiece</code></pre>
+<pre class="rouge highlight"><code data-lang="yaml"><span class="na">prep</span><span class="pi">:</span>
+  <span class="s">....</span>
+  <span class="s">codec_lib</span><span class="err">:</span> <span class="s">nlcodec</span>  <span class="c1"># default is sentpiece</span></code></pre>
 </div>
 </div>
 <div class="sect2">
@@ -1200,10 +1700,10 @@ NLCoded can be enabled as:</p>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="highlight"><code class="language-yaml" data-lang="yaml">prep:
-  ....
-  codec_lib: nlcodec  # other option: sentpiece
-  pieces: bpe         # other options: char, word</code></pre>
+<pre class="rouge highlight"><code data-lang="yaml"><span class="na">prep</span><span class="pi">:</span>
+  <span class="s">....</span>
+  <span class="s">codec_lib</span><span class="err">:</span> <span class="s">nlcodec</span>  <span class="c1"># other option: sentpiece</span>
+  <span class="na">pieces</span><span class="pi">:</span> <span class="s">bpe</span>         <span class="c1"># other options: char, word</span></code></pre>
 </div>
 </div>
 <div class="paragraph">
@@ -1220,11 +1720,11 @@ Here is how to set this for eg to 99.99% i.e. 0.9999 in <code>nlcodec</code></p>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="highlight"><code class="language-yaml" data-lang="yaml">prep:
-  ....
-  codec_lib: nlcodec      # other option: sentpiece
-  pieces: bpe             # other options: char, word
-  char_coverage: 0.9999</code></pre>
+<pre class="rouge highlight"><code data-lang="yaml"><span class="na">prep</span><span class="pi">:</span>
+  <span class="s">....</span>
+  <span class="s">codec_lib</span><span class="err">:</span> <span class="s">nlcodec</span>      <span class="c1"># other option: sentpiece</span>
+  <span class="na">pieces</span><span class="pi">:</span> <span class="s">bpe</span>             <span class="c1"># other options: char, word</span>
+  <span class="na">char_coverage</span><span class="pi">:</span> <span class="s">0.9999</span></code></pre>
 </div>
 </div>
 </div>
@@ -1241,10 +1741,10 @@ This allows us to leverage less data more effectively.</p>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="highlight"><code class="language-yaml" data-lang="yaml">trainer:
-  ....
-  split_ratio: 0.1        # 10% chance to suboptimally split (recursive)
-  dynamic_epoch: true     # Recompute splits for each epoch</code></pre>
+<pre class="rouge highlight"><code data-lang="yaml"><span class="na">trainer</span><span class="pi">:</span>
+  <span class="s">....</span>
+  <span class="s">split_ratio</span><span class="err">:</span> <span class="m">0.1</span>        <span class="c1"># 10% chance to suboptimally split (recursive)</span>
+  <span class="na">dynamic_epoch</span><span class="pi">:</span> <span class="no">true</span>     <span class="c1"># Recompute splits for each epoch</span></code></pre>
 </div>
 </div>
 </div>
@@ -1336,7 +1836,63 @@ Right thing to do for long sequences will be to split long sentences in input an
 </div>
 </div>
 <div class="sect1">
-<h2 id="rtg-cli">5. RTG CLI</h2>
+<h2 id="migrate">5. Migration</h2>
+<div class="sectionbody">
+<div class="sect2">
+<h3 id="migrate-to-0_6">5.1. v0.5.0 or earlier to v0.6.0</h3>
+<div class="paragraph">
+<p>The optimizer block got a big update in v0.6.0, as a result it is not backward compatible.</p>
+</div>
+<div class="listingblock">
+<div class="title">Old config, prior to v0.6.0:</div>
+<div class="content">
+<pre>optim:
+  args:
+    betas:
+    - 0.9
+    - 0.98
+    eps: 1.0e-09
+    label_smoothing: 0.1
+    lr: 0.1
+    warmup_steps: 4000
+    amsgrad: false
+    weight_decay: 0
+    criterion: smooth_kld
+    inv_sqrt: false
+    constant: 2
+  name: ADAM</pre>
+</div>
+</div>
+<div class="listingblock">
+<div class="title">New config in v0.6.0</div>
+<div class="content">
+<pre>optimizer:
+  name: adam
+  args:
+    betas:
+    - 0.9
+    - 0.98
+    eps: 1.0e-09
+    lr: 0.1
+
+schedule:
+  name: noam
+  args:
+    constant: 2
+    warmup: 4000
+    model_dim: 512
+
+criterion:
+  name: smooth_kld
+  args:
+    label_smoothing: 0.1</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rtg-cli">6. RTG CLI</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>All the below CLI tools give you finer control to go step by step if you want to test only a part of the pipeline.
@@ -1356,12 +1912,12 @@ For end usage of the RTG toolkit, the workflow should be as simple as:</p>
 </ol>
 </div>
 <div class="sect2">
-<h3 id="_summary">5.1. Summary:</h3>
+<h3 id="_summary">6.1. Summary:</h3>
 <div class="paragraph">
 <p>The following command line tools are added when <code>rtg</code> is installed using pip.</p>
 </div>
 <table class="tableblock frame-all grid-all stretch">
-<caption class="title">Table 2. Table Summary of CLI tools</caption>
+<caption class="title">Table 6. Table Summary of CLI tools</caption>
 <colgroup>
 <col style="width: 50%;">
 <col style="width: 50%;">
@@ -1419,7 +1975,7 @@ For end usage of the RTG toolkit, the workflow should be as simple as:</p>
 </table>
 </div>
 <div class="sect2">
-<h3 id="rtg-pipe">5.2. <code>rtg-pipe</code>:  Pipeline</h3>
+<h3 id="rtg-pipe">6.2. <code>rtg-pipe</code>:  Pipeline</h3>
 <div class="paragraph">
 <p>This is the  CLI interface that most likely use.</p>
 </div>
@@ -1442,7 +1998,7 @@ optional arguments:
 </div>
 </div>
 <div class="sect2">
-<h3 id="rtg-prep">5.3. <code>rtg-prep</code>:  Prepare an experiment</h3>
+<h3 id="rtg-prep">6.3. <code>rtg-prep</code>:  Prepare an experiment</h3>
 <div class="listingblock">
 <div class="content">
 <pre>    $ python -m rtg.prep -h
@@ -1460,7 +2016,7 @@ optional arguments:
 </div>
 </div>
 <div class="sect2">
-<h3 id="rtg-train">5.4. <code>rtg-train</code> : Train a Model</h3>
+<h3 id="rtg-train">6.4. <code>rtg-train</code> : Train a Model</h3>
 <div class="listingblock">
 <div class="content">
 <pre>    $ python -m rtg.train -h
@@ -1501,7 +2057,7 @@ optional arguments:
 </div>
 </div>
 <div class="sect2">
-<h3 id="rtg-decode">5.5. <code>rtg-decode</code>: Decoder</h3>
+<h3 id="rtg-decode">6.5. <code>rtg-decode</code>: Decoder</h3>
 <div class="listingblock">
 <div class="content">
 <pre>usage: rtg.decode [-h] [-if [INPUT [INPUT ...]]] [-of [OUTPUT [OUTPUT ...]]]
@@ -1536,7 +2092,7 @@ optional arguments:
 </div>
 </div>
 <div class="sect2">
-<h3 id="rtg-decode-pro">5.6. <code>rtg-decode-pro</code>: Pro Decoder</h3>
+<h3 id="rtg-decode-pro">6.6. <code>rtg-decode-pro</code>: Pro Decoder</h3>
 <div class="paragraph">
 <p>Note: for simple use with defauls from conf.yml, use  <code>rtg-decode</code> or <code>python -m rtg.decode</code>.</p>
 </div>
@@ -1599,7 +2155,7 @@ optional arguments:
 </div>
 </div>
 <div class="sect2">
-<h3 id="rtg-decode-fork">5.7. <code>rtg-fork</code>: Fork an experiment</h3>
+<h3 id="rtg-decode-fork">6.7. <code>rtg-fork</code>: Fork an experiment</h3>
 <div class="listingblock">
 <div class="content">
 <pre>usage: rtg-fork [-h] [--conf | --no-conf] [--data | --no-data]
@@ -1626,7 +2182,7 @@ optional arguments:
 </div>
 </div>
 <div class="sect2">
-<h3 id="rtg-export">5.8. <code>rtg-export</code> Export</h3>
+<h3 id="rtg-export">6.8. <code>rtg-export</code> Export</h3>
 <div class="paragraph">
 <p>Export an experiment:</p>
 </div>
@@ -1662,10 +2218,10 @@ optional arguments:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_other_tools">6. Other tools:</h2>
+<h2 id="_other_tools">7. Other tools:</h2>
 <div class="sectionbody">
 <div class="sect2">
-<h3 id="rtg-syscomb">6.1. <code>rtg-syscomb</code> System Combiner</h3>
+<h3 id="rtg-syscomb">7.1. <code>rtg-syscomb</code> System Combiner</h3>
 <div class="listingblock">
 <div class="content">
 <pre>    python -m rtg.syscomb -h
@@ -1686,7 +2242,7 @@ optional arguments:
 </div>
 </div>
 <div class="sect2">
-<h3 id="rtg-perplex">6.2. Perplexity</h3>
+<h3 id="rtg-perplex">7.2. Perplexity</h3>
 <div class="paragraph">
 <p>Compute perplexity of a language model on a test set.</p>
 </div>
@@ -1716,7 +2272,7 @@ optional arguments:
 </div>
 </div>
 <div class="sect2">
-<h3 id="line-bleu">6.3. Line Bleu</h3>
+<h3 id="line-bleu">7.3. Line Bleu</h3>
 <div class="paragraph">
 <p>Computes BLEU per line</p>
 </div>
@@ -1747,7 +2303,7 @@ optional arguments:
 </div>
 </div>
 <div class="sect2">
-<h3 id="rtg-oov">6.4. OOV</h3>
+<h3 id="rtg-oov">7.4. OOV</h3>
 <div class="paragraph">
 <p>Compute Out-of-Vocabulary(OOV) rate</p>
 </div>
@@ -1767,7 +2323,7 @@ optional arguments:
 </div>
 </div>
 <div class="sect2">
-<h3 id="cls-imb-seq-len">6.5. Class imbalance, Sequence lengths</h3>
+<h3 id="cls-imb-seq-len">7.5. Class imbalance, Sequence lengths</h3>
 <div class="paragraph">
 <p>Computes class Imbalance on training data and reports mean and median sequence lengths
 Get the stats reported in <a href="https://arxiv.org/abs/2004.02334">Gowda and May 's Neural Machine Translation with Imbalanced Classes</a></p>
@@ -1800,10 +2356,10 @@ n_segs: 130,000</pre>
 </div>
 </div>
 <div class="sect1">
-<h2 id="env-vars">7. Environment Variables</h2>
+<h2 id="env-vars">8. Environment Variables</h2>
 <div class="sectionbody">
 <div class="sect2">
-<h3 id="_gpus">7.1. GPUs</h3>
+<h3 id="_gpus">8.1. GPUs</h3>
 <div class="paragraph">
 <p>By default, RTG uses all GPUs specified by <code>CUDA_VISIBLE_DEVICES</code> environment variable.</p>
 </div>
@@ -1835,7 +2391,7 @@ unset CUDA_VISIBLE_DEVICES</pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_fast_temporary_filesystem">7.2. Fast Temporary FileSystem</h3>
+<h3 id="_fast_temporary_filesystem">8.2. Fast Temporary FileSystem</h3>
 <div class="paragraph">
 <p>When shared compute grids with network file systems (NFS) are used, the disk IO can be too slow.
 It helps to move training data that is frequently read to a fast temporary file system.
@@ -1844,7 +2400,7 @@ Placing training data on TMPFS can be a good thing to do in this situation.
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="highlight"><code class="language-bash" data-lang="bash">export RTG_TMP=$TMPDIR</code></pre>
+<pre class="rouge highlight"><code data-lang="bash"><span class="nb">export </span><span class="nv">RTG_TMP</span><span class="o">=</span><span class="nv">$TMPDIR</span></code></pre>
 </div>
 </div>
 <div class="paragraph">
@@ -1858,12 +2414,12 @@ we shall revise this decision again.</p>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_number_of_cpu_cores">7.3. Number of CPU Cores</h3>
+<h3 id="_number_of_cpu_cores">8.3. Number of CPU Cores</h3>
 <div class="listingblock">
 <div class="content">
-<pre class="highlight"><code class="language-bash" data-lang="bash">export RTG_CPUS=10     #$SLURM_CPUS_ON_NODE
-export OMP_NUM_THREADS=$RTG_CPUS
-export MKL_NUM_THREADS=$RTG_CPUS</code></pre>
+<pre class="rouge highlight"><code data-lang="bash"><span class="nb">export </span><span class="nv">RTG_CPUS</span><span class="o">=</span>10     <span class="c">#$SLURM_CPUS_ON_NODE</span>
+<span class="nb">export </span><span class="nv">OMP_NUM_THREADS</span><span class="o">=</span><span class="nv">$RTG_CPUS</span>
+<span class="nb">export </span><span class="nv">MKL_NUM_THREADS</span><span class="o">=</span><span class="nv">$RTG_CPUS</span></code></pre>
 </div>
 </div>
 <div class="paragraph">
@@ -1873,7 +2429,7 @@ export MKL_NUM_THREADS=$RTG_CPUS</code></pre>
 </div>
 </div>
 <div class="sect1">
-<h2 id="ddp">8. Distributed Data Parallel (DDP)</h2>
+<h2 id="ddp">9. Distributed Data Parallel (DDP)</h2>
 <div class="sectionbody">
 <div class="admonitionblock note">
 <table>
@@ -1892,10 +2448,10 @@ This is a new feature to RTG and not all edge cases are tested.
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="highlight"><code class="language-bash" data-lang="bash">$ python -m rtg.distrib.launch -h
-usage: launch.py [-h] [-N NODES] [-r NODE_RANK] [-P PROCS_PER_NODE]
-                 [-G GPUS_PER_PROC] [--master-addr MASTER_ADDR]
-                 [--master-port MASTER_PORT] [-m | --no_python]
+<pre class="rouge highlight"><code data-lang="bash"><span class="nv">$ </span>python <span class="nt">-m</span> rtg.distrib.launch <span class="nt">-h</span>
+usage: launch.py <span class="o">[</span><span class="nt">-h</span><span class="o">]</span> <span class="o">[</span><span class="nt">-N</span> NODES] <span class="o">[</span><span class="nt">-r</span> NODE_RANK] <span class="o">[</span><span class="nt">-P</span> PROCS_PER_NODE]
+                 <span class="o">[</span><span class="nt">-G</span> GPUS_PER_PROC] <span class="o">[</span><span class="nt">--master-addr</span> MASTER_ADDR]
+                 <span class="o">[</span><span class="nt">--master-port</span> MASTER_PORT] <span class="o">[</span><span class="nt">-m</span> | <span class="nt">--no_python</span><span class="o">]</span>
                  training_script ...
 
 PyTorch distributed training launch helper utilty that will spawn up multiple
@@ -1903,41 +2459,41 @@ distributed processes
 
 positional arguments:
   training_script       The full path to the single GPU training
-                        program/script to be launched in parallel, followed by
-                        all the arguments for the training script
+                        program/script to be launched <span class="k">in </span>parallel, followed by
+                        all the arguments <span class="k">for </span>the training script
   training_script_args
 
 optional arguments:
-  -h, --help            show this help message and exit
-  -N NODES, --nodes NODES
-                        The number of nodes to use for distributed training
-                        (default: 1)
-  -r NODE_RANK, --node-rank NODE_RANK
-                        The rank of the node for multi-node distributed
-                        training (default: 0)
-  -P PROCS_PER_NODE, --procs-per-node PROCS_PER_NODE
+  <span class="nt">-h</span>, <span class="nt">--help</span>            show this <span class="nb">help </span>message and <span class="nb">exit</span>
+  <span class="nt">-N</span> NODES, <span class="nt">--nodes</span> NODES
+                        The number of nodes to use <span class="k">for </span>distributed training
+                        <span class="o">(</span>default: 1<span class="o">)</span>
+  <span class="nt">-r</span> NODE_RANK, <span class="nt">--node-rank</span> NODE_RANK
+                        The rank of the node <span class="k">for </span>multi-node distributed
+                        training <span class="o">(</span>default: 0<span class="o">)</span>
+  <span class="nt">-P</span> PROCS_PER_NODE, <span class="nt">--procs-per-node</span> PROCS_PER_NODE
                         The number of processes to launch on each node with
-                        one gpu each, for GPU training, this is recommended to
-                        be set to the number of GPUs in your system so that
-                        each process can be bound to a single GPU. (default:
-                        1)
-  -G GPUS_PER_PROC, --gpus-per-proc GPUS_PER_PROC
-                        Number of GPUs to assign to each process. (default: 0)
-  --master-addr MASTER_ADDR
-                        Master node (rank 0)'s address, should be either the
+                        one gpu each, <span class="k">for </span>GPU training, this is recommended to
+                        be <span class="nb">set </span>to the number of GPUs <span class="k">in </span>your system so that
+                        each process can be bound to a single GPU. <span class="o">(</span>default:
+                        1<span class="o">)</span>
+  <span class="nt">-G</span> GPUS_PER_PROC, <span class="nt">--gpus-per-proc</span> GPUS_PER_PROC
+                        Number of GPUs to assign to each process. <span class="o">(</span>default: 0<span class="o">)</span>
+  <span class="nt">--master-addr</span> MASTER_ADDR
+                        Master node <span class="o">(</span>rank 0<span class="o">)</span><span class="s1">'s address, should be either the
                         IP address or the hostname of node 0, for single node
                         multi-proc training, the --master_addr can simply be
                         127.0.0.1 (default: 127.0.0.1)
   --master-port MASTER_PORT
-                        Master node (rank 0)'s free port that needs to be used
-                        for communciation during distributed training
-                        (default: 29500)
-  -m, --module          Changes each process to interpret the launch script as
+                        Master node (rank 0)'</span>s free port that needs to be used
+                        <span class="k">for </span>communciation during distributed training
+                        <span class="o">(</span>default: 29500<span class="o">)</span>
+  <span class="nt">-m</span>, <span class="nt">--module</span>          Changes each process to interpret the launch script as
                         a python module, executing with the same behavior
-                        as'python -m'. (default: False)
-  --no_python           Do not prepend the training script with "python" -
-                        just exec it directly. Useful when the script is not a
-                        Python script. (default: False)</code></pre>
+                        as<span class="s1">'python -m'</span><span class="nb">.</span> <span class="o">(</span>default: False<span class="o">)</span>
+  <span class="nt">--no_python</span>           Do not prepend the training script with <span class="s2">"python"</span> -
+                        just <span class="nb">exec </span>it directly. Useful when the script is not a
+                        Python script. <span class="o">(</span>default: False<span class="o">)</span></code></pre>
 </div>
 </div>
 <div class="paragraph">
@@ -1960,10 +2516,10 @@ optional arguments:
 <p>Run on on two node, two processes each, one GPU per process: <code>-N 2 -P 2 -G 1</code>.</p>
 <div class="listingblock">
 <div class="content">
-<pre class="highlight"><code class="language-bash" data-lang="bash"># on first node: rank 0
-python -m rtg.distrib.launch -N 2 -r 0 -P 2 -G 1 -m rtg.pipeline runs/005-tfm-nldb -G
-# on second node: rank 1
-python -m rtg.distrib.launch -N 2 -r 1 -P 2 -G 1 -m rtg.pipeline  runs/005-tfm-nldb -G</code></pre>
+<pre class="rouge highlight"><code data-lang="bash"><span class="c"># on first node: rank 0</span>
+python <span class="nt">-m</span> rtg.distrib.launch <span class="nt">-N</span> 2 <span class="nt">-r</span> 0 <span class="nt">-P</span> 2 <span class="nt">-G</span> 1 <span class="nt">-m</span> rtg.pipeline runs/005-tfm-nldb <span class="nt">-G</span>
+<span class="c"># on second node: rank 1</span>
+python <span class="nt">-m</span> rtg.distrib.launch <span class="nt">-N</span> 2 <span class="nt">-r</span> 1 <span class="nt">-P</span> 2 <span class="nt">-G</span> 1 <span class="nt">-m</span> rtg.pipeline  runs/005-tfm-nldb <span class="nt">-G</span></code></pre>
 </div>
 </div>
 </li>
@@ -1982,20 +2538,20 @@ python -m rtg.distrib.launch -N 2 -r 1 -P 2 -G 1 -m rtg.pipeline  runs/005-tfm-n
 </div>
 </div>
 <div class="sect1">
-<h2 id="fp16">9. FP16, Mixed Precision Training</h2>
+<h2 id="fp16">10. FP16, Mixed Precision Training</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Note that <code>rtg-pipe -h</code> has <code>-fp16, --fp16</code> CLI argument flag that can be used to enable mixed precision training.</p>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="highlight"><code class="language-bash" data-lang="bash">$ rtg-pipe &lt;experiment-dir&gt; --fp16</code></pre>
+<pre class="rouge highlight"><code data-lang="bash"><span class="nv">$ </span>rtg-pipe &lt;experiment-dir&gt; <span class="nt">--fp16</span></code></pre>
 </div>
 </div>
 </div>
 </div>
 <div class="sect1">
-<h2 id="grad-clip">10. Gradient Clipping</h2>
+<h2 id="grad-clip">11. Gradient Clipping</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Gradient clipping is supported using <a href="https://pytorch.org/docs/stable/generated/torch.nn.utils.clip_grad_norm_.html"><code>torch.clip_grad_norm_</code></a>.</p>
@@ -2005,16 +2561,16 @@ python -m rtg.distrib.launch -N 2 -r 1 -P 2 -G 1 -m rtg.pipeline  runs/005-tfm-n
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="highlight"><code class="language-yaml" data-lang="yaml">trainer:
-  init_args:
-    # grad_accum: 1   # other params for init_args are allowed
-    clip_grad_norm: 8</code></pre>
+<pre class="rouge highlight"><code data-lang="yaml"><span class="na">trainer</span><span class="pi">:</span>
+  <span class="na">init_args</span><span class="pi">:</span>
+    <span class="c1"># grad_accum: 1   # other params for init_args are allowed</span>
+    <span class="na">clip_grad_norm</span><span class="pi">:</span> <span class="s">8</span></code></pre>
 </div>
 </div>
 </div>
 </div>
 <div class="sect1">
-<h2 id="scaling-big">11. Scaling to Big Datasets Using PySpark</h2>
+<h2 id="scaling-big">12. Scaling Big Using PySpark</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>When dealing with big datasets, the traditional tools such as multiprocessing and SQLite3 simply aren&#8217;t enogh.
@@ -2055,16 +2611,16 @@ When pyspark is enabled</p>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="highlight"><code class="language-yaml" data-lang="yaml">prep:
-   codec_lib: nlcodec    # only nlcodec supports pyspark backend
-   max_part_size: 1000000  # part size (num of recs); divides the training data into multiple parts
-   ... # other args
-spark: # add this block to enable spark backend
-  # double quote the keys containing dot
-  "spark.master": local[3]           # set it to local[*] to use all local CPUs
-  "spark.app.name": RTG NMT on Spark  # Name for the App
-  "spark.driver.memory": 6g
-  #key1: value1    # any other spark configs you want to control</code></pre>
+<pre class="rouge highlight"><code data-lang="yaml"><span class="na">prep</span><span class="pi">:</span>
+   <span class="na">codec_lib</span><span class="pi">:</span> <span class="s">nlcodec</span>    <span class="c1"># only nlcodec supports pyspark backend</span>
+   <span class="na">max_part_size</span><span class="pi">:</span> <span class="m">1000000</span>  <span class="c1"># part size (num of recs); divides the training data into multiple parts</span>
+   <span class="s">...</span> <span class="c1"># other args</span>
+<span class="na">spark</span><span class="pi">:</span> <span class="c1"># add this block to enable spark backend</span>
+  <span class="c1"># double quote the keys containing dot</span>
+  <span class="s2">"</span><span class="s">spark.master"</span><span class="err">:</span> <span class="s">local[3]</span>           <span class="c1"># set it to local[*] to use all local CPUs</span>
+  <span class="s2">"</span><span class="s">spark.app.name"</span><span class="err">:</span> <span class="s">RTG NMT on Spark</span>  <span class="c1"># Name for the App</span>
+  <span class="s2">"</span><span class="s">spark.driver.memory"</span><span class="err">:</span> <span class="s">6g</span>
+  <span class="s">#key1</span><span class="err">:</span> <span class="s">value1</span>    <span class="c1"># any other spark configs you want to control</span></code></pre>
 </div>
 </div>
 <div class="paragraph">
@@ -2099,16 +2655,16 @@ The multi-node spark distributed mode is not tested. (But it might work out of t
 </div>
 </div>
 <div class="sect1">
-<h2 id="_rtg_serve">12. RTG Serve</h2>
+<h2 id="_rtg_serve">13. RTG Serve</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>RTG model can be served using Flask Server.</p>
 </div>
 <div class="sect2">
-<h3 id="_flask_installation">12.1. Flask Installation</h3>
+<h3 id="_flask_installation">13.1. Flask Installation</h3>
 <div class="listingblock">
 <div class="content">
-<pre class="highlight"><code class="language-commandline" data-lang="commandline">$ pip install rtg[serve]</code></pre>
+<pre class="rouge highlight"><code data-lang="commandline">$ pip install rtg[serve]</code></pre>
 </div>
 </div>
 <div class="paragraph">
@@ -2116,10 +2672,10 @@ The multi-node spark distributed mode is not tested. (But it might work out of t
 </div>
 </div>
 <div class="sect2">
-<h3 id="_running">12.2. Running</h3>
+<h3 id="_running">13.2. Running</h3>
 <div class="listingblock">
 <div class="content">
-<pre class="highlight"><code class="language-commandline" data-lang="commandline">$ python -m rtg.serve -h  # rtg-serve
+<pre class="rouge highlight"><code data-lang="commandline">$ python -m rtg.serve -h  # rtg-serve
 usage: rtg.serve [-h] [-d] [-p PORT] [-ho HOST] [-msl MAX_SRC_LEN] exp_dir
 
 Deploy an RTG model to a RESTful server
@@ -2172,16 +2728,16 @@ batch decoding is yet to be supported. The current decoder decodes only one sent
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="highlight"><code class="language-json" data-lang="json">{
-  "source": [
-    "Comment allez-vous?",
-    "Bonne journée"
-  ],
-  "translation": [
-    "How are you?",
-    "Have a nice day"
-  ]
-}</code></pre>
+<pre class="rouge highlight"><code data-lang="json"><span class="p">{</span><span class="w">
+  </span><span class="nl">"source"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w">
+    </span><span class="s2">"Comment allez-vous?"</span><span class="p">,</span><span class="w">
+    </span><span class="s2">"Bonne journée"</span><span class="w">
+  </span><span class="p">],</span><span class="w">
+  </span><span class="nl">"translation"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w">
+    </span><span class="s2">"How are you?"</span><span class="p">,</span><span class="w">
+    </span><span class="s2">"Have a nice day"</span><span class="w">
+  </span><span class="p">]</span><span class="w">
+</span><span class="p">}</span></code></pre>
 </div>
 </div>
 <div class="paragraph">
@@ -2195,10 +2751,10 @@ If you dont already have uWSGI, you may install it via conda by running <code>co
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="highlight"><code class="language-bash" data-lang="bash">uwsgi --http 127.0.0.1:5000 --module rtg.serve.app:app --pyargv "&lt;path-to-exp-dir&gt;"
+<pre class="rouge highlight"><code data-lang="bash">uwsgi <span class="nt">--http</span> 127.0.0.1:5000 <span class="nt">--module</span> rtg.serve.app:app <span class="nt">--pyargv</span> <span class="s2">"&lt;path-to-exp-dir&gt;"</span>
 
-# or using a .ini file
-uwsgi --ini examples/uwsgi.ini</code></pre>
+<span class="c"># or using a .ini file</span>
+uwsgi <span class="nt">--ini</span> examples/uwsgi.ini</code></pre>
 </div>
 </div>
 <div class="paragraph">
@@ -2206,13 +2762,13 @@ uwsgi --ini examples/uwsgi.ini</code></pre>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="highlight"><code class="language-ini" data-lang="ini">[uwsgi]
-http = 0.0.0.0:6060
-module = rtg.serve.app:app
-pyargv = /full/path/&lt;path-to-exp-dir&gt; -b /v1
-master = true
-processes = 1
-stats = 127.0.0.1:9191</code></pre>
+<pre class="rouge highlight"><code data-lang="ini"><span class="nn">[uwsgi]</span>
+<span class="py">http</span> <span class="p">=</span> <span class="s">0.0.0.0:6060</span>
+<span class="py">module</span> <span class="p">=</span> <span class="s">rtg.serve.app:app</span>
+<span class="py">pyargv</span> <span class="p">=</span> <span class="s">/full/path/&lt;path-to-exp-dir&gt; -b /v1</span>
+<span class="py">master</span> <span class="p">=</span> <span class="s">true</span>
+<span class="py">processes</span> <span class="p">=</span> <span class="s">1</span>
+<span class="py">stats</span> <span class="p">=</span> <span class="s">127.0.0.1:9191</span></code></pre>
 </div>
 </div>
 <div class="paragraph">
@@ -2222,7 +2778,7 @@ stats = 127.0.0.1:9191</code></pre>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_pre_process_and_post_process">13. Pre-process and post-process</h2>
+<h2 id="_pre_process_and_post_process">14. Pre-process and post-process</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>The input/source text given to the API must be pre-processed in the same settings as the preprocessing during training phase. So, we offer configurations to match the preprocessing:</p>
@@ -2245,20 +2801,20 @@ stats = 127.0.0.1:9191</code></pre>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="highlight"><code class="language-python" data-lang="python">transformers  = {
-    'no_op': lambda x: x,
-    'space_tok': lambda x: ' '.join(x.strip().split()),  # removes extra white spaces
-    'space_detok': lambda toks: ' '.join(toks),
-    'moses_tok': partial(MosesTokenizer().tokenize, escape=False, return_str=True,
-                         aggressive_dash_splits=True,
-                         protected_patterns=MosesTokenizer.WEB_PROTECTED_PATTERNS),
-    'moses_detok': partial(MosesDetokenizer().detokenize, return_str=True, unescape=True),
-    'moses_truecase': partial(MosesTruecaser().truecase, return_str=True),
-    'lowercase': lambda x: x.lower(),
-    'drop_unk': lambda x: x.replace('&lt;unk&gt;', ''),
-    'html_unescape': html.unescape,
-    'punct_norm': MosesPunctNormalizer().normalize
-}</code></pre>
+<pre class="rouge highlight"><code data-lang="python"><span class="n">transformers</span>  <span class="o">=</span> <span class="p">{</span>
+    <span class="s">'no_op'</span><span class="p">:</span> <span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="p">,</span>
+    <span class="s">'space_tok'</span><span class="p">:</span> <span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="s">' '</span><span class="p">.</span><span class="n">join</span><span class="p">(</span><span class="n">x</span><span class="p">.</span><span class="n">strip</span><span class="p">().</span><span class="n">split</span><span class="p">()),</span>  <span class="c1"># removes extra white spaces
+</span>    <span class="s">'space_detok'</span><span class="p">:</span> <span class="k">lambda</span> <span class="n">toks</span><span class="p">:</span> <span class="s">' '</span><span class="p">.</span><span class="n">join</span><span class="p">(</span><span class="n">toks</span><span class="p">),</span>
+    <span class="s">'moses_tok'</span><span class="p">:</span> <span class="n">partial</span><span class="p">(</span><span class="n">MosesTokenizer</span><span class="p">().</span><span class="n">tokenize</span><span class="p">,</span> <span class="n">escape</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="n">return_str</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span>
+                         <span class="n">aggressive_dash_splits</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span>
+                         <span class="n">protected_patterns</span><span class="o">=</span><span class="n">MosesTokenizer</span><span class="p">.</span><span class="n">WEB_PROTECTED_PATTERNS</span><span class="p">),</span>
+    <span class="s">'moses_detok'</span><span class="p">:</span> <span class="n">partial</span><span class="p">(</span><span class="n">MosesDetokenizer</span><span class="p">().</span><span class="n">detokenize</span><span class="p">,</span> <span class="n">return_str</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span> <span class="n">unescape</span><span class="o">=</span><span class="bp">True</span><span class="p">),</span>
+    <span class="s">'moses_truecase'</span><span class="p">:</span> <span class="n">partial</span><span class="p">(</span><span class="n">MosesTruecaser</span><span class="p">().</span><span class="n">truecase</span><span class="p">,</span> <span class="n">return_str</span><span class="o">=</span><span class="bp">True</span><span class="p">),</span>
+    <span class="s">'lowercase'</span><span class="p">:</span> <span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="p">.</span><span class="n">lower</span><span class="p">(),</span>
+    <span class="s">'drop_unk'</span><span class="p">:</span> <span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="p">.</span><span class="n">replace</span><span class="p">(</span><span class="s">'&lt;unk&gt;'</span><span class="p">,</span> <span class="s">''</span><span class="p">),</span>
+    <span class="s">'html_unescape'</span><span class="p">:</span> <span class="n">html</span><span class="p">.</span><span class="n">unescape</span><span class="p">,</span>
+    <span class="s">'punct_norm'</span><span class="p">:</span> <span class="n">MosesPunctNormalizer</span><span class="p">().</span><span class="n">normalize</span>
+<span class="p">}</span></code></pre>
 </div>
 </div>
 <div class="paragraph">
@@ -2266,13 +2822,13 @@ stats = 127.0.0.1:9191</code></pre>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="highlight"><code class="language-yaml" data-lang="yaml">src_pre_proc:
-  - html_unescape
-  - punct_norm
-  - moses_tok
-tgt_post_proc:
-  - moses_detok
-  - drop_unk</code></pre>
+<pre class="rouge highlight"><code data-lang="yaml"><span class="na">src_pre_proc</span><span class="pi">:</span>
+  <span class="pi">-</span> <span class="s">html_unescape</span>
+  <span class="pi">-</span> <span class="s">punct_norm</span>
+  <span class="pi">-</span> <span class="s">moses_tok</span>
+<span class="na">tgt_post_proc</span><span class="pi">:</span>
+  <span class="pi">-</span> <span class="s">moses_detok</span>
+  <span class="pi">-</span> <span class="s">drop_unk</span></code></pre>
 </div>
 </div>
 <div class="paragraph">
@@ -2280,13 +2836,13 @@ tgt_post_proc:
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="highlight"><code class="language-yaml" data-lang="yaml">prep:
-  src_pre_proc:
-    - "#!/path/to/normalizer.perl | /path/to/tokenizer.py --lang deu"
-    - lowercase
-  tgt_post_proc:
-    - drop_unk
-    - moses_detok</code></pre>
+<pre class="rouge highlight"><code data-lang="yaml"><span class="na">prep</span><span class="pi">:</span>
+  <span class="na">src_pre_proc</span><span class="pi">:</span>
+    <span class="pi">-</span> <span class="s2">"</span><span class="s">#!/path/to/normalizer.perl</span><span class="nv"> </span><span class="s">|</span><span class="nv"> </span><span class="s">/path/to/tokenizer.py</span><span class="nv"> </span><span class="s">--lang</span><span class="nv"> </span><span class="s">deu"</span>
+    <span class="pi">-</span> <span class="s">lowercase</span>
+  <span class="na">tgt_post_proc</span><span class="pi">:</span>
+    <span class="pi">-</span> <span class="s">drop_unk</span>
+    <span class="pi">-</span> <span class="s">moses_detok</span></code></pre>
 </div>
 </div>
 <div class="ulist">
@@ -2299,11 +2855,11 @@ tgt_post_proc:
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="highlight"><code class="language-yaml" data-lang="yaml">prep:
-  src_pre_proc:
-    - no_op
-  tgt_post_proc:
-    - no_op</code></pre>
+<pre class="rouge highlight"><code data-lang="yaml"><span class="na">prep</span><span class="pi">:</span>
+  <span class="na">src_pre_proc</span><span class="pi">:</span>
+    <span class="pi">-</span> <span class="s">no_op</span>
+  <span class="na">tgt_post_proc</span><span class="pi">:</span>
+    <span class="pi">-</span> <span class="s">no_op</span></code></pre>
 </div>
 </div>
 <div class="ulist">
@@ -2320,10 +2876,10 @@ tgt_post_proc:
 </div>
 </div>
 <div class="sect1">
-<h2 id="dev-env">14. Development Environment:</h2>
+<h2 id="dev-env">15. Development Environment:</h2>
 <div class="sectionbody">
 <div class="sect2">
-<h3 id="_run_tests">14.1. Run Tests</h3>
+<h3 id="_run_tests">15.1. Run Tests</h3>
 <div class="paragraph">
 <p>Test cases are done using the <a href="https://docs.pytest.org/en/latest/"><code>pytest</code></a> framework.
 It can be installed using <code>pip install pytest</code></p>
@@ -2356,7 +2912,7 @@ It can be installed using <code>pip install pytest</code></p>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_adding_a_new_model">14.2. Adding a new model</h3>
+<h3 id="_adding_a_new_model">15.2. Adding a new model</h3>
 <div class="olist arabic">
 <ol class="arabic">
 <li>
@@ -2391,23 +2947,23 @@ It can be installed using <code>pip install pytest</code></p>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="highlight"><code class="language-python" data-lang="python">from rtg.registry import register, MODEL
-from rtg.module import NMTModel
+<pre class="rouge highlight"><code data-lang="python"><span class="kn">from</span> <span class="nn">rtg.registry</span> <span class="kn">import</span> <span class="n">register</span><span class="p">,</span> <span class="n">MODEL</span>
+<span class="kn">from</span> <span class="nn">rtg.module</span> <span class="kn">import</span> <span class="n">NMTModel</span>
 
-@register(kind=MODEL,name='newnmt')
-class NewNMTModel(NMTModel):
+<span class="o">@</span><span class="n">register</span><span class="p">(</span><span class="n">kind</span><span class="o">=</span><span class="n">MODEL</span><span class="p">,</span><span class="n">name</span><span class="o">=</span><span class="s">'newnmt'</span><span class="p">)</span>
+<span class="k">class</span> <span class="nc">NewNMTModel</span><span class="p">(</span><span class="n">NMTModel</span><span class="p">):</span>
 
-    @classmethod
-    def make_model(cls, exp, *args, **kwargs):
-        pass
+    <span class="o">@</span><span class="nb">classmethod</span>
+    <span class="k">def</span> <span class="nf">make_model</span><span class="p">(</span><span class="n">cls</span><span class="p">,</span> <span class="n">exp</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="k">pass</span>
 
-    @classmethod
-    def make_trainer(cls, *args, **kwargs):
-        pass
+    <span class="o">@</span><span class="nb">classmethod</span>
+    <span class="k">def</span> <span class="nf">make_trainer</span><span class="p">(</span><span class="n">cls</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="k">pass</span>
 
-    @classmethod
-    def make_generator(cls, *args, **kwargs):
-        pass</code></pre>
+    <span class="o">@</span><span class="nb">classmethod</span>
+    <span class="k">def</span> <span class="nf">make_generator</span><span class="p">(</span><span class="n">cls</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="k">pass</span></code></pre>
 </div>
 </div>
 <div class="admonitionblock note">
@@ -2426,7 +2982,7 @@ If your model is similar to existing model and match most of its API, you should
 </div>
 </div>
 <div class="sect1">
-<h2 id="_release_instructions">15. Release instructions</h2>
+<h2 id="_release_instructions">16. Release instructions</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -2439,7 +2995,7 @@ If your model is similar to existing model and match most of its API, you should
 </ul>
 </div>
 <div class="sect2">
-<h3 id="_steps">15.1. Steps:</h3>
+<h3 id="_steps">16.1. Steps:</h3>
 <div class="olist arabic">
 <ol class="arabic">
 <li>
@@ -2499,26 +3055,26 @@ If your model is similar to existing model and match most of its API, you should
 </div>
 </div>
 <div class="sect2">
-<h3 id="_the_pypirc_file">15.2. The <code>.pypirc</code> file</h3>
+<h3 id="_the_pypirc_file">16.2. The <code>.pypirc</code> file</h3>
 <div class="paragraph">
 <p>The rc file <code>~/.pypirc</code> should have something like this</p>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="highlight"><code class="language-ini" data-lang="ini">[distutils]
-index-servers =
-    pypi
-    testpypi
+<pre class="rouge highlight"><code data-lang="ini"><span class="nn">[distutils]</span>
+<span class="py">index-servers</span> <span class="p">=</span>
+    <span class="err">pypi</span>
+    <span class="err">testpypi</span>
 
-[pypi]
-repository: https://upload.pypi.org/legacy/
-username:Thamme.Gowda
-password:&lt;password_here&gt;
+<span class="nn">[pypi]</span>
+<span class="err">repository:</span> <span class="err">https://upload.pypi.org/legacy/</span>
+<span class="err">username:Thamme.Gowda</span>
+<span class="err">password:&lt;password_here&gt;</span>
 
-[testpypi]
-repository: https://test.pypi.org/legacy/
-username:Thamme.Gowda
-password:&lt;password_here&gt;</code></pre>
+<span class="nn">[testpypi]</span>
+<span class="err">repository:</span> <span class="err">https://test.pypi.org/legacy/</span>
+<span class="err">username:Thamme.Gowda</span>
+<span class="err">password:&lt;password_here&gt;</span></code></pre>
 </div>
 </div>
 <div class="paragraph">
@@ -2527,129 +3083,10 @@ password:&lt;password_here&gt;</code></pre>
 </div>
 </div>
 </div>
-<div class="sect1">
-<h2 id="migrate-to-0_6">16. Migration from v0.5.0 or earlier to v0.6.0</h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>The optimizer block got a big update in v0.6.0, as a result it is not backward compatible.</p>
-</div>
-<div class="listingblock">
-<div class="title">Old config, prior to v0.6.0:</div>
-<div class="content">
-<pre>optim:
-  args:
-    betas:
-    - 0.9
-    - 0.98
-    eps: 1.0e-09
-    label_smoothing: 0.1
-    lr: 0.1
-    warmup_steps: 4000
-    amsgrad: false
-    weight_decay: 0
-    criterion: smooth_kld
-    inv_sqrt: false
-    constant: 2
-  name: ADAM</pre>
-</div>
-</div>
-<div class="listingblock">
-<div class="title">New config in v0.6.0</div>
-<div class="content">
-<pre>optimizer:
-  name: adam
-  args:
-    betas:
-    - 0.9
-    - 0.98
-    eps: 1.0e-09
-    lr: 0.1
-
-schedule:
-  name: noam
-  args:
-    constant: 2
-    warmup: 4000
-    model_dim: 512
-
-criterion:
-  name: smooth_kld
-  args:
-    label_smoothing: 0.1</pre>
-</div>
-</div>
-<div class="sect2">
-<h3 id="_learning_rate_schedule">16.1. Learning rate schedule</h3>
-<div class="olist arabic">
-<ol class="arabic">
-<li>
-<p><code>noam</code> with args:</p>
-<div class="ulist">
-<ul>
-<li>
-<p>warmup</p>
-</li>
-<li>
-<p>constant</p>
-</li>
-<li>
-<p>model_dim</p>
-</li>
-</ul>
-</div>
-</li>
-<li>
-<p><code>inverse_sqrt</code> with args:</p>
-<div class="ulist">
-<ul>
-<li>
-<p>warmup</p>
-</li>
-<li>
-<p>peark_lr</p>
-</li>
-</ul>
-</div>
-</li>
-</ol>
-</div>
-</div>
-<div class="sect2">
-<h3 id="_criterion">16.2. Criterion</h3>
-<div class="olist arabic">
-<ol class="arabic">
-<li>
-<p><code>cross_entropy</code></p>
-<div class="ulist">
-<ul>
-<li>
-<p>label smoothing not implemented yet, FIXME: support label smoothing</p>
-</li>
-</ul>
-</div>
-</li>
-<li>
-<p><code>smooth_kld</code></p>
-<div class="ulist">
-<ul>
-<li>
-<p><code>label_smoothing</code></p>
-</li>
-</ul>
-</div>
-</li>
-<li>
-<p>Other (experimental): <code>binary_cross_entropy</code>, <code>triplet_loss</code></p>
-</li>
-</ol>
-</div>
-</div>
-</div>
-</div>
 </div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2021-10-21 11:30:18 -0700
+Last updated 2021-10-21 14:49:32 -0700
 </div>
 </div>
 </body>

@@ -1,5 +1,5 @@
 [#scaling-big]
-== Scaling to Big Datasets Using PySpark
+== Scaling Big Using PySpark
 
 When dealing with big datasets, the traditional tools such as multiprocessing and SQLite3 simply aren't enogh.
 In such scenario, https://spark.apache.org/[PySpark] is a useful backend to use.

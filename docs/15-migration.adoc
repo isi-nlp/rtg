@@ -1,11 +1,14 @@
+[#migrate]
+== Migration
+
 [#migrate-to-0_6]
-== Migration from v0.5.0 or earlier to v0.6.0
+=== v0.5.0 or earlier to v0.6.0
 
 The optimizer block got a big update in v0.6.0, as a result it is not backward compatible.
 
 .Old config, prior to v0.6.0:
 
-[yaml]
+[source,yaml]
 ----
 optim:
   args:
@@ -24,7 +27,7 @@ optim:
   name: ADAM
 ----
 .New config in v0.6.0
-[yaml]
+[source,yaml]
 ----
 optimizer:
   name: adam
@@ -47,22 +50,3 @@ criterion:
   args:
     label_smoothing: 0.1
 ----
-
-
-=== Learning rate schedule
-
-. `noam` with args:
-  * warmup
-  * constant
-  * model_dim
-
-. `inverse_sqrt` with args:
-  * warmup
-  * peark_lr
-
-=== Criterion
-. `cross_entropy`
-   * label smoothing not implemented yet, FIXME: support label smoothing
-. `smooth_kld`
-    * `label_smoothing`
-. Other (experimental): `binary_cross_entropy`, `triplet_loss`

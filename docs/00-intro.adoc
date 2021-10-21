@@ -1,9 +1,10 @@
 == Overview
 
-
 https://github.com/isi-nlp/rtg[Reader-Translator-Generator (RTG)^] is a Neural Machine Translation toolkit based on pytorch.
 
-link:versions.html[_See all versions_^]
+* link:versions.html[_See all versions_^]
+* Demo: 500-Eng multilingual NMT: http://rtg.isi.edu/many-eng/
+
 
 === Features
 * Reproducible experiments: one `conf.yml`  that has everything -- data paths, params, and
@@ -17,21 +18,21 @@ link:versions.html[_See all versions_^]
 *** Lot of varieties of transformer: width varying, skip transformer etc configurable from YAML files
 *** https://papers.nips.cc/paper/5346-sequence-to-sequence-learning-with-neural-networks.pdf[RNN based Encoder-Decoder^] with https://nlp.stanford.edu/pubs/emnlp15_attn.pdf[Attention^]. (No longer using it, but it's available for experimentation)
 * Language Modeling: RNN, Transformer
-* And more ..
+* And more ...
 ** Easy and interpretable code (for those who read code as much as papers)
 ** Object Orientated Design. (Not too many levels of functions and function factories like Tensor2Tensor)
 ** Experiments and reproducibility are main focus. To control an experiment you edit an YAML file that is inside the experiment directory.
 ** Where ever possible, prefer https://www.wikiwand.com/en/Convention_over_configuration[convention-over-configuration^]. Have a look at this experiment directory structure (below).
 
 [#colab-example]
-=== Quick Start using Google Colab
+=== Google Colab Example
 
 Use this Google Colab notebook for learning __how to train your NMT model with RTG__: https://colab.research.google.com/drive/198KbkUcCGXJXnWiM7IyEiO1Mq2hdVq8T?usp=sharing
 
 
 === Setup
 
-`rtg` has been published to PyPi at https://pypi.org/project/rtg/
+image:https://badge.fury.io/py/rtg.svg["PyPI version", link="https://badge.fury.io/py/rtg"]
 
 ----
 pip install rtg

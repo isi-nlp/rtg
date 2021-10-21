@@ -12,10 +12,13 @@ USC Information Sciences Institute  Natural Language Group
 //injects google analytics to <head>
 :docinfo2:
 :hide-uri-scheme:
+:source-highlighter: rouge
 
 include::00-intro.adoc[]
 
 include::10-conf.yml.adoc[]
+
+include::15-migration.adoc[]
 
 include::20-clitools.adoc[]
 
@@ -25,8 +28,9 @@ include::40-train-pro.adoc[]
 
 include::45-scaling.adoc[]
 
+
 include::50-serve.adoc[]
 
-include::60-develop.adoc[]
 
-include::80-migration.adoc[]
+
+include::60-develop.adoc[]
