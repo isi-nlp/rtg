@@ -509,7 +509,7 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <ul class="sectlevel2">
 <li><a href="#rtg-syscomb">6.1. <code>rtg-syscomb</code> System Combiner</a></li>
 <li><a href="#rtg-perplex">6.2. Perplexity</a></li>
-<li><a href="#line-bleu">6.3. Line Bleu (aka BLEU+1)</a></li>
+<li><a href="#line-bleu">6.3. Line Bleu</a></li>
 <li><a href="#rtg-oov">6.4. OOV</a></li>
 <li><a href="#cls-imb-seq-len">6.5. Class imbalance, Sequence lengths</a></li>
 </ul>
@@ -544,7 +544,7 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <li><a href="#_the_pypirc_file">15.2. The <code>.pypirc</code> file</a></li>
 </ul>
 </li>
-<li><a href="#_migration_from_v0_5_0_or_earlier_to_0_6_0">16. Migration from v0.5.0 or earlier to 0.6.0</a>
+<li><a href="#migrate-to-0_6">16. Migration from v0.5.0 or earlier to v0.6.0</a>
 <ul class="sectlevel2">
 <li><a href="#_learning_rate_schedule">16.1. Learning rate schedule</a></li>
 <li><a href="#_criterion">16.2. Criterion</a></li>
@@ -561,7 +561,7 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <p><a href="https://github.com/isi-nlp/rtg" target="_blank" rel="noopener">Reader-Translator-Generator (RTG)</a> is a Neural Machine Translation toolkit based on pytorch.</p>
 </div>
 <div class="paragraph">
-<p><a href="versions" target="_blank" rel="noopener"><em>See doc versions</em></a></p>
+<p><a href="versions.html" target="_blank" rel="noopener"><em>See all versions</em></a></p>
 </div>
 <div class="sect2">
 <h3 id="_features">1.1. Features</h3>
@@ -973,6 +973,7 @@ prep: # data preparation
   train_tgt: wmt_data/data/de-en/europarl-v9.de-en.en.tok
   valid_src: wmt_data/data/dev/newstest2013.de.tok
   valid_tgt: wmt_data/data/dev/newstest2013.en.tok
+  valid_tgt_raw: wmt_data/data/dev/newstest2013.en  # unmodified; required for BLEU
 tester:
   decoder:
    beam_size: 4
@@ -1715,9 +1716,9 @@ optional arguments:
 </div>
 </div>
 <div class="sect2">
-<h3 id="line-bleu">6.3. Line Bleu (aka BLEU+1)</h3>
+<h3 id="line-bleu">6.3. Line Bleu</h3>
 <div class="paragraph">
-<p>Computes Line BLEU</p>
+<p>Computes BLEU per line</p>
 </div>
 <div class="listingblock">
 <div class="content">
@@ -2527,13 +2528,13 @@ password:&lt;password_here&gt;</code></pre>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_migration_from_v0_5_0_or_earlier_to_0_6_0">16. Migration from v0.5.0 or earlier to 0.6.0</h2>
+<h2 id="migrate-to-0_6">16. Migration from v0.5.0 or earlier to v0.6.0</h2>
 <div class="sectionbody">
 <div class="paragraph">
-<p>The optimizer block got a big update in 0.5.0, as a result it is not backward compatible.</p>
+<p>The optimizer block got a big update in v0.6.0, as a result it is not backward compatible.</p>
 </div>
 <div class="listingblock">
-<div class="title">Old config, prior to 0.6.0:</div>
+<div class="title">Old config, prior to v0.6.0:</div>
 <div class="content">
 <pre>optim:
   args:
@@ -2553,7 +2554,7 @@ password:&lt;password_here&gt;</code></pre>
 </div>
 </div>
 <div class="listingblock">
-<div class="title">New config</div>
+<div class="title">New config in v0.6.0</div>
 <div class="content">
 <pre>optimizer:
   name: adam

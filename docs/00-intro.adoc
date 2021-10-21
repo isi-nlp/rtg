@@ -3,7 +3,7 @@
 
 https://github.com/isi-nlp/rtg[Reader-Translator-Generator (RTG)^] is a Neural Machine Translation toolkit based on pytorch.
 
-link:versions[_See doc versions_^]
+link:versions.html[_See all versions_^]
 
 === Features
 * Reproducible experiments: one `conf.yml`  that has everything -- data paths, params, and

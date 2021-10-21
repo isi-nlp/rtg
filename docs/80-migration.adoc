@@ -1,9 +1,9 @@
+[#migrate-to-0_6]
+== Migration from v0.5.0 or earlier to v0.6.0
 
-== Migration from v0.5.0 or earlier to 0.6.0
+The optimizer block got a big update in v0.6.0, as a result it is not backward compatible.
 
-The optimizer block got a big update in 0.5.0, as a result it is not backward compatible.
-
-.Old config, prior to 0.6.0:
+.Old config, prior to v0.6.0:
 
 [yaml]
 ----
@@ -23,7 +23,7 @@ optim:
     constant: 2
   name: ADAM
 ----
-.New config
+.New config in v0.6.0
 [yaml]
 ----
 optimizer:

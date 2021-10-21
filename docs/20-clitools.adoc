@@ -303,8 +303,8 @@ Compute perplexity of a language model on a test set.
 ----
 
 [#line-bleu]
-=== Line Bleu (aka BLEU+1)
-Computes Line BLEU
+=== Line Bleu
+Computes BLEU per line
 
 ----
     python -m rtg.eval.linebleu -h

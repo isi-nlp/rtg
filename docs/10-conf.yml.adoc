@@ -67,6 +67,7 @@ prep: # data preparation
   train_tgt: wmt_data/data/de-en/europarl-v9.de-en.en.tok
   valid_src: wmt_data/data/dev/newstest2013.de.tok
   valid_tgt: wmt_data/data/dev/newstest2013.en.tok
+  valid_tgt_raw: wmt_data/data/dev/newstest2013.en  # unmodified; required for BLEU
 tester:
   decoder:
    beam_size: 4
