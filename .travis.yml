@@ -9,6 +9,7 @@ python:
 
 before_install:
   #- sudo apt-get -y update
+  - pip3 install --upgrade pip
   - python3 setup.py install
 
 install:
