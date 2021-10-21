@@ -4,7 +4,7 @@
 # Created: 3/9/19
 
 import argparse
-from rtg import log, TranslationExperiment as Experiment
+from rtg import log, TranslationExperiment as Experiment, __version__
 from rtg.exp import load_conf
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
@@ -341,6 +341,7 @@ class Pipeline:
 
 def parse_args():
     parser = argparse.ArgumentParser(prog="rtg-pipe", description="RTG Pipeline CLI")
+    parser.add_argument('-v', '--version', action='version', version=f'%(prog)s {__version__}')
     parser.add_argument("exp", metavar='EXP_DIR', help="Working directory of experiment", type=Path)
     parser.add_argument("conf", metavar='conf.yml', type=Path, nargs='?',
                         help="Config File. By default <work_dir>/conf.yml is used")
