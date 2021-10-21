@@ -4,6 +4,12 @@
   - `NoamOpt` replaced with `ScheduledOptimizer` which takes scheduler and optimizer objects which are independently configurable from conf.yml
     
 - Add transformer sequence classification model: `tfmcls`, supports initialization from pretrained NMT (picks encoder layers, source embeddings, and source vocabs from NMT experiment)
+
+# 0.5.2 : 20210821
+- Fix `rtg.decode` bug fix (partial migration to new API)
+  - test case added for `decode` api so we can catch such errors in future
+
+# v0.5.1 : 20210814
 - Add `rtg-params` command that shows trainable parameters in model (layer wise as well as total)
 - TextTransform moved inside Experiment
   - Integrated into rtg.pipeline as well as into validation metrics

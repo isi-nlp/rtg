@@ -1,5 +1,6 @@
 __version__ = '0.6.0-dev'
 
+
 import os
 import logging
 from rtg.tool.log import Logger
