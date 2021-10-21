@@ -34,3 +34,4 @@ MANIFEST
 /runs/
 /tests/test-data/
 /.data/
+/experiments/sample-exp/data/valid.tsv.memdb.pkl
