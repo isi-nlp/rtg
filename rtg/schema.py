@@ -13,4 +13,5 @@ def config_checks(config):
         help_url = 'https://github.com/isi-nlp/rtg-in/issues/260'
         log.warning("Kindly migrate the 'optim' config block to new and improved schema")
         log.info(f"For migration info visit {help_url}")
-        raise ValueError(f'Config migration to new version is required; see {help_url}')
+        raise ValueError(f'Config migration to new version is required; see {help_url};\n '
+                         f'You have {dict(config).keys()}; expected {OPTIMIZER}, {CRITERION} but not optim')

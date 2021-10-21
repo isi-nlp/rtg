@@ -45,6 +45,7 @@ prep:
   truncate: false
   valid_src: experiments/sample-data/sampl.valid.fr.tok
   valid_tgt: experiments/sample-data/sampl.valid.en.tok
+  valid_tgt_raw: experiments/sample-data/sampl.valid.en
   mono_src: []
   mono_tgt: []
 tester:

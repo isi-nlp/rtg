@@ -47,6 +47,7 @@ prep:
   truncate: false
   valid_src: experiments/sample-data/sampl.valid.fr.tok
   valid_tgt: experiments/sample-data/sampl.valid.en.tok
+  valid_tgt_raw: experiments/sample-data/sampl.valid.en.tok
   mono_src: []
   mono_tgt: []
   max_part_size: 500_000   # maximum recs in each part of db; TODO: set it to 1_000_000 or more
