@@ -7,8 +7,6 @@ from pathlib import Path
 import tempfile
 import shutil
 
-from torchtext.datasets import DBpedia
-
 import rtg
 from rtg.exp import load_conf
 from rtg.pipeline import Pipeline
@@ -34,6 +32,7 @@ def setup_dataset():
     flag = dbpedia_dir / '_VALID'
 
     if not flag.exists():
+        from torchtext.datasets import DBpedia
         dbpedia_dir.mkdir(exist_ok=True, parents=True)
         test = list(DBpedia(root=root, split='test'))
         train = list(DBpedia(root=root, split='train'))
@@ -55,10 +54,13 @@ def setup_dataset():
         flag.touch()
 
 
-setup_dataset()
-
-
 def test_tfmcls_model():
+    try:
+        setup_dataset()
+    except Exception as e:
+        log.error(e)
+        return
+
     tmp_dir = tempfile.mkdtemp()
     #tmp_dir = Path('tmp.dbpedia-exp')
     config = load_conf('experiments/transformer.classifier.yml')
