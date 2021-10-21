@@ -31,7 +31,7 @@ IDE Setup:
 
 [source,python]
 ----
-from rtg.registery import register, MODEL
+from rtg.registry import register, MODEL
 from rtg.module import NMTModel
 
 @register(kind=MODEL,name='newnmt')
@@ -54,5 +54,5 @@ class NewNMTModel(NMTModel):
 NOTE: If your model is similar to existing model and match most of its API, you should reuse one of those trainers and generators.
 
 
-
+include::howto-release.adoc[]
 
