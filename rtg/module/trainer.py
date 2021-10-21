@@ -7,116 +7,18 @@ import rtg
 from rtg import log, yaml, TranslationExperiment as Experiment, device, BatchIterable
 from rtg.module import NMTModel
 from rtg.utils import IO
-from rtg.module import criterion as criteria
+from rtg.module.schedule import ScheduledOptimizer
 
 from abc import abstractmethod
 from typing import Optional, Callable, List
 from dataclasses import dataclass, field
 import time
 
-from torch import optim
-from torch.optim.optimizer import Optimizer
 from torch.utils.tensorboard import SummaryWriter
-from enum import Enum
-import inspect
 from pathlib import Path
 from rtg.distrib import DistribTorch
 
-
-
 dtorch = DistribTorch.instance()
-
-
-
-class NoamOpt(Optimizer):
-    """
-    Optimizer wrapper that implements learning rate as a function of step.
-
-    If inv_sqrt==True:
-    - Linear warmup followed by inverse sqrt decay.
-    - Uses learning rate in conf.yml as maximum learning rate after warmup
-
-        Modeled after FairSeq's Inverse Square Root LR Scheduler:
-            https://github.com/pytorch/fairseq/blob/master/fairseq/optim/lr_scheduler/
-                inverse_square_root_schedule.py
-
-    Else:
-    - Independent of learning rate set in conf.yml
-
-        Modeled after The Annotated Transformer's LR Scheduler:
-            https://nlp.seas.harvard.edu/2018/04/03/attention.html
-    """
-
-    def __init__(self, model_size, factor, warmup, optimizer: Optimizer, step=0, inv_sqrt=False):
-        super().__init__(params=optimizer.param_groups, defaults=dict(warmup=warmup, step=step))
-        self.optimizer = optimizer
-        self._step = step
-        self.warmup = warmup
-        self.factor = factor
-        self.model_size = model_size
-
-        self.inv_sqrt = inv_sqrt
-        lr = optimizer.defaults['lr']
-        self.warmup_rate = lr / warmup
-        self.decay_factor = lr * warmup ** 0.5
-
-        self._rate = 0
-        log.info(f"model_size={model_size}, factor={factor}, warmup={warmup}, step={step}, "
-                 f"inv_sqrt={inv_sqrt}")
-
-    def step(self, closure=None):
-        "Update parameters and rate"
-        self._step += 1
-        rate = self.rate()
-        for p in self.optimizer.param_groups:
-            p['lr'] = rate
-        self._rate = rate
-        self.optimizer.step(closure=closure)
-
-    @property
-    def curr_step(self):
-        return self._step
-
-    @property
-    def curr_lr(self):
-        return self._rate
-
-    def zero_grad(self):
-        self.optimizer.zero_grad()
-
-    def rate(self, step=None):
-        "Implement `lrate` above"
-        if step is None:
-            step = self._step
-        if self.inv_sqrt:
-            if step < self.warmup:
-                lr = self.warmup_rate * step
-            else:
-                lr = self.decay_factor * step ** (-0.5)
-        else:
-            lr = self.factor * self.model_size ** (-0.5) * min(step ** (-0.5),
-                                                               step * self.warmup ** (-1.5))
-        return lr
-
-    @staticmethod
-    def get_std_opt(model):
-        return NoamOpt(model.src_embed[0].d_model, 2, 4000,
-                       torch.optim.Adam(model.parameters(), lr=0, betas=(0.9, 0.98), eps=1e-9))
-
-
-class Optims(Enum):
-    ADAM = optim.Adam
-    ADAMW = optim.AdamW
-    SGD = optim.SGD
-
-    def new(self, parameters, lr=0.001, **args):
-        log.info(f"Creating {self.value} optimizer with lr={lr} and extra args:{args}")
-        log.info(f"   {self.value}, default arguments {inspect.signature(self.value)}")
-        return self.value(parameters, lr=lr, **args)
-
-    @staticmethod
-    def names():
-        return list(Optims.__members__.keys())
 
 
 @dataclass
@@ -131,7 +33,7 @@ class TrainerState:
     total_loss: float = 0.0
     steps: int = 0
     start: float = time.time()
-    unit:str = 'tok'
+    unit: str = 'tok'
 
     def running_loss(self):
         return self.total_loss / self.steps if self.steps > 0 else float('inf')
@@ -152,12 +54,13 @@ class TrainerState:
         self.steps += 1
         self.total_toks += toks
         self.total_loss += loss
-        return self.progress_bar_msg(), self.is_check_point()
+        return self.progress_bar_msg(itLoss=f'{loss:g}'), self.is_check_point()
 
-    def progress_bar_msg(self):
+    def progress_bar_msg(self, **kwargs):
+        extra = ' '.join(f'{k}={v}' for k, v in kwargs.items())
         elapsed = time.time() - self.start
-        return f'Loss:{self.running_loss():.4f},' \
-               f' {int(self.total_toks / elapsed)}{self.unit}/s'
+        return f'avgLoss:{self.running_loss():.4f},' \
+               f' {int(self.total_toks / elapsed)}{self.unit}/s {extra}'
 
     def is_check_point(self):
         return self.steps == self.check_point
@@ -170,6 +73,7 @@ class EarlyStopper:
     """
     enabled: bool = True
     by: str = 'loss'
+    minimize: bool = True
     patience: int = 15
     min_steps: int = 0
     cur_step: int = 0
@@ -184,14 +88,8 @@ class EarlyStopper:
         if self.enabled:
             assert self.patience > 0, f'early_stop.patience > 0 ? given={self.patience}'
             assert 1 <= self.buf <= self.patience
-            log.info(f"Early Stop Enabled;")
-
-        if self.by in {'loss'}:
-            self.minimizing = True
-        elif self.by in {'bleu', 'accuracy'}:
-            self.minimizing = False  # maximizing
-        else:
-            raise Exception(f'{self.by} is not supported')
+            goal = "minimize" if self.minimizing else "maximize"
+            log.info(f"Early stopping enabled; {goal} {self.by}; patience {self.patience}")
 
     def step(self):
         self.cur_step += 1
@@ -253,27 +151,15 @@ class SteppedTrainer:
     """
     A base class for Trainers that use step based training (not epoch based training)
     """
-    default_optim_args = {
-        'lr': 0.01,
-        'betas': [0.9, 0.98],
-        'eps': 1e-9,
-        'amsgrad': False,
-        'weight_decay': 0,
-        'criterion': 'smooth_kld',
-        'label_smoothing': 0.1,
-        'warmup_steps': 8000,
-        'inv_sqrt': False,
-        'constant': 2
-    }
-
     def __init__(self, exp: Experiment,
                  model: Optional[NMTModel] = None,
-                 model_factory: Optional[Callable] = None,
-                 optim: str = 'ADAM',
-                 **optim_args):
+                 model_factory: Optional[Callable] = None):
         self.last_step = -1
         self.exp = exp
         optim_state = None
+        self.init_args = self.exp.config.get('trainer', {}).get('init_args', {})
+        if 'clip_grad_norm' in self.init_args:
+            dtorch.clip_grad_norm(self.init_args['clip_grad_norm'])
         if model:
             self.model = model
         else:
@@ -297,20 +183,11 @@ class SteppedTrainer:
             else:
                 log.info("No earlier check point found. Looks like this is a fresh start")
 
-        # optimizer : default args for missing fields
-        for k, v in self.default_optim_args.items():
-            optim_args[k] = optim_args.get(k, v)
-
         self.n_gpus = torch.cuda.device_count()
         self.device_ids = list(range(self.n_gpus))
-
-        inner_opt_args = {k: optim_args[k] for k in
-                          ['lr', 'betas', 'eps', 'weight_decay', 'amsgrad']}
-
         self.core_model = self.model.to(device)
-
         
-        trainable_params = self.exp.config['optim'].get('trainable', {})
+        trainable_params = self.exp.config['optimizer'].get('trainable', {})
         if trainable_params:
             if dtorch.is_distributed: # model is wrapped in DP or DistributedDP
                 log.warning(f">> Using more than 1 GPU with 'trainable' params is NOT tested")
@@ -319,24 +196,23 @@ class SteppedTrainer:
         else:
             trainable_params = self.model.parameters()
 
-        inner_opt = Optims[optim].new(trainable_params, **inner_opt_args)
+        optimizer = exp.get_optimizer(params=trainable_params)
         self.model = dtorch.maybe_distributed(self.core_model)
-        
+
         if optim_state:
-            log.info("restoring optimizer state from checkpoint")
             try:
-                inner_opt.load_state_dict(optim_state)  
+                log.info("restoring optimizer state from checkpoint")
+                optimizer.load_state_dict(optim_state)
             except Exception:
                 log.exception("Unable to restore optimizer, skipping it.")
-        self.opt = NoamOpt(self.core_model.model_dim, optim_args['constant'], optim_args['warmup_steps'],
-                           inner_opt, step=self.start_step, inv_sqrt=optim_args['inv_sqrt'])
+        self.opt = ScheduledOptimizer(start_step=self.start_step, schedule=exp.get_schedule(),
+                                      optimizer=optimizer)
 
         if self.exp.read_only:
             self.tbd = NoOpSummaryWriter()
         else:
             self.tbd = SummaryWriter(log_dir=str(exp.work_dir / 'tensorboard' ))
 
-        self.exp.optim_args = optim, optim_args
         if not self.exp.read_only:
             self.exp.persist_state()
         self.samples = None
@@ -354,7 +230,7 @@ class SteppedTrainer:
         if self.start_step <= 1:
             self.maybe_init_model()
 
-        self.criterion = self.create_criterion(optim_args['criterion'])
+        self.criterion = self.create_criterion()
 
     @property
     def start_step(self):
@@ -368,37 +244,17 @@ class SteppedTrainer:
         assert step >= 0
         return step
 
-    def create_criterion(self, criterion):
-        log.info(f"Criterion = {criterion}")
-
-        optim_args = self.exp.optim_args[1]
-        smoothing = optim_args.get('label_smoothing', 0.0)
-        margin = optim_args.get('margin', 0.0)
-        mode = optim_args.get('mode', 'dot')
-        neg_sampling = optim_args.get('neg_sampling', 'random')
-        neg_region = optim_args.get('neg_region', 0.05)
-        alpha = optim_args.get('alpha', 1.0)
-
-        pad_idx = self.exp.tgt_vocab.pad_idx
-        if criterion == 'smooth_kld':
-            return criteria.SmoothKLD(vocab_size=self.core_model.vocab_size, smoothing=smoothing,
-                                      pad_idx=pad_idx)
-        elif criterion == 'cross_entropy':
-            return criteria.CrossEntropy(pad_idx=pad_idx)
-        elif criterion == 'binary_cross_entropy':
-            return criteria.BinaryCrossEntropy(smoothing=smoothing, pad_idx=pad_idx)
-        elif criterion == 'triplet_loss':
-            tgt_embedding = self.core_model.tgt_embed[0].lut
-            return criteria.TripletLoss(embedding=tgt_embedding, margin=margin,
-                                        neg_region=neg_region,
-                                        mode=mode, neg_sampling=neg_sampling, pad_idx=pad_idx)
-        elif criterion == 'smooth_kld_and_triplet_loss':
-            tgt_embedding = self.core_model.tgt_embed[0].lut
-            return criteria.SmoothKLDAndTripletLoss(
-                embedding=tgt_embedding, margin=margin, neg_region=neg_region, mode=mode,
-                neg_sampling=neg_sampling, smoothing=smoothing, alpha=alpha, pad_idx=pad_idx)
-        else:
-            raise Exception(f'criterion={criterion} is not supported')
+    def create_criterion(self):
+        from rtg.registry import CRITERION, CRITERIA
+        cri_conf = self.exp.config[CRITERION]
+        cri_name, cri_args = cri_conf['name'], cri_conf.get('args') or {}
+        assert cri_name in CRITERIA, f'Criterion {cri_name} unknown; known={CRITERIA.keys()}'
+        xt_args = dict(exp=self.exp, step=self.start_step)
+        if cri_name == 'smooth_kld':
+            xt_args['n_classes'] = self.core_model.vocab_size
+        elif cri_name == 'triplet_loss' or cri_name == 'smooth_kld_and_triplet_loss':
+            xt_args['embedding'] = self.core_model.tgt_embed[0].lut
+        return self.exp.get_criterion(extra_args=xt_args)
 
     def maybe_init_model(self):
         def load_matrix(path: Path):

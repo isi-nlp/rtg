@@ -6,16 +6,21 @@ from pathlib import Path
 from functools import partial
 from typing import Optional, Dict, List, Tuple, Union, Any
 import time
+from collections import Counter
 
 import numpy as np
 import torch
 import hashlib
 import portalocker
+import tqdm
 
+import rtg
 from rtg import log, yaml, device
 from rtg.data.dataset import (TSVData, BatchIterable, LoopingIterable, SqliteFile, GenerativeBatchIterable)
 from rtg.data.codec import Field, SPField, NLField, PretrainMatchField
 from rtg.utils import IO, line_count
+from rtg.registry import CRITERION, OPTIMIZER, SCHEDULE, MODEL
+from rtg.schema import config_checks
 
 
 seeded = False
@@ -44,6 +49,7 @@ class BaseExperiment:
         if isinstance(config, str) or isinstance(config, Path):
             config = load_conf(config)
         self.config = config if config else load_conf(self._config_file)
+        config_checks(self.config)
         self.codec_name = self.config.get('prep', {}).get('codec_lib', 'sentpiece')  # with default
         codec_libs = {'sentpiece': SPField,
                       'nlcodec': NLField,
@@ -233,26 +239,6 @@ class BaseExperiment:
         self.config['model_args'] = model_args
 
     @property
-    def optim_args(self) -> Tuple[Optional[str], Dict]:
-        """
-        Gets optimizer args from file
-        :return: optimizer args if exists or None otherwise
-        """
-        opt_conf = self.config.get('optim')
-        if opt_conf:
-            return opt_conf.get('name'), opt_conf.get('args')
-        else:
-            return None, {}
-
-    @optim_args.setter
-    def optim_args(self, optim_args: Tuple[str, Dict]):
-        """
-        set optimizer args
-        """
-        name, args = optim_args
-        self.config['optim'].update({'name': name, 'args': args})
-
-    @property
     def shared_vocab(self) -> Field:
         return self.shared_field
 
@@ -348,27 +334,47 @@ class BaseExperiment:
             return state
         
     def load_model(self, model_paths=None, ensemble=1):
-        from rtg.registry import factories
-        factory = factories[self.model_type]
-        model = factory(exp=self, **self.model_args)[0]
+        from .registry import MODELS
+        model = MODELS[self.model_type].Model(exp=self, **self.model_args)[0]
         state = self.maybe_ensemble_state(model_paths=model_paths, ensemble=ensemble)
         errors = model.load_state_dict(state)
         log.info(f"{errors}")
         return model
 
     def load_model_with_state(self, checkpt_state):
-        from rtg.registry import factories
+        from .registry import MODELS
         chkpt = checkpt_state
         state = chkpt['model_state']
         model_type = chkpt['model_type']
         model_args = chkpt['model_args']
-        # Dummy experiment wrapper
-        factory = factories[model_type]
-        model = factory(exp=self, **model_args)[0]
+        model = MODELS[model_type].Model(exp=self, **model_args)[0]
         errors = model.load_state_dict(state)
         log.info(f"{errors}")
         log.info(f"Successfully restored the model state of : {model_type}")
         return model
+
+    def get_conf_component(self, kind, extra_args=None):
+        """ Creates a component such as schedule, criterion, optimizer based on config"""
+        from rtg.registry import registry
+        assert kind in registry, f'component {kind} is unknown; valid: {registry.keys()}'
+        if not kind in self.config:
+            log.warning(f"{kind} not found in config; skipping")
+            return None
+        name, args = self.config[kind]['name'], self.config[kind].get('args') or {}
+        assert name in registry[kind], f'{kind}={name} is invalid; valid: {registry[kind].keys()}'
+        factory = registry[kind][name]
+        extra_args = extra_args or {}
+        log.info(f"creating {kind} {name} with args {args}")
+        return factory(**extra_args, **args)
+
+    def get_criterion(self, extra_args=None):
+        return self.get_conf_component(CRITERION, extra_args=extra_args)
+
+    def get_schedule(self):
+        return self.get_conf_component(SCHEDULE)
+
+    def get_optimizer(self, params):
+        return self.get_conf_component(OPTIMIZER, extra_args=dict(params=params))
 
 
 class TranslationExperiment(BaseExperiment):
@@ -383,7 +389,8 @@ class TranslationExperiment(BaseExperiment):
         self.emb_tgt_file = self.data_dir / 'emb_tgt.pt'
         self.ext_emb_src_file = self.data_dir / 'ext_emb_src.pt'  # external Embeddings
         self.ext_emb_tgt_file = self.data_dir / 'ext_emb_tgt.pt'  # external Embeddings
-
+        self.src_field = None
+        self.tgt_field = None
         self.reload_vocabs()
 
         # Either shared field  OR  individual  src and tgt fields
@@ -431,23 +438,38 @@ class TranslationExperiment(BaseExperiment):
 
         xt_args = dict(no_split_toks=args.get('no_split_toks'),
                        char_coverage=args.get('char_coverage', 0))
+        min_co_ev = args.get('min_co_ev', None)
+        pieces = args['pieces']
         if args.get('shared_vocab'):  # shared vocab
+            assert 'max_types' in args, f'prep.max_types is required when prep.shared_vocab=true'
+            max_types = args['max_types']
             corpus = [args[key] for key in ['train_src', 'train_tgt', 'mono_src', 'mono_tgt']
                       if args.get(key)]
-            self.shared_field = self._make_vocab("shared", self._shared_field_file, args['pieces'],
-                                                 args['max_types'], corpus=corpus, **xt_args)
+            assert isinstance(pieces, str), f'shared vocab cant support different pieces for src, tgt;' \
+                                            f' given pieces={pieces}. Either set shared=false or pieces=<a string>'
+            self.shared_field = self._make_vocab("shared", self._shared_field_file, pieces, max_types,
+                                                 corpus=corpus, min_co_ev=min_co_ev, **xt_args)
         else:  # separate vocabularies
             src_corpus = [args[key] for key in ['train_src', 'mono_src'] if args.get(key)]
-            self.src_field = self._make_vocab("src", self._src_field_file, args['pieces'],
-                                              args['max_src_types'], corpus=src_corpus, **xt_args)
+            src_min_co_ev = args.get('src_min_co_ev', min_co_ev)
+            tgt_min_co_ev = args.get('tgt_min_co_ev', min_co_ev)
+            src_pieces = tgt_pieces = pieces
+            if not isinstance(pieces, str):
+                assert len(pieces) == 2
+                src_pieces, tgt_pieces = pieces
+                log.info(f"Vocab types: src: {src_pieces} and tgt: {tgt_pieces}")
 
+            max_src_types = args.get('max_src_types', args.get('max_types'))
+            max_tgt_types = args.get('max_tgt_types', args.get('max_types'))
+            assert max_src_types and max_tgt_types, 'prep.{max_src_types,max_tgt_types} are required' \
+                                                    ' when prep.shared_vocab=false'
+            self.src_field = self._make_vocab("src", self._src_field_file, src_pieces, max_src_types, corpus=src_corpus,
+                                              min_co_ev=src_min_co_ev, **xt_args)
             # target vocabulary
             tgt_corpus = [args[key] for key in ['train_tgt', 'mono_tgt'] if args.get(key)]
-            self.tgt_field = self._make_vocab("src", self._tgt_field_file, args['pieces'],
-                                              args['max_tgt_types'], corpus=tgt_corpus, **xt_args)
-
+            self.tgt_field = self._make_vocab("src", self._tgt_field_file, tgt_pieces, max_tgt_types, corpus=tgt_corpus,
+                                              min_co_ev=tgt_min_co_ev, **xt_args)
         train_file = self.train_db
-
         self._pre_process_parallel('train_src', 'train_tgt', out_file=train_file, args=args,
                                    line_check=False)
         self._pre_process_parallel('valid_src', 'valid_tgt', out_file=self.valid_file, args=args,
@@ -784,7 +806,6 @@ class TranslationExperiment(BaseExperiment):
             torch.save(avg_state, self.parent_model_state)
             self.persist_state()  # this will fix src_vocab and tgt_vocab of model_args conf
 
-
     def pre_process(self, args=None, force=False):
         args = args or self.config['prep']
         super(TranslationExperiment, self).pre_process(args, )
@@ -819,6 +840,12 @@ class TranslationExperiment(BaseExperiment):
             args['tgt_vocab'] = len(self.tgt_vocab) if self.tgt_vocab else 0
 
         self.config['updated_at'] = datetime.now().isoformat()
+        if 'rtg_version' not in self.config:
+            self.config['rtg_version'] = {}
+        version = self.config['rtg_version']
+        if version.get('last_worked', None) != rtg.__version__:
+            version['previous'] =  version.get('last_worked')
+            version['last_worked'] = rtg.__version__
         self.store_config()
 
     def train(self, args=None):
@@ -847,11 +874,8 @@ class TranslationExperiment(BaseExperiment):
             log.warning(
                 f"Already trained upto {last_step}; Requested: train={train_steps}, finetune={finetune_steps} Skipped")
             return
-
-        from rtg.registry import trainers, factories
-        name, optim_args = self.optim_args
-        trainer = trainers[self.model_type](self, optim=name,
-                                            model_factory=factories[self.model_type], **optim_args)
+        from .registry import MODELS
+        trainer = MODELS[self.model_type].Trainer(self)
         if last_step < train_steps:  # regular training
             stopped = trainer.train(fine_tune=False, **run_args)
             if not self.read_only:
@@ -889,7 +913,7 @@ class TranslationExperiment(BaseExperiment):
                 [('src_len', 'max_src_len'), ('tgt_len', 'max_tgt_len'), ('truncate', 'truncate')]
                 if ik in prep_args}
 
-    def get_train_data(self, batch_size:  Union[int, Tuple[int,int]], steps: int = 0, sort_by='eq_len_rand_batch',
+    def get_train_data(self, batch_size:  Union[int, Tuple[int, int]], steps: int = 0, sort_by='eq_len_rand_batch',
                        batch_first=True, shuffle=False, fine_tune=False, keep_in_mem=False,
                        split_ratio: float = 0., dynamic_epoch=False, y_is_cls=False):
 
@@ -911,26 +935,30 @@ class TranslationExperiment(BaseExperiment):
                 dynamic_epoch=dynamic_epoch, batch_first=batch_first, shuffle=shuffle, sort_by=sort_by,
                 **self._get_batch_args())
         else:
-            data = BatchIterable(
+            train_data = BatchIterable(
                 data_path=data_path, batch_size=batch_size, field=self.tgt_vocab, sort_by=sort_by,
                 batch_first=batch_first, shuffle=shuffle, y_is_cls=y_is_cls, **self._get_batch_args())
-            train_data = LoopingIterable(data, steps)
-
+            # default, read data once completely, if steps > 0, truncate or loop depending on steps and data size
+            if steps > 0:
+                train_data = LoopingIterable(train_data, steps)
         return train_data
-
 
     def file_creator(self, train_file, split_ratio, *args, **kwargs):
         self._pre_process_parallel(*args, src_key='train_src', tgt_key='train_tgt',
                                    out_file=train_file, split_ratio=split_ratio, **kwargs)
         return train_file
 
-    def get_val_data(self, batch_size: Union[int, Tuple[int,int]], sort_desc=False, batch_first=True,
+    def get_val_data(self, batch_size: Union[int, Tuple[int, int]], sort_desc=False, batch_first=True,
                      shuffle=False, y_is_cls=False):
-        raw_path = None
         prep = self.config.get('prep', {})
-        if 'valid_src' in prep and 'valid_tgt' in prep:
-            raw_path = prep['valid_src'], prep['valid_tgt']
-
+        raw_tgt = prep.get('valid_tgt_raw', None)
+        if not raw_tgt:
+            raise Exception('Config value prep.valid_tgt_raw is required. It should have path to a file'
+                            ' having raw (unmodified) target file, to be used for computing BLEU.')
+        raw_src = prep.get('valid_src_raw', prep.get('valid_src'))
+        for path in (raw_src, raw_tgt):
+            assert Path(path).exists(), f'File at {path} does not exist; it is required'
+        raw_path = Path(raw_src), Path(raw_tgt)
         return BatchIterable(self.valid_file, batch_size=batch_size, sort_desc=sort_desc,
                              batch_first=batch_first, shuffle=shuffle, field=self.tgt_vocab,
                              keep_in_mem=True, raw_path=raw_path, y_is_cls=y_is_cls,
@@ -944,12 +972,10 @@ class TranslationExperiment(BaseExperiment):
         combo_file = IO.maybe_tmpfs(self.combo_file)
         data = BatchIterable(
             combo_file, batch_size=batch_size, sort_desc=sort_desc, field=self.tgt_vocab,
-            batch_first=batch_first, shuffle=shuffle, **self._get_batch_args()
-        )
+            batch_first=batch_first, shuffle=shuffle, **self._get_batch_args())
         if steps > 0:
             data = LoopingIterable(data, steps)
         return data
-
 
     def copy_vocabs(self, other):
         """
@@ -1003,3 +1029,48 @@ class TranslationExperiment(BaseExperiment):
         if num_batches > 0:
             data = LoopingIterable(data, num_batches)
         return data
+
+    def get_class_freqs(self):
+        batch_size = self.config.get('trainer', {}).get('batch_size', 2000)
+        train_data = self.get_train_data(batch_size=batch_size, steps=-1, shuffle=False)
+        freq_file = self.data_dir / 'class.freqs.tsv'
+        vocab = self.tgt_vocab
+
+        if not freq_file.exists():
+            stats = Counter()
+            for batch in tqdm.tqdm(train_data):
+                for seq in batch.y_seqs.tolist():
+                    stats.update(seq)
+            if vocab.pad_idx >= 0:
+                stats[vocab.pad_idx] = 0
+
+            with freq_file.open('w', encoding='utf-8') as out:
+                for i in range(len(vocab)):
+                    name = vocab.class_names[i]
+                    freq = stats.get(i, 0)
+                    out.write(f'{i}\t{name}\t{freq}\n')
+
+        with freq_file.open('r') as lines:
+            recs = (line.split('\t') for line in lines)
+            recs = [(int(r[0]), r[1], int(r[2])) for r in recs]
+            return recs
+
+    def get_pre_transform(self, side: str):
+        assert side in ('src', 'tgt')
+        from rtg.transform import TextTransform
+        conf_chain = self.config.get('prep', {}).get(f'{side}_pre_proc', None)
+        if conf_chain:
+            transform = TextTransform.make(names=conf_chain)
+        else:
+            transform = TextTransform.recommended_pre()
+        return transform
+
+    def get_post_transform(self, side: str):
+        assert side in ('src', 'tgt')
+        from rtg.transform import TextTransform
+        conf_chain = self.config.get('prep', {}).get(f'{side}_post_proc', None)
+        if conf_chain:
+            transform = TextTransform.make(names=conf_chain)
+        else:
+            transform = TextTransform.recommended_post()
+        return transform

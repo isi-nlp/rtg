@@ -20,9 +20,31 @@ optim:
     lr: 0.2
     warmup_steps: 8000
     constant: 2
-    criterion: smooth_kld  # multi label classification, binary decision per class
+    criterion: binary_cross_entropy  # multi label classification, binary decision per class
     # all options "cross_entropy", "smooth_kld", "binary_cross_entropy", "triplet_loss"
   name: ADAM
+optimizer:
+  name: adam
+  args:
+    betas:
+    - 0.9
+    - 0.98
+    eps: 1.0e-09
+    lr: 0.1
+
+schedule:
+  name: noam
+  args:
+    constant: 2
+    warmup: 8000
+    model_dim: 512
+
+criterion:
+  name: binary_cross_entropy    #options "cross_entropy", "smooth_kld", "binary_cross_entropy", "triplet_loss"
+  args:
+    label_smoothing: 0.1
+
+
 prep: # data preparation
   max_types: 8000  # maximum number of types in vocab ; if shared_vocab=false, set max_src_types and max_tgt_types separately instead of this one
   pieces: bpe   # choices: bpe, char, word, unigram  from google/sentencepiece
@@ -38,30 +60,12 @@ prep: # data preparation
   mono_tgt: []
 tester:
   decoder:
-    tune:  # If this block is missing, then tuner will not be run, and some default values are picked from the code
-      trials: 6  # number of random trials, in addition to "suggested" values
-      tune_src: data/valid.src  # dataset for tuning
-      tune_ref: data/valid.tgt
-      beam_size: [1, 4, 8]    # pool of values for beam_size
-      ensemble: [1, 5, 10]
-      lp_alpha: [0.0, 0.4, 0.6, 1.0]
-      suggested:  # list of suggested values for beam_size, ensemble, lp_alpha
-        - 1, 1, 0.0
-        - 4, 1, 0.0
-        - 4, 1, 0.6
-        - 1, 5, 0.0
-        - 4, 5, 0.0
-        - 4, 5, 0.6
-        - 1, 10, 0.0
-        - 4, 10, 0.0
-        - 4, 10, 0.6
+    beam_size: 4
+    batch_size: 18000
   suit:  # suit of tests to run after the training
     valid:  # name of test and list of src.tok, ref files (ref should be unmodified)
     - data/valid.src
     - data/valid.tgt
-  # in case we want to use external de tokenizer. interface:: $detokenizer < $out > out.detok
-  # by default it uses moses-tokenizer python wrapper to perl script
-  # detokenizer: cut -f1 | python -m rtg.tool.unicode_fix -l hi -d | perl scripts/indic-tok.perl -d
 trainer:
   init_args:
     chunk_size: 10   # generation in chunks of time steps to reduce memory consumption
@@ -70,6 +74,5 @@ trainer:
   check_point: 1000  # how often to checkpoint?
   keep_models: 10   # how many checkpoints to keep on disk (small enough to save disk, large enough for checkpt averaging
   steps: 200000   # how many steps to train
-  keep_in_mem: True
 updated_at: '2019-03-09T21:15:33.707183'
 seed: 12345  # fix the manual seed of pytorch + cuda + numpy + python_stdlib RNGs.  Remove/comment this to disable

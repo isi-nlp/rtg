@@ -39,7 +39,7 @@ tester:
     beam_size: 4
     batch_size: 12000  # this is for 1 beam; effective_batch_size = batch_size / beam_size
     lp_alpha: 0.0     # length penalty
-  suit:  # suit of tests to run after the training
+  suite:  # suit of tests to run after the training
     # name of test and list of src.tok, ref files (ref should be unmodified)
     valid:
       - experiments/sample-data/sampl.valid.fr.tok

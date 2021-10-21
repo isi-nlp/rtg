@@ -2,21 +2,16 @@
 #
 # Author: Thamme Gowda [tg (at) isi (dot) edu] 
 # Created: 6/15/21
-from rtg.emb import tfmcls
-from rtg.registry import log
-import subprocess
-
-from torchtext.datasets import DBpedia
-from pathlib import Path
 import random
-import rtg
-from rtg.registry import registry, MODEL
-import pytest
-from rtg.pipeline import Pipeline, Experiment
+from pathlib import Path
 import tempfile
-from rtg.exp import load_conf
-import torch
 import shutil
+
+import rtg
+from rtg.exp import load_conf
+from rtg.pipeline import Pipeline
+from rtg.registry import log
+from rtg.registry import registry, MODEL
 from . import sanity_check_experiment
 
 
@@ -37,6 +32,7 @@ def setup_dataset():
     flag = dbpedia_dir / '_VALID'
 
     if not flag.exists():
+        from torchtext.datasets import DBpedia
         dbpedia_dir.mkdir(exist_ok=True, parents=True)
         test = list(DBpedia(root=root, split='test'))
         train = list(DBpedia(root=root, split='train'))
@@ -58,20 +54,20 @@ def setup_dataset():
         flag.touch()
 
 
-setup_dataset()
-
-
 def test_tfmcls_model():
-    # tmp_dir = tempfile.mkdtemp()
-    tmp_dir = Path('tmp.dbpedia-exp')
+    try:
+        setup_dataset()
+    except Exception as e:
+        log.error(e)
+        return
+
+    tmp_dir = tempfile.mkdtemp()
+    #tmp_dir = Path('tmp.dbpedia-exp')
     config = load_conf('experiments/transformer.classifier.yml')
-    exp = registry[MODEL]['tfmcls'].experiment(tmp_dir, config=config, read_only=False)
+    exp = registry[MODEL]['tfmcls'].Experiment(tmp_dir, config=config, read_only=False)
     exp.config['trainer'].update(dict(steps=50, check_point=25))
     # exp.config['prep']['num_samples'] = 0
     Pipeline(exp).run(run_tests=False)
     sanity_check_experiment(exp, samples=False, shared_vocab=False)
     print(f"Cleaning up {tmp_dir}")
-    # shutil.rmtree(tmp_dir, ignore_errors=True)
-
-
-
+    shutil.rmtree(tmp_dir, ignore_errors=True)

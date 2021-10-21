@@ -7,7 +7,3 @@ from abc import ABCMeta, ABC
 """
 Stuff related to Language Model
 """
-
-
-class LanguageModel(Model, metaclass=ABCMeta):
-    pass

@@ -120,7 +120,7 @@ def test_freeze_pipeline():
     exp.config['trainer'].update(dict(steps=50, check_point=25))
     # enable these
     trainable = {'include': ['src_embed', 'tgt_embed', 'generator', 'encoder:0', 'decoder:0,1']}
-    exp.config['optim']['trainable'] = trainable
+    exp.config['optimizer']['trainable'] = trainable
     pipe = Pipeline(exp)
     pipe.run(run_tests=False)
 

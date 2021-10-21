@@ -249,6 +249,7 @@ def maybe_compress(arr, frugal=False):
         # fall back to basic list of python
         return np.array(arr, dtype=object)
 
+
 def shell_pipe(cmd_line, input, cwd=None):
     with subprocess.Popen(cmd_line, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                           shell=True, text=True, cwd=cwd) as proc:

@@ -1,4 +1,6 @@
 # Reader-Translator-Generator (RTG)  
+[![image](http://img.shields.io/pypi/v/rtg.svg)](https://pypi.python.org/pypi/rtg/)
+
 
 Reader-Translator-Generator (RTG) is a Neural Machine Translation toolkit based on pytorch. 
 

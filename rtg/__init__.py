@@ -1,4 +1,5 @@
-__version__ = '0.5.2'
+__version__ = '0.6.0'
+
 
 import os
 import logging
@@ -51,3 +52,5 @@ from pathlib import Path
 RTG_PATH = Path(__file__).resolve().parent.parent
 
 log.info(f"rtg v{__version__} from {RTG_PATH}")
+from rtg.registry import __register_all
+__register_all()

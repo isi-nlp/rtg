@@ -1,33 +1,43 @@
 model_args:
-  ff_size: 512
-  hid_size: 256
-  n_heads: 4
+  ff_size: 4096
+  hid_size: 1024
+  n_heads: 16
   attn_dropout: 0.1
-  dropout: 0.2
-  enc_layers: 3
-  dec_layers: 3
+  dropout: 0.3
+  enc_layers: 6
+  dec_layers: 6
   src_vocab: 8000
   tgt_vocab: 8000
   tied_emb: three-way
 model_type: tfmnmt
-optim:
+
+optimizer:
+  name: adam
   args:
     betas:
     - 0.9
     - 0.98
     eps: 1.0e-09
-    label_smoothing: 0.1
     lr: 0.1
-    warmup_steps: 4000
-    criterion: smooth_kld  # multi label classification, binary decision per class
-    # all options "cross_entropy", "smooth_kld", "binary_cross_entropy", "triplet_loss"
-  name: ADAM
+
+schedule:
+  name: noam
+  args:
+    constant: 2
+    warmup: 8000
+    model_dim: 768
+
+criterion:
+  name: smooth_kld    #options "cross_entropy", "smooth_kld", "binary_cross_entropy", "triplet_loss"
+  args:
+    label_smoothing: 0.1
+
 prep:
-  max_types: 500
+  max_types: 8000
   pieces: bpe
   shared_vocab: true
-  src_len: 128
-  tgt_len: 128
+  src_len: 256
+  tgt_len: 256
   train_src: data/train.src
   train_tgt: data/train.tgt
   truncate: true
@@ -43,7 +53,7 @@ tester:
       tune_ref: data/valid.tgt
       beam_size: [1, 4, 8]
       ensemble: [1, 5, 10]
-      lp_alpha: [0.0, 0.6]
+      lp_alpha: [0.0, 0.4, 0.6, 1.0]
       suggested:
         - 1, 1, 0.0
         - 4, 1, 0.0
@@ -62,9 +72,9 @@ trainer:
   init_args:
     chunk_size: 10
     grad_accum: 1    # How many batches to accumulate gradients over
-  batch_size: 1024
-  check_point: 400
+  batch_size: 2600
+  check_point: 1000
   keep_models: 10
-  steps: 2000
+  steps: 200000
 updated_at: '2019-03-09T21:15:33.707183'
 seed: 12345

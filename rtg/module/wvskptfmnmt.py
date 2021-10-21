@@ -12,6 +12,7 @@ from rtg.module import wvtfmnmt as wvtfm
 from rtg.module import tfmnmt as tfm
 from rtg import TranslationExperiment as Experiment, log
 from rtg.utils import get_my_args
+from rtg.registry import register, MODEL
 
 
 class WidthVaryingSkipEncoder(wvtfm.WidthVaryingEncoder):
@@ -58,6 +59,7 @@ class WidthVaryingSkipDecoder(wvtfm.WidthVaryingDecoder):
         return self.norm(x)
 
 
+@register(MODEL, 'wvskptfmnmt')
 class WidthVaryingSkipTransformerNMT(tfm.AbstractTransformerNMT):
     """Enables heterogeneous feed forward dimensions in the Encoder and Decoder"""
 
@@ -117,14 +119,6 @@ class WidthVaryingSkipTransformerNMT(tfm.AbstractTransformerNMT):
         return model, args
 
 
-class WVSKPTransformerTrainer(tfm.TransformerTrainer):
-
-    def __init__(self, *args, model_factory=WidthVaryingSkipTransformerNMT.make_model, **kwargs):
-        super().__init__(*args, model_factory=model_factory, **kwargs)
-        assert isinstance(self.model, WidthVaryingSkipTransformerNMT) or \
-            (isinstance(self.model, nn.DataParallel) and isinstance(self.model.module, WidthVaryingSkipTransformerNMT))
-
-
 def __test_model__():
     from rtg.data.dummy import DummyExperiment
     from rtg import Batch, my_tensor as tensor
@@ -162,7 +156,8 @@ def __test_model__():
     exp = DummyExperiment("work.tmp.wvskptfmnmt", config=config, read_only=True,
                           vocab_size=vocab_size)
     exp.model_args = args
-    trainer = WVSKPTransformerTrainer(exp=exp, warmup_steps=200, **config['optim']['args'])
+    trainer = WidthVaryingSkipTransformerNMT.make_trainer(exp=exp, warmup_steps=200,
+                                                          **config['optim']['args'])
     decr = Decoder.new(exp, trainer.model)
 
     assert 2 == Batch.bos_val

@@ -89,3 +89,18 @@ Note that `rtg-pipe -h` has `-fp16, --fp16` CLI argument flag that can be used t
 ----
 $ rtg-pipe <experiment-dir> --fp16
 ----
+
+[#grad-clip]
+== Gradient Clipping
+
+Gradient clipping is supported using https://pytorch.org/docs/stable/generated/torch.nn.utils.clip_grad_norm_.html[`torch.clip_grad_norm_`].
+
+`trainer.init_args.clip_grad_norm` is treated as maximum L2 norm at which gradients are clipped.
+
+[source,yaml]
+----
+trainer:
+  init_args:
+    # grad_accum: 1   # other params for init_args are allowed
+    clip_grad_norm: 8
+----

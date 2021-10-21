@@ -4,113 +4,63 @@
 # - Thamme Gowda [tg (at) isi (dot) edu]
 # - Lukas J. Ferrer [lferrer (at) isi (dot) edu]
 # Created: 3/9/19
-
+import json
+import re
 from enum import Enum
+from dataclasses import dataclass
+from typing import Any, Dict, Type, Callable
+
+from rtg import log
+from torch import optim
+
 
 class ProblemType(str, Enum):
     TRANSLATION = "translation"
     CLASSIFICATION = "classification"
 
 
-import re
-from dataclasses import dataclass
-from typing import Any, Optional, Mapping, Dict, Type
-from rtg.exp import BaseExperiment
-from rtg.module.tfmnmt import TransformerTrainer
-from rtg.module.skptfmnmt import SKPTransformerTrainer
-from rtg.module.wvtfmnmt import WVTransformerTrainer
-from rtg.module.wvskptfmnmt import WVSKPTransformerTrainer
-from rtg.module.mtfmnmt import MTransformerTrainer
-from rtg.module.rnnmt import SteppedRNNMTTrainer
-from rtg.lm.rnnlm import RnnLmTrainer
-from rtg.lm.tfmlm import TfmLmTrainer
-from rtg.module.skptfmnmt import SkipTransformerNMT
-from rtg.module.wvtfmnmt import WidthVaryingTransformerNMT
-from rtg.module.wvskptfmnmt import WidthVaryingSkipTransformerNMT
-from rtg.module.mtfmnmt import MTransformerNMT
-from rtg.module.ext.tfmextemb import TfmExtEmbNMT
-from rtg.module.hybridmt import HybridMT
-from rtg.emb.word2vec import CBOW
-from rtg.module.ext.robertamt import RoBERTaMT
-from torch import optim
+@dataclass
+class ModelSpec:
+    name: str
+    Model: Any
+    Trainer: Any
+    Generator: Any
+    Experiment: Type['BaseExperiment']
 
-from rtg.module.generator import *
 
-# TODO: use decorators https://github.com/isi-nlp/rtg/issues/246
-trainers = {
-    't2t': TransformerTrainer,
-    'seq2seq': SteppedRNNMTTrainer,
-    'tfmnmt': TransformerTrainer,
-    'skptfmnmt': SKPTransformerTrainer,
-    'wvtfmnmt': WVTransformerTrainer,
-    'wvskptfmnmt': WVSKPTransformerTrainer,
-    'rnnmt': SteppedRNNMTTrainer,
-    'rnnlm': RnnLmTrainer,
-    'tfmlm': TfmLmTrainer,
-    'mtfmnmt': MTransformerTrainer,
-    'wv_cbow': CBOW.make_trainer,
-    'tfmextembmt': TfmExtEmbNMT.make_trainer,
-    'hybridmt': HybridMT.make_trainer,
-    'robertamt': RoBERTaMT.make_trainer
-}
-
-# model factories
-factories = {
-    't2t': TransformerNMT.make_model,
-    'seq2seq': RNNMT.make_model,
-    'tfmnmt': TransformerNMT.make_model,
-    'skptfmnmt': SkipTransformerNMT.make_model,
-    'wvtfmnmt': WidthVaryingTransformerNMT.make_model,
-    'wvskptfmnmt': WidthVaryingSkipTransformerNMT.make_model,
-    'rnnmt': RNNMT.make_model,
-    'rnnlm': RnnLm.make_model,
-    'tfmlm': TfmLm.make_model,
-    'mtfmnmt': MTransformerNMT.make_model,
-    'tfmextembmt': TfmExtEmbNMT.make_model,
-    'hybridmt': HybridMT.make_model,
-    'wv_cbow': CBOW.make_model,
-    'robertamt': RoBERTaMT.make_model
-}
-
-# Generator factories
-generators = {
-    't2t': T2TGenerator,
-    'seq2seq': Seq2SeqGenerator,
-    'combo': ComboGenerator,
-    'tfmnmt': T2TGenerator,
-    'skptfmnmt': T2TGenerator,
-    'wvtfmnmt': T2TGenerator,
-    'wvskptfmnmt': T2TGenerator,
-    'rnnmt': Seq2SeqGenerator,
-    'rnnlm': RnnLmGenerator,
-    'tfmlm': TfmLmGenerator,
-    'mtfmnmt': MTfmGenerator,
-    'hybridmt': MTfmGenerator,
-    'tfmextembmt': TfmExtEembGenerator,
-    'robertamt': T2TGenerator,
-
-    'wv_cbow': CBOW.make_model  # FIXME: this is a place holder
-}
-
-#  TODO: simplify this; use decorators to register directly from class's code
-
-####
 MODEL = 'model'
+MODELS: Dict[str, ModelSpec] = {}
+
 OPTIMIZER = 'optimizer'
+OPTIMIZERS: Dict[str, Type[optim.Optimizer]] = dict(
+    adam=optim.Adam,
+    sgd=optim.SGD,
+    adagrad=optim.Adagrad,
+    adam_w=optim.AdamW,
+    adadelta=optim.Adadelta,
+    sparse_adam=optim.SparseAdam)
+try:
+    # this is still experimental
+    import adabound
+    OPTIMIZERS['ada_bound'] = adabound.AdaBound
+except:
+    pass
+
 SCHEDULE = 'schedule'
+SCHEDULES: Dict[str, Any] = {}
+
 CRITERION = 'criterion'
+CRITERIA: Dict[str, Any] = {}
+
+TRANSFORM = 'transform'     # pre and post processing
+TRANSFORMS: Dict[str, Callable[[str], str]] = {}   # str -> str
 
 registry = {
-    MODEL: dict(),
-    OPTIMIZER: dict(
-        adam=optim.Adam,
-        sgd=optim.SGD,
-        adagrad=optim.Adagrad,
-        adam_w=optim.AdamW,
-        adadelta=optim.Adadelta,
-        sparse_adam=optim.SparseAdam),
-    SCHEDULE: dict(),
-    CRITERION: dict(),
+    MODEL: MODELS,
+    OPTIMIZER: OPTIMIZERS,
+    SCHEDULE: SCHEDULES,
+    CRITERION: CRITERIA,
+    TRANSFORM: TRANSFORMS
 }
 
 
@@ -124,18 +74,6 @@ def snake_case(word):
     word = re.sub(r"([a-z\d])([A-Z])", r'\1_\2', word)
     word = word.replace("-", "_")
     return word.lower()
-
-
-@dataclass
-class Model:
-    name: str
-    Model: Any
-    Trainer: Any
-    Generator: Any
-    Experiment: Type[BaseExperiment]
-
-    def experiment(self, work_dir, *args, **kwargs):
-        return self.Experiment(work_dir, *args, **kwargs)
 
 
 def register(kind, name=None):
@@ -156,16 +94,12 @@ def register(kind, name=None):
         assert _name, f'name is required for {cls}'
         assert isinstance(_name, str), f'name={_name} is not a string'
         assert _name not in registry[kind], f'{_name} model type is already registered.'
-        m = Model(name=_name, Model=getattr(cls, 'make_model'),
-                  Trainer=getattr(cls, 'make_trainer'),
-                  Generator=getattr(cls, 'make_generator', None),
-                  Experiment=getattr(cls, 'experiment_type'))
+        m = ModelSpec(name=_name, Model=getattr(cls, 'make_model'),
+                      Trainer=getattr(cls, 'make_trainer'),
+                      Generator=getattr(cls, 'make_generator', None),
+                      Experiment=getattr(cls, 'experiment_type'))
         registry[kind][_name] = m
-        log.info(f"registering model: {_name}")
-        # for backward compat, also add to the dictionaries, (until we transition fully)
-        trainers[_name] = m.Trainer
-        factories[_name] = m.Model
-        generators[_name] = m.Generator
+        log.debug(f"registering model: {_name}")
         return cls
 
     def _wrap_cls(cls):
@@ -182,14 +116,35 @@ def __register_all():
     # import, so register() calls can happen
     from importlib import import_module
     modules = [
+        'rtg.module.tfmnmt',
+        'rtg.module.skptfmnmt',
+        'rtg.module.wvtfmnmt',
+        'rtg.module.wvskptfmnmt',
+        'rtg.module.rnnmt',
+        'rtg.module.ext.tfmextemb',
+        'rtg.module.ext.robertamt',
+        'rtg.module.mtfmnmt',
+        'rtg.module.hybridmt',
+        'rtg.lm.rnnlm',
+        'rtg.lm.tfmlm',
+        'rtg.emb.word2vec',
         'rtg.emb.tfmcls',
+        'rtg.module.criterion',
+        'rtg.module.schedule',
     ]
     for name in modules:
         import_module(name)
+    msg = []
+    for k, v in registry.items():
+        msg.append(f'{k}:\t' + ', '.join(v.keys()))
+    msg = '\n  '.join(msg)
+    log.info(f"Registered all components; your choices are ::\n  {msg}")
 
-__register_all()
 
 if __name__ == '__main__':
+    from rtg.exp import BaseExperiment
+    # a simple test case
+
     @register(MODEL)
     class MyModel:
         model_type = 'mymodel'

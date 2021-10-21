@@ -1,3 +1,4 @@
+model_type: tfmnmt
 model_args:
   ff_size: 512
   hid_size: 256
@@ -9,7 +10,6 @@ model_args:
   src_vocab: 8000
   tgt_vocab: 8000
   tied_emb: three-way
-model_type: tfmnmt
 
 optimizer:
   name: adam
@@ -28,11 +28,13 @@ schedule:
     model_dim: 256
 
 criterion:
-  name: smooth_kld    #options "cross_entropy", "smooth_kld", "binary_cross_entropy", "triplet_loss"
+  name: kl_divergence
   args:
+    reduction: macro
     label_smoothing: 0.1
 
 prep:
+  codec_lib: nlcodec
   max_types: 500
   pieces: bpe
   shared_vocab: true
@@ -47,18 +49,14 @@ prep:
   mono_src: []
   mono_tgt: []
 tester:
-  decoder:
-    beam_size: 4
-    batch_size: 12000  # this is for 1 beam; effective_batch_size = batch_size / beam_size
-    lp_alpha: 0.0     # length penalty
-    max_len: 50
   suite:
     valid:
     - experiments/sample-data/sampl.valid.fr.tok
     - experiments/sample-data/sampl.valid.en
+
 trainer:
   init_args:
-    chunk_size: 10
+    #chunk_size: 10
     grad_accum: 1    # How many batches to accumulate gradients over
   batch_size: 1024
   check_point: 400

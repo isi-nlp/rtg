@@ -34,17 +34,20 @@ setuptools.setup(
     platforms=['any'],
     install_requires=[
         'ruamel.yaml >= 0.17.10',
-        'sacrebleu == 1.4.14',
+        #'sacrebleu == 2.0.1',       # them, didnt accept my PR :(  https://github.com/mjpost/sacrebleu/pull/163
+        #'sacrebleu @ git+https://github.com/thammegowda/sacrebleu.git@7a8b0e5f',   #2.0.1   # requires new pip
+        'sacrebleu_macrof == 2.0.1',   # so I released my version
         'sentencepiece >= 0.1.85',
         'tensorboard >= 2.6.0',
         'tqdm >= 4.45.0',
-        'mosestokenizer >= 1.0.0',
         'nlcodec >= 0.4.0',
         'torch >= 1.8.0',
         'sacremoses >= 0.0.45',
         'portalocker >= 2.0.0',
         'torchtext >= 0.10.0',
-        'pyspark >= 3.0.0'
+        'pyspark >= 3.0.0',
+        #'utoken >= 0.1.3',
+        #'wildebeest @ git+https://github.com/uhermjakob/wildebeest.git@3bcf6f8',  # 0.7.0
     ],
     extra_requires={
         'big': ['pyspark >= 3.0'],

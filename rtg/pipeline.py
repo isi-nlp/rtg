@@ -4,7 +4,7 @@
 # Created: 3/9/19
 
 import argparse
-from rtg import log, TranslationExperiment as Experiment
+from rtg import log, TranslationExperiment as Experiment, __version__
 from rtg.exp import load_conf
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
@@ -14,12 +14,11 @@ from dataclasses import dataclass
 import torch
 import random
 from collections import defaultdict
-from mosestokenizer import MosesDetokenizer
-from sacrebleu import corpus_bleu, BLEUScore
+
+from sacrebleu import corpus_bleu, corpus_macrof
 import inspect
 import copy
 import json
-import subprocess
 from rtg.distrib import DistribTorch
 from rtg.registry import ProblemType
 
@@ -70,54 +69,30 @@ class Pipeline:
                 assert Path(conf['prep']['finetune_src']).exists()
                 assert Path(conf['prep']['finetune_tgt']).exists()
 
-    def moses_detokenize(self, inp: Path, out: Path, col=0, lang='en', post_op=None):
-        log.info(f"detok : {inp} --> {out}")
-        tok_lines = IO.get_lines(inp, col=col, line_mapper=lambda x: x.split())
-        # TODO: replace with sacremoses
-        with MosesDetokenizer(lang=lang) as detok:
-            detok_lines = (detok(tok_line) for tok_line in tok_lines)
-            if post_op:
-                detok_lines = (post_op(line) for line in detok_lines)
-            IO.write_lines(out, detok_lines)
-
-    @classmethod
-    def shell_pipe(cls, cmd_line, inp, out):
-        """
-
-        :param cmd_line: shell commandlines
-        :param inp: input file, to read records
-        :param out:  output file to store records
-        :return:
-        """
-        log.info("Shell cmd:: {cmd_line}")
-        with IO.reader(inp) as rdr, IO.writer(out) as wtr:
-            proc = subprocess.Popen(cmd_line, stdin=rdr, stdout=wtr, shell=True)
-            proc.wait()
-        log.info("Shell cmd:: Done")
-
     def detokenize(self, inp: Path):
-
-        ext_detokenizer = self.exp.config.get('tester', {}).get('detokenizer')
-        if ext_detokenizer:
-            detok_file = inp.with_suffix('.detok')
-            self.shell_pipe(cmd_line=ext_detokenizer, inp=inp, out=detok_file)
-        else:
-            detok_file = inp.with_suffix('.mosesdetok')
-            self.moses_detokenize(inp, out=detok_file, col=0)
+        post_proc = self.exp.get_post_transform(side='tgt')
+        detok_file = inp.with_suffix('.detok')
+        with inp.open() as lines, detok_file.open('w') as out:
+            for line in lines:
+                line = line.split('\t')[0]
+                out.write(post_proc(line) + '\n')
         return detok_file
 
-    def evaluate_file(self, detok_hyp: Path, ref: Union[Path, List[str]], lowercase=True) -> float:
+    def evaluate_mt_file(self, detok_hyp: Path, ref: Union[Path, List[str]], lowercase=True) -> float:
         detok_lines = list(IO.get_lines(detok_hyp))
         # takes multiple refs, but here we have only one
-        ref_liness = [IO.get_lines(ref) if isinstance(ref, Path) else ref]
-        bleu: BLEUScore = corpus_bleu(sys_stream=detok_lines, ref_streams=ref_liness,
-                                 lowercase=lowercase)
-        # this should be part of new sacrebleu  release (i sent a PR ;)
+        ref_lines = IO.get_lines(ref) if isinstance(ref, Path) else ref
+        ref_liness = [ref_lines]
+        bleu = corpus_bleu(hypotheses=detok_lines, references=ref_liness, lowercase=lowercase)
         bleu_str = bleu.format()
-        bleu_file = detok_hyp.with_name(
-            detok_hyp.name + ('.lc' if lowercase else '.oc') + '.sacrebleu')
-        log.info(f'BLEU {detok_hyp} : {bleu_str}')
+        bleu_file = detok_hyp.with_name(detok_hyp.name + ('.lc' if lowercase else '.oc') + '.sacrebleu')
+        log.info(f'{detok_hyp}: {bleu_str}')
         IO.write_lines(bleu_file, bleu_str)
+        macrof1 = corpus_macrof(hypotheses=detok_lines, references=ref_liness, lowercase=lowercase)
+        macrof1_str = macrof1.format()
+        macrof1_file = detok_hyp.with_name(detok_hyp.name + ('.lc' if lowercase else '.oc') + '.macrof1')
+        log.info(f'{detok_hyp}: {macrof1_str}')
+        IO.write_lines(macrof1_file, macrof1_str)
         return bleu.score
 
     def decode_eval_file(self, decoder, src: Union[Path, List[str]], out_file: Path,
@@ -136,7 +111,7 @@ class Pipeline:
                 decoder.decode_file(src, out, **dec_args)
         detok_hyp = self.detokenize(out_file)
         if ref:
-            return self.evaluate_file(detok_hyp, ref, lowercase=lowercase)
+            return self.evaluate_mt_file(detok_hyp, ref, lowercase=lowercase)
 
     def tune_decoder_params(self, exp: Experiment, tune_src: str, tune_ref: str, batch_size: int,
                             trials: int = 10, lowercase=True,
@@ -206,7 +181,6 @@ class Pipeline:
             # JSON keys cant be tuples, so we stringify them
             data = {str(k): v for k, v in memory.items()}
             IO.write_lines(tune_log, json.dumps(data))
-
 
     def run_classification_tests(self, exp=None, args=None):
         from rtg.emb.tfmcls import ClassificationExperiment
@@ -367,6 +341,7 @@ class Pipeline:
 
 def parse_args():
     parser = argparse.ArgumentParser(prog="rtg-pipe", description="RTG Pipeline CLI")
+    parser.add_argument('-v', '--version', action='version', version=f'%(prog)s {__version__}')
     parser.add_argument("exp", metavar='EXP_DIR', help="Working directory of experiment", type=Path)
     parser.add_argument("conf", metavar='conf.yml', type=Path, nargs='?',
                         help="Config File. By default <work_dir>/conf.yml is used")
@@ -415,6 +390,7 @@ def parse_args():
     exp = ExpFactory(args.exp, config=conf_file, read_only=read_only)
     dtorch.barrier()
     return exp
+
 
 def main():
     pipe = Pipeline(exp=parse_args())

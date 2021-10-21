@@ -5,7 +5,7 @@
 from rtg.exp import TranslationExperiment as Experiment
 from dataclasses import dataclass
 from pathlib import Path
-from rtg.module.decoder import Decoder
+
 from rtg import log, device, yaml
 from rtg.utils import IO
 import datetime
@@ -14,6 +14,7 @@ import os
 import torch
 import time
 import argparse
+
 
 @dataclass
 class ExperimentExporter:

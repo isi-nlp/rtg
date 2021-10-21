@@ -10,7 +10,7 @@ from typing import Optional, Callable
 import torch
 from torch import nn
 from rtg import log, device, BatchIterable, Batch
-from rtg.lm import LanguageModel
+from rtg.module import LangModel
 from rtg import TranslationExperiment as Experiment
 from rtg.module.tfmnmt import (Generator, Embeddings, PositionalEncoding,
                                MultiHeadedAttention, PositionwiseFeedForward, TransformerTrainer)
@@ -24,9 +24,10 @@ import time
 But here, decoder layer is just like Encoder layer: self_attn and feed forward"""
 from rtg.module.tfmnmt import EncoderLayer as LMDecoderLayer
 from rtg.module.tfmnmt import Encoder as LMDecoder
+from rtg.registry import register, MODEL
 
-
-class TfmLm(LanguageModel):
+@register(MODEL, name='tfmlm')
+class TfmLm(LangModel):
 
     def __init__(self, decoder: LMDecoder, embedder, generator: Generator):
         super().__init__()
@@ -78,12 +79,18 @@ class TfmLm(LanguageModel):
         model.init_params()
         return model, args
 
+    @classmethod
+    def make_trainer(cls, *args, **kwargs):
+        return TfmLmTrainer(*args, model_factory=cls.make_model, **kwargs)
+
+    @classmethod
+    def make_generator(cls, *args, **kwargs):
+        from rtg.module.generator import TfmLmGenerator
+        return TfmLmGenerator(*args, **kwargs)
+
 
 class TfmLmTrainer(TransformerTrainer):
 
-    def __init__(self, *args, model_factory=TfmLm.make_model, **kwargs):
-        super().__init__(*args, model_factory=model_factory, **kwargs)
-        self.model: TfmLm = self.model  # type annotation
 
     def run_valid_epoch(self, data_iter: BatchIterable) -> float:
         start = time.time()
@@ -129,10 +136,10 @@ class TfmLmTrainer(TransformerTrainer):
         side = 'tgt'  # TODO: this should be inferrable or configurable instead of hardcoded
 
         train_data = self.exp.get_mono_data('train', side, batch_size=batch_size,
-                                            batch_first=True, sort_dec=False,
+                                            batch_first=True, sort_desc=False,
                                             num_batches=rem_steps, shuffle=True)
         val_data = self.exp.get_mono_data('valid', side, batch_size=batch_size,
-                                          batch_first=True, sort_dec=False)
+                                          batch_first=True, sort_desc=False)
 
         train_state = TrainerState(self.model, check_point=check_point)
         train_state.train_mode(True)

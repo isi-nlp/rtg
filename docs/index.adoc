@@ -11,7 +11,7 @@ USC Information Sciences Institute  Natural Language Group
 :toc: left
 //injects google analytics to <head>
 :docinfo2:
-
+:hide-uri-scheme:
 
 include::00-intro.adoc[]
 
@@ -29,3 +29,4 @@ include::50-serve.adoc[]
 
 include::60-develop.adoc[]
 
+include::80-migration.adoc[]
