@@ -4,6 +4,8 @@
 # Created: 6/15/21
 import random
 from pathlib import Path
+import tempfile
+import shutil
 
 from torchtext.datasets import DBpedia
 
@@ -57,8 +59,8 @@ setup_dataset()
 
 
 def test_tfmcls_model():
-    # tmp_dir = tempfile.mkdtemp()
-    tmp_dir = Path('tmp.dbpedia-exp')
+    tmp_dir = tempfile.mkdtemp()
+    #tmp_dir = Path('tmp.dbpedia-exp')
     config = load_conf('experiments/transformer.classifier.yml')
     exp = registry[MODEL]['tfmcls'].Experiment(tmp_dir, config=config, read_only=False)
     exp.config['trainer'].update(dict(steps=50, check_point=25))
@@ -66,4 +68,4 @@ def test_tfmcls_model():
     Pipeline(exp).run(run_tests=False)
     sanity_check_experiment(exp, samples=False, shared_vocab=False)
     print(f"Cleaning up {tmp_dir}")
-    # shutil.rmtree(tmp_dir, ignore_errors=True)
+    shutil.rmtree(tmp_dir, ignore_errors=True)

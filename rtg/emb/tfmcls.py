@@ -22,7 +22,7 @@ from rtg.eval.clsmetric import ClsMetric
 from rtg.exp import TranslationExperiment
 from rtg.module import Model
 from rtg.module.tfmnmt import (Encoder, EncoderLayer, MultiHeadedAttention, PositionwiseFeedForward,
-                               PositionalEncoding, Embeddings)
+                               PositionalEncoding, Embeddings, BatchIterable)
 from rtg.module.trainer import SteppedTrainer, TrainerState, EarlyStopper
 from rtg.registry import register, MODEL, ProblemType
 from rtg.utils import get_my_args, IO
@@ -55,7 +55,9 @@ class Classifier(nn.Module):
     scores = {
         'logits': lambda x, dim=None: x,
         'softmax': F.softmax,
+        'probs': F.softmax,
         'log_softmax': F.log_softmax,
+        'log_probs': F.log_softmax,
         'sigmoid': lambda x, dim=None: x.sigmoid(),
     }
 
@@ -92,6 +94,12 @@ class ClassificationExperiment(TranslationExperiment):
     def src_to_ids(self):
         # EOS is added by batch maker during training
         return partial(self.src_field.encode_as_ids, add_bos=False, add_eos=True)
+
+    def get_val_data(self, batch_size: Union[int, Tuple[int, int]], sort_desc=False, batch_first=True,
+                     shuffle=False, y_is_cls=False):
+        return BatchIterable(self.valid_file, batch_size=batch_size, sort_desc=sort_desc,
+                             batch_first=batch_first, shuffle=shuffle, field=self.tgt_vocab,
+                             keep_in_mem=True, y_is_cls=y_is_cls, **self._get_batch_args())
 
     def pre_process(self, args=None, force=False):
         args = args or self.config.get('prep')
@@ -236,6 +244,7 @@ class ClassificationExperiment(TranslationExperiment):
 
 @register(kind=MODEL)
 class TransformerClassifier(Model):
+
     model_type = 'tfmcls'
     experiment_type = ClassificationExperiment
 
@@ -488,10 +497,8 @@ class ClassifierTrainer(SteppedTrainer):
                         batch = batch.to(device)
 
                     x_mask = (batch.x_seqs != batch.pad_val).unsqueeze(1)
-                    scores = self.model(src=batch.x_seqs, src_mask=x_mask,
-                                        score=self.criterion.input_type)
-                    loss = self.loss_func(scores=scores, labels=batch.ys,
-                                          train_mode=True, take_step=take_step)
+                    scores = self.model(src=batch.x_seqs, src_mask=x_mask, score=self.criterion.input_type)
+                    loss = self.loss_func(scores=scores, labels=batch.ys, train_mode=True, take_step=take_step)
 
                 if stopper and take_step:
                     stopper.step()

@@ -39,7 +39,7 @@ schedule:
     model_dim: 128
 
 criterion:
-  name: cross_entropy
+  name: sparse_cross_entropy
   # no args
 
 prep:
