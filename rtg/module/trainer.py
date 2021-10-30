@@ -73,7 +73,7 @@ class EarlyStopper:
     """
     enabled: bool = True
     by: str = 'loss'
-    minimize: bool = True
+    minimize: Optional[bool] = None
     patience: int = 15
     min_steps: int = 0
     cur_step: int = 0
@@ -82,13 +82,15 @@ class EarlyStopper:
     measures: List[float] = field(default_factory=list)  # could be loss or accuracy
 
     buf = 3  # take average of these many points; avoids weird dips and surges as stop
-    minimizing = True  # minimize loss, maximize accuracy
 
     def __post_init__(self):
+        if self.minimize is None:   # None => not set, we resolve it
+            self.minimize = self.by in ('loss',)  # else maximize
+
         if self.enabled:
             assert self.patience > 0, f'early_stop.patience > 0 ? given={self.patience}'
             assert 1 <= self.buf <= self.patience
-            goal = "minimize" if self.minimizing else "maximize"
+            goal = "minimize" if self.minimize else "maximize"
             log.info(f"Early stopping enabled; {goal} {self.by}; patience {self.patience}")
 
     def step(self):
@@ -113,7 +115,7 @@ class EarlyStopper:
         old = sum(old) / len(old)  # mean
         recent = self.measures[-self.patience:]  # the patience of seeing the post mark
 
-        if self.minimizing:
+        if self.minimize:
             # older value is smaller than or same as best of recent => time to stop
             should_stop = round(old, self.signi_round) <= round(min(recent), self.signi_round)
         else:
