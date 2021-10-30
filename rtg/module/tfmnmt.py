@@ -650,7 +650,9 @@ class TransformerTrainer(SteppedTrainer):
 
         batch_count = -1
         stopper = None
-        early_stopped = False  # or converged
+        early_stopped_flag = self.exp.model_dir / '_EARLY_STOPPED'
+        if early_stopped_flag.exists():
+            early_stopped_flag.unlink()
         if early_stop:
             stopper = EarlyStopper(cur_step=self.start_step, **early_stop)
         if not stopper or not stopper.enabled:
@@ -661,10 +663,6 @@ class TransformerTrainer(SteppedTrainer):
             for batch in data_bar:
                 batch_count += 1
                 take_step = (batch_count % self.grad_accum_interval) == 0
-
-                # if update_interval == 0:
-                #     self.model.zero_grad()
-
                 #  if not dataparallel, then move
                 if self.n_gpus <= 1:
                     batch = batch.to(device)
@@ -735,11 +733,12 @@ class TransformerTrainer(SteppedTrainer):
                             if stopper.is_stop():
                                 log.info(f"Stopping at {stopper.cur_step} because {stopper.by}"
                                          f" didnt improve over {stopper.patience} checkpoints")
-                                early_stopped = True
-                                break
-                    unsaved_state = False
-                    gc.collect()
+                                early_stopped_flag.touch()
+
                     distr.barrier()
+                    unsaved_state = False
+                    if early_stopped_flag.exists():
+                        break
 
         # End of training
         if unsaved_state and distr.is_global_main:
@@ -750,7 +749,7 @@ class TransformerTrainer(SteppedTrainer):
             self.make_check_point(train_loss, val_loss=val_loss, keep_models=keep_models)
 
         distr.barrier()
-        return early_stopped
+        return early_stopped_flag.exists()
 
     def _log_resources(self, batch):
         self.tbd.add_scalars('resources_mem',
