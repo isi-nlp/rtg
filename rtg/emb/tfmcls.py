@@ -482,7 +482,9 @@ class ClassifierTrainer(SteppedTrainer):
 
         batch_count = -1
         stopper = None
-        early_stopped = False  # or converged
+        early_stopped_flag = self.exp.model_dir / '_EARLY_STOPPED'
+        if early_stopped_flag.exists():
+            early_stopped_flag.unlink()
         if early_stop:
             stopper = EarlyStopper(cur_step=self.start_step, **early_stop)
 
@@ -536,11 +538,13 @@ class ClassifierTrainer(SteppedTrainer):
                             if stopper.is_stop():
                                 log.info(f"Stopping at {stopper.cur_step} because {stopper.by}"
                                          f" didnt improve over {stopper.patience} checkpoints")
-                                early_stopped = True
-                                break
-                    unsaved_state = False
-                    gc.collect()
+                                early_stopped_flag.touch()
+
                     distr.barrier()
+                    unsaved_state = False
+                    if early_stopped_flag.exists():
+                        log.info("Main process was early stopped; so stopping this worker process also")
+                        break
 
         # End of training
         if unsaved_state and distr.is_global_main:
@@ -550,5 +554,5 @@ class ClassifierTrainer(SteppedTrainer):
             self.make_check_point(train_loss, val_loss=val_loss, keep_models=keep_models)
 
         distr.barrier()
-        return early_stopped
+        return early_stopped_flag.exists()
 

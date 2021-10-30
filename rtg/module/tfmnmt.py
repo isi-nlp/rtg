@@ -734,14 +734,11 @@ class TransformerTrainer(SteppedTrainer):
                                 log.info(f"Stopping at {stopper.cur_step} because {stopper.by}"
                                          f" didnt improve over {stopper.patience} checkpoints")
                                 early_stopped_flag.touch()
-                                distr.barrier()
-                                break
-                    else:
-                        distr.barrier()
-                        if early_stopped_flag.exists():
-                            log.info("Main process was early stopped; so stopping this worker process also")
-                            break
+
+                    distr.barrier()
                     unsaved_state = False
+                    if early_stopped_flag.exists():
+                        break
 
         # End of training
         if unsaved_state and distr.is_global_main:
