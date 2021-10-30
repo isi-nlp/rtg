@@ -81,14 +81,17 @@ class Pipeline:
     def evaluate_mt_file(self, detok_hyp: Path, ref: Union[Path, List[str]], lowercase=True) -> float:
         detok_lines = list(IO.get_lines(detok_hyp))
         # takes multiple refs, but here we have only one
-        ref_lines = IO.get_lines(ref) if isinstance(ref, Path) else ref
-        ref_liness = [ref_lines]
-        bleu = corpus_bleu(hypotheses=detok_lines, references=ref_liness, lowercase=lowercase)
+        if isinstance(ref, Path):
+            ref = [x.strip() for x in IO.get_lines(ref)]
+        assert isinstance(ref, list), f'List of strings expected, but given {type(ref)} '
+        assert isinstance(ref[0], str), f'List of strings expected, but given List of {type(ref[0])} '
+        refs = [ref]
+        bleu = corpus_bleu(hypotheses=detok_lines, references=refs, lowercase=lowercase)
         bleu_str = bleu.format()
         bleu_file = detok_hyp.with_name(detok_hyp.name + ('.lc' if lowercase else '.oc') + '.sacrebleu')
         log.info(f'{detok_hyp}: {bleu_str}')
         IO.write_lines(bleu_file, bleu_str)
-        macrof1 = corpus_macrof(hypotheses=detok_lines, references=ref_liness, lowercase=lowercase)
+        macrof1 = corpus_macrof(hypotheses=detok_lines, references=refs, lowercase=lowercase)
         macrof1_str = macrof1.format()
         macrof1_file = detok_hyp.with_name(detok_hyp.name + ('.lc' if lowercase else '.oc') + '.macrof1')
         log.info(f'{detok_hyp}: {macrof1_str}')
