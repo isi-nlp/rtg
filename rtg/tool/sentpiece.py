@@ -41,7 +41,8 @@ def main(model, inp, out, ids, detokenize):
 
 
 if __name__ == '__main__':
-    p = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    p = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+                                description="Sentence piece segmentation")
     p.add_argument('-m', '--model', required=True, help='Sentence piece model path')
     p.add_argument('-i', '--inp', type=argparse.FileType('r'), default=sys.stdin,
                    help='Input file path')
