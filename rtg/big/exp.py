@@ -18,7 +18,6 @@ from pyspark.sql.types import StructType, StructField, LongType
 from rtg import cpu_count, log
 from rtg.data.dataset import Batch, LoopingIterable
 from rtg.exp import TranslationExperiment, Field
-import numpy as np
 
 
 def get_spark_session(config: Dict[str, str]) -> SparkSession:
