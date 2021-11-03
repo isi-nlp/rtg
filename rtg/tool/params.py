@@ -6,7 +6,6 @@
 import logging as log
 from pathlib import Path
 from rtg.exp import TranslationExperiment
-from rtg.module.decoder import  instantiate_model
 import torch
 
 log.basicConfig(level=log.INFO)
@@ -19,7 +18,7 @@ def main(args=None):
     assert model_path
     assert model_path.exists()
     state = torch.load(model_path, map_location='cpu')
-    model = instantiate_model(state, exp=exp)
+    model = exp.load_model_with_state(checkpt_state=state)
     print(model)
 
     total = 0
@@ -38,6 +37,7 @@ def main(args=None):
     print("======")
     print("\n".join(f'{name: <{justify}}\t{val: {justify2},}\t{shape}' for name, val, shape in table))
     print(f"\n\n{'Total': <{justify}}\t{total: {justify2},}\t")
+
 
 def parse_args():
     import argparse

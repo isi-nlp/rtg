@@ -61,7 +61,8 @@ def write_all(lines, out):
 
 
 def main():
-    p = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    p = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+                                description="Segment tokens using the model's vocabulary (e.g. BPE)")
     p.add_argument('exp', help='Path to experiment which has vocabulary files under <exp>/data/')
     p.add_argument('-i', '--inp', type=argparse.FileType('r'), default=sys.stdin,
                    help='Input file path')

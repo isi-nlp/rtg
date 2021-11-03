@@ -25,7 +25,7 @@ schedule:
   args:
     constant: 2
     warmup: 8000
-    model_dim: 768
+    model_dim: 1024
 
 criterion:
   name: smooth_kld    #options "cross_entropy", "smooth_kld", "binary_cross_entropy", "triplet_loss"
