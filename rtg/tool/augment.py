@@ -223,13 +223,12 @@ class Augmentor:
             assert max_src_len > 0
             assert max_tgt_len > 0
             df = self.inp_df
+            short_df = df.filter((SF.size(df.src) <= int(0.6*max_src_len)) & (SF.size(df.tgt) <= int(0.6*max_tgt_len)))
+            short_rdd = short_df.rdd.cache()
 
-            short_df = df.filter((SF.size(df.src) <= 0.6*max_src_len) & (SF.size(df.tgt) <= 0.6*max_tgt_len))
-            short_df.cache()
-
-            cat_rdd = (short_df.rdd.cartesian(short_df.rdd)
-                       .filter(lambda x: x[0][0] != x[1][0] and (len(x[0][1]) + len(x[1][1]) <= max_src_len)
-                                        and (len(x[0][2]) + len(x[1][2]) <= max_tgt_len)))
+            cat_rdd = (short_rdd.cartesian(short_rdd)
+                       .filter(lambda x: (x[0][0] != x[1][0] and (len(x[0][1]) + len(x[1][1]) <= max_src_len)
+                                         and (len(x[0][2]) + len(x[1][2]) <= max_tgt_len))))
                        #.map(lambda x: (x[0][1] + x[1][1], x[0][2] + x[1][2])))
             n_samples = int(self.n_inp_recs * concat)
             # cat_rdd.cache()
@@ -241,8 +240,8 @@ class Augmentor:
             samples = cat_rdd.sample(withReplacement=False, fraction=fraction)
             i = 0
             for rec1, rec2 in tqdm(samples.toLocalIterator(), desc="Writing concats", total=n_samples):
-                src = ' '.join(rec1[1]) + ' '.join(rec2[1])
-                tgt = ' '.join(rec1[2]) + ' '.join(rec2[2])
+                src = ' '.join(rec1[1]) + ' ' + ' '.join(rec2[1])
+                tgt = ' '.join(rec1[2]) + ' ' + ' '.join(rec2[2])
                 # src, tgt = ' '.join(src), ' '.join(tgt)
                 self.write_rec(src, tgt, 'CONCAT1')
                 i += 1
