@@ -174,17 +174,19 @@ class Augmentor:
 
     def run(self, copy=False, noise_src=False, denoise_tgt=False, concat=0, **args):
         config = {
-            'spark.serializer': 'org.apache.spark.serializer.KryoSerializer',
-            'spark.driver.maxResultSize': 0,
+            #'spark.serializer': 'org.apache.spark.serializer.KryoSerializer',
+            #'spark.driver.maxResultSize': 0,
+            
         }
         for cli_name, prop_name in [('spark_master', 'spark.master'), ('spark_memory', 'spark.driver.memory'),
                                     ('spark_tmp', 'spark.local.dir')]:
             if args.get(cli_name):
                 config[prop_name] = args.get(cli_name)
         self._init_spark(config)
+        self.inp_df  # load df
         if copy:
             log.info("copying source to target")
-            for rec in self.inp_df.toLocalIterator():
+            for rec in tqdm(self.inp_df.toLocalIterator(), total=self.n_inp_recs, desc="Copy"):
                 src, tgt = ' '.join(rec.src), ' '.join(rec.tgt)
                 self.write_rec(src, tgt, 'ORIG_INP')
         for enabled, side in [(noise_src, 'src'), (denoise_tgt, 'tgt')]:
@@ -202,7 +204,8 @@ class Augmentor:
                 chain.append(WordReplace(rate=args.get('word_replace'), replacements=['<MASK>']))
             transform = Transforms(chain=chain)
 
-            for rec in self.inp_df.toLocalIterator():
+            for rec in tqdm(self.inp_df.toLocalIterator(), total=self.n_inp_recs,
+                            desc=f"Writing noisy {side} recs"):
                 src, tgt = rec.src, rec.tgt
                 if side == 'src':
                     src = transform(src)
@@ -231,10 +234,13 @@ class Augmentor:
                                          and (len(x[0][2]) + len(x[1][2]) <= max_tgt_len))))
                        #.map(lambda x: (x[0][1] + x[1][1], x[0][2] + x[1][2])))
             n_samples = int(self.n_inp_recs * concat)
-            # cat_rdd.cache()
-            # total_samples = cat_rdd.count()  # this is accurate but too expensive
-            total_samples = int(0.5 * self.n_inp_recs * (self.n_inp_recs - 1) * 0.7)  # approximation
+            cat_rdd.cache()
+            total_samples = cat_rdd.count()  # this is accurate but too expensive
+            #total_samples = int(0.5 * self.n_inp_recs * (self.n_inp_recs - 1) * 0.7)  # approximation
             fraction = n_samples / total_samples
+            if fraction > 1:
+                fraction = 1
+                n_samples = total_samples
             log.info(f"Sampling {self.n_inp_recs:,} x {concat} = {n_samples:,} out of {total_samples:,}"
                      f" total possible concats. fraction={fraction:g}")
             samples = cat_rdd.sample(withReplacement=False, fraction=fraction)
