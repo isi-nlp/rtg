@@ -128,13 +128,13 @@ class Augmentor:
 
     def read_inp_recs(self):
 
-        def tokenizer(s):
-            return s.split()
+        def no_op(x):
+            return x
 
+        max_len = 2 ** 10
         rdd, n_recs = read_raw_parallel_recs(
             self.spark, src_path=self.src_in, tgt_path=self.tgt_in, truncate=True,
-            src_len=self.args.get('max_src_len', 2 ** 10), tgt_len=self.args.get('max_tgt_len', 2 ** 10),
-            src_tokenizer=tokenizer, tgt_tokenizer=tokenizer)
+            src_len=max_len, tgt_len=max_len, src_tokenizer=no_op, tgt_tokenizer=no_op)
         df = rdd.toDF(['id', 'src', 'tgt'])
         return df, n_recs
 
@@ -204,6 +204,7 @@ class Augmentor:
 
             for rec in self.inp_df.toLocalIterator():
                 src, tgt = rec.src, rec.tgt
+                src, tgt = src.split(), tgt.split()
                 if side == 'src':
                     src = transform(src)
                     tag = 'NOISY_SRC'
@@ -223,26 +224,25 @@ class Augmentor:
             assert max_src_len > 0
             assert max_tgt_len > 0
             df = self.inp_df
-            short_df = df.filter((SF.size(df.src) <= int(0.6*max_src_len)) & (SF.size(df.tgt) <= int(0.6*max_tgt_len)))
-            short_rdd = short_df.rdd.cache()
-
+            short_df = df.filter((SF.length(df.src) <= int(0.8*max_src_len))
+                                 & (SF.length(df.tgt) <= int(0.8*max_tgt_len)))
+            short_rdd = short_df.rdd
             cat_rdd = (short_rdd.cartesian(short_rdd)
                        .filter(lambda x: (x[0][0] != x[1][0] and (len(x[0][1]) + len(x[1][1]) <= max_src_len)
                                          and (len(x[0][2]) + len(x[1][2]) <= max_tgt_len))))
-                       #.map(lambda x: (x[0][1] + x[1][1], x[0][2] + x[1][2])))
+                       # .map(lambda x: (x[0][1] + x[1][1], x[0][2] + x[1][2])))
             n_samples = int(self.n_inp_recs * concat)
             # cat_rdd.cache()
             # total_samples = cat_rdd.count()  # this is accurate but too expensive
             total_samples = int(0.5 * self.n_inp_recs * (self.n_inp_recs - 1) * 0.7)  # approximation
             fraction = n_samples / total_samples
             log.info(f"Sampling {self.n_inp_recs:,} x {concat} = {n_samples:,} out of {total_samples:,}"
-                     f" total possible concats. fraction={fraction:g}")
+                     f" total possible concats (approx.). fraction={fraction:g}")
             samples = cat_rdd.sample(withReplacement=False, fraction=fraction)
             i = 0
             for rec1, rec2 in tqdm(samples.toLocalIterator(), desc="Writing concats", total=n_samples):
-                src = ' '.join(rec1[1]) + ' ' + ' '.join(rec2[1])
-                tgt = ' '.join(rec1[2]) + ' ' + ' '.join(rec2[2])
-                # src, tgt = ' '.join(src), ' '.join(tgt)
+                src = rec1[1] + ' ' + rec2[1]
+                tgt = rec1[2] + ' ' + rec2[2]
                 self.write_rec(src, tgt, 'CONCAT1')
                 i += 1
                 if i >= n_samples:
@@ -299,10 +299,10 @@ def parse_args():
     cat_p.add_argument("-cat", "--cat", "--concat", dest='concat', metavar='RATIO', type=float, default=0.0,
                         help="RATIO greater than 0 enables random parallel sentence concatenation. default=%(default)s."
                              " Number of augmentations = RATIO*|INPUT|. See -msl and -mtl to control lengths")
-    cat_p.add_argument("-msl", "--max-src-len", metavar='N_TOKS', type=int, default=120,
-                        help="Maximum source length. Active iff -cat > 0. default=%(default)s")
-    cat_p.add_argument("-mtl", "--max-tgt-len",  metavar='N_TOKS', type=int, default=120,
-                        help="Maximum target length. Active iff -cat > 0. default=%(default)s")
+    cat_p.add_argument("-msl", "--max-src-len", metavar='N_CHARS', type=int, default=200,
+                        help="Maximum chars in source sequence. Active iff -cat > 0. default=%(default)s")
+    cat_p.add_argument("-mtl", "--max-tgt-len",  metavar='N_CHARS', type=int, default=200,
+                        help="Maximum chars in target sequence. Active iff -cat > 0. default=%(default)s")
 
     para_p = parser.add_argument_group("parallelization")
     para_p.add_argument("-sm", "--spark-master", type=str, default='local[4]',
