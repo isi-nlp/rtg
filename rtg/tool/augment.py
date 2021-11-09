@@ -179,7 +179,7 @@ class Augmentor:
         log.warning(f"Going to buffer data; this may consume all the memory crash. Current usage={max_RSS()[1]}.")
         recs = list((s, t) for _, s, t in rdd.toLocalIterator())
         n = len(recs)
-        log.warning(f"Buffered {n} records Current usage={ max_RSS()[1]}")
+        log.warning(f"Buffered {n:,} records Current memory usage={max_RSS()[1]}")
         mem = set()
         while len(mem) < n ** 2:
             x = np.random.randint(0, n, dtype=np.int32)
@@ -222,8 +222,7 @@ class Augmentor:
         if copy:
             log.info("copying source to target")
             for rec in tqdm(self.inp_df.toLocalIterator(), total=self.n_inp_recs, desc="Copy"):
-                src, tgt = ' '.join(rec.src), ' '.join(rec.tgt)
-                self.write_rec(src, tgt, 'ORIG_INP')
+                self.write_rec(rec.src, rec.tgt, 'ORIG_INP')
         for enabled, side in [(noise_src, 'src'), (denoise_tgt, 'tgt')]:
             if not enabled:
                 continue  # skip
@@ -241,8 +240,7 @@ class Augmentor:
 
             for rec in tqdm(self.inp_df.toLocalIterator(), total=self.n_inp_recs,
                             desc=f"Writing noisy {side} recs"):
-                src, tgt = rec.src, rec.tgt
-                src, tgt = src.split(), tgt.split()
+                src, tgt = rec.src.split(), rec.tgt.split()
                 if side == 'src':
                     src = transform(src)
                     tag = 'NOISY_SRC'
@@ -279,13 +277,11 @@ class Augmentor:
             recs = cartesian(rdd=short_rdd, max_src_len=max_src_len, max_tgt_len=max_tgt_len)
 
             i = 0
-            for rec1, rec2 in tqdm(recs, desc="Writing concats", total=n_samples):
-                src = rec1[1] + ' ' + rec2[1]
-                tgt = rec1[2] + ' ' + rec2[2]
+            for src, tgt in tqdm(recs, desc="Writing concats", total=n_samples):
                 self.write_rec(src, tgt, 'CONCAT1')
                 i += 1
                 if i >= n_samples:
-                    log.info("Aborting early...")
+                    log.info(f"Stopping at {i:,} samples...")
                     break
             if i < n_samples:
                 log.warning(f"Expected to get {n_samples} recs but got only {i}")
