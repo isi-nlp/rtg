@@ -9,12 +9,15 @@ import random
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Any, Set, List, Sequence
+from tempfile import NamedTemporaryFile
 
+import numpy as np
 import pyspark
 import pyspark.sql.functions as SF
 from tqdm import tqdm
 
 from rtg import log
+from rtg.utils import max_RSS
 from rtg.big.exp import read_raw_parallel_recs, get_spark_session
 
 
@@ -172,18 +175,50 @@ class Augmentor:
         if self._spark:
             self._spark.stop()
 
+    def buffered_cartesian(self, rdd: pyspark.RDD, max_src_len: int, max_tgt_len: int):
+        log.warning(f"Going to buffer data; this may consume all the memory crash. Current usage={max_RSS()[1]}.")
+        recs = list((s, t) for _, s, t in rdd.toLocalIterator())
+        n = len(recs)
+        log.warning(f"Buffered {n} records Current usage={ max_RSS()[1]}")
+        mem = set()
+        while len(mem) < n ** 2:
+            x = np.random.randint(0, n, dtype=np.int32)
+            y = np.random.randint(0, n, dtype=np.int32)
+            pair = (x, y)
+            if pair in mem:
+                continue
+            mem.add(pair)
+            s1, t1 = recs[x]
+            s2, t2 = recs[y]
+            if len(s1) + len(s2) + 1 > max_src_len or (len(s2) + len(t2) + 1 > max_tgt_len):
+                continue
+            src = recs[x][0] + ' ' + recs[y][0]
+            tgt = recs[x][1] + ' ' + recs[y][1]
+            yield src, tgt
+
+    def unbuffered_cartesian(self, rdd: pyspark.RDD, max_src_len: int, max_tgt_len: int):
+        cat_rdd = (rdd.cartesian(rdd)
+                   .filter(lambda x: (x[0][0] != x[1][0] and (len(x[0][1]) + len(x[1][1]) <= max_src_len - 1)
+                                      and (len(x[0][2]) + len(x[1][2]) <= max_tgt_len - 1))))
+        samples = cat_rdd.sample(withReplacement=False, fraction=0.999)  # random record
+        for rec1, rec2 in samples.toLocalIterator():
+            src = rec1[1] + ' ' + rec2[1]
+            tgt = rec1[2] + ' ' + rec2[2]
+            assert len(src) <= max_src_len
+            assert len(tgt) <= max_tgt_len
+            yield src, tgt
+
     def run(self, copy=False, noise_src=False, denoise_tgt=False, concat=0, **args):
         config = {
             #'spark.serializer': 'org.apache.spark.serializer.KryoSerializer',
             #'spark.driver.maxResultSize': 0,
-            
         }
         for cli_name, prop_name in [('spark_master', 'spark.master'), ('spark_memory', 'spark.driver.memory'),
                                     ('spark_tmp', 'spark.local.dir')]:
             if args.get(cli_name):
                 config[prop_name] = args.get(cli_name)
         self._init_spark(config)
-        self.inp_df  # load df
+        _ = self.inp_df  # load df
         if copy:
             log.info("copying source to target")
             for rec in tqdm(self.inp_df.toLocalIterator(), total=self.n_inp_recs, desc="Copy"):
@@ -224,29 +259,27 @@ class Augmentor:
         if concat > 0:
             max_src_len = args['max_src_len']
             max_tgt_len = args['max_tgt_len']
+            buffered = True
             assert max_src_len > 0
             assert max_tgt_len > 0
             df = self.inp_df
-            short_df = df.filter((SF.length(df.src) <= int(0.8*max_src_len))
-                                 & (SF.length(df.tgt) <= int(0.8*max_tgt_len)))
+            short_df = df.filter((SF.length(df.src) <= int(0.7*max_src_len))
+                                 & (SF.length(df.tgt) <= int(0.7*max_tgt_len)))
             short_rdd = short_df.rdd
-            cat_rdd = (short_rdd.cartesian(short_rdd)
-                       .filter(lambda x: (x[0][0] != x[1][0] and (len(x[0][1]) + len(x[1][1]) <= max_src_len)
-                                         and (len(x[0][2]) + len(x[1][2]) <= max_tgt_len))))
-                       # .map(lambda x: (x[0][1] + x[1][1], x[0][2] + x[1][2])))
             n_samples = int(self.n_inp_recs * concat)
-            cat_rdd.cache()
-            total_samples = cat_rdd.count()  # this is accurate but too expensive
-            #total_samples = int(0.5 * self.n_inp_recs * (self.n_inp_recs - 1) * 0.7)  # approximation
+            total_samples = int(0.5 * self.n_inp_recs * (self.n_inp_recs - 1) * 0.7)  # approximation
             fraction = n_samples / total_samples
-            if fraction > 1:
-                fraction = 1
-                n_samples = total_samples
-            log.info(f"Sampling {self.n_inp_recs:,} x {concat} = {n_samples:,} out of {total_samples:,}"
+            log.info(f"Sampling {self.n_inp_recs:,} x {concat} = {n_samples:,} out of {total_samples:g}"
                      f" total possible concats (approx.). fraction={fraction:g}")
-            samples = cat_rdd.sample(withReplacement=False, fraction=fraction)
+
+            cartesian = self.unbuffered_cartesian
+            if buffered:
+                assert self.n_inp_recs <= 10 ** 9   # billion pairs!
+                cartesian = self.buffered_cartesian
+            recs = cartesian(rdd=short_rdd, max_src_len=max_src_len, max_tgt_len=max_tgt_len)
+
             i = 0
-            for rec1, rec2 in tqdm(samples.toLocalIterator(), desc="Writing concats", total=n_samples):
+            for rec1, rec2 in tqdm(recs, desc="Writing concats", total=n_samples):
                 src = rec1[1] + ' ' + rec2[1]
                 tgt = rec1[2] + ' ' + rec2[2]
                 self.write_rec(src, tgt, 'CONCAT1')
