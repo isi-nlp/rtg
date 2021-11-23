@@ -1567,7 +1567,7 @@ To enable this feature, we need to do following.</p>
 <div class="content">
 <pre class="rouge highlight"><code data-lang="yaml"><span class="na">prep</span><span class="pi">:</span> <span class="c1"># data preparation</span>
   <span class="s">....</span>
-  <span class="s">train_src</span><span class="err">:</span> <span class="s">wmt_data/data/de-en/europarl-v9.de-en.de.tok</span>   <span class="c1"># training data</span>
+  <span class="s">train_src</span><span class="pi">:</span> <span class="s">wmt_data/data/de-en/europarl-v9.de-en.de.tok</span>   <span class="c1"># training data</span>
   <span class="na">train_tgt</span><span class="pi">:</span> <span class="s">wmt_data/data/de-en/europarl-v9.de-en.en.tok</span>
   <span class="na">finetune_src</span><span class="pi">:</span> <span class="s">wmt_data/data/de-en/finetune.de-en.de.tok</span>   <span class="c1"># Finetuning data</span>
   <span class="na">finetune_tgt</span><span class="pi">:</span> <span class="s">wmt_data/data/de-en/finetune.de-en.en.tok</span>
@@ -1690,7 +1690,7 @@ NLCoded can be enabled as:</p>
 <div class="content">
 <pre class="rouge highlight"><code data-lang="yaml"><span class="na">prep</span><span class="pi">:</span>
   <span class="s">....</span>
-  <span class="s">codec_lib</span><span class="err">:</span> <span class="s">nlcodec</span>  <span class="c1"># default is sentpiece</span></code></pre>
+  <span class="s">codec_lib</span><span class="pi">:</span> <span class="s">nlcodec</span>  <span class="c1"># default is sentpiece</span></code></pre>
 </div>
 </div>
 <div class="sect2">
@@ -1702,7 +1702,7 @@ NLCoded can be enabled as:</p>
 <div class="content">
 <pre class="rouge highlight"><code data-lang="yaml"><span class="na">prep</span><span class="pi">:</span>
   <span class="s">....</span>
-  <span class="s">codec_lib</span><span class="err">:</span> <span class="s">nlcodec</span>  <span class="c1"># other option: sentpiece</span>
+  <span class="s">codec_lib</span><span class="pi">:</span> <span class="s">nlcodec</span>  <span class="c1"># other option: sentpiece</span>
   <span class="na">pieces</span><span class="pi">:</span> <span class="s">bpe</span>         <span class="c1"># other options: char, word</span></code></pre>
 </div>
 </div>
@@ -1722,7 +1722,7 @@ Here is how to set this for eg to 99.99% i.e. 0.9999 in <code>nlcodec</code></p>
 <div class="content">
 <pre class="rouge highlight"><code data-lang="yaml"><span class="na">prep</span><span class="pi">:</span>
   <span class="s">....</span>
-  <span class="s">codec_lib</span><span class="err">:</span> <span class="s">nlcodec</span>      <span class="c1"># other option: sentpiece</span>
+  <span class="s">codec_lib</span><span class="pi">:</span> <span class="s">nlcodec</span>      <span class="c1"># other option: sentpiece</span>
   <span class="na">pieces</span><span class="pi">:</span> <span class="s">bpe</span>             <span class="c1"># other options: char, word</span>
   <span class="na">char_coverage</span><span class="pi">:</span> <span class="s">0.9999</span></code></pre>
 </div>
@@ -1743,7 +1743,7 @@ This allows us to leverage less data more effectively.</p>
 <div class="content">
 <pre class="rouge highlight"><code data-lang="yaml"><span class="na">trainer</span><span class="pi">:</span>
   <span class="s">....</span>
-  <span class="s">split_ratio</span><span class="err">:</span> <span class="m">0.1</span>        <span class="c1"># 10% chance to suboptimally split (recursive)</span>
+  <span class="s">split_ratio</span><span class="pi">:</span> <span class="m">0.1</span>        <span class="c1"># 10% chance to suboptimally split (recursive)</span>
   <span class="na">dynamic_epoch</span><span class="pi">:</span> <span class="no">true</span>     <span class="c1"># Recompute splits for each epoch</span></code></pre>
 </div>
 </div>
@@ -1846,46 +1846,46 @@ Right thing to do for long sequences will be to split long sentences in input an
 <div class="listingblock">
 <div class="title">Old config, prior to v0.6.0:</div>
 <div class="content">
-<pre>optim:
-  args:
-    betas:
-    - 0.9
-    - 0.98
-    eps: 1.0e-09
-    label_smoothing: 0.1
-    lr: 0.1
-    warmup_steps: 4000
-    amsgrad: false
-    weight_decay: 0
-    criterion: smooth_kld
-    inv_sqrt: false
-    constant: 2
-  name: ADAM</pre>
+<pre class="rouge highlight"><code data-lang="yaml"><span class="na">optim</span><span class="pi">:</span>
+  <span class="na">args</span><span class="pi">:</span>
+    <span class="na">betas</span><span class="pi">:</span>
+    <span class="pi">-</span> <span class="m">0.9</span>
+    <span class="pi">-</span> <span class="m">0.98</span>
+    <span class="na">eps</span><span class="pi">:</span> <span class="s">1.0e-09</span>
+    <span class="na">label_smoothing</span><span class="pi">:</span> <span class="m">0.1</span>
+    <span class="na">lr</span><span class="pi">:</span> <span class="m">0.1</span>
+    <span class="na">warmup_steps</span><span class="pi">:</span> <span class="m">4000</span>
+    <span class="na">amsgrad</span><span class="pi">:</span> <span class="no">false</span>
+    <span class="na">weight_decay</span><span class="pi">:</span> <span class="m">0</span>
+    <span class="na">criterion</span><span class="pi">:</span> <span class="s">smooth_kld</span>
+    <span class="na">inv_sqrt</span><span class="pi">:</span> <span class="no">false</span>
+    <span class="na">constant</span><span class="pi">:</span> <span class="m">2</span>
+  <span class="na">name</span><span class="pi">:</span> <span class="s">ADAM</span></code></pre>
 </div>
 </div>
 <div class="listingblock">
 <div class="title">New config in v0.6.0</div>
 <div class="content">
-<pre>optimizer:
-  name: adam
-  args:
-    betas:
-    - 0.9
-    - 0.98
-    eps: 1.0e-09
-    lr: 0.1
+<pre class="rouge highlight"><code data-lang="yaml"><span class="na">optimizer</span><span class="pi">:</span>
+  <span class="na">name</span><span class="pi">:</span> <span class="s">adam</span>
+  <span class="na">args</span><span class="pi">:</span>
+    <span class="na">betas</span><span class="pi">:</span>
+    <span class="pi">-</span> <span class="m">0.9</span>
+    <span class="pi">-</span> <span class="m">0.98</span>
+    <span class="na">eps</span><span class="pi">:</span> <span class="s">1.0e-09</span>
+    <span class="na">lr</span><span class="pi">:</span> <span class="m">0.1</span>
 
-schedule:
-  name: noam
-  args:
-    constant: 2
-    warmup: 4000
-    model_dim: 512
+<span class="na">schedule</span><span class="pi">:</span>
+  <span class="na">name</span><span class="pi">:</span> <span class="s">noam</span>
+  <span class="na">args</span><span class="pi">:</span>
+    <span class="na">constant</span><span class="pi">:</span> <span class="m">2</span>
+    <span class="na">warmup</span><span class="pi">:</span> <span class="m">4000</span>
+    <span class="na">model_dim</span><span class="pi">:</span> <span class="m">512</span>
 
-criterion:
-  name: smooth_kld
-  args:
-    label_smoothing: 0.1</pre>
+<span class="na">criterion</span><span class="pi">:</span>
+  <span class="na">name</span><span class="pi">:</span> <span class="s">smooth_kld</span>
+  <span class="na">args</span><span class="pi">:</span>
+    <span class="na">label_smoothing</span><span class="pi">:</span> <span class="s">0.1</span></code></pre>
 </div>
 </div>
 </div>
@@ -2617,10 +2617,10 @@ When pyspark is enabled</p>
    <span class="s">...</span> <span class="c1"># other args</span>
 <span class="na">spark</span><span class="pi">:</span> <span class="c1"># add this block to enable spark backend</span>
   <span class="c1"># double quote the keys containing dot</span>
-  <span class="s2">"</span><span class="s">spark.master"</span><span class="err">:</span> <span class="s">local[3]</span>           <span class="c1"># set it to local[*] to use all local CPUs</span>
-  <span class="s2">"</span><span class="s">spark.app.name"</span><span class="err">:</span> <span class="s">RTG NMT on Spark</span>  <span class="c1"># Name for the App</span>
-  <span class="s2">"</span><span class="s">spark.driver.memory"</span><span class="err">:</span> <span class="s">6g</span>
-  <span class="s">#key1</span><span class="err">:</span> <span class="s">value1</span>    <span class="c1"># any other spark configs you want to control</span></code></pre>
+  <span class="s2">"</span><span class="s">spark.master"</span><span class="pi">:</span> <span class="s">local[3]</span>           <span class="c1"># set it to local[*] to use all local CPUs</span>
+  <span class="s2">"</span><span class="s">spark.app.name"</span><span class="pi">:</span> <span class="s">RTG NMT on Spark</span>  <span class="c1"># Name for the App</span>
+  <span class="s2">"</span><span class="s">spark.driver.memory"</span><span class="pi">:</span> <span class="s">6g</span>
+  <span class="c1">#key1: value1    # any other spark configs you want to control</span></code></pre>
 </div>
 </div>
 <div class="paragraph">
@@ -3086,7 +3086,7 @@ If your model is similar to existing model and match most of its API, you should
 </div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2021-10-21 14:49:32 -0700
+Last updated 2021-10-21 15:01:17 -0700
 </div>
 </div>
 </body>
