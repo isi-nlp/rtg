@@ -1,4 +1,10 @@
-# v0.6.0 : WIP
+# v0.6.1 : WIP
+- `rtg.fork` accepts multiple to_dir; thus supports cloning multiple times at once
+- Bug fix: early stopping on distributed parallel training
+- `rtg.tool.augment` to support data augmentations
+- 
+
+# v0.6.0 : 20210921
 - Redesign of registry; using decorators to register all modules
 - `optim` block is split into `optimizer` `schedule` and `criterion; as a result, **this version is not backward compatible with prior versions** Refer to migration guide
   - `NoamOpt` replaced with `ScheduledOptimizer` which takes scheduler and optimizer objects which are independently configurable from conf.yml
