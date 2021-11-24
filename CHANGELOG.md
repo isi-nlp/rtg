@@ -2,7 +2,7 @@
 - `rtg.fork` accepts multiple to_dir; thus supports cloning multiple times at once
 - Bug fix: early stopping on distributed parallel training
 - `rtg.tool.augment` to support data augmentations
-- 
+- Add attention visualization in rtg.serve; powered by plotly
 
 # v0.6.0 : 20210921
 - Redesign of registry; using decorators to register all modules

@@ -107,15 +107,31 @@ class EncoderLayer(nn.Module):
 class Encoder(nn.Module):
     "Core encoder is a stack of N layers"
 
-    def __init__(self, layer: EncoderLayer, N: int):
+    def __init__(self, layer: EncoderLayer, N: int, cache_attn=False):
         super().__init__()
         self.layers = clones(layer, N)
         self.norm = nn.LayerNorm(layer.size)
+        self.n = N
+        self.self_attn = None
+        self._cache_attn = cache_attn    # for visualization
+
+    @property
+    def cache_attn(self):
+        return self._cache_attn
+
+    @cache_attn.setter
+    def cache_attn(self, enable=True):
+        self._cache_attn = enable
+        for layer in self.layers:
+            layer.self_attn.cache_attn = enable
 
     def forward(self, x, mask):
         "Pass the input (and mask) through each layer in turn."
         for layer in self.layers:
             x = layer(x, mask)
+        if self.cache_attn:
+            # Batch x Layers x Heads x Seq_from x Seq_to
+             self.self_attn = torch.stack([layer.self_attn.attn for layer in self.layers], dim=1)
         return self.norm(x)
 
 
@@ -141,14 +157,32 @@ class DecoderLayer(nn.Module):
 class Decoder(nn.Module):
     "Generic N layer decoder with masking."
 
-    def __init__(self, layer: DecoderLayer, n_layers: int):
+    def __init__(self, layer: DecoderLayer, n_layers: int, cache_attn=False):
         super().__init__()
         self.layers = clones(layer, n_layers)
         self.norm = nn.LayerNorm(layer.size)
+        self._cache_attn = cache_attn
+        self.self_attn = None
+        self.src_attn = None
+
+    @property
+    def cache_attn(self):
+        return self._cache_attn
+
+    @cache_attn.setter
+    def cache_attn(self, enable=True):
+        self._cache_attn = enable
+        for layer in self.layers:
+            layer.self_attn.cache_attn = enable
+            layer.src_attn.cache_attn = enable
 
     def forward(self, x, memory, src_mask, tgt_mask):
         for layer in self.layers:
             x = layer(x, memory, src_mask, tgt_mask)
+        if self.cache_attn:
+            # Batch x Layers x Heads x Seq_from x Seq_to
+            self.self_attn = torch.stack([layer.self_attn.attn for layer in self.layers], dim=1)
+            self.src_attn = torch.stack([layer.src_attn.attn for layer in self.layers], dim=1)
         return self.norm(x)
 
 
@@ -168,6 +202,15 @@ class AbstractTransformerNMT(NMTModel, ABC):
         self.tgt_embed = tgt_embed
         self.generator = generator
         self.tgt_vocab = tgt_vocab if tgt_vocab else generator.vocab
+
+    @property
+    def cache_attn(self):
+        return self.encoder.cache_attn and self.decoder.cache_attn
+
+    @cache_attn.setter
+    def cache_attn(self, enable=True):
+        self.encoder.cache_attn = enable
+        self.decoder.cache_attn = enable
 
     @property
     def model_dim(self):
@@ -362,7 +405,8 @@ def attention(query, key, value, mask=None, dropout=None):
 
 
 class MultiHeadedAttention(nn.Module):
-    def __init__(self, h, d_model, dropout=0.1, bias=True):
+
+    def __init__(self, h, d_model, dropout=0.1, bias=True, cache_attn=False):
         "Take in model size and number of heads."
         super().__init__()
         assert d_model % h == 0
@@ -370,6 +414,7 @@ class MultiHeadedAttention(nn.Module):
         self.d_k = d_model // h
         self.h = h
         self.linears = clones(nn.Linear(d_model, d_model, bias=bias), 4)
+        self.cache_attn = cache_attn
         self.attn = None
         self.dropout = nn.Dropout(p=dropout)
 
@@ -389,14 +434,16 @@ class MultiHeadedAttention(nn.Module):
         #        --> transpose: [BatchSize x Heads x SeqLen x ModelDim/Heads ]
 
         # 2) Apply attention on all the projected vectors in batch.
-        x, self.attn = attention(query, key, value, mask=mask, dropout=self.dropout)
+        x, attn = attention(query, key, value, mask=mask, dropout=self.dropout)
+        if self.cache_attn:  # dont cache this at training time
+            self.attn = attn
+        # attn: [BatchSize x Heads x SeqLen_query x SeqLen_value ]
         # x : [BatchSize x Heads x SeqLen x ModelDim/Heads ]
 
         # 3) "Concat" using a view and apply a final linear.
         x = x.transpose(1, 2).contiguous().view(batch_size, -1, self.h * self.d_k)
         # x : transpose [BatchSize x SeqLen x Heads x ModelDim/Heads ]
         # x : view [BatchSize x SeqLen x ModelDim ]
-
         return self.linears[-1](x)
 
 
