@@ -1,0 +1,150 @@
+{% extends 'base.html' %}
+{% block head %}
+    <script src="{{ url_for('static', filename='js/plotly-2.6.3.min.js') }}"></script>
+{% endblock %}
+
+{% block content %}
+    <h1>{% block title %} Attention Visualization {% endblock %}</h1>
+
+    <div class="container-fluid">
+        <div class="row">
+            <div class="col-6 alert alert-primary">
+                <form id="source-form" action="./visual">
+                    <div class="form-group row">
+          <textarea id="source_txt" name="source" rows="2" class="form-control form-control-lg form-control-plaintext"
+                    placeholder="Source Text Here...">बिटकॉइन समेत सभी क्रिप्टो करेंसी बैन कर '🐅' </textarea>
+                    </div>
+                    <label for="reduction">Reduction:</label>
+                    <select id="reduction" class="form-select">
+                        <option value="none">None</option>
+                        <option selected value="heads_max">Heads' max</option>
+                        <option value="heads_mean">Heads' mean</option>
+                        <option value="layers_mean">Layers' mean</option>
+                        <option value="layers_max">Layers' max</option>
+
+                        <option value="heads_max_layers_mean">Heads' max, Layers' mean</option>
+                        <option value="heads_max_layers_max">Heads' max, Layers' max</option>
+                        <option value="heads_mean_layers_mean">Heads' mean, Layers' mean</option>
+                        <option value="heads_mean_layers_max">Heads' mean, Layers' max</option>
+
+                        <option value="layers_max_heads_max">Layers' max, Heads' max</option>
+                        <option value="layers_max_heads_mean">Layers' max, Heads' mean</option>
+                        <option value="layers_mean_heads_max">Layers' mean, Heads' max</option>
+                        <option value="layers_mean_heads_mean">Layers' mean, Heads' mean</option>
+                    </select>
+                    <button type="submit" class="btn btn-primary float-right">Translate→</button>
+                </form>
+            </div>
+
+            <div class="col-6 alert alert-success">
+                <div class="form-group row">
+        <textarea id='target' rows="2" class="form-control form-control-lg form-control-plaintext"
+                  placeholder="Translation (to-appear)"></textarea>
+                </div>
+                <div id="loading-progress-old" style="display: none;" class="spinner-border text-success float-left"
+                     role="status">
+                    <span class="sr-only">Loading...</span>
+                </div>
+                <div id="loading-progress" style="display: none;" class="spinner-grow" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+            </div>
+        </div>
+        <div class="row">
+            <table id="table1" class="table table-striped"></table>
+        </div>
+        <div class="row" id="heatmaps">
+        </div>
+    </div>
+
+    <script>
+        function on_output(data) {
+            console.log(data);
+            $('#target').text(data["translation"]);
+            $('#heatmaps').html("")
+            let table = $("#table1")
+            table.html("");
+            for (const [key, value] of Object.entries(data)) {
+                if (key.endsWith("_attn")) {
+                    continue
+                }
+                let tr = $('<tr />');
+                tr.append($('<th />', {text: key}));
+                tr.append($('<td />', {text: value}));
+                table.append(tr);
+            }
+            let x = data['in_toks']
+            let y = data['out_toks']
+            let reduction =  $('#reduction').val()
+            for (const args of [[x, y, data['yx_attn'], 'Cross'],
+                [x, x, data['xx_attn'], 'Source'],
+                [y, y, data['yy_attn'], 'Target']]) {
+                let [xVals, yVals, attnVals, side] = args
+                for (let [nLayer, heads] of attnVals.entries()) {
+                    if (reduction.includes("layers_max")){
+                        nLayer = "[Max]"
+                    } else if (reduction.includes("layers_mean")) {
+                        nLayer = "[Mean]"
+                    }
+                    for (let [nHead, attn] of heads.entries()) {
+                        if (reduction.includes("heads_max")) {
+                            nHead = "[Max]"
+                        } else if (reduction.includes("heads_mean")) {
+                            nHead = "[Mean]"
+                        }
+                        console.log(`Layer ${nLayer} head ${nHead}`)
+                        let newDiv = document.createElement("div")
+                        newDiv.id = `${side}-${nLayer}L-${nHead}H`
+                        document.getElementById('heatmaps').appendChild(newDiv)
+                        let map_data = [{
+                            x: xVals,
+                            y: yVals,
+                            z: attn,
+                            colorscale: 'Jet',   // https://plotly.com/javascript/colorscales/
+                            type: 'heatmap',
+                            hoverongaps: false
+                        }]
+                        let layout = {
+                            title: `${side} Attention Layer ${nLayer} Head ${nHead}`,
+                            //margin: {l: 100, r: 10,  b: 100, t: 50, pad: 4},
+                        }
+                        Plotly.newPlot(newDiv.id, map_data, layout);
+                    }
+                }
+            }
+        }
+        window.onload = function () {
+            $(document).ajaxStart(function () {
+                $("#loading-progress").show();
+            });
+
+            $(document).ajaxStop(function () {
+                $("#loading-progress").hide();
+            });
+
+            $("#source-form").submit(function (event) {
+                event.preventDefault();
+                let $form = $(this)
+                let url = $form.attr('action')
+                let data = JSON.stringify({
+                    'source': $('#source_txt').val(),
+                    'reduction': $('#reduction').val()
+                })
+                console.log(data);
+                let posting = $.ajax(url, {
+                    data: data,
+                    contentType: 'application/json',
+                    type: 'POST'
+                });
+
+                posting.done(on_output);
+                posting.fail(function () {
+                    alert("Something went wrong🤒! Check console logs.")
+                    $('#target').text('');
+                    $('#table1').html("");
+                     $('#heatmaps').html("");
+                });
+            });
+        }
+    </script>
+{% endblock %}

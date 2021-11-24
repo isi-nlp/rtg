@@ -2,22 +2,47 @@
 """
 Serves an RTG model using Flask HTTP server
 """
+import logging
 import os
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 
+import numpy as np
 import torch
-from flask import Flask, request, jsonify, render_template, send_from_directory, Blueprint
+
+import flask
+from flask import Flask, request, render_template, send_from_directory, Blueprint
 
 from rtg import TranslationExperiment as Experiment
 from rtg.module.decoder import Decoder
 
 torch.set_grad_enabled(False)
-
+FLOAT_POINTS = 4
 exp = None
 app = Flask(__name__)
 app.config['JSON_AS_ASCII'] = False
 
-bp = Blueprint('burritos', __name__, template_folder='templates')
+bp = Blueprint('nmt', __name__, template_folder='templates')
+
+
+def jsonify(obj):
+
+    def _jsonify(ob):
+        if ob is None or isinstance(ob, (int, bool, str)):
+            return ob
+        elif isinstance(ob, float):
+            return round(ob, FLOAT_POINTS)
+        elif isinstance(ob, dict):
+            return {key: _jsonify(val) for key, val in ob.items()}
+        elif isinstance(ob, list):
+            return [_jsonify(it) for it in ob]
+        elif isinstance(ob, np.ndarray):
+            return _jsonify(ob.tolist())
+        else:
+            logging.warning(f"Type {type(ob)} maybe not be json serializable")
+            return ob
+
+    obj = _jsonify(obj)
+    return flask.jsonify(obj)
 
 
 @bp.route('/')
@@ -61,6 +86,27 @@ def attach_translate_route(cli_args):
             translations.append(translated)
 
         res = dict(source=sources, translation=translations)
+        return jsonify(res)
+
+    @bp.route("/visual", methods=["POST", "GET"])
+    def visual():
+        if request.method not in ("POST", "GET"):
+            return "GET and POST are supported", 400
+        if request.method == 'GET':
+            return render_template('visual.html')
+        body = request.json or request.form
+        source = body.get("source")
+        reduction = body.get('reduction')
+        if not source:
+            return "Please submit 'source' argument having a source sentence", 400
+        if not isinstance(source, str):
+            return f"Expected 'source' to be a string, but given {source}", 400
+        prep = request.args.get('prep', "true").lower() in ("true", "yes", "y", "t")  # query param is always string
+        if prep:
+            source = src_prep(source)
+        res = decoder.decode_visualize(source, reduction=reduction, **dec_args)
+        if prep:
+            res['translation'] = tgt_postp(res['translation'])
         return jsonify(res)
 
     @bp.route("/conf.yml", methods=["GET"])
