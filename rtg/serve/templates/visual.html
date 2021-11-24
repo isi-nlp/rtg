@@ -12,7 +12,7 @@
                 <form id="source-form" action="./visual">
                     <div class="form-group row">
           <textarea id="source_txt" name="source" rows="2" class="form-control form-control-lg form-control-plaintext"
-                    placeholder="Source Text Here...">बिटकॉइन समेत सभी क्रिप्टो करेंसी बैन कर '🐅' </textarea>
+                    placeholder="Source Text Here..."></textarea>
                     </div>
                     <label for="reduction">Reduction:</label>
                     <select id="reduction" class="form-select">
@@ -75,6 +75,8 @@
             }
             let x = data['in_toks']
             let y = data['out_toks']
+            let max_toks = Math.max(x.length, y.length)
+            let pixels = Math.max(600, max_toks * 18)
             let reduction =  $('#reduction').val()
             for (const args of [[x, y, data['yx_attn'], 'Cross'],
                 [x, x, data['xx_attn'], 'Source'],
@@ -85,12 +87,16 @@
                         nLayer = "[Max]"
                     } else if (reduction.includes("layers_mean")) {
                         nLayer = "[Mean]"
+                    } else {
+                        nLayer += 1
                     }
                     for (let [nHead, attn] of heads.entries()) {
                         if (reduction.includes("heads_max")) {
                             nHead = "[Max]"
                         } else if (reduction.includes("heads_mean")) {
                             nHead = "[Mean]"
+                        } else {
+                            nHead += 1
                         }
                         console.log(`Layer ${nLayer} head ${nHead}`)
                         let newDiv = document.createElement("div")
@@ -100,15 +106,61 @@
                             x: xVals,
                             y: yVals,
                             z: attn,
-                            colorscale: 'Jet',   // https://plotly.com/javascript/colorscales/
+                            zmin: 0,
+                            zmax: 1,
                             type: 'heatmap',
-                            hoverongaps: false
+                            //hoverongaps: false,
+                            //colorscale: 'Jet',   // https://plotly.com/javascript/colorscales/
+                            colorscale: [
+                                        ['0.0', 'rgb(255,255,255)'],
+                                        ['0.1', 'rgb(255,222,222)'],
+                                        ['0.2', 'rgb(255,200,200)'],
+                                        ['0.3', 'rgb(255,175,175)'],
+                                        ['0.4', 'rgb(255,150,150)'],
+                                        ['0.5', 'rgb(255,125,125)'],
+                                        ['0.6', 'rgb(255,100,100)'],
+                                        ['0.7', 'rgb(255,75,75)'],
+                                        ['0.8', 'rgb(255,50,50)'],
+                                        ['0.9', 'rgb(255,25,25)'],
+                                        ['1.0', 'rgb(255,0,0)']
+                                        ],
                         }]
                         let layout = {
-                            title: `${side} Attention Layer ${nLayer} Head ${nHead}`,
+                            autosize: false,
+                            width: pixels,
+                            height: pixels,
+                            title: `${side} Attention: Layer ${nLayer}, Head ${nHead}`,
                             //margin: {l: 100, r: 10,  b: 100, t: 50, pad: 4},
+                            xaxis: {
+                              title: {
+                                text: 'Input (i.e., Documents)',
+                                font: {
+                                  //family: 'Courier New, monospace',
+                                  size: 14,
+                                  color: '#7f7f7f'
+                                }
+                              },
+                            },
+                          yaxis: {
+                            title: {
+                              text: 'Output (i.e., Query)',
+                              font: {
+                                //family: 'Courier New, monospace',
+                                size: 14,
+                                color: '#7f7f7f'
+                              }
+                            }
+                          },
                         }
-                        Plotly.newPlot(newDiv.id, map_data, layout);
+
+                        let config = {
+                            responsive: true,
+                            editable: true,
+                            showLink: true,
+                            plotlyServerURL: "https://chart-studio.plotly.com",
+                            //staticPlot: true
+                        }
+                        Plotly.newPlot(newDiv, map_data, layout, config);
                     }
                 }
             }

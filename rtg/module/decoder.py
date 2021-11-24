@@ -452,6 +452,7 @@ class Decoder:
         out_toks = self.out_vocab.tokenize(out_line)
         result = dict(source=line, translation=out_line, score=greedy_score,
                       in_ids=in_seq, in_toks=in_toks, out_ids=out_ids, out_toks=out_toks,
+                      source_length= len(in_toks), target_lenth=len(out_toks),
                       xx_attn=xx_attn, yy_attn=yy_attn, yx_attn=yx_attn, reduction=reduction)
         return result
 
