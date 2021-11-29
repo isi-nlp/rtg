@@ -369,7 +369,7 @@ prep:
 ----
 
 [#conf-vocab]
-== Vocabulary Preprocessing
+=== Vocabulary Preprocessing
 
 link:https://github.com/google/sentencepiece[Google's sentencepiece] is an awesome lib for
 preprocessing the text datasets.
@@ -387,7 +387,7 @@ prep:
   codec_lib: nlcodec  # default is sentpiece
 ----
 
-=== Vocabulary Types
+==== Vocabulary Types
 Both `sentpiece` or `nlcodec` support `pieces=` `bpe`, `char`, `word`.
 
 [source, yaml]
@@ -398,8 +398,9 @@ prep:
   pieces: bpe         # other options: char, word
 ----
 As of now, only `sentpiece` supports `pieces=unigram`.
+For classification experiments, `nlcodec` supports `pieces=class`
 
-=== Character coverage
+==== Character coverage
 
 For `bpe` and `char` vocabulary types, a useful trick is to exclude low frequency character and mark them as `UNK's`.
 Usually expressed as percentage of character coverage in training corpus.
@@ -416,12 +417,9 @@ prep:
 
 === Sub-Word Regularization
 
-When using `codec_lib: nlcodec` and `pieces: bpe`, you have the option to add
-sub-word regularization to your training.
-Normally, text is split into the fewest tokens necessary to represent
-the sequence (greedy split).
-By occasionally splitting some tokens into its constituents (suboptimal split),
-we can represent the same sequence many different ways.
+When using `codec_lib: nlcodec` and `pieces: bpe`, you have the option to add  sub-word regularization to your training.
+Normally, text is split into the fewest tokens necessary to represent  the sequence (greedy split).
+By occasionally splitting some tokens into its constituents (suboptimal split),  we can represent the same sequence many ways.
 This allows us to leverage less data more effectively.
 
 [source, yaml]
