@@ -15,20 +15,6 @@ USC Information Sciences Institute  Natural Language Group
 :hide-uri-scheme:
 :source-highlighter: rouge
 
-ifdef::backend-html5[]
-++++
-<style>
-body {
-    font-family: "Linux Libertine O", "Helvetica", serif
-}
-
-h1, h2, h3, h4, h5 {
-    font-family: "Linux Libertine O", "Helvetica", serif
-}
-</style>
-++++
-endif::backend-html5[]
-
 include::00-intro.adoc[]
 
 include::10-conf.yml.adoc[]
