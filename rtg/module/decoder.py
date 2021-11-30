@@ -433,6 +433,8 @@ class Decoder:
         in_lens = tensor([len(in_seq)], dtype=torch.long)
 
         greedy_score, out_ids = self.greedy_decode(in_seqs, in_lens, max_len, **args)[0]
+        out_ids.insert(0, self.bos_val)
+
         # [0] since Batch=1 sentence
         attns = [self.model.encoder.self_attn, self.model.decoder.self_attn, self.model.decoder.src_attn]
         attns = [a[0].detach().numpy() for a in attns]
@@ -449,10 +451,10 @@ class Decoder:
 
         xx_attn, yy_attn, yx_attn = attns
         out_line = self.out_vocab.decode_ids(out_ids, trunc_eos=True)
-        out_toks = self.out_vocab.tokenize(out_line)
+        out_toks = self.out_vocab.tokenize(out_line) + [self.out_vocab.eos_tok]   # it was truncated
         result = dict(source=line, translation=out_line, score=greedy_score,
                       in_ids=in_seq, in_toks=in_toks, out_ids=out_ids, out_toks=out_toks,
-                      source_length= len(in_toks), target_lenth=len(out_toks),
+                      source_length=len(in_toks), target_lenth=len(out_toks),
                       xx_attn=xx_attn, yy_attn=yy_attn, yx_attn=yx_attn, reduction=reduction)
         return result
 
