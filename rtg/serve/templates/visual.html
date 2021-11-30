@@ -16,21 +16,20 @@
                     </div>
                     <label for="reduction">Reduction:</label>
                     <select id="reduction" class="form-select">
-                        <option value="none">None</option>
-                        <option selected value="heads_max">Heads' max</option>
+                        <option value="heads_max">Heads' max</option>
                         <option value="heads_mean">Heads' mean</option>
                         <option value="layers_mean">Layers' mean</option>
                         <option value="layers_max">Layers' max</option>
-
+                        <option selected value="heads_max_layers_max">Heads' max, Layers' max</option>
                         <option value="heads_max_layers_mean">Heads' max, Layers' mean</option>
-                        <option value="heads_max_layers_max">Heads' max, Layers' max</option>
-                        <option value="heads_mean_layers_mean">Heads' mean, Layers' mean</option>
                         <option value="heads_mean_layers_max">Heads' mean, Layers' max</option>
+                        <option value="heads_mean_layers_mean">Heads' mean, Layers' mean</option>
 
                         <option value="layers_max_heads_max">Layers' max, Heads' max</option>
                         <option value="layers_max_heads_mean">Layers' max, Heads' mean</option>
                         <option value="layers_mean_heads_max">Layers' mean, Heads' max</option>
                         <option value="layers_mean_heads_mean">Layers' mean, Heads' mean</option>
+                        <option value="none">None</option>
                     </select>
                     <button type="submit" class="btn btn-primary float-right">Translate→</button>
                 </form>
@@ -63,7 +62,6 @@
             let mem = new Set()
             for (let idx = 0; idx < arr.length; idx++) {
                 let val = arr[idx]
-                console.log(`${idx} : ${val} : ${mem.has(val)}`)
                 while (mem.has(val)) {
                     val += pad
                 }
@@ -77,9 +75,12 @@
             $('#heatmaps').html("")
             let table = $("#table1")
             table.html("");
-            for (const [key, value] of Object.entries(data)) {
+            for (let [key, value] of Object.entries(data)) {
                 if (key.endsWith("_attn")) {
                     continue
+                }
+                if (Array.isArray(value)){
+                    value = value.join(', ')
                 }
                 let tr = $('<tr />');
                 tr.append($('<th />', {text: key}));
@@ -88,18 +89,18 @@
             }
             let x = data['in_toks']
             let y = data['out_toks']
-            y.push("[/s]")
 
             unique_items(x)
             unique_items(y)
 
-
             let max_toks = Math.max(x.length, y.length)
             let pixels = Math.max(600, max_toks * 18)
             let reduction =  $('#reduction').val()
-            for (const args of [[x, y, data['yx_attn'], 'Cross'],
+            for (const args of [
+                [x, y.slice(1), data['yx_attn'], 'Cross'],
+                [y.slice(0,-1), y.slice(1), data['yy_attn'], 'Target'],
                 [x, x, data['xx_attn'], 'Source'],
-                [y, y, data['yy_attn'], 'Target']]) {
+                ]) {
                 let [xVals, yVals, attnVals, side] = args
                 for (let [nLayer, heads] of attnVals.entries()) {
                     if (reduction.includes("layers_max")){
@@ -185,9 +186,18 @@
             }
         }
         window.onload = function () {
+            const srcText = $('#source_txt')
             $(document).ajaxStart(function () {
                 $("#loading-progress").show();
             });
+
+            if (!srcText.val().trim()) {
+                const urlParams = new URLSearchParams(window.location.search);
+                const urlText = urlParams.get('source')
+                if (urlParams.get('source')){
+                    srcText.val(urlText)
+                }
+            }
 
             $(document).ajaxStop(function () {
                 $("#loading-progress").hide();
@@ -197,7 +207,7 @@
                 event.preventDefault();
                 let $form = $(this)
                 let url = $form.attr('action')
-                let source = $('#source_txt').val().trim()
+                let source = srcText.val().trim()
                 if (!source){
                     alert("Please enter a source sentence and try again.")
                     return
