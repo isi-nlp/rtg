@@ -58,6 +58,19 @@
     </div>
 
     <script>
+
+        function unique_items(arr, pad='\u200b'){
+            let mem = new Set()
+            for (let idx = 0; idx < arr.length; idx++) {
+                let val = arr[idx]
+                console.log(`${idx} : ${val} : ${mem.has(val)}`)
+                while (mem.has(val)) {
+                    val += pad
+                }
+                mem.add(val)
+                arr[idx] = val
+            }
+        }
         function on_output(data) {
             console.log(data);
             $('#target').text(data["translation"]);
@@ -75,6 +88,12 @@
             }
             let x = data['in_toks']
             let y = data['out_toks']
+            y.push("[/s]")
+
+            //unique_items(x)
+            //unique_items(y)
+
+
             let max_toks = Math.max(x.length, y.length)
             let pixels = Math.max(600, max_toks * 18)
             let reduction =  $('#reduction').val()
@@ -132,24 +151,24 @@
                             title: `${side} Attention: Layer ${nLayer}, Head ${nHead}`,
                             //margin: {l: 100, r: 10,  b: 100, t: 50, pad: 4},
                             xaxis: {
-                              title: {
-                                text: 'Input (i.e., Documents)',
-                                font: {
-                                  //family: 'Courier New, monospace',
-                                  size: 14,
-                                  color: '#7f7f7f'
-                                }
-                              },
+                                title: {
+                                    text: 'Input (i.e., Documents)',
+                                    font: {
+                                      //family: 'Courier New, monospace',
+                                      size: 14,
+                                      color: '#7f7f7f'
+                                    }
+                                },
                             },
-                          yaxis: {
-                            title: {
-                              text: 'Output (i.e., Query)',
-                              font: {
-                                //family: 'Courier New, monospace',
-                                size: 14,
-                                color: '#7f7f7f'
-                              }
-                            }
+                            yaxis: {
+                                title: {
+                                    text: 'Output (i.e., Query)',
+                                    font: {
+                                        //family: 'Courier New, monospace',
+                                        size: 14,
+                                        color: '#7f7f7f'
+                                    }
+                                }
                           },
                         }
 
@@ -178,8 +197,13 @@
                 event.preventDefault();
                 let $form = $(this)
                 let url = $form.attr('action')
+                let source = $('#source_txt').val().trim()
+                if (!source){
+                    alert("Please enter a source sentence and try again.")
+                    return
+                }
                 let data = JSON.stringify({
-                    'source': $('#source_txt').val(),
+                    'source': source,
                     'reduction': $('#reduction').val()
                 })
                 console.log(data);
