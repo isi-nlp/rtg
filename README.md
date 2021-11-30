@@ -18,7 +18,7 @@ Please use github issues to ask a question or report an issue :
 
 ### ACKNOWLEDGEMENTS
 
-The research is based upon work supported by the Office of the Director of
+* The research is based upon work supported by the Office of the Director of
 National Intelligence (ODNI), Intelligence Advanced Research Projects
 Activity (IARPA), via AFRL Contract #FA8650-17-C-9116.
 The views and conclusions contained herein are those of the authors and
@@ -27,3 +27,8 @@ endorsements, either expressed or implied, of the ODNI, IARPA, or the
 U.S. Government. The U.S. Government is authorized to reproduce and
 distribute reprints for Governmental purposes notwithstanding any
 copyright annotation thereon.
+
+* This material is based on research sponsored by
+ Air Force Research Laboratory (AFRL) under agreement number FA8750-19-1-1000.
+The U.S. Government is authorized to reproduce and distribute reprints for
+Government purposes notwithstanding any copyright notation therein.
