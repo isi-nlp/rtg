@@ -437,7 +437,7 @@ class Decoder:
 
         # [0] since Batch=1 sentence
         attns = [self.model.encoder.self_attn, self.model.decoder.self_attn, self.model.decoder.src_attn]
-        attns = [a[0].detach().numpy() for a in attns]
+        attns = [a[0].cpu().detach().numpy() for a in attns]
         if reduction and reduction.lower() == 'none':
             reduction = None
 
