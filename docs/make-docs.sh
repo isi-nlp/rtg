@@ -28,3 +28,5 @@ if [[ -f "$DOCS_DIR/index.html" ]]; then
 fi
 
 [[ -f $DOCS_DIR/versions.adoc ]] &&  asciidoctor -o "$DOCS_DIR/versions.html" "$DOCS_DIR/versions.adoc"
+
+cp ${ver_dir}/index.html $DOCS_DIR/../rtg/serve/static/docs.html
