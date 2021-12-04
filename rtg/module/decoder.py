@@ -427,8 +427,9 @@ class Decoder:
         assert hasattr(self.model, 'cache_attn'), f'{type(self.model)} does not have cache_attn feature'
         if not self.model.cache_attn:
             self.model.cache_attn = True
+        # EOS was added to encoder sequence during training
         in_seq = self.inp_vocab.encode_as_ids(line, add_eos=True, add_bos=False)
-        in_toks = self.inp_vocab.tokenize(line)
+        in_toks = self.inp_vocab.tokenize(line) + [self.inp_vocab.eos_tok]
         in_seqs = tensor(in_seq, dtype=torch.long).view(1, -1)
         in_lens = tensor([len(in_seq)], dtype=torch.long)
 
