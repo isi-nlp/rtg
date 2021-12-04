@@ -69,6 +69,15 @@ An example POST request:
 You can also request like GET method as `http://localhost:6060/translate?source=text1&source=text2`
 after properly URL encoding the `text1` `text2`. This should only be used for quick testing in your web browser.
 
+=== Google Analytics Integration
+
+Google Analytics is supported on web pages, however disabled by default.
+To enable set `GA_TAG` environment variable before starting `rtg.serve` process.
+
+[source,bash]
+----
+export GA_TAG="G-xxxxx"
+----
 
 **Production Deployment**
 Please use uWSGI for production deployment.

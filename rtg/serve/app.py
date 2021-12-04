@@ -4,16 +4,20 @@ Serves an RTG model using Flask HTTP server
 """
 import logging
 import os
+import sys
+import platform
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 
 import numpy as np
+import rtg
 import torch
 
 import flask
-from flask import Flask, request, render_template, send_from_directory, Blueprint
+from flask import Flask, request, send_from_directory, Blueprint
 
 from rtg import TranslationExperiment as Experiment
 from rtg.module.decoder import Decoder
+from rtg.utils import max_RSS
 
 torch.set_grad_enabled(False)
 FLOAT_POINTS = 4
@@ -22,6 +26,23 @@ app = Flask(__name__)
 app.config['JSON_AS_ASCII'] = False
 
 bp = Blueprint('nmt', __name__, template_folder='templates')
+
+sys_info = {
+    'RTG Version': rtg.__version__,
+    'PyTorch Version': torch.__version__,
+    'Python Version': sys.version,
+    'Platform': platform.platform(),
+    'Platform Version': platform.version(),
+    'Processor':  platform.processor(),
+    'CPU Memory Used': max_RSS()[1],
+    'GPU': '[unavailable]',
+}
+if torch.cuda.is_available():
+    sys_info['GPU'] = str(torch.cuda.get_device_properties(rtg.device))
+    sys_info['Cuda Version']: torch.version.cuda
+
+def render_template(*args, **kwargs):
+    return flask.render_template(*args, environ=os.environ, **kwargs)
 
 
 def jsonify(obj):
@@ -117,7 +138,8 @@ def attach_translate_route(cli_args):
     @bp.route("/about", methods=["GET"])
     def about():
         def_desc = "Model description is unavailable; please update conf.yml"
-        return render_template('about.html', model_desc=exp.config.get("description", def_desc))
+        return render_template('about.html', model_desc=exp.config.get("description", def_desc),
+                               sys_info=sys_info)
 
 
 def parse_args():

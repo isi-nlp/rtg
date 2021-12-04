@@ -7,7 +7,6 @@
         type="text/css">
   <title>{% block title %} {% endblock %}</title>
   {% block head %} {% endblock %}
-
   <style type="text/css">
     html, body {
       width: 100%;
@@ -26,6 +25,16 @@
       bottom: 0;
     }
   </style>
+
+  {% if environ['GA_GTAG'] is defined %}
+  <script async src="https://www.googletagmanager.com/gtag/js?id={{environ['GA_GTAG']}}"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', "{{environ['GA_GTAG']}}");
+  </script>
+  {% endif %}
 </head>
 <body>
 <div id="wrap">
@@ -45,6 +54,9 @@
         </li>
         <li class="nav-item active">
           <a class="nav-link" href="about">About</a>
+        </li>
+        <li class="nav-item active">
+          <a class="nav-link" href="static/docs.html" target="_blank">Docs</a>
         </li>
       </ul>
     </div>
