@@ -15,7 +15,7 @@ import torch
 import flask
 from flask import Flask, request, send_from_directory, Blueprint
 
-from rtg import TranslationExperiment as Experiment
+from rtg import TranslationExperiment as Experiment, log
 from rtg.module.decoder import Decoder
 from rtg.utils import max_RSS
 
@@ -39,7 +39,12 @@ sys_info = {
 }
 if torch.cuda.is_available():
     sys_info['GPU'] = str(torch.cuda.get_device_properties(rtg.device))
-    sys_info['Cuda Version']: torch.version.cuda
+    sys_info['Cuda Version'] = torch.version.cuda
+else:
+    log.warning("CUDA unavailable")
+
+log.info(f"System Info: ${sys_info}")
+
 
 def render_template(*args, **kwargs):
     return flask.render_template(*args, environ=os.environ, **kwargs)
