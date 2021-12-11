@@ -891,6 +891,8 @@ class TransformerNMT(AbstractTransformerNMT):
                                          n_rel_pos=self_attn_rel_pos)
         x_attn = MultiHeadedAttention(n_heads, hid_size, dropout=attn_dropout, bias=attn_bias)
         ff = PositionwiseFeedForward(hid_size, ff_size, dropout, activation=activation)
+        if self_attn_rel_pos:
+            log.info(f"Self-attn relative position embedding enabled; k={self_attn_rel_pos}")
 
         if enc_layers == 0:
             log.warning("Zero encoder layers!")
