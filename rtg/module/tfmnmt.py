@@ -364,7 +364,7 @@ class SublayerConnection(nn.Module):
         return x + self.dropout(sublayer(self.norm(x)))
 
 
-def attention(query, key, value, mask=None, dropout=None, query_key_emb=None):
+def attention(query, key, value, mask=None, dropout=None, query_key_emb: 'RelativePositionEmbedding'=None):
     """
     Compute 'Scaled Dot Product Attention'
     :param query:
@@ -381,10 +381,8 @@ def attention(query, key, value, mask=None, dropout=None, query_key_emb=None):
     # See https://pytorch.org/docs/stable/torch.html?highlight=matmul#torch.matmul
     scores = torch.matmul(query, key.transpose(-2, -1))
     if query_key_emb is not None:
-        # query:          [b x h x n x d]     --> [b  x h x n x 1 x d]
-        # query_key_emb : [1 x 1 x n x n x d] --> [1 x 1 x n x d x n]
-        #  product =  [b x h x n x 1 x n ]  --> [b x h x n x n]
-        rel_scores = torch.matmul(query.unsqueeze(3), query_key_emb.transpose(-2, -1)).squeeze(3)
+        # the above impementation was memory inefficient, so rewrote this
+        rel_scores = query_key_emb(query=query, key=key)
         scores += rel_scores
     scores = scores / math.sqrt(d_k)
     # scores: [BatchSize x Heads x Time=SeqLen x SeqLen ]
@@ -411,6 +409,53 @@ def attention(query, key, value, mask=None, dropout=None, query_key_emb=None):
     ctx_vals = torch.matmul(p_attn, value)
     return ctx_vals, p_attn
 
+class RelativePositionEmbedding(nn.Module):
+    # implements https://aclanthology.org/N18-2074.pdf
+    # Shaw et al 2018, Self-Attention with Relative Position Representations
+
+    def __init__(self, emb_dim: int, n_rel_pos: int, max_len=512):
+        super(RelativePositionEmbedding, self).__init__()
+        self.emb_dim = emb_dim
+        self.n_rel_pos = n_rel_pos
+        self.emb = nn.Embedding(num_embeddings=2 * self.n_rel_pos + 1, embedding_dim=self.emb_dim)
+        self._rel_pos_chart = self.make_relative_positions(n=max_len, k=n_rel_pos, positive_index=True)
+
+    @classmethod
+    def make_relative_positions(cls, n: int, k: int, positive_index=True):
+        """
+
+        :param n: sequence length
+        :param k: relative window size; k as in [-k, ... -2, -1, 0, 1, 2, ... k]
+        :param positive_index: novert neagtive index to positive index.
+          i.e. [-k, ... -2, -1, 0, 1, 2, ... k] --> [0, 1, 2, .. k, k+1, k+2, .. 2*k
+        :return:  a matrix of [n x n] with relative positions
+        """
+        assert n > 0
+        k = k or n
+        seq = torch.arange(n)  # [n]
+        matrix = seq.repeat(n, 1)  # [n x n]
+        matrix = matrix - seq.view(-1, 1)
+        matrix.masked_fill_(matrix > k, k)
+        matrix.masked_fill_(matrix < -k, -k)
+        if positive_index:  # convert negatives to positive index;
+            matrix += k
+        return matrix
+
+    def forward(self, query, key):
+        assert query.shape[2] == key.shape[2], 'This feature works only for self-attention'
+        n = query.shape[2]
+
+        # efficient implementation
+        # query, key:  [BatchSize x Heads x SeqLen x d ]  ; d=model_dim/heads
+        # emb.weieght: [2*k+1 x d]
+        dots = torch.matmul(query, self.emb.weight.transpose(-1, -2)) # [b x h x n x 2*k+1]
+        if n > len(self._rel_pos_chart):
+            self._rel_pos_chart = self.make_relative_positions(n=n, k=self.n_rel_pos, positive_index=True)
+        rel_idx = self._rel_pos_chart[:n, :n] # n x n
+        rel_idx = rel_idx.view(1, 1, *rel_idx.shape)        # [1, 1, n, n] ; add batch and heads dim
+        scores = dots.gather(-1, rel_idx)  # pick scores along the last dim
+        return scores
+
 
 class MultiHeadedAttention(nn.Module):
 
@@ -428,27 +473,8 @@ class MultiHeadedAttention(nn.Module):
         self.n_rel_pos = n_rel_pos
         self.rel_pos_emb = None
         if self.n_rel_pos > 0:
-            self.rel_pos_emb = nn.Embedding(num_embeddings=2 * self.n_rel_pos + 1, embedding_dim=self.d_k)
+            self.rel_pos_emb = RelativePositionEmbedding(emb_dim=self.d_k, n_rel_pos=n_rel_pos)
 
-    def make_relative_positions(self, n: int, k: int, positive_index=False):
-        """
-
-        :param n: sequence length
-        :param k: relative window size; k as in [-k, ... -2, -1, 0, 1, 2, ... k]
-        :param positive_index: novert neagtive index to positive index.
-          i.e. [-k, ... -2, -1, 0, 1, 2, ... k] --> [0, 1, 2, .. k, k+1, k+2, .. 2*k
-        :return:  a matrix of [n x n] with relative positions
-        """
-        assert n > 0
-        k = k or n
-        seq = torch.arange(n)     # [n]
-        matrix = seq.repeat(n, 1)    # [n x n]
-        matrix = matrix - seq.view(-1, 1)
-        matrix.masked_fill_(matrix > k, k )
-        matrix.masked_fill_(matrix < -k, -k)
-        if positive_index: # convert negatives to positive index;
-            matrix += k
-        return matrix
 
     def forward(self, query, key, value, mask=None):
         "Implements Figure 2"
@@ -464,15 +490,7 @@ class MultiHeadedAttention(nn.Module):
         # Q,K,V  --> input, linear: [BatchSize x SeqLen x ModelDim]
         #        --> view: [BatchSize x SeqLen x Heads x ModelDim/Heads ]
         #        --> transpose: [BatchSize x Heads x SeqLen x ModelDim/Heads ]
-        rel_pos_emb = None
-        if self.n_rel_pos > 0:
-            n = key.size(2)  # sequence length
-            assert query.size(2) == n     # self-attention only; |query| == |key|
-            rel_idx = self.make_relative_positions(n=n, k=self.n_rel_pos, positive_index=True)
-            rel_pos_emb = self.rel_pos_emb(rel_idx)  # [n x n x d]
-            rel_pos_emb = rel_pos_emb.view(1, 1, *rel_pos_emb.shape) # [1, 1, ...] same embeddings across batch and heads
-        # 2) Apply attention on all the projected vectors in batch.
-        x, attn = attention(query, key, value, mask=mask, dropout=self.dropout, query_key_emb=rel_pos_emb)
+        x, attn = attention(query, key, value, mask=mask, dropout=self.dropout, query_key_emb=self.rel_pos_emb)
         if self.cache_attn:  # dont cache this at training time
             self.attn = attn.detach()
         # attn: [BatchSize x Heads x SeqLen_query x SeqLen_value ]
