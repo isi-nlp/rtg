@@ -432,7 +432,7 @@ class RelativePositionEmbedding(nn.Module):
         """
         assert n > 0
         k = k or n
-        seq = torch.arange(n)  # [n]
+        seq = torch.arange(n, device=device)  # [n]
         matrix = seq.repeat(n, 1)  # [n x n]
         matrix = matrix - seq.view(-1, 1)
         matrix.masked_fill_(matrix > k, k)
