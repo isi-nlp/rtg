@@ -34,6 +34,7 @@ model_args: # model construction args
   src_vocab: 8000
   tgt_vocab: 8000
   tied_emb: three-way  # choices: null, one-way, two-way, three-way
+  # self_attn_rel_pos: 8  # enable relative pos self attention with window=8
 model_type: tfmnmt  # model type. tfmnmt is the transformer NMT model
 optimizer:
   name: adam

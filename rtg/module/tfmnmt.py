@@ -364,7 +364,7 @@ class SublayerConnection(nn.Module):
         return x + self.dropout(sublayer(self.norm(x)))
 
 
-def attention(query, key, value, mask=None, dropout=None):
+def attention(query, key, value, mask=None, dropout=None, query_key_emb=None):
     """
     Compute 'Scaled Dot Product Attention'
     :param query:
@@ -372,13 +372,21 @@ def attention(query, key, value, mask=None, dropout=None):
     :param value:
     :param mask:
     :param dropout:
+    :param query_key_emb:
     :return:
     """
 
     d_k = query.size(-1)
     # Beware: this is a batch multiplier!
     # See https://pytorch.org/docs/stable/torch.html?highlight=matmul#torch.matmul
-    scores = torch.matmul(query, key.transpose(-2, -1)) / math.sqrt(d_k)
+    scores = torch.matmul(query, key.transpose(-2, -1))
+    if query_key_emb is not None:
+        # query:          [b x h x n x d]     --> [b  x h x n x 1 x d]
+        # query_key_emb : [1 x 1 x n x n x d] --> [1 x 1 x n x d x n]
+        #  product =  [b x h x n x 1 x n ]  --> [b x h x n x n]
+        rel_scores = torch.matmul(query.unsqueeze(3), query_key_emb.transpose(-2, -1)).squeeze(3)
+        scores += rel_scores
+    scores = scores / math.sqrt(d_k)
     # scores: [BatchSize x Heads x Time=SeqLen x SeqLen ]
     if mask is not None:
         # How masking works:
@@ -406,7 +414,7 @@ def attention(query, key, value, mask=None, dropout=None):
 
 class MultiHeadedAttention(nn.Module):
 
-    def __init__(self, h, d_model, dropout=0.1, bias=True, cache_attn=False):
+    def __init__(self, h, d_model, dropout=0.1, bias=True, cache_attn=False, n_rel_pos=0):
         "Take in model size and number of heads."
         super().__init__()
         assert d_model % h == 0
@@ -417,6 +425,30 @@ class MultiHeadedAttention(nn.Module):
         self.cache_attn = cache_attn
         self.attn = None
         self.dropout = nn.Dropout(p=dropout)
+        self.n_rel_pos = n_rel_pos
+        self.rel_pos_emb = None
+        if self.n_rel_pos > 0:
+            self.rel_pos_emb = nn.Embedding(num_embeddings=2 * self.n_rel_pos + 1, embedding_dim=self.d_k)
+
+    def make_relative_positions(self, n: int, k: int, positive_index=False):
+        """
+
+        :param n: sequence length
+        :param k: relative window size; k as in [-k, ... -2, -1, 0, 1, 2, ... k]
+        :param positive_index: novert neagtive index to positive index.
+          i.e. [-k, ... -2, -1, 0, 1, 2, ... k] --> [0, 1, 2, .. k, k+1, k+2, .. 2*k
+        :return:  a matrix of [n x n] with relative positions
+        """
+        assert n > 0
+        k = k or n
+        seq = torch.arange(n)     # [n]
+        matrix = seq.repeat(n, 1)    # [n x n]
+        matrix = matrix - seq.view(-1, 1)
+        matrix.masked_fill_(matrix > k, k )
+        matrix.masked_fill_(matrix < -k, -k)
+        if positive_index: # convert negatives to positive index;
+            matrix += k
+        return matrix
 
     def forward(self, query, key, value, mask=None):
         "Implements Figure 2"
@@ -432,11 +464,17 @@ class MultiHeadedAttention(nn.Module):
         # Q,K,V  --> input, linear: [BatchSize x SeqLen x ModelDim]
         #        --> view: [BatchSize x SeqLen x Heads x ModelDim/Heads ]
         #        --> transpose: [BatchSize x Heads x SeqLen x ModelDim/Heads ]
-
+        rel_pos_emb = None
+        if self.n_rel_pos > 0:
+            n = key.size(2)  # sequence length
+            assert query.size(2) == n     # self-attention only; |query| == |key|
+            rel_idx = self.make_relative_positions(n=n, k=self.n_rel_pos, positive_index=True)
+            rel_pos_emb = self.rel_pos_emb(rel_idx)  # [n x n x d]
+            rel_pos_emb = rel_pos_emb.view(1, 1, *rel_pos_emb.shape) # [1, 1, ...] same embeddings across batch and heads
         # 2) Apply attention on all the projected vectors in batch.
-        x, attn = attention(query, key, value, mask=mask, dropout=self.dropout)
+        x, attn = attention(query, key, value, mask=mask, dropout=self.dropout, query_key_emb=rel_pos_emb)
         if self.cache_attn:  # dont cache this at training time
-            self.attn = attn
+            self.attn = attn.detach()
         # attn: [BatchSize x Heads x SeqLen_query x SeqLen_value ]
         # x : [BatchSize x Heads x SeqLen x ModelDim/Heads ]
 
@@ -840,9 +878,8 @@ class TransformerNMT(AbstractTransformerNMT):
 
     @classmethod
     def make_model(cls, src_vocab, tgt_vocab, enc_layers=6, dec_layers=6, hid_size=512,
-                   ff_size=2048,
-                   n_heads=8, attn_bias=True, attn_dropout=0.1, dropout=0.2, activation='relu',
-                   tied_emb='three-way', exp: Experiment = None):
+                   ff_size=2048, n_heads=8, attn_bias=True, attn_dropout=0.1, dropout=0.2, activation='relu',
+                   tied_emb='three-way', self_attn_rel_pos=0, exp: Experiment = None):
         "Helper: Construct a model from hyper parameters."
 
         # get all args for reconstruction at a later phase
@@ -850,17 +887,20 @@ class TransformerNMT(AbstractTransformerNMT):
         assert activation in {'relu', 'elu', 'gelu'}
         log.info(f"Make model, Args={args}")
         c = copy.deepcopy
-        attn = MultiHeadedAttention(n_heads, hid_size, dropout=attn_dropout, bias=attn_bias)
+        self_attn = MultiHeadedAttention(n_heads, hid_size, dropout=attn_dropout, bias=attn_bias,
+                                         n_rel_pos=self_attn_rel_pos)
+        x_attn = MultiHeadedAttention(n_heads, hid_size, dropout=attn_dropout, bias=attn_bias)
         ff = PositionwiseFeedForward(hid_size, ff_size, dropout, activation=activation)
 
         if enc_layers == 0:
             log.warning("Zero encoder layers!")
-        encoder = cls.EncoderFactory(cls.EncoderLayerFactory(hid_size, c(attn), c(ff), dropout),
-                                     enc_layers)
+
+        encoder = cls.EncoderFactory(cls.EncoderLayerFactory(
+            hid_size, c(self_attn), c(ff), dropout), enc_layers)
 
         assert dec_layers > 0
-        decoder = cls.DecoderFactory(
-            cls.DecoderLayerFactory(hid_size, c(attn), c(attn), c(ff), dropout), dec_layers)
+        decoder = cls.DecoderFactory(cls.DecoderLayerFactory(
+            hid_size, c(self_attn), c(x_attn), c(ff), dropout), dec_layers)
 
         src_emb = nn.Sequential(Embeddings(hid_size, src_vocab),
                                 PositionalEncoding(hid_size, dropout))
@@ -873,8 +913,8 @@ class TransformerNMT(AbstractTransformerNMT):
         if tied_emb:
             if tied_emb == 'three-way':
                 assert exp.config['prep'].get('shared_vocab'),\
-                    'tied_emb=three-way supported only if prep.shared_vocab=true; Fix: set model_args.tied_emb=one-way' \
-                    ' or prep.shared_vocab=true'
+                    'tied_emb=three-way supported only if prep.shared_vocab=true;' \
+                    ' Fix: set model_args.tied_emb=one-way or prep.shared_vocab=true'
             model.tie_embeddings(tied_emb)
 
         model.init_params()
