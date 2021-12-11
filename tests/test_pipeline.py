@@ -12,8 +12,16 @@ from io import StringIO
 from . import sanity_check_experiment
 
 
-def test_prepared_pipeline():
+def test_prepared_pipeline():  # its a transformer
     exp = Experiment('experiments/sample-exp', read_only=True)
+    exp.config['trainer'].update(dict(steps=50, check_point=25))
+    pipe = Pipeline(exp)
+    pipe.run(run_tests=False)
+
+
+def test_prepared_pipeline_relative_pos():
+    exp = Experiment('experiments/sample-exp', read_only=True)
+    exp.config['model_args']['self_attn_rel_pos'] = 4
     exp.config['trainer'].update(dict(steps=50, check_point=25))
     pipe = Pipeline(exp)
     pipe.run(run_tests=False)
