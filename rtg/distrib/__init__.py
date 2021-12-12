@@ -42,6 +42,8 @@ class DistribTorch:
     _model: nn.Module = None
     _clip_grad_max_norm = None
 
+    _n_recent_errors = 0
+
     def setup(self):
         log.info("DistribTorch setup()")
         if self.world_size > 1:
@@ -108,14 +110,20 @@ class DistribTorch:
         # else we dont need it
 
     def backward(self, loss):
+        max_errors = 5
         if torch.isnan(loss):
-            log.warning('loss is nan; backward() skipped')
+            log.warning('loss is nan; Skipping backward() propagation of gradients')
+            self._n_recent_errors += 1
             return True
+        if self._n_recent_errors > max_errors:
+            raise Exception(f"More than {max_errors} occurred back to back; aborting")
         if self.fp16:
             loss = self._scaler.scale(loss)
         if loss < 0:
+            self._n_recent_errors += 1
             raise Exception('Loss is negative; looks like a numerical error (underflow or overflow?')
         loss.backward()
+        self._n_recent_errors = 0  # good
 
     def average_gradients(self, model):
         size = float(self.world_size)
@@ -125,9 +133,13 @@ class DistribTorch:
             param.grad.data /= size
 
     def step(self, optimizer: Optimizer):
+        if self._n_recent_errors > 0:
+            log.warning(f"Recent errors = {self._n_recent_errors}; skipping optimizer step...")
+            optimizer.zero_grad()
+            return
         if self.is_distributed:
             self.average_gradients(self._model)
-            #TODO: Maybe we dont need to average every step ?
+            # TODO: Maybe we dont need to average every step ?
 
         if self._clip_grad_max_norm:
             if self.fp16:
