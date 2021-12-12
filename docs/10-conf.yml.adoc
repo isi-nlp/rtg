@@ -246,7 +246,6 @@ link:https://arxiv.org/abs/1412.6980[Adam: A Method for Stochastic Optimization]
 It is also possible to use `ADAMW` from link:https://arxiv.org/abs/1711.05101[Decoupled Weight Decay Regularization],
 since weight decay is different in optimizers with variable step sizes.
 
-Note: When `inv_sqrt: false`, `lr` does nothing. When `inv_sqrt: true`, `constant` does nothing.
 
 An alternative optimizer may look like:
 [source,yaml]
