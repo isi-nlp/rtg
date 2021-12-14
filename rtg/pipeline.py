@@ -329,7 +329,8 @@ class Pipeline:
         dtorch.barrier()
         self.exp.reload()  # with updated config and vocabs from global_main
         # train on all
-        self.exp.train()
+        with torch.autograd.detect_anomaly():
+            self.exp.train()
         dtorch.barrier()
         if run_tests:
             if self.exp.problem_type in self.tests_types:
