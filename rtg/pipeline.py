@@ -4,7 +4,7 @@
 # Created: 3/9/19
 
 import argparse
-from rtg import log, TranslationExperiment as Experiment, __version__
+from rtg import log, TranslationExperiment as Experiment, __version__, debug_mode
 from rtg.exp import load_conf
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
@@ -317,7 +317,7 @@ class Pipeline:
                 err = test_dir / f'{name}.err'
                 err.write_text(str(e))
 
-    def run(self, run_tests=True):
+    def run(self, run_tests=True, debug=debug_mode):
         if not self.exp.read_only:
             # if not distr.is_main:
             #    log.clear_console() # console handler
@@ -329,7 +329,7 @@ class Pipeline:
         dtorch.barrier()
         self.exp.reload()  # with updated config and vocabs from global_main
         # train on all
-        with torch.autograd.detect_anomaly():
+        with torch.autograd.set_detect_anomaly(debug):
             self.exp.train()
         dtorch.barrier()
         if run_tests:
