@@ -576,8 +576,10 @@ class TransformerTrainer(SteppedTrainer):
                                                 opt=self.opt)
         else:
             log.info(f"Using Chunked Loss Generator. chunk_size={chunk_size}")
+            clip_grad_norm = self.init_args.get('clip_grad_norm', 0.0)
             self.loss_func = ChunkedLossCompute(generator=generator, criterion=self.criterion,
-                                                opt=self.opt, chunk_size=chunk_size)
+                                                opt=self.opt, chunk_size=chunk_size,
+                                                clip_grad_norm=clip_grad_norm)
 
     def run_valid_epoch(self, data_iter: BatchIterable, dec_bos_cut=False) -> Dict[str, float]:
         """
@@ -971,10 +973,12 @@ class SimpleLossFunction:
 @dataclass
 class ChunkedLossCompute(SimpleLossFunction):
     chunk_size: int = 10
+    clip_grad_norm: float = 0.0
 
     def __post_init__(self):
         if self.criterion.reduction == 'macro':
             raise Exception('ChunkedLoss doesnt support reduction=macro; set chunk_size=0 to disable ChunkedLoss')
+
 
     def __call__(self, y_feats, y_seqs, train_mode=True, chunk_size=None, take_step=True, get_out=False):
         """
@@ -1017,6 +1021,8 @@ class ChunkedLossCompute(SimpleLossFunction):
                 log.warning(".backward() skipped because there are no gradients")
             else:
                 out_grad = _y_feats.grad.data
+                if self.clip_grad_norm > 0:
+                    torch.nn.utils.clip_grad_norm_(out_grad, self.clip_grad_norm)
                 y_feats.backward(gradient=out_grad)
                 if take_step:
                     dtorch.step(optimizer=self.opt)
