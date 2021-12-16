@@ -383,7 +383,7 @@ def attention(query, key, value, mask=None, dropout=None, query_key_emb: 'Relati
     if query_key_emb is not None:
         # the above impementation was memory inefficient, so rewrote this
         rel_scores = query_key_emb(query=query, key=key)
-        scores += rel_scores
+        scores = scores + rel_scores
     scores = scores / math.sqrt(d_k)
     # scores: [BatchSize x Heads x Time=SeqLen x SeqLen ]
     if mask is not None:
@@ -400,7 +400,8 @@ def attention(query, key, value, mask=None, dropout=None, query_key_emb: 'Relati
         # for devising this concise code. I needed a lot of time to understand how this code works!
         #
         # scores = scores.masked_fill(mask == 0, -1e9)
-        low_val = -2 ** 15 if dtorch.fp16 else -1e9
+        low_val = -2 ** 14 if dtorch.fp16 else -1e9  # -2**15 causes nan
+        #low_val = -1e9
         scores = scores.masked_fill(mask == 0, low_val)
     p_attn = F.softmax(scores, dim=-1)  # [BatchSize x Heads x Time=SeqLen x SeqLen ]
     if dropout is not None:
@@ -435,8 +436,8 @@ class RelativePositionEmbedding(nn.Module):
         seq = torch.arange(n, device=device)  # [n]
         matrix = seq.repeat(n, 1)  # [n x n]
         matrix = matrix - seq.view(-1, 1)
-        matrix.masked_fill_(matrix > k, k)
-        matrix.masked_fill_(matrix < -k, -k)
+        matrix = matrix.masked_fill(matrix > k, k)
+        matrix = matrix.masked_fill(matrix < -k, -k)
         if positive_index:  # convert negatives to positive index;
             matrix += k
         return matrix

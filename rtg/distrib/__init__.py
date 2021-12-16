@@ -109,12 +109,11 @@ class DistribTorch:
 
     def backward(self, loss):
         if torch.isnan(loss):
-            raise Exception('''Loss is nan;
-            enable debug mode to know more (export NMT_DEBUG=true);
-            or here are some tricks: \n
-            1. reduce the learning rate \n
-            2. reduce batch size \n
-            3. set trainer.init_args.clip_grad_norm to a small number e.g. 5''')
+            raise Exception('''Loss is nan; enable debug mode to know more (export NMT_DEBUG=true);
+   Or, here are some tips:
+   1. reduce the learning rate
+   2. reduce batch size
+   3. set trainer.init_args.clip_grad_norm to a small number e.g. 5.0''')
         if self.fp16:
             loss = self._scaler.scale(loss)
         if loss < 0:

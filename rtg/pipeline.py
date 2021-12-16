@@ -329,7 +329,11 @@ class Pipeline:
         dtorch.barrier()
         self.exp.reload()  # with updated config and vocabs from global_main
         # train on all
-        with torch.autograd.set_detect_anomaly(debug):
+        if debug:
+            log.warning("<<<Anomoly detection enabled; this is very slow; use this only for debugging/hunting bugs>>>")
+            with torch.autograd.detect_anomaly():
+                self.exp.train()
+        else:
             self.exp.train()
         dtorch.barrier()
         if run_tests:
