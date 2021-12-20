@@ -131,6 +131,7 @@ def __register_all():
         'rtg.emb.tfmcls',
         'rtg.module.criterion',
         'rtg.module.schedule',
+        'rtg.module.subcls_tfmnmt',
     ]
     for name in modules:
         import_module(name)

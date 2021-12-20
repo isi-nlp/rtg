@@ -19,9 +19,20 @@ def test_prepared_pipeline():  # its a transformer
 
 
 def test_prepared_pipeline_relative_pos():
-    exp = Experiment('experiments/sample-exp', read_only=True)
-    exp.config['model_args']['self_attn_rel_pos'] = 4
+    config = load_conf('experiments/sample-exp/conf.yml')
+    config['model_args']['self_attn_rel_pos'] = 4
+    exp = Experiment('experiments/sample-exp', config=config, read_only=True)
     exp.config['trainer'].update(dict(steps=50, check_point=25))
+    exp.config['trainer']['init_args']['chunk_size'] = 0  # disable chunked loss
+    pipe = Pipeline(exp)
+    pipe.run(run_tests=False)
+
+
+def test_prepared_pipeline_subclassing():
+    exp = Experiment('experiments/sample-exp', read_only=True)
+    exp.config['model_type'] = 'subcls_tfmnmt'
+    exp.config['trainer'].update(dict(steps=500, check_point=25))
+    exp.config['optimizer']['name'] = 'kl_divergence'
     pipe = Pipeline(exp)
     pipe.run(run_tests=False)
 
