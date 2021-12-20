@@ -327,7 +327,8 @@ class Pipeline:
         if dtorch.is_global_main:
             self.exp.pre_process()
         dtorch.barrier()
-        self.exp.reload()  # with updated config and vocabs from global_main
+        if not self.exp.read_only:
+            self.exp.reload()  # with updated config and vocabs from global_main
         # train on all
         with torch.autograd.set_detect_anomaly(debug):
             self.exp.train()
