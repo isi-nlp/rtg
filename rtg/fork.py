@@ -6,6 +6,7 @@
 # This tool is useful for forking an experiment
 
 import argparse
+import os
 from typing import Union, List
 from rtg import log, TranslationExperiment as Experiment
 from pathlib import Path
@@ -34,8 +35,10 @@ def fork_experiment(from_exp: Path, to_exps: Union[Path, List[Path]], conf: bool
                 to_data_dir.unlink()
             assert not to_data_dir.exists()
             assert from_data_dir.exists()
-            log.info(f"link {to_data_dir} → {from_data_dir}")
-            to_data_dir.symlink_to(from_data_dir.resolve())
+            # relative paths for portability; copying dirs to new machine should work
+            from_data_dir_rel = os.path.relpath(from_data_dir.absolute(), to_data_dir.parent)
+            log.info(f"link {to_data_dir} → {from_data_dir} [{from_data_dir_rel}]")
+            to_data_dir.symlink_to(from_data_dir_rel)
             (to_exp / '_PREPARED').touch(exist_ok=True)
         if not data and vocab: # just the vocab
             if not _from_exp:
