@@ -327,7 +327,8 @@ class Pipeline:
         if dtorch.is_global_main:
             self.exp.pre_process()
         dtorch.barrier()
-        self.exp.reload()  # with updated config and vocabs from global_main
+        if not self.exp.read_only:
+            self.exp.reload()  # with updated config and vocabs from global_main
         # train on all
         if debug:
             log.warning("<<<Anomoly detection enabled; this is very slow; use this only for debugging/hunting bugs>>>")
