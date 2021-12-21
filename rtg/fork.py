@@ -40,10 +40,10 @@ def fork_experiment(from_exp: Path, to_exps: Union[Path, List[Path]], conf: bool
             log.info(f"link {to_data_dir} → {from_data_dir} [{from_data_dir_rel}]")
             to_data_dir.symlink_to(from_data_dir_rel)
             (to_exp / '_PREPARED').touch(exist_ok=True)
-        if not data and vocab: # just the vocab
+        if not data and vocab:  # just the vocab
             if not _from_exp:
                 _from_exp = Experiment(from_exp, read_only=True)
-            _from_exp.copy_vocabs(Experiment(to_exp, config={'Not': 'Empty'}, read_only=True))
+            _from_exp.copy_vocabs(Experiment(to_exp, read_only=True))
 
         if code:
             for f in ['rtg.zip', 'githead']:
