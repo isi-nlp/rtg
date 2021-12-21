@@ -194,7 +194,7 @@ class Augmentor:
             yield src, tgt
 
     def run(self, copy=False, noise_src=False, denoise_tgt=False, concat=0, reverse_src=False, reverse_tgt=False, **args):
-        assert copy or noise_src or denoise_tgt or concat or reverse_src, 'no augmentations are enabled'
+        assert copy or noise_src or denoise_tgt or concat or reverse_src or reverse_tgt, 'no augmentations are enabled'
         _ = self.inp_recs  # load recs
         if copy:
             log.info("copying input to output")
