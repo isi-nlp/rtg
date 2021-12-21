@@ -3,6 +3,9 @@
 - Bug fix: early stopping on distributed parallel training
 - `rtg.tool.augment` to support data augmentations
 - Add attention visualization in rtg.serve; powered by plotly
+- rtg.pipeline and rtg.fork: uses relative symlinks instead of absolute paths
+- rtg.decode shows decoding speed (segs, src_toks, hyp_toks)
+
 
 # v0.6.0 : 20210921
 - Redesign of registry; using decorators to register all modules
