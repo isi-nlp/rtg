@@ -4,6 +4,7 @@
 # Created: 3/9/19
 
 import argparse
+import os
 from rtg import log, TranslationExperiment as Experiment, __version__, debug_mode
 from rtg.exp import load_conf
 from pathlib import Path
@@ -214,12 +215,13 @@ class Pipeline:
                 if out_file.exists() and out_file.stat().st_size > 0:
                     log.warning(f"{out_file} exists and not empty, so skipping it")
                     continue
-                buffer = [(src_link, Path(src).resolve())]
+                buffer = [(src_link, Path(src).absolute())]
                 if label:
-                    buffer.append((label_link, Path(label).resolve()))
+                    buffer.append((label_link, Path(label).absolute()))
                 for link, orig in buffer:
                     if not link.exists():
-                        link.symlink_to(orig)
+                        orig_rel = os.path.relpath(orig, link.parent)
+                        link.symlink_to(orig_rel)
                 metric, top1_labels, top1_probs = exp.evaluate_classifier(
                     model, input=src_link, labels=label_link, **eval_args)
 
@@ -296,16 +298,17 @@ class Pipeline:
                 src, ref = data['src'], data.get('ref')
                 out_file = data.get('out')
             try:
-                orig_src = Path(src).resolve()
+                orig_src = Path(src).absolute()
                 src_link = test_dir / f'{name}.src'
                 ref_link = test_dir / f'{name}.ref'
                 buffer = [(src_link, orig_src)]
                 if ref:
-                    orig_ref = Path(ref).resolve()
+                    orig_ref = Path(ref).absolute()
                     buffer.append((ref_link, orig_ref))
                 for link, orig in buffer:
                     if not link.exists():
-                        link.symlink_to(orig)
+                        orig_rel = os.path.relpath(orig, link.parent)
+                        link.symlink_to(orig_rel)
                 out_file = test_dir / f'{name}.out.tsv' if not out_file else out_file
                 out_file.parent.mkdir(parents=True, exist_ok=True)
 
@@ -327,7 +330,8 @@ class Pipeline:
         if dtorch.is_global_main:
             self.exp.pre_process()
         dtorch.barrier()
-        self.exp.reload()  # with updated config and vocabs from global_main
+        if not self.exp.read_only:
+            self.exp.reload()  # with updated config and vocabs from global_main
         # train on all
         if debug:
             log.warning("<<<Anomoly detection enabled; this is very slow; use this only for debugging/hunting bugs>>>")

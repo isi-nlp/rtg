@@ -21,6 +21,7 @@ from rtg.data.codec import Field, SPField, NLField, PretrainMatchField
 from rtg.utils import IO, line_count
 from rtg.registry import CRITERION, OPTIMIZER, SCHEDULE, MODEL
 from rtg.schema import config_checks
+from rtg.distrib import DistribTorch
 
 
 seeded = False
@@ -848,15 +849,26 @@ class TranslationExperiment(BaseExperiment):
             version['last_worked'] = rtg.__version__
         self.store_config()
 
+    @classmethod
+    def maybe_adjust_batch_size(cls, batch_size):
+        n_workers = DistribTorch.instance().world_size
+        if n_workers > 1:
+            if isinstance(batch_size, int):
+                batch_size = batch_size // n_workers
+            else:
+                batch_size = [x//batch_size for x in batch_size]
+            log.info(f"batch_size adjusted to {n_workers}:: {batch_size}")
+        return batch_size
+
     def train(self, args=None):
         run_args = copy.deepcopy(self.config.get('trainer', {}))
         if args:
             run_args.update(args)
         if 'init_args' in run_args:
             del run_args['init_args']
+        run_args['batch_size'] = self.maybe_adjust_batch_size(run_args['batch_size'])
         train_steps = run_args['steps']
         finetune_steps = run_args.pop('finetune_steps', None)
-        finetune_batch_size = run_args.pop('finetune_batch_size', run_args.get('batch_size'))
         if finetune_steps:
             assert type(finetune_steps) is int
             assert finetune_steps > train_steps, f'finetune_steps={finetune_steps} should be' \
@@ -886,6 +898,9 @@ class TranslationExperiment(BaseExperiment):
                     pass
                 yaml.dump(status, stream=self._trained_flag)
         if finetune_steps:  # Fine tuning
+            finetune_batch_size = run_args['batch_size']
+            if 'finetune_batch_size' in run_args:
+                finetune_batch_size = self.maybe_adjust_batch_size(run_args.pop('finetune_batch_size'))
             log.info(f"Fine tuning upto {finetune_steps}, batch_size={finetune_batch_size}")
             assert finetune_batch_size
             run_args['steps'] = finetune_steps

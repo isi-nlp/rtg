@@ -1,24 +1,49 @@
 #!/usr/bin/env python
 #
-#
+# A script to augment parallel datasets
 # Author: Thamme Gowda
 # Created: 11/2/21
 
 import argparse
+import collections
 import random
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Any, Set, List, Sequence
-from tempfile import NamedTemporaryFile
-
+from typing import Dict, Any, Set, List, Sequence, Tuple
+import itertools
+import resource
 import numpy as np
-import pyspark
-import pyspark.sql.functions as SF
 from tqdm import tqdm
+import logging as log
 
-from rtg import log
-from rtg.utils import max_RSS
-from rtg.big.exp import read_raw_parallel_recs, get_spark_session
+
+log.basicConfig(level=log.INFO)
+
+
+def read_raw_parallel_lines(*streams):
+    assert len(streams) >= 2
+    for lines in itertools.zip_longest(*streams):
+        assert all(x is not None for x in lines), 'Input has unequal number of segments; parallel segments expected'
+        yield tuple(line.strip() for line in lines)
+
+
+def max_RSS(who=resource.RUSAGE_SELF) -> Tuple[int, str]:
+    """Gets memory usage of current process, maximum so far.
+    Maximum so far, since the system call API doesnt provide "current"
+    :returns (int, str)
+       int is a value from getrusage().ru_maxrss
+       str is human friendly value (best attempt to add right units)
+    """
+    mem = resource.getrusage(who).ru_maxrss
+    h_mem = mem
+    if 'darwin' in sys.platform:  # "man getrusage 2" says we get bytes
+        h_mem /= 10 ** 3  # bytes to kilo
+    unit = 'KB'
+    if h_mem >= 10 ** 3:
+        h_mem /= 10 ** 3  # kilo to mega
+        unit = 'MB'
+    return mem, f'{int(h_mem):,}{unit}'
 
 
 @dataclass
@@ -97,8 +122,7 @@ class Augmentor:
     n_out_recs: int = 0
     args: Dict[str, Any] = field(default_factory=dict)
     # ##########
-    _spark = None
-    _inp_df = None
+    _inp_recs = None
     _src_freqs = None
     _tgt_freqs = None
 
@@ -108,57 +132,34 @@ class Augmentor:
             p.parent.mkdir(exist_ok=True)
         self.outs = [open(p, mode='w', encoding='utf-8') for p in paths]
 
-    def _init_spark(self, config=None):
-        config = config or {}
-        if 'spark.master' not in config:
-            config['spark.master'] = 'local[4]'
-        log.info(f"Creating spark with config {config}|")
-        self._spark = get_spark_session(config=config)
-
     @property
-    def spark(self):
-        if not self._spark:
-            self._init_spark()
-        return self._spark
+    def inp_recs(self):
+        if not self._inp_recs:
+            log.warning(f"Going to buffer data; this may consume all the memory crash. Current usage={max_RSS()[1]}.")
+            with self.src_in.open(encoding='utf8') as src, self.tgt_in.open(encoding='utf8') as tgt:
+                recs = read_raw_parallel_lines(src, tgt)
+                self._inp_recs = list(recs)
+            self.n_inp_recs = len(self._inp_recs)
+            log.warning(f"Buffered {self.n_inp_recs:,} records Current memory usage={max_RSS()[1]}")
+        return self._inp_recs
 
-    @property
-    def inp_df(self):
-        if not self._inp_df:
-            self._inp_df, self.n_inp_recs = self.read_inp_recs()
-
-            self._inp_df.persist(pyspark.storagelevel.StorageLevel.MEMORY_AND_DISK)
-        return self._inp_df
-
-    def read_inp_recs(self):
-
-        def no_op(x):
-            return x
-
-        max_len = 2 ** 10
-        rdd, n_recs = read_raw_parallel_recs(
-            self.spark, src_path=self.src_in, tgt_path=self.tgt_in, truncate=True,
-            src_len=max_len, tgt_len=max_len, src_tokenizer=no_op, tgt_tokenizer=no_op)
-        df = rdd.toDF(['id', 'src', 'tgt'])
-        return df, n_recs
+    def _get_freqs(self, lines):
+        stats = collections.Counter()
+        for line in tqdm(lines, desc="Counting frequencies"):
+            stats.update(line.split())
+        stats = {k: v for k, v in sorted(stats.items(), key=lambda x: x[1], reverse=True)}
+        return stats
 
     @property
     def src_freqs(self):
         if not self._src_freqs:
-            src_freqs = (self.inp_df.rdd.flatMap(lambda rec: rec[1])
-                         .map(lambda tok: (tok, 1))
-                         .reduceByKey(lambda a, b: a + b)
-                         .collect())
-            self._src_freqs = {k: v for k, v in sorted(src_freqs, key=lambda x: x[1], reverse=True)}
+            self._src_freqs = self._get_freqs(lines=(s for s, t in self.inp_recs))
         return self._src_freqs
 
     @property
     def tgt_freqs(self):
         if not self._tgt_freqs:
-            tgt_freqs = (self.inp_df.rdd.flatMap(lambda rec: rec[2])
-                         .map(lambda tok: (tok, 1))
-                         .reduceByKey(lambda a, b: a + b)
-                         .collect())
-            self._tgt_freqs = {k: v for k, v in sorted(tgt_freqs, key=lambda x: x[1], reverse=True)}
+            self._tgt_freqs = self._get_freqs(lines=(s for s, t in self.inp_recs))
         return self._tgt_freqs
 
     def write_rec(self, src: str, tgt: str, tag: str):
@@ -172,22 +173,18 @@ class Augmentor:
         for o in self.outs:
             o.close()
 
-        if self._spark:
-            self._spark.stop()
-
-    def buffered_cartesian(self, rdd: pyspark.RDD, max_src_len: int, max_tgt_len: int):
-        log.warning(f"Going to buffer data; this may consume all the memory crash. Current usage={max_RSS()[1]}.")
-        recs = list((s, t) for _, s, t in rdd.toLocalIterator())
+    def buffered_cartesian(self, recs: List[Tuple[str, str]], max_src_len: int, max_tgt_len: int):
         n = len(recs)
-        log.warning(f"Buffered {n:,} records Current memory usage={max_RSS()[1]}")
         mem = set()
-        while len(mem) < n ** 2:
-            x = np.random.randint(0, n, dtype=np.int32)
-            y = np.random.randint(0, n, dtype=np.int32)
-            pair = (x, y)
-            if pair in mem:
+        tot = n ** 2
+        while len(mem) < tot:
+            # generate a random number [0, n**2]
+            # think of number is like a cell in big square, wrap the cell_idx to row_idx and col_idx
+            r = np.random.randint(0, tot, dtype=np.int64)
+            if r in mem:
                 continue
-            mem.add(pair)
+            mem.add(r)
+            x, y = r // n, r % n
             s1, t1 = recs[x]
             s2, t2 = recs[y]
             if len(s1) + len(s2) + 1 > max_src_len or (len(s2) + len(t2) + 1 > max_tgt_len):
@@ -196,33 +193,23 @@ class Augmentor:
             tgt = recs[x][1] + ' ' + recs[y][1]
             yield src, tgt
 
-    def unbuffered_cartesian(self, rdd: pyspark.RDD, max_src_len: int, max_tgt_len: int):
-        cat_rdd = (rdd.cartesian(rdd)
-                   .filter(lambda x: (x[0][0] != x[1][0] and (len(x[0][1]) + len(x[1][1]) <= max_src_len - 1)
-                                      and (len(x[0][2]) + len(x[1][2]) <= max_tgt_len - 1))))
-        samples = cat_rdd.sample(withReplacement=False, fraction=0.999)  # random record
-        for rec1, rec2 in samples.toLocalIterator():
-            src = rec1[1] + ' ' + rec2[1]
-            tgt = rec1[2] + ' ' + rec2[2]
-            assert len(src) <= max_src_len
-            assert len(tgt) <= max_tgt_len
-            yield src, tgt
-
-    def run(self, copy=False, noise_src=False, denoise_tgt=False, concat=0, **args):
-        config = {
-            #'spark.serializer': 'org.apache.spark.serializer.KryoSerializer',
-            #'spark.driver.maxResultSize': 0,
-        }
-        for cli_name, prop_name in [('spark_master', 'spark.master'), ('spark_memory', 'spark.driver.memory'),
-                                    ('spark_tmp', 'spark.local.dir')]:
-            if args.get(cli_name):
-                config[prop_name] = args.get(cli_name)
-        self._init_spark(config)
-        _ = self.inp_df  # load df
+    def run(self, copy=False, noise_src=False, denoise_tgt=False, concat=0, reverse_src=False, reverse_tgt=False, **args):
+        assert copy or noise_src or denoise_tgt or concat or reverse_src, 'no augmentations are enabled'
+        _ = self.inp_recs  # load recs
         if copy:
-            log.info("copying source to target")
-            for rec in tqdm(self.inp_df.toLocalIterator(), total=self.n_inp_recs, desc="Copy"):
-                self.write_rec(rec.src, rec.tgt, 'ORIG_INP')
+            log.info("copying input to output")
+            for src, tgt in tqdm(self.inp_recs, total=self.n_inp_recs, desc="Copy"):
+                self.write_rec(src, tgt, 'ORIG_INP')
+        if reverse_src or reverse_tgt:
+            log.info(f"Reversing words src:{reverse_src} tgt:{reverse_tgt} ")
+            for src, tgt in tqdm(self.inp_recs, total=self.n_inp_recs, desc="Reversing"):
+                if reverse_src:
+                    src2 = ' '.join(reversed(src.split()))
+                    self.write_rec(src2, tgt, 'REV_SRC')
+                if reverse_tgt:
+                    tgt2 = ' '.join(reversed(tgt.split()))
+                    self.write_rec(tgt2, tgt, 'REV_TGT')
+
         for enabled, side in [(noise_src, 'src'), (denoise_tgt, 'tgt')]:
             if not enabled:
                 continue  # skip
@@ -238,9 +225,8 @@ class Augmentor:
                 chain.append(WordReplace(rate=args.get('word_replace'), replacements=['<MASK>']))
             transform = Transforms(chain=chain)
 
-            for rec in tqdm(self.inp_df.toLocalIterator(), total=self.n_inp_recs,
-                            desc=f"Writing noisy {side} recs"):
-                src, tgt = rec.src.split(), rec.tgt.split()
+            for src, tgt in tqdm(self.inp_recs, total=self.n_inp_recs, desc=f"Writing noisy {side} recs"):
+                src, tgt = src.split(), tgt.split()
                 if side == 'src':
                     src = transform(src)
                     tag = 'NOISY_SRC'
@@ -248,8 +234,7 @@ class Augmentor:
                     assert side == 'tgt'
                     src = transform(tgt)
                     tag = 'DENOISE_TGT'
-                if not src or not tgt:
-                    # this was not augmented, so skip
+                if not src or not tgt: # this was not augmented, so skip
                     continue
                 src, tgt = ' '.join(src), ' '.join(tgt)
                 self.write_rec(src, tgt, tag)
@@ -257,25 +242,17 @@ class Augmentor:
         if concat > 0:
             max_src_len = args['max_src_len']
             max_tgt_len = args['max_tgt_len']
-            buffered = True
             assert max_src_len > 0
             assert max_tgt_len > 0
-            df = self.inp_df
-            short_df = df.filter((SF.length(df.src) <= int(0.7*max_src_len))
-                                 & (SF.length(df.tgt) <= int(0.7*max_tgt_len)))
-            short_rdd = short_df.rdd
+            short_recs = [(s, t) for s, t in self.inp_recs if
+                          (len(s) < int(0.7 * max_src_len)) and (len(t) < int(0.7 * max_tgt_len))]
+
             n_samples = int(self.n_inp_recs * concat)
-            total_samples = int(0.5 * self.n_inp_recs * (self.n_inp_recs - 1) * 0.7)  # approximation
+            total_samples = len(short_recs) ** 2 - len(short_recs)  # approximation
             fraction = n_samples / total_samples
             log.info(f"Sampling {self.n_inp_recs:,} x {concat} = {n_samples:,} out of {total_samples:g}"
                      f" total possible concats (approx.). fraction={fraction:g}")
-
-            cartesian = self.unbuffered_cartesian
-            if buffered:
-                assert self.n_inp_recs <= 10 ** 9   # billion pairs!
-                cartesian = self.buffered_cartesian
-            recs = cartesian(rdd=short_rdd, max_src_len=max_src_len, max_tgt_len=max_tgt_len)
-
+            recs = self.buffered_cartesian(recs=short_recs, max_src_len=max_src_len, max_tgt_len=max_tgt_len)
             i = 0
             for src, tgt in tqdm(recs, desc="Writing concats", total=n_samples):
                 self.write_rec(src, tgt, 'CONCAT1')
@@ -305,8 +282,6 @@ def bound_float(s, mn=0.0, mx=1.0):
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Augment parallel sentences")
-    # parser.add_argument("-i", '--inp', type=Path, help="Input file having <source>\\t<target> per line", required=True)
-    # parser.add_argument("-o", '--out', type=Path, help="Output file path", required=True)
     io_p = parser.add_argument_group("input-out")
     io_p.add_argument("-si", '--src-in', type=Path, help="Source input file", required=True)
     io_p.add_argument("-so", '--src-out', type=Path, help="Source output file path", required=True)
@@ -318,34 +293,34 @@ def parse_args():
     copy_p.add_argument("-cp", "--copy", action="store_true", help="Copy input to output. default=%(default)s")
     noise_p = parser.add_argument_group("noise")
     noise_p.add_argument("-ns", "--noise-src", action="store_true",
-                        help="augment (noise(source), target) records "
-                             " See -wd and -ws to control noise rate. default=%(default)s")
+                         help="augment (noise(source), target) records "
+                              " See -wd and -ws to control noise rate. default=%(default)s")
     noise_p.add_argument("-dt", "--denoise-tgt", action="store_true",
-                        help="Augment (noise(target),target) records."
-                             " See -wd and -ws to control noise rate. default=%(default)s")
+                         help="Augment (noise(target),target) records."
+                              " See -wd and -ws to control noise rate. default=%(default)s")
     noise_p.add_argument("-wd", "--word-drop", metavar="RATE", type=float, default=0.1,
-                        help="What percent of words are to be dropped.")
+                         help="What percent of words are to be dropped.")
     noise_p.add_argument("-ws", "--word-shuffle", metavar="RATE", type=bound_float, default=0.1,
-                        help="What percent of words to shuffle? Range: [0, 1], default=%(default)s")
+                         help="What percent of words to shuffle? Range: [0, 1], default=%(default)s")
     noise_p.add_argument("-wr", "--word-random", metavar="RATE", type=bound_float, default=0.1,
-                        help="What percent of words to randomly replace? default=%(default)s")
+                         help="What percent of words to randomly replace? default=%(default)s")
 
     cat_p = parser.add_argument_group("concatenation")
     cat_p.add_argument("-cat", "--cat", "--concat", dest='concat', metavar='RATIO', type=float, default=0.0,
-                        help="RATIO greater than 0 enables random parallel sentence concatenation. default=%(default)s."
-                             " Number of augmentations = RATIO*|INPUT|. See -msl and -mtl to control lengths")
+                       help="RATIO greater than 0 enables random parallel sentence concatenation. default=%(default)s."
+                            " Number of augmentations = RATIO*|INPUT|. See -msl and -mtl to control lengths")
     cat_p.add_argument("-msl", "--max-src-len", metavar='N_CHARS', type=int, default=200,
-                        help="Maximum chars in source sequence. Active iff -cat > 0. default=%(default)s")
-    cat_p.add_argument("-mtl", "--max-tgt-len",  metavar='N_CHARS', type=int, default=200,
-                        help="Maximum chars in target sequence. Active iff -cat > 0. default=%(default)s")
+                       help="Maximum chars in source sequence. Active iff -cat > 0. default=%(default)s")
+    cat_p.add_argument("-mtl", "--max-tgt-len", metavar='N_CHARS', type=int, default=200,
+                       help="Maximum chars in target sequence. Active iff -cat > 0. default=%(default)s")
 
-    para_p = parser.add_argument_group("parallelization")
-    para_p.add_argument("-sm", "--spark-master", type=str, default='local[4]',
-                        help="Spark master. set 'local[4]' implies 4 threads on local machine. default=%(default)s")
-    para_p.add_argument("-mem", "--spark-memory", metavar='MEM', type=str, default='8g',
-                        help="Spark driver memory; higher the better. default=%(default)s")
-    para_p.add_argument("-tmp", "--spark-tmp", metavar='PATH', type=str, default=None,
-                        help="Spark tmp directory; faster storage is preferred. default=%(default)s")
+    rev_p = parser.add_argument_group("reverse")
+    rev_p.add_argument("-rs", "--reverse-src", dest='reverse_src', action='store_true',
+                       help="Enables augmentation of (reversed(src.split()), tgt). Words are split by white space."
+                            " default=%(default)s. Number of augmentations = |INPUT|.")
+    rev_p.add_argument("-rt", "--reverse-tgt", dest='reverse_tgt', action='store_true',
+                       help="Enables augmentation having (reversed(tgt.split()), tgt). Words are split by white space."
+                            " default=%(default)s. Number of augmentations = |INPUT|.")
     return parser.parse_args()
 
 

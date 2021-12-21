@@ -12,6 +12,7 @@ import os
 import torch
 from torch import nn as nn
 import numpy as np
+import tqdm
 
 from rtg import TranslationExperiment as Experiment
 from rtg import log, device, my_tensor as tensor, debug_mode
@@ -574,27 +575,38 @@ class Decoder:
 
         def _decode_all():
             buffer = []
-            for batch in batches:
-                in_seqs, in_lens = batch.as_tensors(device=device)
-                batched_hyps: List[List[Hypothesis]] = self.beam_decode(in_seqs, in_lens,
-                                                                        num_hyp=num_hyp, **args)
-                assert len(batched_hyps) == batch.line_count
-                for i, hyps in enumerate(batched_hyps):
-                    idx = batch.idxs[i]
-                    src = batch.srcs[i]
-                    _id = batch.ids[i]
-                    log.info(f"{idx}: SRC: {batch.srcs[i]}")
-                    ref = batch.refs[i]  # just for the sake of logging, if it exists
-                    if ref:
-                        log.info(f"{idx}: REF: {batch.refs[i]}")
+            start_at = time.time()
+            n_src_toks = 0
+            n_hyp_toks = 0
+            with tqdm.tqdm(batches, dynamic_ncols=True, desc='Decoding', unit='segs') as data_bar:
+                for batch in data_bar:
+                    in_seqs, in_lens = batch.as_tensors(device=device)
+                    batched_hyps: List[List[Hypothesis]] = self.beam_decode(in_seqs, in_lens,
+                                                                            num_hyp=num_hyp, **args)
+                    assert len(batched_hyps) == batch.line_count
+                    for i, hyps in enumerate(batched_hyps):
+                        idx = batch.idxs[i]
+                        src = batch.srcs[i]
+                        _id = batch.ids[i]
+                        log.info(f"{idx}: SRC: {batch.srcs[i]}")
+                        ref = batch.refs[i]  # just for the sake of logging, if it exists
+                        if ref:
+                            log.info(f"{idx}: REF: {batch.refs[i]}")
 
-                    result = []
-                    for j, (score, hyp) in enumerate(hyps):
-                        hyp_line = self.out_vocab.decode_ids(hyp,
-                                                             trunc_eos=True)  # tok ids to string
-                        log.info(f"{idx}: HYP{j}: {score:g} : {hyp_line}")
-                        result.append((score, hyp_line))
-                    buffer.append((idx, src, result, _id))
+                        result = []
+                        _hyp_toks = []
+                        for j, (score, hyp) in enumerate(hyps):
+                            hyp_line = self.out_vocab.decode_ids(hyp, trunc_eos=True)  # tok ids to string
+                            log.info(f"{idx}: HYP{j}: {score:g} : {hyp_line}")
+                            result.append((score, hyp_line))
+                            _hyp_toks.append(len(hyp_line.split()))
+                        buffer.append((idx, src, result, _id))
+
+                        n_src_toks += len(src.split())
+                        n_hyp_toks += max(_hyp_toks)
+                        time_delta = time.time() - start_at
+                        speed = f'src: {n_src_toks / time_delta:.2f} toks/sec hyp: {n_hyp_toks / time_delta:.2f} toks/sec'
+                        data_bar.set_postfix_str(speed)
 
             buffer = sorted(buffer, key=lambda x: x[0])  # restore order
             for _, src, result, _id in buffer:
