@@ -856,7 +856,7 @@ class TranslationExperiment(BaseExperiment):
             if isinstance(batch_size, int):
                 batch_size = batch_size // n_workers
             else:
-                batch_size = [x//batch_size for x in batch_size]
+                batch_size = [x // n_workers for x in batch_size]
             log.info(f"batch_size adjusted to {n_workers}:: {batch_size}")
         return batch_size
 
