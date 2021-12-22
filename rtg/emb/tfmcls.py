@@ -359,7 +359,7 @@ class ClassifierTrainer(SteppedTrainer):
         self.classifier = self.core_model.classifier
 
     def loss_func(self, scores, labels, train_mode=False, take_step=False):
-        loss = self.criterion(scores, labels, mask_pad=False).sum() / len(labels)
+        loss = self.criterion(scores, labels, mask_out=None).sum() / len(labels)
         if train_mode:  # don't do this for validation set
             dtorch.backward(loss)
             if take_step:
@@ -386,8 +386,7 @@ class ClassifierTrainer(SteppedTrainer):
                     x_mask = (batch.x_seqs != batch.pad_val).unsqueeze(1)
                     scores = self.model(src=batch.x_seqs, src_mask=x_mask,
                                         score=self.criterion.input_type)
-                    loss = self.loss_func(scores=scores, labels=batch.ys,
-                                          train_mode=False, take_step=False)
+                    loss = self.loss_func(scores=scores, labels=batch.ys, train_mode=False, take_step=False)
 
                     total_loss += loss
                     num_batches += 1
