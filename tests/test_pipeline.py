@@ -31,10 +31,11 @@ def test_prepared_pipeline_relative_pos():
 def test_prepared_pipeline_subclassing():
     exp = Experiment('experiments/sample-exp', read_only=True)
     exp.config['model_type'] = 'subcls_tfmnmt'
-    exp.config['trainer'].update(dict(steps=500, check_point=25))
-    exp.config['optimizer']['name'] = 'kl_divergence'
+    exp.config['trainer'].update(dict(steps=200, check_point=50))
+    exp.config['trainer']['init_args']['chunk_size'] = 0
+    exp.config['criterion']['name'] = 'kl_divergence'
     pipe = Pipeline(exp)
-    pipe.run(run_tests=False)
+    pipe.run(run_tests=False, debug=True)
 
 
 def test_pipeline_transformer():

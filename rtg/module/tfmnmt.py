@@ -782,18 +782,12 @@ class TransformerTrainer(SteppedTrainer):
 
                 # Prep masks
                 x_mask = (x_seqs != batch.pad_val).unsqueeze(1)
-                y_seqs_with_bos = torch.cat([bos_step, batch.y_seqs], dim=1)
-                y_mask = batch.make_autoreg_mask(y_seqs_with_bos)
+                y_seqs_out = batch.y_seqs
+                y_seqs_in = torch.cat([bos_step, batch.y_seqs], dim=1)
+                y_mask = batch.make_autoreg_mask(y_seqs_in)
 
                 with autocast(enabled=dtorch.fp16):
-                    # [Batch x Time x D]
-                    out = self.model(x_seqs, y_seqs_with_bos, x_mask, y_mask)
-
-                    # skip the last time step (the one with EOS as input)
-                    out = out[:, :-1, :]
-
-                    # assumption:  y_seqs has EOS, and not BOS
-                    loss = self.loss_func(out, batch.y_seqs, train_mode=True, take_step=take_step)
+                    loss = self._train_step(take_step, x_mask, x_seqs, y_mask, y_seqs_in, y_seqs_out)
 
                 if stopper and take_step:
                     stopper.step()
@@ -857,6 +851,15 @@ class TransformerTrainer(SteppedTrainer):
 
         distr.barrier()
         return early_stopped_flag.exists()
+
+    def _train_step(self, take_step: bool, x_mask, x_seqs, y_mask, y_seqs_in, y_seqs_out):
+        # [Batch x Time x D]
+        out = self.model(x_seqs, y_seqs_in, x_mask, y_mask)
+        # skip the last time step (the one with EOS as input)
+        out = out[:, :-1, :]
+        # assumption:  y_seqs has EOS, and not BOS
+        loss = self.loss_func(out, y_seqs_out, train_mode=True, take_step=take_step)
+        return loss
 
     def _log_resources(self, batch):
         self.tbd.add_scalars('resources_mem',
