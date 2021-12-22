@@ -17,7 +17,7 @@ from tqdm import tqdm
 
 from rtg import device, log, TranslationExperiment as Experiment
 from rtg.utils import get_my_args
-from rtg.data.dataset import BatchIterable
+from rtg.data.dataset import BatchIterable, Field
 from rtg.module import NMTModel
 from rtg.module.trainer import TrainerState, SteppedTrainer, EarlyStopper
 from rtg.module.criterion import Criterion
@@ -574,13 +574,13 @@ class TransformerTrainer(SteppedTrainer):
 
         if not chunk_size or chunk_size < 1:
             self.loss_func = SimpleLossFunction(generator=generator, criterion=self.criterion,
-                                                opt=self.opt)
+                                                opt=self.opt, vocab=exp.tgt_vocab)
         else:
             log.info(f"Using Chunked Loss Generator. chunk_size={chunk_size}")
             clip_grad_norm = self.init_args.get('clip_grad_norm', 0.0)
             self.loss_func = ChunkedLossCompute(generator=generator, criterion=self.criterion,
-                                                opt=self.opt, chunk_size=chunk_size,
-                                                clip_grad_norm=clip_grad_norm)
+                                                opt=self.opt, vocab=exp.tgt_vocab,
+                                                chunk_size=chunk_size, clip_grad_norm=clip_grad_norm)
 
     def run_valid_epoch(self, data_iter: BatchIterable, dec_bos_cut=False) -> Dict[str, float]:
         """
@@ -793,8 +793,7 @@ class TransformerTrainer(SteppedTrainer):
                     out = out[:, :-1, :]
 
                     # assumption:  y_seqs has EOS, and not BOS
-                    loss = self.loss_func(out, batch.y_seqs, train_mode=True,
-                                          take_step=take_step)
+                    loss = self.loss_func(out, batch.y_seqs, train_mode=True, take_step=take_step)
 
                 if stopper and take_step:
                     stopper.step()
@@ -954,13 +953,37 @@ class SimpleLossFunction:
     generator: Generator
     criterion: Criterion
     opt: Optimizer
+    vocab: Field
+    subcls_gen: bool = False
+    vocab_size = -1
+    min_sub_vocab = 100
+
+    def __post_init__(self):
+        #self.class_ids = torch.arange(len(self.vocab), device=device)
+        self.vocab_size = len(self.vocab)
+        assert self.vocab_size > 1
+        self.min_sub_vocab = min(len(self.vocab), self.min_sub_vocab)
 
     def __call__(self, x_feats, y_seqs, train_mode=True, take_step=True, get_out=False):
         # B x T x D --> B x T x V
-        x_probs = self.generator(x_feats, score=self.criterion.input_type)
+        mask_out = (y_seqs == self.vocab.pad_idx).view(-1, 1)
+        if not get_out and self.subcls_gen:
+            sub_vocab, tgt_rev_idx = y_seqs.unique(return_inverse=True)
+            # y_seqs.copy_(tgt_rev_idx)  # update in place
+            y_seqs_orig, y_seqs = y_seqs, tgt_rev_idx
+            if len(sub_vocab) < self.min_sub_vocab:
+                weight = torch.ones(self.vocab_size, device=y_seqs.device)
+                weight[sub_vocab] = 0   # try to avoid classes already in sub_vocab (i.e. pos classes)
+                neg_classes = torch.multinomial(weight, self.min_sub_vocab - len(sub_vocab))
+                sub_vocab = torch.cat([sub_vocab, neg_classes])
+            x_probs = self.generator(x_feats, score=self.criterion.input_type, sub_select=sub_vocab)
+        else:
+            x_probs = self.generator(x_feats, score=self.criterion.input_type)
         scores = x_probs.contiguous().view(-1, x_probs.size(-1))  # B x T x V --> B.T x V
         truth = y_seqs.contiguous().view(-1)  # B x T --> B.T
-        loss = self.criterion(scores, truth)
+        loss = self.criterion(scores, truth, mask_out=mask_out)
+        if loss.item() < 0:
+            log.warning(f"Oooops! Negative loss {loss.item()}")
 
         if train_mode:  # don't do this for validation set
             dtorch.backward(loss)
@@ -982,7 +1005,6 @@ class ChunkedLossCompute(SimpleLossFunction):
         if self.criterion.reduction == 'macro':
             raise Exception('ChunkedLoss doesnt support reduction=macro; set chunk_size=0 to disable ChunkedLoss')
 
-
     def __call__(self, y_feats, y_seqs, train_mode=True, chunk_size=None, take_step=True, get_out=False):
         """
         :param y_feats:
@@ -994,6 +1016,7 @@ class ChunkedLossCompute(SimpleLossFunction):
         :return: total_loss if get_outs=False (default)
                 (total_loss, outputs) if get_out=True
         """
+        assert not self.subcls_gen, 'subcls_generation is not supported with chunked_loss'
         chunk_size = chunk_size or self.chunk_size
         assert chunk_size > 0
         total = 0
@@ -1001,10 +1024,13 @@ class ChunkedLossCompute(SimpleLossFunction):
         _y_feats.requires_grad = True  # yet collect grads
         out_chunks = []
         count = 0
+        mask_out = (y_seqs == self.vocab.pad_idx)
+
         for i in range(0, _y_feats.shape[1], chunk_size):
             count += 1
             # grad network is cut here
             chunked_feats = _y_feats[:, i:i + chunk_size]
+
             chunked_dist = self.generator(chunked_feats, score=self.criterion.input_type)
             if get_out:
                 top_idxs = chunked_dist.argmax(dim=-1)  # B x C x V -> B x C
@@ -1012,8 +1038,9 @@ class ChunkedLossCompute(SimpleLossFunction):
             # B x C x V -> B.C x V
             chunked_dist = chunked_dist.contiguous().view(-1, chunked_dist.shape[-1])
             chunked_ys = y_seqs[:, i:i + chunk_size].contiguous().view(-1)  # B x C -> B.C
+            chunked_mask_out = mask_out[:, i: i + chunk_size].reshape(-1, 1)
             # FIXME: normalization is improper with chunking and macro reduction
-            loss = self.criterion(chunked_dist, chunked_ys)
+            loss = self.criterion(chunked_dist, chunked_ys, mask_out=chunked_mask_out)
             total += loss.detach().item()
             if train_mode:
                 dtorch.backward(loss)

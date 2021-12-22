@@ -236,7 +236,7 @@ class SparseCrossEntropy(TemperedCriterion):
         if self.weight_by:
             log.info(f"Weight activation is after {self.weight_calm_time} updates")
 
-    def forward(self, inputs, targets, mask_pad=True):
+    def forward(self, inputs, targets, mask_out=None):
         # logits: [N x C] targets: [N]
         assert self.reduction == 'micro'
         assert targets.shape[0] == inputs.shape[0]
@@ -244,8 +244,7 @@ class SparseCrossEntropy(TemperedCriterion):
 
         losses = F.cross_entropy(input=inputs, target=targets, reduction='none', weight=weights)
         tot_items = targets.shape[0]
-        if mask_pad:
-            mask_out = targets.eq(self.pad_idx)
+        if mask_out is not None:
             losses.masked_fill_(mask_out, 0)
             tot_items -= mask_out.sum()
         return losses.sum() / tot_items
@@ -309,13 +308,12 @@ class KLDivergence(SparseCrossEntropy):
         if 'macro' in self.reduction:
             assert self.label_smoothing > 0., 'reduce=macro requires label_smoothing > 0'
 
-    def forward(self, inputs, targets, mask_pad=True):
+    def forward(self, inputs, targets, mask_out=None):
         # logits: [N x C] targets: [N]
         N, C = inputs.shape
         assert targets.shape[0] == inputs.shape[0]
-        mask_out = None
-        if mask_pad:
-            mask_out = (targets == self.pad_idx).unsqueeze(1)  # [N] -> [N, 1]
+        #if mask_out is None and mask_pad:
+        #    mask_out = (targets == self.pad_idx).unsqueeze(1)  # [N] -> [N, 1]
         dense_targets = get_dense_targets(labels=targets, n_labels=C, label_smoothing=self.label_smoothing,
                                           ignore_idx=self.pad_idx)
         weight = self.get_weights(inputs, targets)
@@ -332,7 +330,7 @@ class FocalLoss(TemperedCriterion):
         assert gamma >= 0.0
         self.gamma = gamma
 
-    def forward(self, inputs, targets, mask_pad=True):
+    def forward(self, inputs, targets, mask_out=None):
         # logits: [N x C] targets: [N]
         assert self.reduction == 'micro'
         assert targets.shape[0] == inputs.shape[0]
@@ -341,8 +339,8 @@ class FocalLoss(TemperedCriterion):
         tot_items = targets.shape[0]
         assert losses.shape == weights.shape, f'Shape mis match: losses:{losses.shape} == weights:{weights.shape}'
         losses = torch.mul(losses, weights)
-        if mask_pad:
-            mask_out = targets.eq(self.pad_idx)
+        if mask_out is not None:
+            # mask_out = targets.eq(self.pad_idx)
             losses.masked_fill_(mask_out, 0)
             tot_items -= mask_out.sum()
         assert tot_items > 0
@@ -375,7 +373,7 @@ class BinaryCrossEntropy(Criterion):
         self.bce_loss = nn.BCEWithLogitsLoss(reduction='none')
         self.smoothing = label_smoothing
 
-    def forward(self, logits, targets, mask_pad=True):
+    def forward(self, logits, targets, mask_out=None):
         # logits: [B x V] targets: [B]
         assert targets.shape[0] == logits.shape[0]
         targets = targets.unsqueeze(1)
@@ -385,9 +383,9 @@ class BinaryCrossEntropy(Criterion):
         truth_full.scatter_(1, targets, 1)
 
         per_time_per_class_loss = self.bce_loss(logits, truth_full)
-        if mask_pad:
-            pad_mask = targets == self.pad_idx
-            per_time_per_class_loss.masked_fill_(mask=pad_mask, value=0.)
+        if mask_out is not None:
+            # pad_mask = targets == self.pad_idx
+            per_time_per_class_loss.masked_fill_(mask=mask_out, value=0.)
 
         # num_toks = batch_size - pad_mask.sum()
         # mean_loss = per_tok_loss.sum() / num_toks
@@ -408,7 +406,7 @@ class SmoothKLD(Criterion):
         self.fill_val = label_smoothing / (n_classes - 2)  # exclude 2  = padding, and expected word
         self.confidence = 1.0 - label_smoothing
 
-    def forward(self, x, target, mask_pad=True):
+    def forward(self, x, target, mask_out=None):
         # 'x' is log probabilities, originally [B, T, V], but here [B.T, V]
         # 'target' is expected word Ids, originally [B, T] but here [B.T]
         assert x.shape[1] == self.size
@@ -419,13 +417,13 @@ class SmoothKLD(Criterion):
         smooth_truth[:, self.pad_idx] = 0
         smooth_truth.scatter_(1, target, self.confidence)
         tot_toks = x.shape[0]
-        if mask_pad:
-            mask = target.eq(self.pad_idx)
-            smooth_truth.masked_fill_(mask, 0)
+        if mask_out is not None:
+            # mask = target.eq(self.pad_idx)
+            smooth_truth.masked_fill_(mask_out, 0)
             # note: x is log probs, smooth_truth is just probs
             # D (P || Q) = - \sum p(x) log[q(x)/p(x)]
             # mask is done by setting p(x)=0 for pad toks
-            tot_toks -= mask.sum()
+            tot_toks -= mask_out.sum()
         loss_per_item = F.kl_div(x, smooth_truth, reduction='none')
         # micro reduction
         loss = loss_per_item.sum() / tot_toks
@@ -466,7 +464,7 @@ class TripletLoss(Criterion):
         # the root is ignored; do we really need it? I dont think so
         return dist_sq
 
-    def forward(self, x, targets):
+    def forward(self, x, targets, mask_out=None):
         # x: [B x D]   targets:[B]
         anchors = x  # [B x D]
         pos_embs = self.embedding(targets)  # [B x D]
@@ -491,8 +489,9 @@ class TripletLoss(Criterion):
             triplet_loss = F.relu(-triplet_loss)
         else:
             raise Exception(self.mode + ' not supported')
-
-        triplet_loss = triplet_loss.masked_fill(targets == self.pad_idx, 0)
+        if mask_out is not None:
+            # triplet_loss = triplet_loss.masked_fill(targets == self.pad_idx, 0)
+            triplet_loss = triplet_loss.masked_fill(mask_out, 0.)
         return triplet_loss
 
 
@@ -510,10 +509,10 @@ class SmoothKLDAndTripletLoss(Criterion):
                                        mode=mode, neg_sampling=neg_sampling, exp=exp)
         self.alpha = alpha
 
-    def forward(self, x, targets, mask_pad=True):
+    def forward(self, x, targets, mask_out=None):
         smx = F.log_softmax(torch.einsum('bd,vd->bv', x, self.embeddings), dim=-1)
-        sKLD = self.smoothKLD(smx, targets, mask_pad)
-        tLoss = self.tripletLoss(x, targets)
+        sKLD = self.smoothKLD(smx, targets, mask_out=mask_out)
+        tLoss = self.tripletLoss(x, targets, mask_out=mask_out)
 
         # Must sum here to match sizes
         return sKLD.sum() + self.alpha * tLoss.sum()
@@ -532,14 +531,15 @@ class DiceLoss(Criterion):
         self.additive_smoothing = additive_smoothing
         self.label_smoothing = label_smoothing
 
-    def forward(self, inputs, targets, mask_pad=True):
+    def forward(self, inputs, targets, mask_out=None):
         probs = inputs.softmax(dim=1)
         # probs = inputs.sigmoid()
         N, C = probs.shape
         assert targets.shape[0] == probs.shape[0]
         mask_in = None
-        if mask_pad:
-            mask_in = (targets != self.pad_idx).unsqueeze(1).float()  # [N] -> [N, 1]
+        if mask_out is not None:
+            #mask_in = (targets != self.pad_idx).unsqueeze(1).float()  # [N] -> [N, 1]
+            mask_in = ~mask_out
         dense_targets = get_dense_targets(labels=targets, n_labels=C, label_smoothing=self.label_smoothing,
                                           ignore_idx=self.pad_idx)
         weight = None
@@ -581,7 +581,7 @@ class SquaredError(Criterion):
         assert 0.0 <= label_smoothing <= 1.0
         assert self.reduction in ('micro', 'macro')
 
-    def forward(self, x, target, mask_pad=True):
+    def forward(self, x, target, mask_out=None):
         # 'x' is log probabilities, originally [B, T, V], but here [B.T, V]
         # 'target' is expected word Ids, originally [B, T] but here [B.T]
         assert x.shape[0] == target.shape[0]
@@ -589,11 +589,11 @@ class SquaredError(Criterion):
         smooth_truth = smooth_labels(labels=target, n_labels=n_labels, smooth_rate=self.label_smoothing,
                                      ignore_idx=self.pad_idx)
         tot_toks = x.shape[0]
-        if mask_pad:
-            mask = target.eq(self.pad_idx).unsqueeze(1)
-            smooth_truth.masked_fill_(mask, 0)
-            x = x.masked_fill(mask, 0)
-            tot_toks -= mask.sum()
+        if mask_out is not None:
+            # mask = target.eq(self.pad_idx).unsqueeze(1)
+            smooth_truth.masked_fill_(mask_out, 0)
+            x = x.masked_fill(mask_out, 0)
+            tot_toks -= mask_out.sum()
         assert tot_toks > 0
         dist_sq = (x - smooth_truth).pow(2)
         loss_per_item_per_cls = dist_sq

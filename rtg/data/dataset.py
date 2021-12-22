@@ -652,8 +652,13 @@ class BatchIterable(Iterable[Batch]):
                 max_len = this_len
         if batch:
             log.debug(f"\nLast batch, size={len(batch)}")
-            yield Batch(batch, sort_dec=self.sort_desc, batch_first=self.batch_first,
+            batch = Batch(batch, sort_dec=self.sort_desc, batch_first=self.batch_first,
                         field=self.field, device=self.device, y_is_cls=self.y_is_cls)
+            this_size = hasattr(batch, 'y_toks') and batch.y_toks or batch.x_toks
+            if this_size < 0.2 * self.max_toks:
+                log.warning(f"Skipped a batch having {this_size} tokens; required batch_size={self.max_toks}")
+            else:
+                yield batch
 
     def _make_eq_len_batch_ids(self):
         sort = 'y_len desc'
@@ -700,8 +705,13 @@ class BatchIterable(Iterable[Batch]):
         for batch_ids in batches:
             batch = list(self.data.get_all_ids(batch_ids))
             # batch = [Example(r['x'], r.get('y')) for r in batch]
-            yield Batch(batch, sort_dec=self.sort_desc, batch_first=self.batch_first,
+            batch = Batch(batch, sort_dec=self.sort_desc, batch_first=self.batch_first,
                         field=self.field, device=self.device, y_is_cls=self.y_is_cls)
+            this_size = hasattr(batch, 'y_toks') and batch.y_toks or batch.x_toks
+            if this_size < 0.2 * self.max_toks:
+                log.warning(f"Skipped a batch having {this_size} tokens; required batch_size={self.max_toks}")
+                continue
+            yield batch
         self.n_reads += 1
 
     def __iter__(self) -> Iterator[Batch]:
