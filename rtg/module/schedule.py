@@ -40,10 +40,16 @@ class Noam(LRSchedule):
 class InverseSqrt(LRSchedule):
     warmup: int
     peak_lr: float
+    init_lr: 0.0
+
+    def __post_init__(self):
+        assert self.init_lr < self.peak_lr, f'init_lr must be lower than peak_lr'
 
     def rate(self, step) -> float:
-        return min(step * self.peak_lr / self.warmup,
-                   self.peak_lr * self.warmup ** 0.5 * step ** -0.5)
+        if step <= self.warmup:
+            return self.init_lr + step * (self.peak_lr - self.init_lr) / self.warmup
+        else:
+            return self.peak_lr * self.warmup ** 0.5 * step ** -0.5
 
 
 @dataclass
