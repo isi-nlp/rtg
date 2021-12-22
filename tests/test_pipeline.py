@@ -34,6 +34,7 @@ def test_prepared_pipeline_subclassing():
     exp.config['trainer'].update(dict(steps=200, check_point=50))
     exp.config['trainer']['init_args']['chunk_size'] = 0
     exp.config['criterion']['name'] = 'kl_divergence'
+    exp.config['schedule'] = dict(name='inverse_sqrt', args=dict(warmup=50, init_lr=1e-5, peak_lr=1e-2))
     pipe = Pipeline(exp)
     pipe.run(run_tests=False, debug=True)
 
@@ -44,6 +45,7 @@ def test_prepared_pipeline_subclassing_with_chunking():
     exp.config['trainer'].update(dict(steps=200, check_point=50, batch_size=(2048, 200)))
     exp.config['trainer']['init_args']['chunk_size'] = 10
     exp.config['criterion']['name'] = 'kl_divergence'
+    exp.config['schedule'] = dict(name='inverse_sqrt', args=dict(warmup=50, init_lr=1e-5, peak_lr=1e-2))
     pipe = Pipeline(exp)
     pipe.run(run_tests=False, debug=True)
 

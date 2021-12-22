@@ -7,7 +7,7 @@ from abc import ABC
 
 from rtg.module.tfmnmt import (Decoder, MultiHeadedAttention, TransformerNMT, TransformerTrainer, Generator)
 from rtg.emb.tfmcls import SentenceCompressor
-
+from rtg.distrib import dtorch
 from rtg.registry import register, MODEL, registry, CRITERION
 
 
@@ -84,13 +84,17 @@ class SubClassNMTTrainer(TransformerTrainer):
     def _train_step(self, take_step: bool, x_mask, x_seqs, y_mask, y_seqs_in, y_seqs_out):
         # [Batch x Time x D], [Batch x V]
         out, vocab_guesses = self.model(x_seqs, y_seqs_in, x_mask, y_mask, sub_select=True)
-        # skip the last time step (the one with EOS as input)
-        out = out[:, :-1, :]
-        # assumption:  y_seqs has EOS, and not BOS
-        loss = self.loss_func(out, y_seqs_out, train_mode=True, take_step=take_step)
 
         # multi-label classification on vocabulary
         vocab_truth = torch.zeros_like(vocab_guesses, dtype=torch.float)   # [B x V]
         vocab_truth.scatter_(1, y_seqs_out, 1.)                           # [B x V]
         loss2 = self.vocab_loss_func(vocab_guesses, vocab_truth)
-        return loss + loss2
+        dtorch.backward(loss2, retain_graph=True)
+        loss2 = loss2.item()
+
+        # skip the last time step (the one with EOS as input)
+        out = out[:, :-1, :]
+        # assumption:  y_seqs has EOS, and not BOS
+        loss1 = self.loss_func(out, y_seqs_out, train_mode=True, take_step=take_step)
+
+        return loss1 + loss2
