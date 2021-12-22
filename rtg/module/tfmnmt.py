@@ -962,23 +962,27 @@ class SimpleLossFunction:
     min_sub_vocab = 100
 
     def __post_init__(self):
-        #self.class_ids = torch.arange(len(self.vocab), device=device)
         self.vocab_size = len(self.vocab)
         assert self.vocab_size > 1
         self.min_sub_vocab = min(len(self.vocab), self.min_sub_vocab)
+
+    def get_sub_vocab(self, y_seqs):
+        """
+        Sub select vocab
+        """
+        sub_vocab, tgt_rev_idx = y_seqs.unique(return_inverse=True)
+        if len(sub_vocab) < self.min_sub_vocab:
+            weight = torch.ones(self.vocab_size, device=y_seqs.device)
+            weight[sub_vocab] = 0  # try to avoid classes already in sub_vocab (i.e. pos classes)
+            neg_classes = torch.multinomial(weight, self.min_sub_vocab - len(sub_vocab))
+            sub_vocab = torch.cat([sub_vocab, neg_classes])
+        return sub_vocab, tgt_rev_idx
 
     def __call__(self, x_feats, y_seqs, train_mode=True, take_step=True, get_out=False):
         # B x T x D --> B x T x V
         mask_out = (y_seqs == self.vocab.pad_idx).view(-1, 1)
         if not get_out and self.subcls_gen:
-            sub_vocab, tgt_rev_idx = y_seqs.unique(return_inverse=True)
-            # y_seqs.copy_(tgt_rev_idx)  # update in place
-            y_seqs_orig, y_seqs = y_seqs, tgt_rev_idx
-            if len(sub_vocab) < self.min_sub_vocab:
-                weight = torch.ones(self.vocab_size, device=y_seqs.device)
-                weight[sub_vocab] = 0   # try to avoid classes already in sub_vocab (i.e. pos classes)
-                neg_classes = torch.multinomial(weight, self.min_sub_vocab - len(sub_vocab))
-                sub_vocab = torch.cat([sub_vocab, neg_classes])
+            sub_vocab, y_seqs = self.get_sub_vocab(y_seqs)
             x_probs = self.generator(x_feats, score=self.criterion.input_type, sub_select=sub_vocab)
         else:
             x_probs = self.generator(x_feats, score=self.criterion.input_type)
@@ -1019,7 +1023,6 @@ class ChunkedLossCompute(SimpleLossFunction):
         :return: total_loss if get_outs=False (default)
                 (total_loss, outputs) if get_out=True
         """
-        assert not self.subcls_gen, 'subcls_generation is not supported with chunked_loss'
         chunk_size = chunk_size or self.chunk_size
         assert chunk_size > 0
         total = 0
@@ -1028,13 +1031,18 @@ class ChunkedLossCompute(SimpleLossFunction):
         out_chunks = []
         count = 0
         mask_out = (y_seqs == self.vocab.pad_idx)
+        sub_vocab = None
+        if not get_out and self.subcls_gen:
+            sub_vocab, y_seqs = self.get_sub_vocab(y_seqs)
 
         for i in range(0, _y_feats.shape[1], chunk_size):
             count += 1
             # grad network is cut here
             chunked_feats = _y_feats[:, i:i + chunk_size]
-
-            chunked_dist = self.generator(chunked_feats, score=self.criterion.input_type)
+            if not get_out and self.subcls_gen:
+                chunked_dist = self.generator(chunked_feats, score=self.criterion.input_type, sub_select=sub_vocab)
+            else:
+                chunked_dist = self.generator(chunked_feats, score=self.criterion.input_type)
             if get_out:
                 top_idxs = chunked_dist.argmax(dim=-1)  # B x C x V -> B x C
                 out_chunks.append(top_idxs)
