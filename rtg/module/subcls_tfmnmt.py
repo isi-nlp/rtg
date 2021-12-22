@@ -1,19 +1,14 @@
 #!/usr/bin/env python
 #
-
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from abc import ABC
-from typing import List, Optional
 
-from rtg.module.tfmnmt import (EncoderLayer, Decoder, DecoderLayer, PositionwiseFeedForward, MultiHeadedAttention,
-                               TransformerNMT, TransformerTrainer, Generator)
+from rtg.module.tfmnmt import (Decoder, MultiHeadedAttention, TransformerNMT, TransformerTrainer, Generator)
 from rtg.emb.tfmcls import SentenceCompressor
 
-from rtg import TranslationExperiment as Experiment, log
-from rtg.utils import get_my_args
-from rtg.registry import register, MODEL
-
+from rtg.registry import register, MODEL, registry, CRITERION
 
 
 MODEL_NAME = 'subcls_tfmnmt'
@@ -44,7 +39,7 @@ class SubClassDecoder(Decoder):
 
 @register(MODEL, name=MODEL_NAME)
 class SubClassTfmNMT(TransformerNMT, ABC):
-    DecoderFactory = SubClassDecoder
+    # DecoderFactory = SubClassDecoder
     GeneratorFactory = SubClassGenerator
     model_type = MODEL_NAME
 
@@ -52,79 +47,50 @@ class SubClassTfmNMT(TransformerNMT, ABC):
         super(SubClassTfmNMT, self).__init__(*args, **kwargs)
         d_model = self.model_dim
         attn = MultiHeadedAttention(h=8, d_model=d_model)
-        # self.compressor = SentenceCompressor(d_model=d_model, attn=attn)
+        self.compressor = SentenceCompressor(d_model=d_model, attn=attn)
 
-    def forward(self, src, tgt, src_mask, tgt_mask, gen_probs=False, log_probs=True):
+    def vocab_sub_selection(self, enc_outs, src_mask):
+        sent_repr = self.compressor(enc_outs, src_mask)  # [B x D]
+        tgt_vocabs = self.generator(sent_repr, score='sigmoid')  # [B x Vocab]
+        return tgt_vocabs
+
+    def forward(self, src, tgt, src_mask, tgt_mask, gen_probs=False, log_probs=True, sub_select=False):
         "Take in and process masked src and target sequences."
-        enc_outs = self.encode(src, src_mask)
-        # sent_repr = self.compressor(enc_outs, src_mask)
-        feats = self.decode(enc_outs, src_mask, tgt, tgt_mask)
-        # tgt_vocabs = self.generator(sent_repr, score='sigmoid')
-        # tgt.copy_(tgt_rev_idx)  # remap Ids
+        enc_outs = self.encode(src, src_mask)                       # [B x T1 x D]
+        feats = self.decode(enc_outs, src_mask, tgt, tgt_mask)      # [B x T2 x D]
         if not gen_probs:
-            return feats
+            if sub_select:
+                tgt_vocabs = self.vocab_sub_selection(enc_outs=enc_outs, src_mask=src_mask)
+                return feats, tgt_vocabs
+            else:
+                return feats
+        assert not sub_select, 'sub_select is not implemented yet'
         score = 'log_softmax' if log_probs else 'softmax'
-        tgt_sub_vocab, tgt_rev_idx = tgt.unique(return_inverse=True)
-        tgt.copy_(tgt_rev_idx)  # remap
-        return self.generator(feats, score=score, sub_select=tgt_sub_vocab)
+        # tgt_sub_vocab, tgt_rev_idx = tgt.unique(return_inverse=True)
+        return self.generator(feats, score=score)
+
+    @classmethod
+    def make_trainer(cls, *args, **kwargs):
+        return SubClassNMTTrainer(*args, model_factory=cls.make_model, **kwargs)
 
 
+class SubClassNMTTrainer(TransformerTrainer):
 
-def __test_model__():
-    from rtg.data.dummy import DummyExperiment
-    from rtg import Batch, my_tensor as tensor
+    def __init__(self, *args, **kwargs):
+        super(SubClassNMTTrainer, self).__init__(*args, **kwargs)
+        self.loss_func.subcls_gen = True
+        self.vocab_loss_func = nn.BCELoss(reduce='mean')
 
-    vocab_size = 24
-    args = {
-        'src_vocab': vocab_size,
-        'tgt_vocab': vocab_size,
-        'enc_layers': 2,
-        'dec_layers': 4,
-        'hid_size': 32,
-        'eff_dims': [16, 24],
-        'dff_dims': [64, 128, 128, 64],
-        'n_heads': 4,
-        'activation': 'relu'
-    }
+    def _train_step(self, take_step: bool, x_mask, x_seqs, y_mask, y_seqs_in, y_seqs_out):
+        # [Batch x Time x D], [Batch x V]
+        out, vocab_guesses = self.model(x_seqs, y_seqs_in, x_mask, y_mask, sub_select=True)
+        # skip the last time step (the one with EOS as input)
+        out = out[:, :-1, :]
+        # assumption:  y_seqs has EOS, and not BOS
+        loss = self.loss_func(out, y_seqs_out, train_mode=True, take_step=take_step)
 
-    from rtg.module.decoder import Decoder
-
-    config = {
-        'model_type': 'wvtfmnmt',
-        'trainer': {'init_args': {'chunk_size': 2, 'grad_accum': 1}},
-        'optim': {
-            'args': {
-                # "cross_entropy", "smooth_kld", "binary_cross_entropy", "triplet_loss"
-                'criterion': "smooth_kld",
-                'lr': 0.01,
-                'inv_sqrt': True
-            }
-        }
-    }
-
-    exp = DummyExperiment("work.tmp.wvtfmnmt", config=config, read_only=True,
-                          vocab_size=vocab_size)
-    exp.model_args = args
-    trainer = SubClassTfmNMT.make_trainer(exp=exp, warmup_steps=200, **config['optim']['args'])
-    decr = Decoder.new(exp, trainer.model)
-
-    assert 2 == Batch.bos_val
-    src = tensor([[4, 5, 6, 7, 8, 9, 10, 11, 12, 13, Batch.eos_val, Batch.pad_value],
-                  [13, 12, 11, 10, 9, 8, 7, 6, Batch.eos_val, Batch.pad_value, Batch.pad_value,
-                   Batch.pad_value]])
-    src_lens = tensor([src.size(1)] * src.size(0))
-
-    def check_pt_callback(**args):
-        res = decr.greedy_decode(src, src_lens, max_len=12)
-        for score, seq in res:
-            log.info(f'{score:.4f} :: {seq}')
-
-    batch_size = 50
-    steps = 1000
-    check_point = 50
-    trainer.train(steps=steps, check_point=check_point, batch_size=batch_size,
-                  check_pt_callback=check_pt_callback)
-
-
-if __name__ == '__main__':
-    __test_model__()
+        # multi-label classification on vocabulary
+        vocab_truth = torch.zeros_like(vocab_guesses, dtype=torch.float)   # [B x V]
+        vocab_truth.scatter_(1, y_seqs_out, 1.)                           # [B x V]
+        loss2 = self.vocab_loss_func(vocab_guesses, vocab_truth)
+        return loss + loss2

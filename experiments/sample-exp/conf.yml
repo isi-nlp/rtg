@@ -26,7 +26,7 @@ schedule:
   name: noam
   args:
     constant: 2
-    warmup: 4000
+    warmup: 400
     model_dim: 128
 
 criterion:
