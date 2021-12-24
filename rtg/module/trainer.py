@@ -157,8 +157,8 @@ class SteppedTrainer:
                  model: Optional[NMTModel] = None,
                  model_factory: Optional[Callable] = None):
         self.last_step = -1
+        last_state_file = None
         self.exp = exp
-        optim_state = None
         self.init_args = self.exp.config.get('trainer', {}).get('init_args', {})
         if 'clip_grad_norm' in self.init_args:
             dtorch.clip_grad_norm(self.init_args['clip_grad_norm'])
@@ -170,53 +170,34 @@ class SteppedTrainer:
             assert model_factory
             self.model, args = model_factory(exp=exp, **args)
             exp.model_args = args
-            last_model, self.last_step = self.exp.get_last_saved_model()
-            if last_model:
-                log.info(f"Resuming training from step:{self.last_step}, model={last_model}")
-                state = torch.load(last_model, map_location=device)  
-                model_state = state['model_state'] if 'model_state' in state else state
-
-                if 'optim_state' in state:
-                    optim_state = state['optim_state']
-                self.model.load_state_dict(model_state)
-                if 'amp_state' in state and dtorch.fp16:
-                    log.info("Restoring  AMP state")
-                    dtorch._scaler.load_state_dict(state['amp_state'])
-            else:
-                log.info("No earlier check point found. Looks like this is a fresh start")
-
+            last_state_file, self.last_step = self.exp.get_last_saved_model()
         self.n_gpus = torch.cuda.device_count()
         self.device_ids = list(range(self.n_gpus))
         self.core_model = self.model.to(device)
-        
+        if last_state_file:
+            self.load_state(chkpt_path=last_state_file)
+        else:
+            log.info("No earlier check point found. Looks like this is a fresh start")
+
         trainable_params = self.exp.config['optimizer'].get('trainable', {})
         if trainable_params:
-            if dtorch.is_distributed: # model is wrapped in DP or DistributedDP
+            if dtorch.is_distributed:   # model is wrapped in DP or DistributedDP
                 log.warning(f">> Using more than 1 GPU with 'trainable' params is NOT tested")
             trainable_params = self.core_model.get_trainable_params(
                 include=trainable_params.get('include'), exclude=trainable_params.get('exclude'))
         else:
             trainable_params = self.model.parameters()
 
-        optimizer = exp.get_optimizer(params=trainable_params)
+        self.core_opt = exp.get_optimizer(params=trainable_params)
         self.model = dtorch.maybe_distributed(self.core_model)
-
-        if optim_state:
-            try:
-                log.info("restoring optimizer state from checkpoint")
-                optimizer.load_state_dict(optim_state)
-            except Exception:
-                log.exception("Unable to restore optimizer, skipping it.")
-        self.opt = ScheduledOptimizer(start_step=self.start_step, schedule=exp.get_schedule(),
-                                      optimizer=optimizer)
+        self.opt = ScheduledOptimizer(start_step=self.start_step, schedule=exp.get_schedule(), optimizer=self.core_opt)
 
         if self.exp.read_only:
             self.tbd = NoOpSummaryWriter()
         else:
             self.tbd = SummaryWriter(log_dir=str(exp.work_dir / 'tensorboard' ))
-
-        if not self.exp.read_only:
             self.exp.persist_state()
+
         self.samples = None
         if exp.samples_file and exp.samples_file.exists():
             with IO.reader(exp.samples_file) as f:
@@ -233,6 +214,24 @@ class SteppedTrainer:
             self.maybe_init_model()
 
         self.criterion = self.create_criterion()
+
+    def load_state(self, chkpt_path=None, state=None):
+        if chkpt_path:
+            log.info(f"Restoring state from file {chkpt_path}")
+            state = torch.load(chkpt_path, map_location=device)
+        model_state = state['model_state'] if 'model_state' in state else state
+        log.info("Restoring model state")
+        self.core_model.load_state_dict(model_state)
+        if 'optim_state' in state:
+            try:
+                log.info("restoring optimizer state from checkpoint")
+                self.core_opt.load_state_dict(state['optim_state'])
+            except Exception:
+                log.exception("Unable to restore optimizer, skipping it.")
+
+        if 'amp_state' in state and dtorch.fp16:
+            log.info("Restoring  AMP state")
+            dtorch._scaler.load_state_dict(state['amp_state'])
 
     @property
     def start_step(self):
