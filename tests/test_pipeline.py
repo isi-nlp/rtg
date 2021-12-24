@@ -8,8 +8,7 @@ import tempfile
 from rtg.exp import load_conf
 import torch
 import shutil
-from io import StringIO
-from . import sanity_check_experiment
+from . import sanity_check_experiment, run_decode
 
 
 def test_prepared_pipeline():  # its a transformer
@@ -29,15 +28,6 @@ def test_prepared_pipeline_relative_pos():
 
 def test_pipeline_transformer():
 
-    def _run_decode(exp_dir, sentences):
-        assert isinstance(sentences, list)
-        from rtg.decode import main as decode_cli
-        buffer = StringIO()
-        decode_cli(exp_dir=exp_dir, input=[sentences], output=[buffer], skip_check=True, max_src_len=200)
-        lines = buffer.getvalue().splitlines()
-        buffer.close()
-        return lines
-
     for codec_lib in ['sentpiece', 'nlcodec']:
         tmp_dir = tempfile.mkdtemp()
         config = load_conf('experiments/transformer.test.yml')
@@ -50,7 +40,7 @@ def test_pipeline_transformer():
         sanity_check_experiment(exp)
         print(f"Cleaning up {tmp_dir}")
         src_sents = ["hello there", "this is a test"]
-        output = _run_decode(exp_dir=tmp_dir, sentences=src_sents)
+        output = run_decode(exp_dir=tmp_dir, sentences=src_sents)
         assert len(src_sents) == len(output)
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
@@ -88,7 +78,6 @@ def test_robertamt_2layer_init():
 def test_parent_child_pipeline():
     parent_dir = tempfile.mkdtemp()
     # parent_dir = 'tmp-xyz-parent'
-
     print(f"Making parent at {parent_dir}")
     exp = Experiment(parent_dir, config='experiments/transformer.test.yml', read_only=False)
     exp.config['trainer'].update(dict(steps=50, check_point=25))
@@ -131,6 +120,26 @@ def test_freeze_pipeline():
     exp.config['optimizer']['trainable'] = trainable
     pipe = Pipeline(exp)
     pipe.run(run_tests=False)
+
+
+def test_byte_vocab():
+    for pieces in ['byte->bpe', 'bpe->byte', 'byte->byte']:
+        tmp_dir = tempfile.mkdtemp()
+        codec_lib = 'nlcodec'
+        config = load_conf('experiments/transformer.test.yml')
+        config['prep'].update({'codec_lib': codec_lib,
+                               'pieces': pieces.split('->'),
+                               'shared_vocab': False,
+                               'num_samples': 3})
+        config['model_args'].update({'tied_emb': 'one-way'})
+        config['trainer'].update(dict(steps=50, check_point=25))
+        exp = Experiment(tmp_dir, config=config, read_only=False)
+        Pipeline(exp).run(run_tests=False)
+        sanity_check_experiment(exp, shared_vocab=False)
+        src_sents = ["hello there", "this is a test"]
+        output = run_decode(exp_dir=tmp_dir, sentences=src_sents)
+        assert len(src_sents) == len(output)
+        shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
 if __name__ == '__main__':

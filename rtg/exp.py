@@ -447,7 +447,7 @@ class TranslationExperiment(BaseExperiment):
             corpus = [args[key] for key in ['train_src', 'train_tgt', 'mono_src', 'mono_tgt']
                       if args.get(key)]
             assert isinstance(pieces, str), f'shared vocab cant support different pieces for src, tgt;' \
-                                            f' given pieces={pieces}. Either set shared=false or pieces=<a string>'
+                                            f' given pieces={pieces}. Either set shared_vocab=false or pieces=<a string>'
             self.shared_field = self._make_vocab("shared", self._shared_field_file, pieces, max_types,
                                                  corpus=corpus, min_co_ev=min_co_ev, **xt_args)
         else:  # separate vocabularies
