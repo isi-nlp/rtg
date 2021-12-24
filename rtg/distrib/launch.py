@@ -11,7 +11,7 @@ import torch
 
 # adapted from torch.distributed.launch
 
-def parse_args():
+def parse_args(args=None):
     parser = ArgumentParser(
         description="PyTorch distributed training launch helper utilty that will spawn up "
                     "multiple distributed processes",
@@ -62,7 +62,7 @@ def parse_args():
 
     # rest from the training program
     parser.add_argument('training_script_args', nargs=REMAINDER)
-    return parser.parse_args()
+    return parser.parse_args(args)
 
 
 def main(args=None):

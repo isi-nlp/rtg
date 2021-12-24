@@ -123,7 +123,7 @@ class DistribTorch:
     def average_gradients(self, model):
         size = float(self.world_size)
         for param in model.parameters():
-            dist.all_reduce(param.grad.data, op=dist.reduce_op.SUM)
+            dist.all_reduce(param.grad.data, op=dist.ReduceOp.SUM)
             # TODO: ring reduce https://pytorch.org/tutorials/intermediate/dist_tuto.html#our-own-ring-allreduce
             param.grad.data /= size
 

@@ -827,9 +827,7 @@ class TransformerTrainer(SteppedTrainer):
                             self.make_check_point(train_loss, val_loss=val_loss, keep_models=keep_models,
                                                   log_embedding=log_embedding)
                             if check_pt_callback:
-                                check_pt_callback(model=self.model,
-                                                  step=self.opt.curr_step,
-                                                  train_loss=train_loss)
+                                check_pt_callback(model=self.model, step=self.opt.curr_step, train_loss=train_loss)
                         train_state.train_mode(True)
 
                         if stopper:
@@ -842,6 +840,10 @@ class TransformerTrainer(SteppedTrainer):
                                 early_stopped_flag.touch()
 
                     distr.barrier()
+                    if not self.exp.read_only and dtorch.world_size > 1:
+                        assert self.exp.last_state_file.exists()
+                        self.load_state(self.exp.last_state_file)
+
                     unsaved_state = False
                     if early_stopped_flag.exists():
                         break

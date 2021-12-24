@@ -84,6 +84,8 @@ class BaseExperiment:
         self.shared_field = self.Field(str(self._shared_field_file)) \
             if self._shared_field_file.exists() else None
 
+        self.last_state_file = self.model_dir / 'last_state.pt'
+
     @property
     def problem_type(self):
         raise NotImplementedError
@@ -158,6 +160,10 @@ class BaseExperiment:
             cols = [str(optimizer_step), datetime.now().isoformat(), name, f'{train_score:g}',
                     f'{val_score:g}']
             f.write('\t'.join(cols) + '\n')
+
+        if self.last_state_file.exists():
+            self.last_state_file.unlink()
+        self.last_state_file.symlink_to(name)  # in the same dir
 
     @staticmethod
     def _path_to_validn_score(path):
