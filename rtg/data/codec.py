@@ -7,6 +7,8 @@ from abc import ABCMeta, abstractmethod
 from pathlib import Path
 from typing import List, Iterator, Union, Optional
 import collections as coll
+
+import nlcodec
 from tqdm import tqdm
 import numpy as np
 from rtg import log, yaml
@@ -171,18 +173,25 @@ class SPField(SentencePieceProcessor, Field):
 
 class NLField(Field):
     # from nlcodec lib
-
     def __init__(self, path: Union[str, Path]):
-        # this is experimental
+        super().__init__()
         from nlcodec import load_scheme, EncoderScheme, Type
         self.codec: EncoderScheme = load_scheme(path)
         self.vocab: List[Type] = self.codec.table
         log.info(f'Loaded {len(self.codec)} types from {path}')
-        if self.codec.name not in ('class',):  # except in classification field
-            for tok, idx in self.reserved():  # reserved are reserved
-                # Todo swap it with nlcodec.Reserved
-                assert self.vocab[idx].name == tok
+        for tok, idx in self.reserved():  # reserved are reserved
+            assert self.vocab[idx].name == tok
         self.class_names = [t.name for t in self.vocab]
+
+    def reserved(self):
+        if self.codec.name == 'class':      # no reserved
+            return []
+        elif self.codec.name == 'byte':  # only two reserved types
+            self.bos_idx = self.codec.str_to_idx[nlcodec.Reseved.BOS_TOK[0]]
+            self.eos_idx = self.codec.str_to_idx[nlcodec.Reseved.EOS_TOK[0]]
+            return [(self.bos_tok, self.bos_idx), (self.eos_tok, self.eos_idx)]
+        else:   # all reserved must match
+            return super(NLField, self).reserved()
 
     def encode_as_ids(self, text: str, add_bos=False, add_eos=False, split_ratio=0.) -> Array:
         if self.codec.name == "bpe" and split_ratio > 0:
@@ -267,6 +276,7 @@ class NLField(Field):
         mappings = self.codec.shrink_vocab(files, min_freq=min_freq, save_at=save_at)
         return mappings
 
+
 class PretrainMatchField(Field):
     # this order is for fairseq's XML-R
 
@@ -280,6 +290,7 @@ class PretrainMatchField(Field):
     """
 
     def __init__(self, path: Union[str, Path]):
+        super(PretrainMatchField, self).__init__()
         with IO.reader(path) as rdr:
             data = yaml.load(rdr)
         hub_api = self.load_hub_model(data['model_id'])
