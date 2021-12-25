@@ -69,14 +69,14 @@ class ScheduledOptimizer:
         self._step += 1
         if self.schedule is not None:
             rate = self.schedule.rate(step=self._step)
-            if dtorch.world_size > 1:
+            # if dtorch.world_size > 1:
                 # assumption: batch_size was divided across workers
                 # Refer to: https://arxiv.org/pdf/1706.02677.pdf
                 # Usually, batch_size is multiplied when more GPUs are added
                 #           rate *= dtorch.world_size   #  <-- this is harmful
                 # but, in RTG, we stick to same batch_size specified in conf.yml (for reproducibility)
                 # and hence divide batch_size across workers, so we divide learning rate instead of multiplying
-                rate /= dtorch.world_size
+                # rate /= dtorch.world_size
             for p in self.param_groups:
                 p['lr'] = rate
             self._rate = rate
