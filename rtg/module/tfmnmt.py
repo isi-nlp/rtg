@@ -828,7 +828,7 @@ class TransformerTrainer(SteppedTrainer):
                                          f" didnt improve over {stopper.patience} checkpoints")
                                 early_stopped_flag.touch()
 
-                    distr.barrier()
+                    dtorch.barrier()
                     if not self.exp.read_only and dtorch.world_size > 1:
                         assert self.exp.last_state_file.exists()
                         self.load_state(self.exp.last_state_file)
@@ -977,6 +977,10 @@ class SimpleLossFunction:
     def __call__(self, x_feats, y_seqs, train_mode=True, take_step=True, get_out=False):
         # B x T x D --> B x T x V
         mask_out = (y_seqs == self.vocab.pad_idx).view(-1, 1)
+        total_toks = mask_out.shape[0] - mask_out.sum()
+        if dtorch.world_size > 1:
+            total_toks *= dtorch.world_size
+
         if not get_out and self.subcls_gen:
             sub_vocab, y_seqs = self.get_sub_vocab(y_seqs)
             x_probs = self.generator(x_feats, score=self.criterion.input_type, sub_select=sub_vocab)
@@ -984,7 +988,7 @@ class SimpleLossFunction:
             x_probs = self.generator(x_feats, score=self.criterion.input_type)
         scores = x_probs.contiguous().view(-1, x_probs.size(-1))  # B x T x V --> B.T x V
         truth = y_seqs.contiguous().view(-1)  # B x T --> B.T
-        loss = self.criterion(scores, truth, mask_out=mask_out)
+        loss = self.criterion(scores, truth, normalizer=total_toks, mask_out=mask_out)
         if loss.item() < 0:
             log.warning(f"Oooops! Negative loss {loss.item()}")
 
@@ -1027,6 +1031,10 @@ class ChunkedLossCompute(SimpleLossFunction):
         out_chunks = []
         count = 0
         mask_out = (y_seqs == self.vocab.pad_idx)
+        total_toks = mask_out.shape[0] * mask_out.shape[1] - mask_out.sum()
+        if dtorch.world_size > 1:
+            total_toks *= dtorch.world_size
+
         sub_vocab = None
         if not get_out and self.subcls_gen:
             sub_vocab, y_seqs = self.get_sub_vocab(y_seqs)
@@ -1047,7 +1055,7 @@ class ChunkedLossCompute(SimpleLossFunction):
             chunked_ys = y_seqs[:, i:i + chunk_size].contiguous().view(-1)  # B x C -> B.C
             chunked_mask_out = mask_out[:, i: i + chunk_size].reshape(-1, 1)
             # FIXME: normalization is improper with chunking and macro reduction
-            loss = self.criterion(chunked_dist, chunked_ys, mask_out=chunked_mask_out)
+            loss = self.criterion(chunked_dist, chunked_ys, normalizer=total_toks, mask_out=chunked_mask_out)
             if loss.item() < 0:
                 log.warning(f"Oooops! Negative loss {loss.item()}")
             total += loss.detach().item()
