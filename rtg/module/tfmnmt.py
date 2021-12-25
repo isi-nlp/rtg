@@ -24,10 +24,7 @@ from rtg.module.criterion import Criterion
 from torch.optim.optimizer import Optimizer
 from dataclasses import dataclass
 from sacrebleu import corpus_bleu, corpus_chrf, corpus_macrof, corpus_microf
-from rtg.distrib import DistribTorch
-
-
-dtorch = DistribTorch.instance()
+from rtg.distrib import dtorch
 
 
 def clones(module, N):
@@ -735,7 +732,6 @@ class TransformerTrainer(SteppedTrainer):
                  f' check point size:{check_point}; fine_tune={fine_tune};'
                  f' dec_bos_cut={dec_bos_cut}')
 
-        distr = DistribTorch.instance()
         if batches <= start_batch:
             raise Exception(f'The model was already trained to {self.start_step} steps. '
                             f'Please increase the steps or clear the existing models')
@@ -745,7 +741,7 @@ class TransformerTrainer(SteppedTrainer):
             fine_tune=fine_tune, keep_in_mem=keep_in_mem, split_ratio=split_ratio, dynamic_epoch=dynamic_epoch
         )
         val_data = None
-        if distr.is_global_main:
+        if dtorch.is_global_main:
             val_data = self.exp.get_val_data(batch_size=max_toks, shuffle=False, batch_first=True,
                                              sort_desc=False)
 
@@ -765,7 +761,7 @@ class TransformerTrainer(SteppedTrainer):
             log.warning("Early stopping is not enabled")
 
         with tqdm(train_data, initial=start_batch, total=batches, unit='batch',
-                  dynamic_ncols=True, disable=not distr.is_global_main) as data_bar:
+                  dynamic_ncols=True, disable=not dtorch.is_global_main) as data_bar:
             for batch in data_bar:
                 batch_count += 1
                 take_step = (batch_count % self.grad_accum_interval) == 0
@@ -811,8 +807,8 @@ class TransformerTrainer(SteppedTrainer):
                 # Save checkpoint
                 if is_check_pt:
                     train_loss = train_state.reset()
-                    log.info(f"Chkpt Train loss={train_loss}; Runs validation? {distr.is_global_main}")
-                    if distr.is_global_main:
+                    log.info(f"Chkpt Train loss={train_loss}; Runs validation? {dtorch.is_global_main}")
+                    if dtorch.is_global_main:
                         train_state.train_mode(False)
                         with torch.no_grad():
                             val_metrics = self.run_valid_epoch(val_data, dec_bos_cut=dec_bos_cut)
@@ -842,14 +838,14 @@ class TransformerTrainer(SteppedTrainer):
                         break
 
         # End of training
-        if unsaved_state and distr.is_global_main:
+        if unsaved_state and dtorch.is_global_main:
             train_loss = train_state.reset()
             train_state.train_mode(False)
             val_metrics = self.run_valid_epoch(val_data, dec_bos_cut=dec_bos_cut)
             val_loss = val_metrics['loss']
             self.make_check_point(train_loss, val_loss=val_loss, keep_models=keep_models)
 
-        distr.barrier()
+        dtorch.barrier()
         return early_stopped_flag.exists()
 
     def _train_step(self, take_step: bool, x_mask, x_seqs, y_mask, y_seqs_in, y_seqs_out):
@@ -1052,6 +1048,8 @@ class ChunkedLossCompute(SimpleLossFunction):
             chunked_mask_out = mask_out[:, i: i + chunk_size].reshape(-1, 1)
             # FIXME: normalization is improper with chunking and macro reduction
             loss = self.criterion(chunked_dist, chunked_ys, mask_out=chunked_mask_out)
+            if loss.item() < 0:
+                log.warning(f"Oooops! Negative loss {loss.item()}")
             total += loss.detach().item()
             if train_mode:
                 dtorch.backward(loss)

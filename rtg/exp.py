@@ -21,7 +21,7 @@ from rtg.data.codec import Field, SPField, NLField, PretrainMatchField
 from rtg.utils import IO, line_count
 from rtg.registry import CRITERION, OPTIMIZER, SCHEDULE, MODEL
 from rtg.schema import config_checks
-from rtg.distrib import DistribTorch
+from rtg.distrib import dtorch
 
 
 seeded = False
@@ -857,7 +857,7 @@ class TranslationExperiment(BaseExperiment):
 
     @classmethod
     def maybe_adjust_batch_size(cls, batch_size):
-        n_workers = DistribTorch.instance().world_size
+        n_workers = dtorch.world_size
         if n_workers > 1:
             if isinstance(batch_size, int):
                 batch_size = batch_size // n_workers

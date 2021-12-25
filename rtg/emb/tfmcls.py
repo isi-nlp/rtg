@@ -4,7 +4,6 @@
 # Created: 3/12/21
 
 import copy
-import gc
 import time
 from functools import partial
 from pathlib import Path
@@ -17,7 +16,7 @@ import tqdm
 from torch.cuda.amp import autocast
 
 from rtg import log, device
-from rtg.distrib import DistribTorch
+from rtg.distrib import dtorch
 from rtg.eval.clsmetric import ClsMetric
 from rtg.exp import TranslationExperiment
 from rtg.module import Model
@@ -26,8 +25,6 @@ from rtg.module.tfmnmt import (Encoder, EncoderLayer, MultiHeadedAttention, Posi
 from rtg.module.trainer import SteppedTrainer, TrainerState, EarlyStopper
 from rtg.registry import register, MODEL, ProblemType
 from rtg.utils import get_my_args, IO
-
-dtorch = DistribTorch.instance()
 
 
 class SentenceCompressor(nn.Module):
