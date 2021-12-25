@@ -20,10 +20,8 @@ from sacrebleu import corpus_bleu, corpus_macrof
 import inspect
 import copy
 import json
-from rtg.distrib import DistribTorch
+from rtg.distrib import dtorch
 from rtg.registry import ProblemType
-
-dtorch = DistribTorch.instance()
 
 
 @dataclass

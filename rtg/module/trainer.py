@@ -16,9 +16,7 @@ import time
 
 from torch.utils.tensorboard import SummaryWriter
 from pathlib import Path
-from rtg.distrib import DistribTorch
-
-dtorch = DistribTorch.instance()
+from rtg.distrib import dtorch
 
 
 @dataclass
