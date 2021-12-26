@@ -5,7 +5,10 @@
 - Add attention visualization in rtg.serve; powered by plotly
 - rtg.pipeline and rtg.fork: uses relative symlinks instead of absolute paths
 - rtg.decode shows decoding speed (segs, src_toks, hyp_toks)
-- `batch_size` auto adjusted based on number of workers (huh! finally)
+- `batch_size` is auto adjusted based on number of workers and gradient_accum (huh! finally)
+- `batch_size` normalizer in distributed training setting (fix! faster convergence now)
+- support for `byte` encoding added
+- 
 
 # v0.6.0 : 20210921
 - Redesign of registry; using decorators to register all modules
