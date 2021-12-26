@@ -76,7 +76,8 @@ class ScheduledOptimizer:
                 #           rate *= dtorch.world_size   #  <-- this is harmful
                 # but, in RTG, we stick to same batch_size specified in conf.yml (for reproducibility)
                 # and hence divide batch_size across workers, so we divide learning rate instead of multiplying
-                # rate /= dtorch.world_size
+                # rate /= dtorch.world_size   #<-- this should have been okay, but see update:
+                # update: we have scaled the minibatch normalizer instead, so we dont need to mess with learning rate
             for p in self.param_groups:
                 p['lr'] = rate
             self._rate = rate
