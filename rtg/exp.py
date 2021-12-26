@@ -857,13 +857,15 @@ class TranslationExperiment(BaseExperiment):
 
     @classmethod
     def maybe_adjust_batch_size(cls, batch_size):
-        n_workers = dtorch.world_size
-        if n_workers > 1:
+        orig = batch_size
+        scaler = dtorch.batch_size_scaler
+        if scaler > 1:
             if isinstance(batch_size, int):
-                batch_size = batch_size // n_workers
+                batch_size = batch_size // scaler
             else:
-                batch_size = [x // n_workers for x in batch_size]
-            log.info(f"batch_size adjusted to {n_workers}:: {batch_size}")
+                batch_size = [x // scaler for x in batch_size]
+            log.info(f"batch_size:: given={orig}; adjusted to {dtorch.world_size} workers "
+                     f" x {dtorch.grad_accum} accumulations = {batch_size}")
         return batch_size
 
     def train(self, args=None):

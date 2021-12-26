@@ -158,8 +158,9 @@ class SteppedTrainer:
         last_state_file = None
         self.exp = exp
         self.init_args = self.exp.config.get('trainer', {}).get('init_args', {})
-        if 'clip_grad_norm' in self.init_args:
-            dtorch.clip_grad_norm(self.init_args['clip_grad_norm'])
+        if self.init_args:
+            dtorch.init_trainer_args(self.init_args)
+
         if model:
             self.model = model
         else:
@@ -212,6 +213,10 @@ class SteppedTrainer:
             self.maybe_init_model()
 
         self.criterion = self.create_criterion()
+
+    @property
+    def grad_accum_interval(self):
+        return dtorch.grad_accum
 
     def load_state(self, chkpt_path=None, state=None):
         if chkpt_path:
