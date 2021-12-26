@@ -559,8 +559,6 @@ class TransformerTrainer(SteppedTrainer):
     def __init__(self, exp: Experiment,
                  model: Optional['TransformerNMT'] = None, model_factory=None):
         super().__init__(exp=exp, model=model, model_factory=model_factory)
-        self.grad_accum_interval = self.init_args.get('grad_accum', 1)
-        assert self.grad_accum_interval > 0, 'grad_accum should be greater than 0 '
 
         if self.n_gpus > 1:  # Multi GPU mode
             raise Exception(f"Please use: python -m rtg.distrib.launch -G {self.n_gpus} \n "
@@ -742,8 +740,7 @@ class TransformerTrainer(SteppedTrainer):
         )
         val_data = None
         if dtorch.is_global_main:
-            val_data = self.exp.get_val_data(batch_size=max_toks, shuffle=False, batch_first=True,
-                                             sort_desc=False)
+            val_data = self.exp.get_val_data(batch_size=max_toks, shuffle=False, batch_first=True, sort_desc=False)
 
         train_state = TrainerState(self.model, check_point=check_point)
         train_state.train_mode(True)
@@ -978,8 +975,8 @@ class SimpleLossFunction:
         # B x T x D --> B x T x V
         mask_out = (y_seqs == self.vocab.pad_idx).view(-1, 1)
         total_toks = mask_out.shape[0] - mask_out.sum()
-        if dtorch.world_size > 1:
-            total_toks *= dtorch.world_size
+        # scale batch size back
+        total_toks *= dtorch.batch_size_scaler
 
         if not get_out and self.subcls_gen:
             sub_vocab, y_seqs = self.get_sub_vocab(y_seqs)
@@ -1032,8 +1029,8 @@ class ChunkedLossCompute(SimpleLossFunction):
         count = 0
         mask_out = (y_seqs == self.vocab.pad_idx)
         total_toks = mask_out.shape[0] * mask_out.shape[1] - mask_out.sum()
-        if dtorch.world_size > 1:
-            total_toks *= dtorch.world_size
+        # scale batch  size back
+        total_toks *= dtorch.batch_size_scaler
 
         sub_vocab = None
         if not get_out and self.subcls_gen:

@@ -342,12 +342,9 @@ class ClassifierTrainer(SteppedTrainer):
         self.exp: ClassificationExperiment = exp
         assert isinstance(self.core_model, TransformerClassifier), \
             f'Expected an instance of TransformerClassifier; but found {type(self.core_model)}'
-        trainer_args = self.exp.config.get('trainer', {}).get('init_args', {})
-        chunk_size = trainer_args.get('chunk_size', -1)
+        chunk_size = self.init_args.get('chunk_size', -1)
         if chunk_size > 0:
             log.warning("chunk_size not supported for this setup; it is ignored")
-        self.grad_accum_interval = trainer_args.get('grad_accum', 1)
-        assert self.grad_accum_interval > 0
 
         if self.n_gpus > 1:  # Multi GPU mode
             raise Exception(f"Please use: python -m rtg.distrib.launch -G {self.n_gpus} \n "
@@ -356,7 +353,7 @@ class ClassifierTrainer(SteppedTrainer):
         self.classifier = self.core_model.classifier
 
     def loss_func(self, scores, labels, train_mode=False, take_step=False):
-        loss = self.criterion(scores, labels, mask_out=None).sum() / len(labels)
+        loss = self.criterion(scores, labels, normalizer=len(labels), mask_out=None)
         if train_mode:  # don't do this for validation set
             dtorch.backward(loss)
             if take_step:
@@ -459,7 +456,6 @@ class ClassifierTrainer(SteppedTrainer):
                  f' (from {self.start_step} steps);'
                  f' batch_size={batch_size} toks; sort_by={sort_by};')
 
-        distr = DistribTorch.instance()
         if batches <= start_batch:
             raise Exception(f'The model was already trained to {self.start_step} steps. '
                             f'Please increase the steps or clear the existing models')
@@ -468,7 +464,7 @@ class ClassifierTrainer(SteppedTrainer):
             batch_size=batch_size, steps=batches - start_batch, sort_by=sort_by, batch_first=True,
             keep_in_mem=keep_in_mem, fine_tune=fine_tune, y_is_cls=True)
         val_data = None
-        if distr.is_global_main:
+        if dtorch.is_global_main:
             val_data = self.exp.get_val_data(batch_size=max_toks, shuffle=False, batch_first=True,
                                              sort_desc=False, y_is_cls=True)
 
@@ -485,7 +481,7 @@ class ClassifierTrainer(SteppedTrainer):
             stopper = EarlyStopper(cur_step=self.start_step, **early_stop)
 
         with tqdm.tqdm(train_data, initial=start_batch, total=batches, unit='batch',
-                       dynamic_ncols=True, disable=not distr.is_global_main) as data_bar:
+                       dynamic_ncols=True, disable=not dtorch.is_global_main) as data_bar:
             for batch in data_bar:
                 batch_count += 1
                 take_step = (batch_count % self.grad_accum_interval) == 0
@@ -516,8 +512,8 @@ class ClassifierTrainer(SteppedTrainer):
                 if is_check_pt:
                     train_loss = train_state.reset()
                     log.info(
-                        f"Chkpt Train loss={train_loss:g}; Runs validation? {distr.is_global_main}")
-                    if distr.is_global_main:
+                        f"Chkpt Train loss={train_loss:g}; Runs validation? {dtorch.is_global_main}")
+                    if dtorch.is_global_main:
                         train_state.train_mode(False)
                         with torch.no_grad():
                             val_loss, val_scores = self.run_valid_epoch(val_data)
@@ -536,19 +532,19 @@ class ClassifierTrainer(SteppedTrainer):
                                          f" didnt improve over {stopper.patience} checkpoints")
                                 early_stopped_flag.touch()
 
-                    distr.barrier()
+                    dtorch.barrier()
                     unsaved_state = False
                     if early_stopped_flag.exists():
                         log.info("Main process was early stopped; so stopping this worker process also")
                         break
 
         # End of training
-        if unsaved_state and distr.is_global_main:
+        if unsaved_state and dtorch.is_global_main:
             train_loss = train_state.reset()
             train_state.train_mode(False)
             val_loss = self.run_valid_epoch(val_data)
             self.make_check_point(train_loss, val_loss=val_loss, keep_models=keep_models)
 
-        distr.barrier()
+        dtorch.barrier()
         return early_stopped_flag.exists()
 

@@ -34,6 +34,7 @@ class DistribTorch:
     visible_devices: str = get_env('CUDA_VISIBLE_DEVICES', '')
     max_norm = 10
     fp16 = False  # Manually enable by calling enable_fp16()
+    grad_accum = 1  # grad accumulation over these many batches
 
     _scaler = None
     _is_backend_ready = False
@@ -55,6 +56,12 @@ class DistribTorch:
             self._is_backend_ready = True
         return self
 
+    def init_trainer_args(self, args: dict):
+        if 'clip_grad_norm' in args:
+            self.clip_grad_norm(args['clip_grad_norm'])
+        if args.get('grad_accum'):
+            self.set_grad_accum(args['grad_accum'])
+
     def enable_fp16(self):
         if not self.fp16:
             self.fp16 = True
@@ -62,6 +69,13 @@ class DistribTorch:
             log.info("Enabling FP16  /Automatic Mixed Precision training")
         else:
             log.warning(" fp16 is already enabled")
+
+    def set_grad_accum(self, interval: int):
+        if interval < 1:
+            log.warning(f"grad_accum is set to {interval}; updating to 1")
+            interval = 1
+        self.grad_accum = interval
+        log.info(f"Gradient accumulation interval set to {interval}")
 
     def clip_grad_norm(self, max_norm):
         assert max_norm
@@ -145,6 +159,10 @@ class DistribTorch:
         else:
             optimizer.step()
         optimizer.zero_grad()
+
+    @property
+    def batch_size_scaler(self):
+        return max(self.world_size, 1) * max(self.grad_accum, 1)
 
 
 dtorch = DistribTorch.instance()
