@@ -655,7 +655,7 @@ class BatchIterable(Iterable[Batch]):
             batch = Batch(batch, sort_dec=self.sort_desc, batch_first=self.batch_first,
                         field=self.field, device=self.device, y_is_cls=self.y_is_cls)
             this_size = hasattr(batch, 'y_toks') and batch.y_toks or batch.x_toks
-            if this_size < 0.2 * self.max_toks:
+            if this_size < 0.05 * self.max_toks:
                 log.warning(f"Skipped a batch having {this_size} tokens; required batch_size={self.max_toks}")
             else:
                 yield batch
@@ -708,7 +708,7 @@ class BatchIterable(Iterable[Batch]):
             batch = Batch(batch, sort_dec=self.sort_desc, batch_first=self.batch_first,
                         field=self.field, device=self.device, y_is_cls=self.y_is_cls)
             this_size = hasattr(batch, 'y_toks') and batch.y_toks or batch.x_toks
-            if this_size < 0.2 * self.max_toks:
+            if this_size < 0.05 * self.max_toks:
                 log.warning(f"Skipped a batch having {this_size} tokens; required batch_size={self.max_toks}")
                 continue
             yield batch
