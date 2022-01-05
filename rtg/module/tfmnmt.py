@@ -706,6 +706,8 @@ class TransformerTrainer(SteppedTrainer):
         :param args: any extra args
         :return:
         """
+        msg = '\n\t'.join(f'{k}: {v}' for k, v in get_my_args(exclusions=['self']).items()) 
+        log.warning(f"Train args::\n\t{msg}")
         log_resources = args.pop('log_resources', False)
         log_embedding = args.pop('log_embedding', False)
         split_ratio = args.pop('split_ratio', 0.)

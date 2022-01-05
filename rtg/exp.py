@@ -864,8 +864,8 @@ class TranslationExperiment(BaseExperiment):
                 batch_size = batch_size // scaler
             else:
                 batch_size = [x // scaler for x in batch_size]
-            log.info(f"batch_size:: given={orig}; adjusted to {dtorch.world_size} workers "
-                     f" x {dtorch.grad_accum} accumulations = {batch_size}")
+        log.info(f"batch_size:: given={orig}; adjusted to {dtorch.world_size}workers"
+                 f" x {dtorch.grad_accum}accumulations =>{batch_size}")
         return batch_size
 
     def train(self, args=None):
@@ -874,7 +874,6 @@ class TranslationExperiment(BaseExperiment):
             run_args.update(args)
         if 'init_args' in run_args:
             del run_args['init_args']
-        run_args['batch_size'] = self.maybe_adjust_batch_size(run_args['batch_size'])
         train_steps = run_args['steps']
         finetune_steps = run_args.pop('finetune_steps', None)
         if finetune_steps:
@@ -896,6 +895,7 @@ class TranslationExperiment(BaseExperiment):
             return
         from .registry import MODELS
         trainer = MODELS[self.model_type].Trainer(self)
+        run_args['batch_size'] = self.maybe_adjust_batch_size(run_args['batch_size'])
         if last_step < train_steps:  # regular training
             stopped = trainer.train(fine_tune=False, **run_args)
             if not self.read_only:
