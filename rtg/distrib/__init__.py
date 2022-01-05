@@ -61,6 +61,8 @@ class DistribTorch:
             self.clip_grad_norm(args['clip_grad_norm'])
         if args.get('grad_accum'):
             self.set_grad_accum(args['grad_accum'])
+        if args.get('fp16'):
+            self.enable_fp16()
 
     def enable_fp16(self):
         if not self.fp16:
