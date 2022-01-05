@@ -18,14 +18,14 @@ from rtg.exp import TranslationExperiment
 def parse_args():
 
     stdin = io.TextIOWrapper(sys.stdin.buffer, encoding='utf-8', errors='ignore', newline='\n')
-    stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='ignore')
+    #stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='ignore')
     parser = argparse.ArgumentParser(prog="rtg.decode", description="Decode using NMT model",
                                      formatter_class=ArgFormatter)
     parser.add_argument("exp_dir", help="Experiment directory", type=str)
     parser.add_argument("-if", '--input', default=[stdin], nargs='*',
                         type=argparse.FileType('r', encoding='utf-8', errors='ignore'),
                         help='Input file path. default is STDIN')
-    parser.add_argument("-of", '--output', default=[stdout], nargs='*',
+    parser.add_argument("-of", '--output', default=[sys.stdout], nargs='*',
                         type=argparse.FileType('w', encoding='utf-8', errors='ignore'),
                         help='Output File path. default is STDOUT')
     parser.add_argument("-sc", '--skip-check', action='store_true',
