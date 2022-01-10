@@ -16,7 +16,7 @@ import numpy as np
 import tqdm
 
 from rtg import TranslationExperiment as Experiment
-from rtg import log, device, my_tensor as tensor
+from rtg import log, device, my_tensor as tensor, debug_mode
 from rtg.module.generator import GeneratorFactory
 from rtg.data.dataset import Field, Batch as TrainerBatch
 from rtg.registry import MODELS
@@ -452,7 +452,6 @@ class Decoder:
         else:
             score, out_ids = self.greedy_decode(in_seqs, in_lens, max_len, **args)[0]
 
-        out_ids.insert(0, self.bos_val)   # for visualization
         # [0] since Batch=1 sentence
         attns = [self.model.encoder.self_attn, self.model.decoder.self_attn, self.model.decoder.src_attn]
         attns = [a[0].cpu().detach().numpy() for a in attns]

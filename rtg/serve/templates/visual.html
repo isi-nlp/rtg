@@ -47,13 +47,20 @@
             </div>
         </form>
         <div class="row">
+            <form action="#">
+                    <label class="form-label" for="chart-size">Plot size:</label>
+                    <input class="form-range" id="chart-size" name="chart-size" type="range" min="300" max="1600" step="20" value="600" />
+                    <span id="chart-size-view">600 x 600 </span>
+            </form>
+        </div>
+        <div class="row">
             <table id="table1" class="table table-striped"></table>
         </div>
-        <div class="row" id="heatmaps">
-        </div>
+        <div class="row" id="heatmaps"> </div>
     </div>
 
     <script>
+        let chart_size = 600;
 
         function unique_items(arr, pad = '\u200b') {
             let mem = new Set()
@@ -68,7 +75,7 @@
         }
 
         function on_output(data) {
-            console.log(data);
+            //console.log(data);
             $('#target').text(data["translation"]);
             $('#heatmaps').html("")
             let table = $("#table1")
@@ -92,7 +99,7 @@
             unique_items(y)
 
             let max_toks = Math.max(x.length, y.length)
-            let pixels = Math.max(600, max_toks * 18)
+            let pixels = chart_size | Math.max(600, max_toks * 18)
             let reduction = $('#reduction').val()
             for (const args of [
                 [x, y.slice(1), data['yx_attn'], 'Cross'],
@@ -193,6 +200,9 @@
             $(document).ajaxStop(function () {
                 $("#loading-progress").hide();
             });
+            $(document).on('input', '#chart-size', function() {
+                $('#chart-size-view').html($(this).val() + ' x ' + $(this).val());
+            });
 
             if (!srcText.val().trim()) {
                 const urlParams = new URLSearchParams(window.location.search);
@@ -209,6 +219,8 @@
                 let url = $form.attr('action')
                 let source = srcText.val().trim()
                 let target = tgtText.val().trim()
+                chart_size = $('#chart-size').val()
+
                 if (!source) {
                     alert("Please enter a source sentence and try again.")
                     return
@@ -224,7 +236,7 @@
                     data['target'] = target
                 }
                 data = JSON.stringify(data)
-                console.log(data);
+                //console.log(data);
                 let posting = $.ajax(url, {
                     data: data,
                     contentType: 'application/json',
