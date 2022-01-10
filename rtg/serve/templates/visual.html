@@ -47,10 +47,19 @@
             </div>
         </form>
         <div class="row">
-            <form action="#">
-                    <label class="form-label" for="chart-size">Plot size:</label>
+            <form action="#" class="row">
+                    <label class="form-label" for="chart-size">Plot size:&nbsp;</label>
                     <input class="form-range" id="chart-size" name="chart-size" type="range" min="300" max="1600" step="20" value="600" />
                     <span id="chart-size-view">600 x 600 </span>
+                    <span>&emsp;</span>
+                    <label class="form-label" for="chart-format">Format:&nbsp; </label>
+                     <select id="chart-format" class="form-select">
+                         png, svg, jpeg, webp
+                        <option value="png">PNG</option>
+                        <option selected value="svg">SVG</option>
+                         <option value="jpeg">JPEG</option>
+                         <option value="webp">WEBP</option>
+                    </select>
             </form>
         </div>
         <div class="row">
@@ -125,7 +134,8 @@
                         }
                         console.log(`Layer ${nLayer} head ${nHead}`)
                         let newDiv = document.createElement("div")
-                        newDiv.id = `${side}-${nLayer}L-${nHead}H`
+                        let title = `${side}-${nLayer}L-${nHead}H`
+                        newDiv.id = title
                         document.getElementById('heatmaps').appendChild(newDiv)
                         let map_data = [{
                             x: xVals,
@@ -158,7 +168,7 @@
                             //margin: {l: 100, r: 10,  b: 100, t: 50, pad: 4},
                             xaxis: {
                                 title: {
-                                    text: 'Input (i.e., Documents)',
+                                    text: 'Input',
                                     font: {
                                         //family: 'Courier New, monospace',
                                         size: 14,
@@ -168,7 +178,7 @@
                             },
                             yaxis: {
                                 title: {
-                                    text: 'Output (i.e., Query)',
+                                    text: 'Output',
                                     font: {
                                         //family: 'Courier New, monospace',
                                         size: 14,
@@ -183,7 +193,13 @@
                             editable: true,
                             showLink: true,
                             plotlyServerURL: "https://chart-studio.plotly.com",
+                            showEditInChartStudio: true,
                             //staticPlot: true
+                            toImageButtonOptions: {
+                                // one of png, svg, jpeg, webp
+                                format: $('#chart-format').val(),
+                                filename: title,
+                            }
                         }
                         Plotly.newPlot(newDiv, map_data, layout, config);
                     }
