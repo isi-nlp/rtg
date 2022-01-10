@@ -18,7 +18,7 @@ import tqdm
 from rtg import TranslationExperiment as Experiment
 from rtg import log, device, my_tensor as tensor, debug_mode
 from rtg.module.generator import GeneratorFactory
-from rtg.data.dataset import Field
+from rtg.data.dataset import Field, Batch as TrainerBatch
 from rtg.registry import MODELS, ModelSpec
 
 Hypothesis = Tuple[float, List[int]]
@@ -424,20 +424,35 @@ class Decoder:
             result.append((score, out))
         return result
 
-    def decode_visualize(self, line: str, max_len=20, reduction=None, **args):
+    def decode_visualize(self, line: str, target=None, max_len=20, reduction=None, **args):
         line = line.strip()
         assert hasattr(self.model, 'cache_attn'), f'{type(self.model)} does not have cache_attn feature'
         if not self.model.cache_attn:
             self.model.cache_attn = True
         # EOS was added to encoder sequence during training
-        in_seq = self.inp_vocab.encode_as_ids(line, add_eos=True, add_bos=False)
         in_toks = self.inp_vocab.tokenize(line) + [self.inp_vocab.eos_tok]
+        in_seq = self.inp_vocab.encode_as_ids(line, add_eos=True, add_bos=False)
         in_seqs = tensor(in_seq, dtype=torch.long).view(1, -1)
         in_lens = tensor([len(in_seq)], dtype=torch.long)
+        if target:
+            # tgt_toks = [self.out_vocab.bos_tok] + self.out_vocab.tokenize(target) + [self.out_vocab.eos_tok]
+            tgt_seq = self.out_vocab.encode_as_ids(target, add_eos=True, add_bos=True)
+            tgt_seqs = tensor(tgt_seq, dtype=torch.long).view(1, -1)
+            tgt_in_seqs = tgt_seqs[:, :-1]  # skip EOS
+            x_mask = (in_seqs != self.inp_vocab.pad_idx).unsqueeze(1)
+            y_mask = TrainerBatch.make_autogres_mask_(tgt_in_seqs, self.out_vocab.pad_idx)
+            out_feats = self.model(in_seqs, tgt_in_seqs, x_mask, y_mask)
+            #self.model.generator(out_feats)
+            x_probs = self.model.generator(out_feats, score='log_probs')   # B=1 x T x V
+            out_ids = tgt_seqs[0, 1:]  # Skip BOS  # [T]
+            x_probs = x_probs.squeeze(0)  # T x V
+            force_score = x_probs.gather(1, out_ids.view(-1, 1))
+            score = force_score.sum().item()
+            out_ids = out_ids.tolist()
+        else:
+            score, out_ids = self.greedy_decode(in_seqs, in_lens, max_len, **args)[0]
 
-        greedy_score, out_ids = self.greedy_decode(in_seqs, in_lens, max_len, **args)[0]
-        out_ids.insert(0, self.bos_val)
-
+        out_ids.insert(0, self.bos_val)   # for visualization
         # [0] since Batch=1 sentence
         attns = [self.model.encoder.self_attn, self.model.decoder.self_attn, self.model.decoder.src_attn]
         attns = [a[0].cpu().detach().numpy() for a in attns]
@@ -455,7 +470,7 @@ class Decoder:
         xx_attn, yy_attn, yx_attn = attns
         out_line = self.out_vocab.decode_ids(out_ids, trunc_eos=True)
         out_toks = self.out_vocab.tokenize(out_line) + [self.out_vocab.eos_tok]   # it was truncated
-        result = dict(source=line, translation=out_line, score=greedy_score,
+        result = dict(source=line, translation=out_line, score=score,
                       in_ids=in_seq, in_toks=in_toks, out_ids=out_ids, out_toks=out_toks,
                       source_length=len(in_toks), target_lenth=len(out_toks),
                       xx_attn=xx_attn, yy_attn=yy_attn, yx_attn=yx_attn, reduction=reduction)

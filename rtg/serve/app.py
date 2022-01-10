@@ -87,6 +87,7 @@ def attach_translate_route(cli_args):
     dec_args = exp.config.get("decoder") or exp.config["tester"].get("decoder", {})
     decoder = Decoder.new(exp, ensemble=dec_args.pop("ensemble", 1))
     src_prep = exp.get_pre_transform(side='src')
+    tgt_prep = exp.get_pre_transform(side='tgt')
     tgt_postp = exp.get_post_transform(side='tgt')
 
     @bp.route("/translate", methods=["POST", "GET"])
@@ -123,6 +124,7 @@ def attach_translate_route(cli_args):
         body = request.json or request.form
         source = body.get("source")
         reduction = body.get('reduction')
+        target = body.get("target", None)  # For force decoding
         if not source:
             return "Please submit 'source' argument having a source sentence", 400
         if not isinstance(source, str):
@@ -130,7 +132,8 @@ def attach_translate_route(cli_args):
         prep = request.args.get('prep', "true").lower() in ("true", "yes", "y", "t")  # query param is always string
         if prep:
             source = src_prep(source)
-        res = decoder.decode_visualize(source, reduction=reduction, **dec_args)
+            target = target and tgt_prep(target)
+        res = decoder.decode_visualize(source, target=target, reduction=reduction, **dec_args)
         if prep:
             res['translation'] = tgt_postp(res['translation'])
         return jsonify(res)
