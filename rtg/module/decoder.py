@@ -16,10 +16,10 @@ import numpy as np
 import tqdm
 
 from rtg import TranslationExperiment as Experiment
-from rtg import log, device, my_tensor as tensor, debug_mode
+from rtg import log, device, my_tensor as tensor
 from rtg.module.generator import GeneratorFactory
 from rtg.data.dataset import Field, Batch as TrainerBatch
-from rtg.registry import MODELS, ModelSpec
+from rtg.registry import MODELS
 
 Hypothesis = Tuple[float, List[int]]
 StrHypothesis = Tuple[float, str]
@@ -469,7 +469,7 @@ class Decoder:
 
         xx_attn, yy_attn, yx_attn = attns
         out_line = self.out_vocab.decode_ids(out_ids, trunc_eos=True)
-        out_toks = self.out_vocab.tokenize(out_line) + [self.out_vocab.eos_tok]   # it was truncated
+        out_toks = [self.out_vocab.bos_tok] + self.out_vocab.tokenize(out_line) + [self.out_vocab.eos_tok]
         result = dict(source=line, translation=out_line, score=score,
                       in_ids=in_seq, in_toks=in_toks, out_ids=out_ids, out_toks=out_toks,
                       source_length=len(in_toks), target_lenth=len(out_toks),
