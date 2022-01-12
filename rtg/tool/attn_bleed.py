@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import TextIO, Tuple
 
 import torch
-from torch import Tensor
 
 from rtg import my_tensor as tensor, device
 from rtg.data.dataset import Batch as TrainerBatch
@@ -21,7 +20,8 @@ from rtg.module.decoder import Decoder
 from rtg.registry import registry, MODEL
 
 MAX_LEN = 640
-BATCH_SIZE = 50
+BATCH_SIZE = 500
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Force decode and attention visualization",
@@ -33,12 +33,9 @@ def parse_args():
                         help="Reference file having <ref1><delim><ref2>")
     parser.add_argument("-d", "--delim", default='\t', help="Delimiter: default:\\t")
 
-    parser.add_argument("-of", '--output', default=sys.stdout, nargs='*',
-                        type=argparse.FileType('w', encoding='utf-8', errors='ignore'),
-                        help='Output File path. default is STDOUT')
+    parser.add_argument("-of", '--output', type=argparse.FileType('w', encoding='utf-8', errors='ignore'),
+                        default=sys.stdout, help='Output File path. default is STDOUT')
     parser.add_argument("-b", '--batch-size', type=int, default=BATCH_SIZE, help='batch size; number of sentences')
-    #parser.add_argument("-mxl", '--max-len', type=int, default=MAX_LEN,
-    #                    help='max source len; longer seqs will be truncated')
     args = vars(parser.parse_args())
     return args
 
@@ -83,7 +80,7 @@ def get_attns(decoder, srcs, refs, max_len=MAX_LEN):
     attns = [model.encoder.self_attn, model.decoder.self_attn, model.decoder.src_attn]
     return attns, (src_seqs_list, tgt_seqs_list)
 
-
+"""
 def compute_attn_bleed(attn: Tensor, cross_over: Tuple[int, int], epsilon=1e-6):
     n_tgt, n_src = attn.shape
     src_x, tgt_x = cross_over
@@ -93,7 +90,7 @@ def compute_attn_bleed(attn: Tensor, cross_over: Tuple[int, int], epsilon=1e-6):
     for ti, row in enumerate(attn):
         assert abs(row.sum() - 1) < epsilon  # row sums to 1
         part1, part2 = row[:src_x], row[src_x:]  # upto src_x is first sentence; after is second sentence
-        if ti > tgt_x:
+        if ti >= tgt_x:
             part1, part2 = part2, part1
         good_mass += part1.sum()
         bad_mass += part2.sum()
@@ -109,6 +106,24 @@ def avg_attn_bleed(attn, cross_over: Tuple[int, int]):
         for head in range(n_heads):
             res[layer, head] = compute_attn_bleed(attn[layer, head], cross_over)
     return res.mean(dim=1).mean().item()  # mean over heads, then mean over layers
+"""
+
+
+def avg_attn_bleed_fast(attn, cross_over: Tuple[int, int]):
+    n_layers, n_heads, n_ref, n_src = attn.shape
+    src_x, tgt_x = cross_over
+    attn = attn.view(-1, n_ref, n_src)
+
+    counter = torch.arange(n_src)
+    good_mask = torch.cat([(counter < src_x).repeat(tgt_x, 1),
+                        (counter >= src_x).repeat(n_ref - tgt_x, 1)], dim=0)
+    #good_score = attn.masked_fill(good_mask, 0).sum()
+    #bleed_score = attn.masked_fill(~good_mask, 0).sum()
+    good_score = attn.masked_select(good_mask).sum()
+    bleed_score = attn.masked_select(~good_mask).sum()
+    total_mass = attn.shape[0] * n_ref * 1.0
+    assert abs(good_score + bleed_score - total_mass) < (1e-6 * total_mass)
+    return (bleed_score / total_mass).item()
 
 
 def corpus_bleed_rate(batches, decoder: Decoder, output: TextIO):
@@ -119,7 +134,10 @@ def corpus_bleed_rate(batches, decoder: Decoder, output: TextIO):
         attns, (src_seq, ref_seq) = get_attns(decoder=decoder, srcs=srcs, refs=refs)
         enc_attn, dec_attn, xattn = attns
         for i in range(batch_size):
-            rate = avg_attn_bleed(xattn[i], (src_idxs[i], ref_idxs[i]))
+            src_len, ref_len = len(src_seq[i]), len(ref_seq[i]) - 1
+            i_xttn = xattn[i][:, :, :ref_len, :src_len]   # exclude pads
+            # rate = avg_attn_bleed(i_xttn, (src_idxs[i], ref_idxs[i]))
+            rate = avg_attn_bleed_fast(i_xttn, (src_idxs[i], ref_idxs[i]))
             output.write(f'{rate:.4f}\n')
             rates.append(rate)
     # mean over the corpus
@@ -170,7 +188,7 @@ def main(**args):
     exp = exp_factory(exp_dir, config=conf, read_only=True)
     assert isinstance(exp, TranslationExperiment)
     rate = compute_bleed(exp, **cli_args)
-    print(rate)
+    print(f'AverageBleed: {rate:.4f}')
 
 
 if __name__ == '__main__':
