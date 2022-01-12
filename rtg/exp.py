@@ -877,7 +877,7 @@ class TranslationExperiment(BaseExperiment):
         train_steps = run_args['steps']
         finetune_steps = run_args.pop('finetune_steps', None)
         if finetune_steps:
-            assert type(finetune_steps) is int
+            assert isinstance(finetune_steps, int)
             assert finetune_steps > train_steps, f'finetune_steps={finetune_steps} should be' \
                                                  f' greater than steps={train_steps}'
 

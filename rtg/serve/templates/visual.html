@@ -85,7 +85,7 @@
 
         function on_output(data) {
             //console.log(data);
-            $('#target').text(data["translation"]);
+            $('#target').val(data["translation"]);
             $('#heatmaps').html("")
             let table = $("#table1")
             table.html("");
@@ -262,7 +262,7 @@
                 posting.done(on_output);
                 posting.fail(function () {
                     alert("Something went wrong🤒! Check console logs.")
-                    $('#target').text('');
+                    $('#target').val('');
                     $('#table1').html("");
                     $('#heatmaps').html("");
                 });
