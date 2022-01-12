@@ -109,14 +109,17 @@ def avg_attn_bleed(attn, cross_over: Tuple[int, int]):
 """
 
 
-def avg_attn_bleed_fast(attn, cross_over: Tuple[int, int]):
+def avg_attn_bleed_fast(attn, cross_over: Tuple[int, int], exclude_eos=False):
     n_layers, n_heads, n_ref, n_src = attn.shape
     src_x, tgt_x = cross_over
     attn = attn.view(-1, n_ref, n_src)
 
-    counter = torch.arange(n_src)
+    counter = torch.arange(n_src, device=device)
     good_mask = torch.cat([(counter < src_x).repeat(tgt_x, 1),
                         (counter >= src_x).repeat(n_ref - tgt_x, 1)], dim=0)
+    if exclude_eos:     # dont consider EOS, i.e. last token, os bleeding
+        good_mask[:, -1] = True
+        good_mask[-1, :] = True
     #good_score = attn.masked_fill(good_mask, 0).sum()
     #bleed_score = attn.masked_fill(~good_mask, 0).sum()
     good_score = attn.masked_select(good_mask).sum()
@@ -126,7 +129,7 @@ def avg_attn_bleed_fast(attn, cross_over: Tuple[int, int]):
     return (bleed_score / total_mass).item()
 
 
-def corpus_bleed_rate(batches, decoder: Decoder, output: TextIO):
+def corpus_bleed_rate(batches, decoder: Decoder, output: TextIO, exclude_eos=False):
     rates = []
     for srcs, refs, src_idxs, ref_idxs in batches:
         batch_size = len(srcs)
@@ -137,7 +140,7 @@ def corpus_bleed_rate(batches, decoder: Decoder, output: TextIO):
             src_len, ref_len = len(src_seq[i]), len(ref_seq[i]) - 1
             i_xttn = xattn[i][:, :, :ref_len, :src_len]   # exclude pads
             # rate = avg_attn_bleed(i_xttn, (src_idxs[i], ref_idxs[i]))
-            rate = avg_attn_bleed_fast(i_xttn, (src_idxs[i], ref_idxs[i]))
+            rate = avg_attn_bleed_fast(i_xttn, (src_idxs[i], ref_idxs[i]), exclude_eos=exclude_eos)
             output.write(f'{rate:.4f}\n')
             rates.append(rate)
     # mean over the corpus
@@ -171,7 +174,7 @@ def compute_bleed(exp, **cli_args):
             yield rec
     recs = _prep_input()
     batches = make_batches(recs, batch_size=batch_size)
-    bleed_rate = corpus_bleed_rate(batches, decoder, output)
+    bleed_rate = corpus_bleed_rate(batches, decoder, output, exclude_eos=True)
     return bleed_rate
 
 
