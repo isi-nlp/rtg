@@ -13,13 +13,15 @@ from typing import TextIO, Tuple
 import torch
 from torch import Tensor
 
-from rtg import my_tensor as tensor
+from rtg import my_tensor as tensor, device
 from rtg.data.dataset import Batch as TrainerBatch
 from rtg.exp import TranslationExperiment
 from rtg.exp import load_conf
 from rtg.module.decoder import Decoder
 from rtg.registry import registry, MODEL
 
+MAX_LEN = 640
+BATCH_SIZE = 50
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Force decode and attention visualization",
@@ -34,53 +36,52 @@ def parse_args():
     parser.add_argument("-of", '--output', default=sys.stdout, nargs='*',
                         type=argparse.FileType('w', encoding='utf-8', errors='ignore'),
                         help='Output File path. default is STDOUT')
-    parser.add_argument("-b", '--batch-size', type=int, help='batch size; number of sentences')
-    parser.add_argument("-msl", '--max-src-len', type=int,
-                        help='max source len; longer seqs will be truncated')
-    parser.add_argument("-nb", '--no-buffer', action='store_true',
-                        help='Processes one line per batch followed by flush output')
+    parser.add_argument("-b", '--batch-size', type=int, default=BATCH_SIZE, help='batch size; number of sentences')
+    #parser.add_argument("-mxl", '--max-len', type=int, default=MAX_LEN,
+    #                    help='max source len; longer seqs will be truncated')
     args = vars(parser.parse_args())
     return args
 
 
-def make_batches(recs, batch_size=10):
-    res = [[]]
+def make_batches(recs, batch_size=BATCH_SIZE):
+
+    def separate_cols(b):
+        n_cols = len(b[0])
+        return [[x[a] for x in b] for a in range(n_cols)]
+
+    buffer = []
     for rec in recs:
-        if len(res[-1]) > batch_size:
-            res.append([])
-        res[-1].append(rec)
-    # separate columns
-    n_cols = len(recs[0])
-    res2 = []
-    for b in res:
-        res2.append([])
-        for i in range(n_cols):
-            res2[-1].append([x[i] for x in b])
-    return res2
+        if len(buffer) > batch_size:
+            yield separate_cols(buffer)
+            buffer = []
+        buffer.append(rec)
+    if buffer:
+        yield separate_cols(buffer)
 
 
-def force_decode(decoder, src, ref):
+def get_attns(decoder, srcs, refs, max_len=MAX_LEN):
     model = decoder.model
     assert model.cache_attn
-    src_seq = decoder.inp_vocab.encode_as_ids(src, add_eos=True, add_bos=False)
-    ref_seq = decoder.out_vocab.encode_as_ids(ref, add_eos=True, add_bos=True)
-    src_seqs = tensor(src_seq, dtype=torch.long).view(1, -1)
-    tgt_seqs = tensor(ref_seq, dtype=torch.long).view(1, -1)
+    n_seqs = len(srcs)
+    src_seqs_list = [decoder.inp_vocab.encode_as_ids(src, add_eos=True, add_bos=False)[:max_len] for src in srcs]
+    tgt_seqs_list = [decoder.out_vocab.encode_as_ids(ref, add_eos=True, add_bos=True)[:max_len] for ref in refs]
+
+    max_src_len = max(len(s) for s in src_seqs_list)
+    max_tgt_len = max(len(s) for s in tgt_seqs_list)
+    src_seqs = torch.full((n_seqs, max_src_len), device=device, fill_value=decoder.inp_vocab.pad_idx)
+    tgt_seqs = torch.full((n_seqs, max_tgt_len), device=device, fill_value=decoder.out_vocab.pad_idx)
+    for i in range(n_seqs):
+        src = src_seqs_list[i]
+        tgt = tgt_seqs_list[i]
+        src_seqs[i, :len(src)] = tensor(src)
+        tgt_seqs[i, :len(tgt)] = tensor(tgt)
 
     tgt_in_seqs = tgt_seqs[:, :-1]  # skip EOS
     x_mask = (src_seqs != decoder.inp_vocab.pad_idx).unsqueeze(1)
     y_mask = TrainerBatch.make_autogres_mask_(tgt_in_seqs, decoder.out_vocab.pad_idx)
-
     out_feats = model(src_seqs, tgt_in_seqs, x_mask, y_mask)
-    # self.model.generator(out_feats)
-    x_probs = model.generator(out_feats, score='log_probs')  # B=1 x T x V
-    out_ids = tgt_seqs[0, 1:]  # Skip BOS  # [T]
-    x_probs = x_probs.squeeze(0)  # T x V
-    force_score = x_probs.gather(1, out_ids.view(-1, 1))
-    score = force_score.sum().item()
     attns = [model.encoder.self_attn, model.decoder.self_attn, model.decoder.src_attn]
-    attns = [a[0] for a in attns]  # it was one sentence only
-    return score, attns, (src_seq, ref_seq)
+    return attns, (src_seqs_list, tgt_seqs_list)
 
 
 def compute_attn_bleed(attn: Tensor, cross_over: Tuple[int, int], epsilon=1e-6):
@@ -110,14 +111,17 @@ def avg_attn_bleed(attn, cross_over: Tuple[int, int]):
     return res.mean(dim=1).mean().item()  # mean over heads, then mean over layers
 
 
-def decode_recs(recs, decoder: Decoder, output: TextIO):
+def corpus_bleed_rate(batches, decoder: Decoder, output: TextIO):
     rates = []
-    for src, ref, src_idx, ref_idx in recs:
-        score, attns, (src_seq, ref_seq) = force_decode(decoder=decoder, src=src, ref=ref)
+    for srcs, refs, src_idxs, ref_idxs in batches:
+        batch_size = len(srcs)
+        assert batch_size == len(refs) == len(src_idxs), len(ref_idxs)
+        attns, (src_seq, ref_seq) = get_attns(decoder=decoder, srcs=srcs, refs=refs)
         enc_attn, dec_attn, xattn = attns
-        rate = avg_attn_bleed(xattn, (src_idx, ref_idx))
-        output.write(f'{rate:.4f}\n')
-        rates.append(rate)
+        for i in range(batch_size):
+            rate = avg_attn_bleed(xattn[i], (src_idxs[i], ref_idxs[i]))
+            output.write(f'{rate:.4f}\n')
+            rates.append(rate)
     # mean over the corpus
     return sum(rates) / len(rates)
 
@@ -126,6 +130,7 @@ def compute_bleed(exp, **cli_args):
     dec_args = exp.config.get('decoder') or exp.config['tester'].get('decoder', {})
     src_file: TextIO = cli_args.pop('src')
     ref_file: TextIO = cli_args.pop('ref')
+    batch_size: int = cli_args.pop('batch_size', 10)
     delim: str = cli_args.pop('delim')
     joiner: str = cli_args.pop('joiner', ' ')
 
@@ -146,8 +151,9 @@ def compute_bleed(exp, **cli_args):
             ref1_ids = decoder.out_vocab.encode_as_ids(refs[0], add_bos=True, add_eos=False)
             rec = (joiner.join(srcs), joiner.join(refs), len(src1_ids), len(ref1_ids))
             yield rec
-
-    bleed_rate = decode_recs(_prep_input(), decoder, output)
+    recs = _prep_input()
+    batches = make_batches(recs, batch_size=batch_size)
+    bleed_rate = corpus_bleed_rate(batches, decoder, output)
     return bleed_rate
 
 
