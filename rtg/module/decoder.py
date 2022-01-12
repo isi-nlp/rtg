@@ -578,7 +578,7 @@ class Decoder:
     def _remove_null_vals(args: Dict):
         return {k: v for k, v in args.items() if v is not None}  # remove None args
 
-    def decode_file(self, inp: Iterator[str], out: StringIO,
+    def decode_file(self, inp: Iterator[str], out: StringIO, beam_size=default_beam_size,
                     num_hyp=1, batch_size=1, max_src_len=-1, **args):
         args = self._remove_null_vals(args)
         log.info(f"Args to decoder : {args} and num_hyp={num_hyp} "
@@ -596,8 +596,13 @@ class Decoder:
             with tqdm.tqdm(batches, dynamic_ncols=True, desc='Decoding', unit='segs') as data_bar:
                 for batch in data_bar:
                     in_seqs, in_lens = batch.as_tensors(device=device)
-                    batched_hyps: List[List[Hypothesis]] = self.beam_decode(in_seqs, in_lens,
-                                                                            num_hyp=num_hyp, **args)
+                    if beam_size > 1:
+                        batched_hyps: List[List[Hypothesis]] = self.beam_decode(in_seqs, in_lens,
+                                                                                num_hyp=num_hyp, **args)
+                    else:
+                        batched_hyps: List[Hypothesis] = self.greedy_decode(in_seqs, in_lens, **args)
+                        batched_hyps: List[List[Hypothesis]] = [[h] for h in batched_hyps]
+
                     assert len(batched_hyps) == batch.line_count
                     for i, hyps in enumerate(batched_hyps):
                         idx = batch.idxs[i]
