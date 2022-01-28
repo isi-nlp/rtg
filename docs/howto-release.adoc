@@ -7,7 +7,7 @@
 . Update the version: `\__version__` in `rtg/\__init__.py`
 . Remove old builds (if any)
 
-   rm -r build dist *.egg-info`
+   rm -r build dist *.egg-info
 
 . Build:
 
