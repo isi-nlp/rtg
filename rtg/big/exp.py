@@ -18,7 +18,6 @@ from pyspark.sql.types import StructType, StructField, LongType
 from rtg import cpu_count, log
 from rtg.data.dataset import Batch, LoopingIterable
 from rtg.exp import TranslationExperiment, Field
-import numpy as np
 
 
 def get_spark_session(config: Dict[str, str]) -> SparkSession:
@@ -93,7 +92,7 @@ class BigTranslationExperiment(TranslationExperiment):
                           repartition=n_parts)
 
     def _make_vocab(self, name: str, vocab_file: Path, model_type: str, vocab_size: int,
-                    corpus: List, no_split_toks: List[str] = None, char_coverage=0) -> Field:
+                    corpus: List, no_split_toks: List[str] = None, char_coverage=0, min_co_ev=None) -> Field:
         if vocab_file.exists():
             log.info(f"{vocab_file} exists. Skipping the {name} vocab creation")
             return self.Field(str(vocab_file))
@@ -104,12 +103,16 @@ class BigTranslationExperiment(TranslationExperiment):
                     flat_uniq_corpus.update(i)
                 else:
                     flat_uniq_corpus.add(i)
+
+            xt_args = {}
+            if min_co_ev:
+                xt_args["min_co_ev"] = min_co_ev
             with spark_session(config=self.spark_conf) as spark:
                 flat_uniq_corpus = list(flat_uniq_corpus)
                 log.info(f"Going to build {name} vocab from {len(flat_uniq_corpus)} files ")
                 return self.Field.train(model_type, vocab_size, str(vocab_file),
                                         flat_uniq_corpus, no_split_toks=no_split_toks,
-                                        char_coverage=char_coverage, spark=spark)
+                                        char_coverage=char_coverage, spark=spark, **xt_args)
 
     def get_train_data(self, batch_size: Tuple[int, int], steps: int = 0, sort_by='eq_len_rand_batch',
                        batch_first=True, shuffle=False, fine_tune=False, keep_in_mem=False, **kwargs):

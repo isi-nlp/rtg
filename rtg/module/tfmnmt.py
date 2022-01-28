@@ -17,17 +17,14 @@ from tqdm import tqdm
 
 from rtg import device, log, TranslationExperiment as Experiment
 from rtg.utils import get_my_args
-from rtg.data.dataset import BatchIterable
+from rtg.data.dataset import BatchIterable, Field
 from rtg.module import NMTModel
 from rtg.module.trainer import TrainerState, SteppedTrainer, EarlyStopper
 from rtg.module.criterion import Criterion
 from torch.optim.optimizer import Optimizer
 from dataclasses import dataclass
 from sacrebleu import corpus_bleu, corpus_chrf, corpus_macrof, corpus_microf
-from rtg.distrib import DistribTorch
-
-
-dtorch = DistribTorch.instance()
+from rtg.distrib import dtorch
 
 
 def clones(module, N):
@@ -107,15 +104,31 @@ class EncoderLayer(nn.Module):
 class Encoder(nn.Module):
     "Core encoder is a stack of N layers"
 
-    def __init__(self, layer: EncoderLayer, N: int):
+    def __init__(self, layer: EncoderLayer, N: int, cache_attn=False):
         super().__init__()
         self.layers = clones(layer, N)
         self.norm = nn.LayerNorm(layer.size)
+        self.n = N
+        self.self_attn = None
+        self._cache_attn = cache_attn    # for visualization
+
+    @property
+    def cache_attn(self):
+        return self._cache_attn
+
+    @cache_attn.setter
+    def cache_attn(self, enable=True):
+        self._cache_attn = enable
+        for layer in self.layers:
+            layer.self_attn.cache_attn = enable
 
     def forward(self, x, mask):
         "Pass the input (and mask) through each layer in turn."
         for layer in self.layers:
             x = layer(x, mask)
+        if self.cache_attn:
+            # Batch x Layers x Heads x Seq_from x Seq_to
+             self.self_attn = torch.stack([layer.self_attn.attn for layer in self.layers], dim=1)
         return self.norm(x)
 
 
@@ -141,14 +154,32 @@ class DecoderLayer(nn.Module):
 class Decoder(nn.Module):
     "Generic N layer decoder with masking."
 
-    def __init__(self, layer: DecoderLayer, n_layers: int):
+    def __init__(self, layer: DecoderLayer, n_layers: int, cache_attn=False):
         super().__init__()
         self.layers = clones(layer, n_layers)
         self.norm = nn.LayerNorm(layer.size)
+        self._cache_attn = cache_attn
+        self.self_attn = None
+        self.src_attn = None
+
+    @property
+    def cache_attn(self):
+        return self._cache_attn
+
+    @cache_attn.setter
+    def cache_attn(self, enable=True):
+        self._cache_attn = enable
+        for layer in self.layers:
+            layer.self_attn.cache_attn = enable
+            layer.src_attn.cache_attn = enable
 
     def forward(self, x, memory, src_mask, tgt_mask):
         for layer in self.layers:
             x = layer(x, memory, src_mask, tgt_mask)
+        if self.cache_attn:
+            # Batch x Layers x Heads x Seq_from x Seq_to
+            self.self_attn = torch.stack([layer.self_attn.attn for layer in self.layers], dim=1)
+            self.src_attn = torch.stack([layer.src_attn.attn for layer in self.layers], dim=1)
         return self.norm(x)
 
 
@@ -168,6 +199,15 @@ class AbstractTransformerNMT(NMTModel, ABC):
         self.tgt_embed = tgt_embed
         self.generator = generator
         self.tgt_vocab = tgt_vocab if tgt_vocab else generator.vocab
+
+    @property
+    def cache_attn(self):
+        return self.encoder.cache_attn and self.decoder.cache_attn
+
+    @cache_attn.setter
+    def cache_attn(self, enable=True):
+        self.encoder.cache_attn = enable
+        self.decoder.cache_attn = enable
 
     @property
     def model_dim(self):
@@ -321,7 +361,7 @@ class SublayerConnection(nn.Module):
         return x + self.dropout(sublayer(self.norm(x)))
 
 
-def attention(query, key, value, mask=None, dropout=None):
+def attention(query, key, value, mask=None, dropout=None, query_key_emb: 'RelativePositionEmbedding'=None):
     """
     Compute 'Scaled Dot Product Attention'
     :param query:
@@ -329,13 +369,19 @@ def attention(query, key, value, mask=None, dropout=None):
     :param value:
     :param mask:
     :param dropout:
+    :param query_key_emb:
     :return:
     """
 
     d_k = query.size(-1)
     # Beware: this is a batch multiplier!
     # See https://pytorch.org/docs/stable/torch.html?highlight=matmul#torch.matmul
-    scores = torch.matmul(query, key.transpose(-2, -1)) / math.sqrt(d_k)
+    scores = torch.matmul(query, key.transpose(-2, -1))
+    if query_key_emb is not None:
+        # the above impementation was memory inefficient, so rewrote this
+        rel_scores = query_key_emb(query=query, key=key)
+        scores = scores + rel_scores
+    scores = scores / math.sqrt(d_k)
     # scores: [BatchSize x Heads x Time=SeqLen x SeqLen ]
     if mask is not None:
         # How masking works:
@@ -351,7 +397,8 @@ def attention(query, key, value, mask=None, dropout=None):
         # for devising this concise code. I needed a lot of time to understand how this code works!
         #
         # scores = scores.masked_fill(mask == 0, -1e9)
-        low_val = -2 ** 15 if dtorch.fp16 else -1e9
+        low_val = -2 ** 14 if dtorch.fp16 else -1e9  # -2**15 causes nan
+        #low_val = -1e9
         scores = scores.masked_fill(mask == 0, low_val)
     p_attn = F.softmax(scores, dim=-1)  # [BatchSize x Heads x Time=SeqLen x SeqLen ]
     if dropout is not None:
@@ -360,9 +407,57 @@ def attention(query, key, value, mask=None, dropout=None):
     ctx_vals = torch.matmul(p_attn, value)
     return ctx_vals, p_attn
 
+class RelativePositionEmbedding(nn.Module):
+    # implements https://aclanthology.org/N18-2074.pdf
+    # Shaw et al 2018, Self-Attention with Relative Position Representations
+
+    def __init__(self, emb_dim: int, n_rel_pos: int, max_len=512):
+        super(RelativePositionEmbedding, self).__init__()
+        self.emb_dim = emb_dim
+        self.n_rel_pos = n_rel_pos
+        self.emb = nn.Embedding(num_embeddings=2 * self.n_rel_pos + 1, embedding_dim=self.emb_dim)
+        self._rel_pos_chart = self.make_relative_positions(n=max_len, k=n_rel_pos, positive_index=True)
+
+    @classmethod
+    def make_relative_positions(cls, n: int, k: int, positive_index=True):
+        """
+
+        :param n: sequence length
+        :param k: relative window size; k as in [-k, ... -2, -1, 0, 1, 2, ... k]
+        :param positive_index: novert neagtive index to positive index.
+          i.e. [-k, ... -2, -1, 0, 1, 2, ... k] --> [0, 1, 2, .. k, k+1, k+2, .. 2*k
+        :return:  a matrix of [n x n] with relative positions
+        """
+        assert n > 0
+        k = k or n
+        seq = torch.arange(n, device=device)  # [n]
+        matrix = seq.repeat(n, 1)  # [n x n]
+        matrix = matrix - seq.view(-1, 1)
+        matrix = matrix.masked_fill(matrix > k, k)
+        matrix = matrix.masked_fill(matrix < -k, -k)
+        if positive_index:  # convert negatives to positive index;
+            matrix += k
+        return matrix
+
+    def forward(self, query, key):
+        assert query.shape[2] == key.shape[2], 'This feature works only for self-attention'
+        n = query.shape[2]
+
+        # efficient implementation
+        # query, key:  [BatchSize x Heads x SeqLen x d ]  ; d=model_dim/heads
+        # emb.weieght: [2*k+1 x d]
+        dots = torch.matmul(query, self.emb.weight.transpose(-1, -2)) # [b x h x n x 2*k+1]
+        if n > len(self._rel_pos_chart):
+            self._rel_pos_chart = self.make_relative_positions(n=n, k=self.n_rel_pos, positive_index=True)
+        rel_idx = self._rel_pos_chart[:n, :n] # n x n
+        rel_idx = rel_idx.view(1, 1, *rel_idx.shape)        # [1, 1, n, n] ; add batch and heads dim
+        scores = dots.gather(-1, rel_idx)  # pick scores along the last dim
+        return scores
+
 
 class MultiHeadedAttention(nn.Module):
-    def __init__(self, h, d_model, dropout=0.1, bias=True):
+
+    def __init__(self, h, d_model, dropout=0.1, bias=True, cache_attn=False, n_rel_pos=0):
         "Take in model size and number of heads."
         super().__init__()
         assert d_model % h == 0
@@ -370,8 +465,14 @@ class MultiHeadedAttention(nn.Module):
         self.d_k = d_model // h
         self.h = h
         self.linears = clones(nn.Linear(d_model, d_model, bias=bias), 4)
+        self.cache_attn = cache_attn
         self.attn = None
         self.dropout = nn.Dropout(p=dropout)
+        self.n_rel_pos = n_rel_pos
+        self.rel_pos_emb = None
+        if self.n_rel_pos > 0:
+            self.rel_pos_emb = RelativePositionEmbedding(emb_dim=self.d_k, n_rel_pos=n_rel_pos)
+
 
     def forward(self, query, key, value, mask=None):
         "Implements Figure 2"
@@ -387,16 +488,16 @@ class MultiHeadedAttention(nn.Module):
         # Q,K,V  --> input, linear: [BatchSize x SeqLen x ModelDim]
         #        --> view: [BatchSize x SeqLen x Heads x ModelDim/Heads ]
         #        --> transpose: [BatchSize x Heads x SeqLen x ModelDim/Heads ]
-
-        # 2) Apply attention on all the projected vectors in batch.
-        x, self.attn = attention(query, key, value, mask=mask, dropout=self.dropout)
+        x, attn = attention(query, key, value, mask=mask, dropout=self.dropout, query_key_emb=self.rel_pos_emb)
+        if self.cache_attn:  # dont cache this at training time
+            self.attn = attn.detach()
+        # attn: [BatchSize x Heads x SeqLen_query x SeqLen_value ]
         # x : [BatchSize x Heads x SeqLen x ModelDim/Heads ]
 
         # 3) "Concat" using a view and apply a final linear.
         x = x.transpose(1, 2).contiguous().view(batch_size, -1, self.h * self.d_k)
         # x : transpose [BatchSize x SeqLen x Heads x ModelDim/Heads ]
         # x : view [BatchSize x SeqLen x ModelDim ]
-
         return self.linears[-1](x)
 
 
@@ -458,8 +559,6 @@ class TransformerTrainer(SteppedTrainer):
     def __init__(self, exp: Experiment,
                  model: Optional['TransformerNMT'] = None, model_factory=None):
         super().__init__(exp=exp, model=model, model_factory=model_factory)
-        self.grad_accum_interval = self.init_args.get('grad_accum', 1)
-        assert self.grad_accum_interval > 0, 'grad_accum should be greater than 0 '
 
         if self.n_gpus > 1:  # Multi GPU mode
             raise Exception(f"Please use: python -m rtg.distrib.launch -G {self.n_gpus} \n "
@@ -470,11 +569,13 @@ class TransformerTrainer(SteppedTrainer):
 
         if not chunk_size or chunk_size < 1:
             self.loss_func = SimpleLossFunction(generator=generator, criterion=self.criterion,
-                                                opt=self.opt)
+                                                opt=self.opt, vocab=exp.tgt_vocab)
         else:
             log.info(f"Using Chunked Loss Generator. chunk_size={chunk_size}")
+            clip_grad_norm = self.init_args.get('clip_grad_norm', 0.0)
             self.loss_func = ChunkedLossCompute(generator=generator, criterion=self.criterion,
-                                                opt=self.opt, chunk_size=chunk_size)
+                                                opt=self.opt, vocab=exp.tgt_vocab,
+                                                chunk_size=chunk_size, clip_grad_norm=clip_grad_norm)
 
     def run_valid_epoch(self, data_iter: BatchIterable, dec_bos_cut=False) -> Dict[str, float]:
         """
@@ -605,6 +706,8 @@ class TransformerTrainer(SteppedTrainer):
         :param args: any extra args
         :return:
         """
+        msg = '\n\t'.join(f'{k}: {v}' for k, v in get_my_args(exclusions=['self']).items()) 
+        log.warning(f"Train args::\n\t{msg}")
         log_resources = args.pop('log_resources', False)
         log_embedding = args.pop('log_embedding', False)
         split_ratio = args.pop('split_ratio', 0.)
@@ -629,7 +732,6 @@ class TransformerTrainer(SteppedTrainer):
                  f' check point size:{check_point}; fine_tune={fine_tune};'
                  f' dec_bos_cut={dec_bos_cut}')
 
-        distr = DistribTorch.instance()
         if batches <= start_batch:
             raise Exception(f'The model was already trained to {self.start_step} steps. '
                             f'Please increase the steps or clear the existing models')
@@ -639,9 +741,8 @@ class TransformerTrainer(SteppedTrainer):
             fine_tune=fine_tune, keep_in_mem=keep_in_mem, split_ratio=split_ratio, dynamic_epoch=dynamic_epoch
         )
         val_data = None
-        if distr.is_global_main:
-            val_data = self.exp.get_val_data(batch_size=max_toks, shuffle=False, batch_first=True,
-                                             sort_desc=False)
+        if dtorch.is_global_main:
+            val_data = self.exp.get_val_data(batch_size=max_toks, shuffle=False, batch_first=True, sort_desc=False)
 
         train_state = TrainerState(self.model, check_point=check_point)
         train_state.train_mode(True)
@@ -650,21 +751,19 @@ class TransformerTrainer(SteppedTrainer):
 
         batch_count = -1
         stopper = None
-        early_stopped = False  # or converged
+        early_stopped_flag = self.exp.model_dir / '_EARLY_STOPPED'
+        if early_stopped_flag.exists():
+            early_stopped_flag.unlink()
         if early_stop:
             stopper = EarlyStopper(cur_step=self.start_step, **early_stop)
         if not stopper or not stopper.enabled:
             log.warning("Early stopping is not enabled")
 
         with tqdm(train_data, initial=start_batch, total=batches, unit='batch',
-                  dynamic_ncols=True, disable=not distr.is_global_main) as data_bar:
+                  dynamic_ncols=True, disable=not dtorch.is_global_main) as data_bar:
             for batch in data_bar:
                 batch_count += 1
                 take_step = (batch_count % self.grad_accum_interval) == 0
-
-                # if update_interval == 0:
-                #     self.model.zero_grad()
-
                 #  if not dataparallel, then move
                 if self.n_gpus <= 1:
                     batch = batch.to(device)
@@ -678,19 +777,12 @@ class TransformerTrainer(SteppedTrainer):
 
                 # Prep masks
                 x_mask = (x_seqs != batch.pad_val).unsqueeze(1)
-                y_seqs_with_bos = torch.cat([bos_step, batch.y_seqs], dim=1)
-                y_mask = batch.make_autoreg_mask(y_seqs_with_bos)
+                y_seqs_out = batch.y_seqs
+                y_seqs_in = torch.cat([bos_step, batch.y_seqs], dim=1)
+                y_mask = batch.make_autoreg_mask(y_seqs_in)
 
                 with autocast(enabled=dtorch.fp16):
-                    # [Batch x Time x D]
-                    out = self.model(x_seqs, y_seqs_with_bos, x_mask, y_mask)
-
-                    # skip the last time step (the one with EOS as input)
-                    out = out[:, :-1, :]
-
-                    # assumption:  y_seqs has EOS, and not BOS
-                    loss = self.loss_func(out, batch.y_seqs, train_mode=True,
-                                          take_step=take_step)
+                    loss = self._train_step(take_step, x_mask, x_seqs, y_mask, y_seqs_in, y_seqs_out)
 
                 if stopper and take_step:
                     stopper.step()
@@ -714,8 +806,8 @@ class TransformerTrainer(SteppedTrainer):
                 # Save checkpoint
                 if is_check_pt:
                     train_loss = train_state.reset()
-                    log.info(f"Chkpt Train loss={train_loss}; Runs validation? {distr.is_global_main}")
-                    if distr.is_global_main:
+                    log.info(f"Chkpt Train loss={train_loss}; Runs validation? {dtorch.is_global_main}")
+                    if dtorch.is_global_main:
                         train_state.train_mode(False)
                         with torch.no_grad():
                             val_metrics = self.run_valid_epoch(val_data, dec_bos_cut=dec_bos_cut)
@@ -723,9 +815,7 @@ class TransformerTrainer(SteppedTrainer):
                             self.make_check_point(train_loss, val_loss=val_loss, keep_models=keep_models,
                                                   log_embedding=log_embedding)
                             if check_pt_callback:
-                                check_pt_callback(model=self.model,
-                                                  step=self.opt.curr_step,
-                                                  train_loss=train_loss)
+                                check_pt_callback(model=self.model, step=self.opt.curr_step, train_loss=train_loss)
                         train_state.train_mode(True)
 
                         if stopper:
@@ -735,22 +825,36 @@ class TransformerTrainer(SteppedTrainer):
                             if stopper.is_stop():
                                 log.info(f"Stopping at {stopper.cur_step} because {stopper.by}"
                                          f" didnt improve over {stopper.patience} checkpoints")
-                                early_stopped = True
-                                break
+                                early_stopped_flag.touch()
+
+                    dtorch.barrier()
+                    if not self.exp.read_only and dtorch.world_size > 1:
+                        assert self.exp.last_state_file.exists()
+                        self.load_state(self.exp.last_state_file)
+
                     unsaved_state = False
-                    gc.collect()
-                    distr.barrier()
+                    if early_stopped_flag.exists():
+                        break
 
         # End of training
-        if unsaved_state and distr.is_global_main:
+        if unsaved_state and dtorch.is_global_main:
             train_loss = train_state.reset()
             train_state.train_mode(False)
             val_metrics = self.run_valid_epoch(val_data, dec_bos_cut=dec_bos_cut)
             val_loss = val_metrics['loss']
             self.make_check_point(train_loss, val_loss=val_loss, keep_models=keep_models)
 
-        distr.barrier()
-        return early_stopped
+        dtorch.barrier()
+        return early_stopped_flag.exists()
+
+    def _train_step(self, take_step: bool, x_mask, x_seqs, y_mask, y_seqs_in, y_seqs_out):
+        # [Batch x Time x D]
+        out = self.model(x_seqs, y_seqs_in, x_mask, y_mask)
+        # skip the last time step (the one with EOS as input)
+        out = out[:, :-1, :]
+        # assumption:  y_seqs has EOS, and not BOS
+        loss = self.loss_func(out, y_seqs_out, train_mode=True, take_step=take_step)
+        return loss
 
     def _log_resources(self, batch):
         self.tbd.add_scalars('resources_mem',
@@ -794,9 +898,8 @@ class TransformerNMT(AbstractTransformerNMT):
 
     @classmethod
     def make_model(cls, src_vocab, tgt_vocab, enc_layers=6, dec_layers=6, hid_size=512,
-                   ff_size=2048,
-                   n_heads=8, attn_bias=True, attn_dropout=0.1, dropout=0.2, activation='relu',
-                   tied_emb='three-way', exp: Experiment = None):
+                   ff_size=2048, n_heads=8, attn_bias=True, attn_dropout=0.1, dropout=0.2, activation='relu',
+                   tied_emb='three-way', self_attn_rel_pos=0, exp: Experiment = None):
         "Helper: Construct a model from hyper parameters."
 
         # get all args for reconstruction at a later phase
@@ -804,17 +907,22 @@ class TransformerNMT(AbstractTransformerNMT):
         assert activation in {'relu', 'elu', 'gelu'}
         log.info(f"Make model, Args={args}")
         c = copy.deepcopy
-        attn = MultiHeadedAttention(n_heads, hid_size, dropout=attn_dropout, bias=attn_bias)
+        self_attn = MultiHeadedAttention(n_heads, hid_size, dropout=attn_dropout, bias=attn_bias,
+                                         n_rel_pos=self_attn_rel_pos)
+        x_attn = MultiHeadedAttention(n_heads, hid_size, dropout=attn_dropout, bias=attn_bias)
         ff = PositionwiseFeedForward(hid_size, ff_size, dropout, activation=activation)
+        if self_attn_rel_pos:
+            log.info(f"Self-attn relative position embedding enabled; k={self_attn_rel_pos}")
 
         if enc_layers == 0:
             log.warning("Zero encoder layers!")
-        encoder = cls.EncoderFactory(cls.EncoderLayerFactory(hid_size, c(attn), c(ff), dropout),
-                                     enc_layers)
+
+        encoder = cls.EncoderFactory(cls.EncoderLayerFactory(
+            hid_size, c(self_attn), c(ff), dropout), enc_layers)
 
         assert dec_layers > 0
-        decoder = cls.DecoderFactory(
-            cls.DecoderLayerFactory(hid_size, c(attn), c(attn), c(ff), dropout), dec_layers)
+        decoder = cls.DecoderFactory(cls.DecoderLayerFactory(
+            hid_size, c(self_attn), c(x_attn), c(ff), dropout), dec_layers)
 
         src_emb = nn.Sequential(Embeddings(hid_size, src_vocab),
                                 PositionalEncoding(hid_size, dropout))
@@ -827,8 +935,8 @@ class TransformerNMT(AbstractTransformerNMT):
         if tied_emb:
             if tied_emb == 'three-way':
                 assert exp.config['prep'].get('shared_vocab'),\
-                    'tied_emb=three-way supported only if prep.shared_vocab=true; Fix: set model_args.tied_emb=one-way' \
-                    ' or prep.shared_vocab=true'
+                    'tied_emb=three-way supported only if prep.shared_vocab=true;' \
+                    ' Fix: set model_args.tied_emb=one-way or prep.shared_vocab=true'
             model.tie_embeddings(tied_emb)
 
         model.init_params()
@@ -843,13 +951,45 @@ class SimpleLossFunction:
     generator: Generator
     criterion: Criterion
     opt: Optimizer
+    vocab: Field
+    subcls_gen: bool = False
+    vocab_size = -1
+    min_sub_vocab = 100
+
+    def __post_init__(self):
+        self.vocab_size = len(self.vocab)
+        assert self.vocab_size > 1
+        self.min_sub_vocab = min(len(self.vocab), self.min_sub_vocab)
+
+    def get_sub_vocab(self, y_seqs):
+        """
+        Sub select vocab
+        """
+        sub_vocab, tgt_rev_idx = y_seqs.unique(return_inverse=True)
+        if len(sub_vocab) < self.min_sub_vocab:
+            weight = torch.ones(self.vocab_size, device=y_seqs.device)
+            weight[sub_vocab] = 0  # try to avoid classes already in sub_vocab (i.e. pos classes)
+            neg_classes = torch.multinomial(weight, self.min_sub_vocab - len(sub_vocab))
+            sub_vocab = torch.cat([sub_vocab, neg_classes])
+        return sub_vocab, tgt_rev_idx
 
     def __call__(self, x_feats, y_seqs, train_mode=True, take_step=True, get_out=False):
         # B x T x D --> B x T x V
-        x_probs = self.generator(x_feats, score=self.criterion.input_type)
+        mask_out = (y_seqs == self.vocab.pad_idx).view(-1, 1)
+        total_toks = mask_out.shape[0] - mask_out.sum()
+        # scale batch size back
+        total_toks *= dtorch.batch_size_scaler
+
+        if not get_out and self.subcls_gen:
+            sub_vocab, y_seqs = self.get_sub_vocab(y_seqs)
+            x_probs = self.generator(x_feats, score=self.criterion.input_type, sub_select=sub_vocab)
+        else:
+            x_probs = self.generator(x_feats, score=self.criterion.input_type)
         scores = x_probs.contiguous().view(-1, x_probs.size(-1))  # B x T x V --> B.T x V
         truth = y_seqs.contiguous().view(-1)  # B x T --> B.T
-        loss = self.criterion(scores, truth)
+        loss = self.criterion(scores, truth, normalizer=total_toks, mask_out=mask_out)
+        if loss.item() < 0:
+            log.warning(f"Oooops! Negative loss {loss.item()}")
 
         if train_mode:  # don't do this for validation set
             dtorch.backward(loss)
@@ -865,6 +1005,7 @@ class SimpleLossFunction:
 @dataclass
 class ChunkedLossCompute(SimpleLossFunction):
     chunk_size: int = 10
+    clip_grad_norm: float = 0.0
 
     def __post_init__(self):
         if self.criterion.reduction == 'macro':
@@ -888,19 +1029,34 @@ class ChunkedLossCompute(SimpleLossFunction):
         _y_feats.requires_grad = True  # yet collect grads
         out_chunks = []
         count = 0
+        mask_out = (y_seqs == self.vocab.pad_idx)
+        total_toks = mask_out.shape[0] * mask_out.shape[1] - mask_out.sum()
+        # scale batch  size back
+        total_toks *= dtorch.batch_size_scaler
+
+        sub_vocab = None
+        if not get_out and self.subcls_gen:
+            sub_vocab, y_seqs = self.get_sub_vocab(y_seqs)
+
         for i in range(0, _y_feats.shape[1], chunk_size):
             count += 1
             # grad network is cut here
             chunked_feats = _y_feats[:, i:i + chunk_size]
-            chunked_dist = self.generator(chunked_feats, score=self.criterion.input_type)
+            if not get_out and self.subcls_gen:
+                chunked_dist = self.generator(chunked_feats, score=self.criterion.input_type, sub_select=sub_vocab)
+            else:
+                chunked_dist = self.generator(chunked_feats, score=self.criterion.input_type)
             if get_out:
                 top_idxs = chunked_dist.argmax(dim=-1)  # B x C x V -> B x C
                 out_chunks.append(top_idxs)
             # B x C x V -> B.C x V
             chunked_dist = chunked_dist.contiguous().view(-1, chunked_dist.shape[-1])
             chunked_ys = y_seqs[:, i:i + chunk_size].contiguous().view(-1)  # B x C -> B.C
+            chunked_mask_out = mask_out[:, i: i + chunk_size].reshape(-1, 1)
             # FIXME: normalization is improper with chunking and macro reduction
-            loss = self.criterion(chunked_dist, chunked_ys)
+            loss = self.criterion(chunked_dist, chunked_ys, normalizer=total_toks, mask_out=chunked_mask_out)
+            if loss.item() < 0:
+                log.warning(f"Oooops! Negative loss {loss.item()}")
             total += loss.detach().item()
             if train_mode:
                 dtorch.backward(loss)
@@ -911,6 +1067,8 @@ class ChunkedLossCompute(SimpleLossFunction):
                 log.warning(".backward() skipped because there are no gradients")
             else:
                 out_grad = _y_feats.grad.data
+                if self.clip_grad_norm > 0:
+                    torch.nn.utils.clip_grad_norm_(out_grad, self.clip_grad_norm)
                 y_feats.backward(gradient=out_grad)
                 if take_step:
                     dtorch.step(optimizer=self.opt)

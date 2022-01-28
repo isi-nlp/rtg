@@ -68,6 +68,6 @@ trainer:
   batch_size: 512
   check_point: 200
   keep_models: 10
-  steps: 1000
+  steps: 500
 updated_at: '2020-02-26T13:01:58.856517'
 seed: 12345

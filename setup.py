@@ -40,7 +40,7 @@ setuptools.setup(
         'sentencepiece >= 0.1.85',
         'tensorboard >= 2.6.0',
         'tqdm >= 4.45.0',
-        'nlcodec >= 0.4.0',
+        'nlcodec >= 0.5',
         'torch >= 1.8.0',
         'sacremoses >= 0.0.45',
         'portalocker >= 2.0.0',

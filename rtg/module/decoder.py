@@ -1,3 +1,4 @@
+
 import time
 import traceback
 from io import StringIO
@@ -11,19 +12,21 @@ import os
 
 import torch
 from torch import nn as nn
+import numpy as np
+import tqdm
 
 from rtg import TranslationExperiment as Experiment
 from rtg import log, device, my_tensor as tensor, debug_mode
 from rtg.module.generator import GeneratorFactory
-from rtg.data.dataset import Field
-from rtg.registry import MODELS, ModelSpec
+from rtg.data.dataset import Field, Batch as TrainerBatch
+from rtg.registry import MODELS
 
 Hypothesis = Tuple[float, List[int]]
 StrHypothesis = Tuple[float, str]
 
 if not sys.warnoptions:
-    warnings.simplefilter("default") # Change the filter in this process
-    os.environ["PYTHONWARNINGS"] = "default" # Also affect subprocesses
+    warnings.simplefilter("default")  # Change the filter in this process
+    os.environ["PYTHONWARNINGS"] = "default"  # Also affect subprocesses
 
 
 def load_models(models: List[Path], exp: Experiment):
@@ -50,16 +53,15 @@ class ReloadEvent(Exception):
 
 @dataclass
 class DecoderBatch:
-
     idxs: List[int] = field(default_factory=list)  # index in the file, for restoring the order
     srcs: List[str] = field(default_factory=list)
     seqs: List[str] = field(default_factory=list)  # processed srcs
     refs: List[str] = field(default_factory=list)  # references for logging if they exist
-    ids: List[str] = field(default_factory=list)   # original id column; not to be confused with
+    ids: List[str] = field(default_factory=list)  # original id column; not to be confused with
     line_count = 0
     tok_count = 0
     max_len = 0
-    max_len_buffer = 0   # Some extra buffer for target size; eg: tgt_len = 50 + src_len
+    max_len_buffer = 0  # Some extra buffer for target size; eg: tgt_len = 50 + src_len
 
     def add(self, idx, src, ref, seq, id):
         self.idxs.append(idx)
@@ -73,7 +75,7 @@ class DecoderBatch:
 
     @property
     def padded_tok_count(self):
-        return ( self.max_len + self.max_len_buffer ) * self.line_count
+        return (self.max_len + self.max_len_buffer) * self.line_count
 
     def as_tensors(self, device):
         seqs = torch.zeros(self.line_count, self.max_len, device=device,
@@ -106,11 +108,11 @@ class DecoderBatch:
                 line = "."
             cols = line.split('\t')
             id, ref = None, None
-            if len(cols) == 1: # SRC
+            if len(cols) == 1:  # SRC
                 src = cols[0]
-            elif len(cols) == 2: # ID \t SRC
+            elif len(cols) == 2:  # ID \t SRC
                 id, src = cols
-            else: # ID \t SRC \t REF
+            else:  # ID \t SRC \t REF
                 id, src, ref = cols[:3]
             seq = vocab.encode_as_ids(src, add_eos=True, add_bos=False)
             if max_src_len > 0 and len(seq) > max_src_len:
@@ -422,6 +424,57 @@ class Decoder:
             result.append((score, out))
         return result
 
+    def decode_visualize(self, line: str, target=None, max_len=20, reduction=None, **args):
+        line = line.strip()
+        assert hasattr(self.model, 'cache_attn'), f'{type(self.model)} does not have cache_attn feature'
+        if not self.model.cache_attn:
+            self.model.cache_attn = True
+        # EOS was added to encoder sequence during training
+        in_toks = self.inp_vocab.tokenize(line) + [self.inp_vocab.eos_tok]
+        in_seq = self.inp_vocab.encode_as_ids(line, add_eos=True, add_bos=False)
+        in_seqs = tensor(in_seq, dtype=torch.long).view(1, -1)
+        in_lens = tensor([len(in_seq)], dtype=torch.long)
+        if target:
+            # tgt_toks = [self.out_vocab.bos_tok] + self.out_vocab.tokenize(target) + [self.out_vocab.eos_tok]
+            tgt_seq = self.out_vocab.encode_as_ids(target, add_eos=True, add_bos=True)
+            tgt_seqs = tensor(tgt_seq, dtype=torch.long).view(1, -1)
+            tgt_in_seqs = tgt_seqs[:, :-1]  # skip EOS
+            x_mask = (in_seqs != self.inp_vocab.pad_idx).unsqueeze(1)
+            y_mask = TrainerBatch.make_autogres_mask_(tgt_in_seqs, self.out_vocab.pad_idx)
+            out_feats = self.model(in_seqs, tgt_in_seqs, x_mask, y_mask)
+            #self.model.generator(out_feats)
+            x_probs = self.model.generator(out_feats, score='log_probs')   # B=1 x T x V
+            out_ids = tgt_seqs[0, 1:]  # Skip BOS  # [T]
+            x_probs = x_probs.squeeze(0)  # T x V
+            force_score = x_probs.gather(1, out_ids.view(-1, 1))
+            score = force_score.sum().item()
+            out_ids = out_ids.tolist()
+        else:
+            score, out_ids = self.greedy_decode(in_seqs, in_lens, max_len, **args)[0]
+
+        # [0] since Batch=1 sentence
+        attns = [self.model.encoder.self_attn, self.model.decoder.self_attn, self.model.decoder.src_attn]
+        attns = [a[0].cpu().detach().numpy() for a in attns]
+        if reduction and reduction.lower() == 'none':
+            reduction = None
+
+        if reduction:
+            parts = reduction.split('_')
+            assert len(parts) % 2 == 0, f'reduction={reduction} is invalid'
+            for dim, func in zip(parts[::2], parts[1::2]):
+                dim = dict(layers=0, heads=1)[dim]
+                func = dict(mean=np.mean, max=np.amax)[func]
+                attns = [func(a, axis=dim, keepdims=True) for a in attns]
+
+        xx_attn, yy_attn, yx_attn = attns
+        out_line = self.out_vocab.decode_ids(out_ids, trunc_eos=True)
+        out_toks = [self.out_vocab.bos_tok] + self.out_vocab.tokenize(out_line) + [self.out_vocab.eos_tok]
+        result = dict(source=line, translation=out_line, score=score,
+                      in_ids=in_seq, in_toks=in_toks, out_ids=out_ids, out_toks=out_toks,
+                      source_length=len(in_toks), target_lenth=len(out_toks),
+                      xx_attn=xx_attn, yy_attn=yy_attn, yx_attn=yx_attn, reduction=reduction)
+        return result
+
     def next_word_distr(self, past_seq, x_seqs=None, x_lens=None):
         """
         Gets log distribution of next word
@@ -525,7 +578,7 @@ class Decoder:
     def _remove_null_vals(args: Dict):
         return {k: v for k, v in args.items() if v is not None}  # remove None args
 
-    def decode_file(self, inp: Iterator[str], out: StringIO,
+    def decode_file(self, inp: Iterator[str], out: StringIO, beam_size=default_beam_size,
                     num_hyp=1, batch_size=1, max_src_len=-1, **args):
         args = self._remove_null_vals(args)
         log.info(f"Args to decoder : {args} and num_hyp={num_hyp} "
@@ -537,27 +590,43 @@ class Decoder:
 
         def _decode_all():
             buffer = []
-            for batch in batches:
-                in_seqs, in_lens = batch.as_tensors(device=device)
-                batched_hyps: List[List[Hypothesis]] = self.beam_decode(in_seqs, in_lens,
-                                                                        num_hyp=num_hyp, **args)
-                assert len(batched_hyps) == batch.line_count
-                for i, hyps in enumerate(batched_hyps):
-                    idx = batch.idxs[i]
-                    src = batch.srcs[i]
-                    _id = batch.ids[i]
-                    log.info(f"{idx}: SRC: {batch.srcs[i]}")
-                    ref = batch.refs[i]  # just for the sake of logging, if it exists
-                    if ref:
-                        log.info(f"{idx}: REF: {batch.refs[i]}")
+            start_at = time.time()
+            n_src_toks = 0
+            n_hyp_toks = 0
+            with tqdm.tqdm(batches, dynamic_ncols=True, desc='Decoding', unit='segs') as data_bar:
+                for batch in data_bar:
+                    in_seqs, in_lens = batch.as_tensors(device=device)
+                    if beam_size > 1:
+                        batched_hyps: List[List[Hypothesis]] = self.beam_decode(in_seqs, in_lens,
+                                                                                num_hyp=num_hyp, **args)
+                    else:
+                        batched_hyps: List[Hypothesis] = self.greedy_decode(in_seqs, in_lens, **args)
+                        batched_hyps: List[List[Hypothesis]] = [[h] for h in batched_hyps]
 
-                    result = []
-                    for j, (score, hyp) in enumerate(hyps):
-                        hyp_line = self.out_vocab.decode_ids(hyp,
-                                                             trunc_eos=True)  # tok ids to string
-                        log.info(f"{idx}: HYP{j}: {score:g} : {hyp_line}")
-                        result.append((score, hyp_line))
-                    buffer.append((idx, src, result, _id))
+                    assert len(batched_hyps) == batch.line_count
+                    for i, hyps in enumerate(batched_hyps):
+                        idx = batch.idxs[i]
+                        src = batch.srcs[i]
+                        _id = batch.ids[i]
+                        log.info(f"{idx}: SRC: {batch.srcs[i]}")
+                        ref = batch.refs[i]  # just for the sake of logging, if it exists
+                        if ref:
+                            log.info(f"{idx}: REF: {batch.refs[i]}")
+
+                        result = []
+                        _hyp_toks = []
+                        for j, (score, hyp) in enumerate(hyps):
+                            hyp_line = self.out_vocab.decode_ids(hyp, trunc_eos=True)  # tok ids to string
+                            log.info(f"{idx}: HYP{j}: {score:g} : {hyp_line}")
+                            result.append((score, hyp_line))
+                            _hyp_toks.append(len(hyp_line.split()))
+                        buffer.append((idx, src, result, _id))
+
+                        n_src_toks += len(src.split())
+                        n_hyp_toks += max(_hyp_toks)
+                        time_delta = time.time() - start_at
+                        speed = f'src: {n_src_toks / time_delta:.2f} toks/sec hyp: {n_hyp_toks / time_delta:.2f} toks/sec'
+                        data_bar.set_postfix_str(speed)
 
             buffer = sorted(buffer, key=lambda x: x[0])  # restore order
             for _, src, result, _id in buffer:
@@ -578,7 +647,7 @@ class Decoder:
 
         for inp_line in inp:
             log.info(f"SRC: {inp_line}")
-            out_line = self.decode_sentence(line=inp_line, **args)[0][1]    # 0th result, 1st hyp
+            out_line = self.decode_sentence(line=inp_line, **args)[0][1]  # 0th result, 1st hyp
             log.info(f"HYP: {out_line} \n")
 
             out.write(f'{out_line}\n')

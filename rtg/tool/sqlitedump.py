@@ -26,7 +26,8 @@ def main(db_path: Path, field: str, out: TextIO):
 
 
 if __name__ == '__main__':
-    p = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    p = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+                                description="Dump sqlite file as plain text")
     p.add_argument('db_path', type=Path, help='Input file path to db')
     p.add_argument('field', choices={"x", "y", "x_len", "y_len"}, help='field name to extract')
     p.add_argument('-o', '--out', type=argparse.FileType('w'), default=sys.stdout,

@@ -21,6 +21,7 @@ from rtg.data.codec import Field, SPField, NLField, PretrainMatchField
 from rtg.utils import IO, line_count
 from rtg.registry import CRITERION, OPTIMIZER, SCHEDULE, MODEL
 from rtg.schema import config_checks
+from rtg.distrib import dtorch
 
 
 seeded = False
@@ -82,6 +83,8 @@ class BaseExperiment:
 
         self.shared_field = self.Field(str(self._shared_field_file)) \
             if self._shared_field_file.exists() else None
+
+        self.last_state_file = self.model_dir / 'last_state.pt'
 
     @property
     def problem_type(self):
@@ -157,6 +160,10 @@ class BaseExperiment:
             cols = [str(optimizer_step), datetime.now().isoformat(), name, f'{train_score:g}',
                     f'{val_score:g}']
             f.write('\t'.join(cols) + '\n')
+
+        if self.last_state_file.exists():
+            self.last_state_file.unlink()
+        self.last_state_file.symlink_to(name)  # in the same dir
 
     @staticmethod
     def _path_to_validn_score(path):
@@ -446,7 +453,7 @@ class TranslationExperiment(BaseExperiment):
             corpus = [args[key] for key in ['train_src', 'train_tgt', 'mono_src', 'mono_tgt']
                       if args.get(key)]
             assert isinstance(pieces, str), f'shared vocab cant support different pieces for src, tgt;' \
-                                            f' given pieces={pieces}. Either set shared=false or pieces=<a string>'
+                                            f' given pieces={pieces}. Either set shared_vocab=false or pieces=<a string>'
             self.shared_field = self._make_vocab("shared", self._shared_field_file, pieces, max_types,
                                                  corpus=corpus, min_co_ev=min_co_ev, **xt_args)
         else:  # separate vocabularies
@@ -848,6 +855,19 @@ class TranslationExperiment(BaseExperiment):
             version['last_worked'] = rtg.__version__
         self.store_config()
 
+    @classmethod
+    def maybe_adjust_batch_size(cls, batch_size):
+        orig = batch_size
+        scaler = dtorch.batch_size_scaler
+        if scaler > 1:
+            if isinstance(batch_size, int):
+                batch_size = batch_size // scaler
+            else:
+                batch_size = [x // scaler for x in batch_size]
+        log.info(f"batch_size:: given={orig}; adjusted to {dtorch.world_size}workers"
+                 f" x {dtorch.grad_accum}accumulations =>{batch_size}")
+        return batch_size
+
     def train(self, args=None):
         run_args = copy.deepcopy(self.config.get('trainer', {}))
         if args:
@@ -856,9 +876,8 @@ class TranslationExperiment(BaseExperiment):
             del run_args['init_args']
         train_steps = run_args['steps']
         finetune_steps = run_args.pop('finetune_steps', None)
-        finetune_batch_size = run_args.pop('finetune_batch_size', run_args.get('batch_size'))
         if finetune_steps:
-            assert type(finetune_steps) is int
+            assert isinstance(finetune_steps, int)
             assert finetune_steps > train_steps, f'finetune_steps={finetune_steps} should be' \
                                                  f' greater than steps={train_steps}'
 
@@ -876,6 +895,7 @@ class TranslationExperiment(BaseExperiment):
             return
         from .registry import MODELS
         trainer = MODELS[self.model_type].Trainer(self)
+        run_args['batch_size'] = self.maybe_adjust_batch_size(run_args['batch_size'])
         if last_step < train_steps:  # regular training
             stopped = trainer.train(fine_tune=False, **run_args)
             if not self.read_only:
@@ -886,6 +906,9 @@ class TranslationExperiment(BaseExperiment):
                     pass
                 yaml.dump(status, stream=self._trained_flag)
         if finetune_steps:  # Fine tuning
+            finetune_batch_size = run_args['batch_size']
+            if 'finetune_batch_size' in run_args:
+                finetune_batch_size = self.maybe_adjust_batch_size(run_args.pop('finetune_batch_size'))
             log.info(f"Fine tuning upto {finetune_steps}, batch_size={finetune_batch_size}")
             assert finetune_batch_size
             run_args['steps'] = finetune_steps

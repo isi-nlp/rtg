@@ -755,6 +755,7 @@ pre.rouge {
 <ul class="sectlevel2">
 <li><a href="#_flask_installation">13.1. Flask Installation</a></li>
 <li><a href="#_running">13.2. Running</a></li>
+<li><a href="#_google_analytics_integration">13.3. Google Analytics Integration</a></li>
 </ul>
 </li>
 <li><a href="#_pre_process_and_post_process">14. Pre-process and post-process</a></li>
@@ -1567,7 +1568,7 @@ To enable this feature, we need to do following.</p>
 <div class="content">
 <pre class="rouge highlight"><code data-lang="yaml"><span class="na">prep</span><span class="pi">:</span> <span class="c1"># data preparation</span>
   <span class="s">....</span>
-  <span class="s">train_src</span><span class="pi">:</span> <span class="s">wmt_data/data/de-en/europarl-v9.de-en.de.tok</span>   <span class="c1"># training data</span>
+  <span class="s">train_src</span><span class="err">:</span> <span class="s">wmt_data/data/de-en/europarl-v9.de-en.de.tok</span>   <span class="c1"># training data</span>
   <span class="na">train_tgt</span><span class="pi">:</span> <span class="s">wmt_data/data/de-en/europarl-v9.de-en.en.tok</span>
   <span class="na">finetune_src</span><span class="pi">:</span> <span class="s">wmt_data/data/de-en/finetune.de-en.de.tok</span>   <span class="c1"># Finetuning data</span>
   <span class="na">finetune_tgt</span><span class="pi">:</span> <span class="s">wmt_data/data/de-en/finetune.de-en.en.tok</span>
@@ -1690,7 +1691,7 @@ NLCoded can be enabled as:</p>
 <div class="content">
 <pre class="rouge highlight"><code data-lang="yaml"><span class="na">prep</span><span class="pi">:</span>
   <span class="s">....</span>
-  <span class="s">codec_lib</span><span class="pi">:</span> <span class="s">nlcodec</span>  <span class="c1"># default is sentpiece</span></code></pre>
+  <span class="s">codec_lib</span><span class="err">:</span> <span class="s">nlcodec</span>  <span class="c1"># default is sentpiece</span></code></pre>
 </div>
 </div>
 <div class="sect2">
@@ -1702,7 +1703,7 @@ NLCoded can be enabled as:</p>
 <div class="content">
 <pre class="rouge highlight"><code data-lang="yaml"><span class="na">prep</span><span class="pi">:</span>
   <span class="s">....</span>
-  <span class="s">codec_lib</span><span class="pi">:</span> <span class="s">nlcodec</span>  <span class="c1"># other option: sentpiece</span>
+  <span class="s">codec_lib</span><span class="err">:</span> <span class="s">nlcodec</span>  <span class="c1"># other option: sentpiece</span>
   <span class="na">pieces</span><span class="pi">:</span> <span class="s">bpe</span>         <span class="c1"># other options: char, word</span></code></pre>
 </div>
 </div>
@@ -1722,7 +1723,7 @@ Here is how to set this for eg to 99.99% i.e. 0.9999 in <code>nlcodec</code></p>
 <div class="content">
 <pre class="rouge highlight"><code data-lang="yaml"><span class="na">prep</span><span class="pi">:</span>
   <span class="s">....</span>
-  <span class="s">codec_lib</span><span class="pi">:</span> <span class="s">nlcodec</span>      <span class="c1"># other option: sentpiece</span>
+  <span class="s">codec_lib</span><span class="err">:</span> <span class="s">nlcodec</span>      <span class="c1"># other option: sentpiece</span>
   <span class="na">pieces</span><span class="pi">:</span> <span class="s">bpe</span>             <span class="c1"># other options: char, word</span>
   <span class="na">char_coverage</span><span class="pi">:</span> <span class="s">0.9999</span></code></pre>
 </div>
@@ -1743,7 +1744,7 @@ This allows us to leverage less data more effectively.</p>
 <div class="content">
 <pre class="rouge highlight"><code data-lang="yaml"><span class="na">trainer</span><span class="pi">:</span>
   <span class="s">....</span>
-  <span class="s">split_ratio</span><span class="pi">:</span> <span class="m">0.1</span>        <span class="c1"># 10% chance to suboptimally split (recursive)</span>
+  <span class="s">split_ratio</span><span class="err">:</span> <span class="m">0.1</span>        <span class="c1"># 10% chance to suboptimally split (recursive)</span>
   <span class="na">dynamic_epoch</span><span class="pi">:</span> <span class="no">true</span>     <span class="c1"># Recompute splits for each epoch</span></code></pre>
 </div>
 </div>
@@ -2617,10 +2618,10 @@ When pyspark is enabled</p>
    <span class="s">...</span> <span class="c1"># other args</span>
 <span class="na">spark</span><span class="pi">:</span> <span class="c1"># add this block to enable spark backend</span>
   <span class="c1"># double quote the keys containing dot</span>
-  <span class="s2">"</span><span class="s">spark.master"</span><span class="pi">:</span> <span class="s">local[3]</span>           <span class="c1"># set it to local[*] to use all local CPUs</span>
-  <span class="s2">"</span><span class="s">spark.app.name"</span><span class="pi">:</span> <span class="s">RTG NMT on Spark</span>  <span class="c1"># Name for the App</span>
-  <span class="s2">"</span><span class="s">spark.driver.memory"</span><span class="pi">:</span> <span class="s">6g</span>
-  <span class="c1">#key1: value1    # any other spark configs you want to control</span></code></pre>
+  <span class="s2">"</span><span class="s">spark.master"</span><span class="err">:</span> <span class="s">local[3]</span>           <span class="c1"># set it to local[*] to use all local CPUs</span>
+  <span class="s2">"</span><span class="s">spark.app.name"</span><span class="err">:</span> <span class="s">RTG NMT on Spark</span>  <span class="c1"># Name for the App</span>
+  <span class="s2">"</span><span class="s">spark.driver.memory"</span><span class="err">:</span> <span class="s">6g</span>
+  <span class="s">#key1</span><span class="err">:</span> <span class="s">value1</span>    <span class="c1"># any other spark configs you want to control</span></code></pre>
 </div>
 </div>
 <div class="paragraph">
@@ -2743,6 +2744,18 @@ batch decoding is yet to be supported. The current decoder decodes only one sent
 <div class="paragraph">
 <p>You can also request like GET method as <code><a href="http://localhost:6060/translate?source=text1&amp;source=text2" class="bare">localhost:6060/translate?source=text1&amp;source=text2</a></code>
 after properly URL encoding the <code>text1</code> <code>text2</code>. This should only be used for quick testing in your web browser.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_google_analytics_integration">13.3. Google Analytics Integration</h3>
+<div class="paragraph">
+<p>Google Analytics is supported on web pages, however disabled by default.
+To enable set <code>GA_TAG</code> environment variable before starting <code>rtg.serve</code> process.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="rouge highlight"><code data-lang="bash"><span class="nb">export </span><span class="nv">GA_TAG</span><span class="o">=</span><span class="s2">"G-xxxxx"</span></code></pre>
+</div>
 </div>
 <div class="paragraph">
 <p><strong>Production Deployment</strong>
@@ -3086,7 +3099,7 @@ If your model is similar to existing model and match most of its API, you should
 </div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2021-10-21 15:01:17 -0700
+Last updated 2021-11-30 12:49:59 -0800
 </div>
 </div>
 </body>

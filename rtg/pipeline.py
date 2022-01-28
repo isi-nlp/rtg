@@ -4,7 +4,8 @@
 # Created: 3/9/19
 
 import argparse
-from rtg import log, TranslationExperiment as Experiment, __version__
+import os
+from rtg import log, TranslationExperiment as Experiment, __version__, debug_mode
 from rtg.exp import load_conf
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
@@ -19,10 +20,8 @@ from sacrebleu import corpus_bleu, corpus_macrof
 import inspect
 import copy
 import json
-from rtg.distrib import DistribTorch
+from rtg.distrib import dtorch
 from rtg.registry import ProblemType
-
-dtorch = DistribTorch.instance()
 
 
 @dataclass
@@ -81,14 +80,17 @@ class Pipeline:
     def evaluate_mt_file(self, detok_hyp: Path, ref: Union[Path, List[str]], lowercase=True) -> float:
         detok_lines = list(IO.get_lines(detok_hyp))
         # takes multiple refs, but here we have only one
-        ref_lines = IO.get_lines(ref) if isinstance(ref, Path) else ref
-        ref_liness = [ref_lines]
-        bleu = corpus_bleu(hypotheses=detok_lines, references=ref_liness, lowercase=lowercase)
+        if isinstance(ref, Path):
+            ref = [x.strip() for x in IO.get_lines(ref)]
+        assert isinstance(ref, list), f'List of strings expected, but given {type(ref)} '
+        assert isinstance(ref[0], str), f'List of strings expected, but given List of {type(ref[0])} '
+        refs = [ref]
+        bleu = corpus_bleu(hypotheses=detok_lines, references=refs, lowercase=lowercase)
         bleu_str = bleu.format()
         bleu_file = detok_hyp.with_name(detok_hyp.name + ('.lc' if lowercase else '.oc') + '.sacrebleu')
         log.info(f'{detok_hyp}: {bleu_str}')
         IO.write_lines(bleu_file, bleu_str)
-        macrof1 = corpus_macrof(hypotheses=detok_lines, references=ref_liness, lowercase=lowercase)
+        macrof1 = corpus_macrof(hypotheses=detok_lines, references=refs, lowercase=lowercase)
         macrof1_str = macrof1.format()
         macrof1_file = detok_hyp.with_name(detok_hyp.name + ('.lc' if lowercase else '.oc') + '.macrof1')
         log.info(f'{detok_hyp}: {macrof1_str}')
@@ -211,12 +213,13 @@ class Pipeline:
                 if out_file.exists() and out_file.stat().st_size > 0:
                     log.warning(f"{out_file} exists and not empty, so skipping it")
                     continue
-                buffer = [(src_link, Path(src).resolve())]
+                buffer = [(src_link, Path(src).absolute())]
                 if label:
-                    buffer.append((label_link, Path(label).resolve()))
+                    buffer.append((label_link, Path(label).absolute()))
                 for link, orig in buffer:
                     if not link.exists():
-                        link.symlink_to(orig)
+                        orig_rel = os.path.relpath(orig, link.parent)
+                        link.symlink_to(orig_rel)
                 metric, top1_labels, top1_probs = exp.evaluate_classifier(
                     model, input=src_link, labels=label_link, **eval_args)
 
@@ -293,16 +296,17 @@ class Pipeline:
                 src, ref = data['src'], data.get('ref')
                 out_file = data.get('out')
             try:
-                orig_src = Path(src).resolve()
+                orig_src = Path(src).absolute()
                 src_link = test_dir / f'{name}.src'
                 ref_link = test_dir / f'{name}.ref'
                 buffer = [(src_link, orig_src)]
                 if ref:
-                    orig_ref = Path(ref).resolve()
+                    orig_ref = Path(ref).absolute()
                     buffer.append((ref_link, orig_ref))
                 for link, orig in buffer:
                     if not link.exists():
-                        link.symlink_to(orig)
+                        orig_rel = os.path.relpath(orig, link.parent)
+                        link.symlink_to(orig_rel)
                 out_file = test_dir / f'{name}.out.tsv' if not out_file else out_file
                 out_file.parent.mkdir(parents=True, exist_ok=True)
 
@@ -314,7 +318,7 @@ class Pipeline:
                 err = test_dir / f'{name}.err'
                 err.write_text(str(e))
 
-    def run(self, run_tests=True):
+    def run(self, run_tests=True, debug=debug_mode):
         if not self.exp.read_only:
             # if not distr.is_main:
             #    log.clear_console() # console handler
@@ -324,9 +328,15 @@ class Pipeline:
         if dtorch.is_global_main:
             self.exp.pre_process()
         dtorch.barrier()
-        self.exp.reload()  # with updated config and vocabs from global_main
+        if not self.exp.read_only:
+            self.exp.reload()  # with updated config and vocabs from global_main
         # train on all
-        self.exp.train()
+        if debug:
+            log.warning("<<<Anomoly detection enabled; this is very slow; use this only for debugging/hunting bugs>>>")
+            with torch.autograd.detect_anomaly():
+                self.exp.train()
+        else:
+            self.exp.train()
         dtorch.barrier()
         if run_tests:
             if self.exp.problem_type in self.tests_types:

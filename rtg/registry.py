@@ -131,6 +131,7 @@ def __register_all():
         'rtg.emb.tfmcls',
         'rtg.module.criterion',
         'rtg.module.schedule',
+        'rtg.module.subcls_tfmnmt',
     ]
     for name in modules:
         import_module(name)
@@ -138,7 +139,7 @@ def __register_all():
     for k, v in registry.items():
         msg.append(f'{k}:\t' + ', '.join(v.keys()))
     msg = '\n  '.join(msg)
-    log.info(f"Registered all components; your choices are ::\n  {msg}")
+    log.debug(f"Registered all components; your choices are ::\n  {msg}")
 
 
 if __name__ == '__main__':

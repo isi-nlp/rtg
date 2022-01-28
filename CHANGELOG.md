@@ -1,4 +1,16 @@
-# v0.6.0 : WIP
+# v0.6.1 : WIP
+- `rtg.fork` accepts multiple to_dir; thus supports cloning multiple times at once
+- Bug fix: early stopping on distributed parallel training
+- `rtg.tool.augment` to support data augmentations
+- Add attention visualization in rtg.serve; powered by plotly
+- rtg.pipeline and rtg.fork: uses relative symlinks instead of absolute paths
+- rtg.decode shows decoding speed (segs, src_toks, hyp_toks)
+- `batch_size` is auto adjusted based on number of workers and gradient_accum (huh! finally)
+- `batch_size` normalizer in distributed training setting (fix! faster convergence now)
+- support for `byte` encoding added
+- 
+
+# v0.6.0 : 20210921
 - Redesign of registry; using decorators to register all modules
 - `optim` block is split into `optimizer` `schedule` and `criterion; as a result, **this version is not backward compatible with prior versions** Refer to migration guide
   - `NoamOpt` replaced with `ScheduledOptimizer` which takes scheduler and optimizer objects which are independently configurable from conf.yml

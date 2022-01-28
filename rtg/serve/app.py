@@ -2,22 +2,73 @@
 """
 Serves an RTG model using Flask HTTP server
 """
+import logging
 import os
+import sys
+import platform
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 
+import numpy as np
+import rtg
 import torch
-from flask import Flask, request, jsonify, render_template, send_from_directory, Blueprint
 
-from rtg import TranslationExperiment as Experiment
+import flask
+from flask import Flask, request, send_from_directory, Blueprint
+
+from rtg import TranslationExperiment as Experiment, log
 from rtg.module.decoder import Decoder
+from rtg.utils import max_RSS
 
 torch.set_grad_enabled(False)
-
+FLOAT_POINTS = 4
 exp = None
 app = Flask(__name__)
 app.config['JSON_AS_ASCII'] = False
 
-bp = Blueprint('burritos', __name__, template_folder='templates')
+bp = Blueprint('nmt', __name__, template_folder='templates')
+
+sys_info = {
+    'RTG Version': rtg.__version__,
+    'PyTorch Version': torch.__version__,
+    'Python Version': sys.version,
+    'Platform': platform.platform(),
+    'Platform Version': platform.version(),
+    'Processor':  platform.processor(),
+    'CPU Memory Used': max_RSS()[1],
+    'GPU': '[unavailable]',
+}
+if torch.cuda.is_available():
+    sys_info['GPU'] = str(torch.cuda.get_device_properties(rtg.device))
+    sys_info['Cuda Version'] = torch.version.cuda
+else:
+    log.warning("CUDA unavailable")
+
+log.info(f"System Info: ${sys_info}")
+
+
+def render_template(*args, **kwargs):
+    return flask.render_template(*args, environ=os.environ, **kwargs)
+
+
+def jsonify(obj):
+
+    def _jsonify(ob):
+        if ob is None or isinstance(ob, (int, bool, str)):
+            return ob
+        elif isinstance(ob, float):
+            return round(ob, FLOAT_POINTS)
+        elif isinstance(ob, dict):
+            return {key: _jsonify(val) for key, val in ob.items()}
+        elif isinstance(ob, list):
+            return [_jsonify(it) for it in ob]
+        elif isinstance(ob, np.ndarray):
+            return _jsonify(ob.tolist())
+        else:
+            logging.warning(f"Type {type(ob)} maybe not be json serializable")
+            return ob
+
+    obj = _jsonify(obj)
+    return flask.jsonify(obj)
 
 
 @bp.route('/')
@@ -36,6 +87,7 @@ def attach_translate_route(cli_args):
     dec_args = exp.config.get("decoder") or exp.config["tester"].get("decoder", {})
     decoder = Decoder.new(exp, ensemble=dec_args.pop("ensemble", 1))
     src_prep = exp.get_pre_transform(side='src')
+    tgt_prep = exp.get_pre_transform(side='tgt')
     tgt_postp = exp.get_post_transform(side='tgt')
 
     @bp.route("/translate", methods=["POST", "GET"])
@@ -63,6 +115,29 @@ def attach_translate_route(cli_args):
         res = dict(source=sources, translation=translations)
         return jsonify(res)
 
+    @bp.route("/visual", methods=["POST", "GET"])
+    def visual():
+        if request.method not in ("POST", "GET"):
+            return "GET and POST are supported", 400
+        if request.method == 'GET':
+            return render_template('visual.html')
+        body = request.json or request.form
+        source = body.get("source")
+        reduction = body.get('reduction')
+        target = body.get("target", None)  # For force decoding
+        if not source:
+            return "Please submit 'source' argument having a source sentence", 400
+        if not isinstance(source, str):
+            return f"Expected 'source' to be a string, but given {source}", 400
+        prep = request.args.get('prep', "true").lower() in ("true", "yes", "y", "t")  # query param is always string
+        if prep:
+            source = src_prep(source)
+            target = target and tgt_prep(target)
+        res = decoder.decode_visualize(source, target=target, reduction=reduction, **dec_args)
+        if prep:
+            res['translation'] = tgt_postp(res['translation'])
+        return jsonify(res)
+
     @bp.route("/conf.yml", methods=["GET"])
     def get_conf():
         conf_str = exp._config_file.read_text(encoding='utf-8', errors='ignore')
@@ -71,7 +146,8 @@ def attach_translate_route(cli_args):
     @bp.route("/about", methods=["GET"])
     def about():
         def_desc = "Model description is unavailable; please update conf.yml"
-        return render_template('about.html', model_desc=exp.config.get("description", def_desc))
+        return render_template('about.html', model_desc=exp.config.get("description", def_desc),
+                               sys_info=sys_info)
 
 
 def parse_args():

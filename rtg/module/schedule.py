@@ -8,6 +8,10 @@ from rtg import log
 from rtg.registry import register, SCHEDULE
 from torch import optim
 
+from rtg.distrib import DistribTorch
+
+dtorch = DistribTorch.instance()
+
 
 @dataclass
 class LRSchedule:
@@ -36,10 +40,16 @@ class Noam(LRSchedule):
 class InverseSqrt(LRSchedule):
     warmup: int
     peak_lr: float
+    init_lr: 0.0
+
+    def __post_init__(self):
+        assert self.init_lr < self.peak_lr, f'init_lr must be lower than peak_lr'
 
     def rate(self, step) -> float:
-        return min(step * self.peak_lr / self.warmup,
-                   self.peak_lr * self.warmup ** 0.5 * step ** -0.5)
+        if step <= self.warmup:
+            return self.init_lr + step * (self.peak_lr - self.init_lr) / self.warmup
+        else:
+            return self.peak_lr * self.warmup ** 0.5 * step ** -0.5
 
 
 @dataclass
@@ -59,6 +69,15 @@ class ScheduledOptimizer:
         self._step += 1
         if self.schedule is not None:
             rate = self.schedule.rate(step=self._step)
+            # if dtorch.world_size > 1:
+                # assumption: batch_size was divided across workers
+                # Refer to: https://arxiv.org/pdf/1706.02677.pdf
+                # Usually, batch_size is multiplied when more GPUs are added
+                #           rate *= dtorch.world_size   #  <-- this is harmful
+                # but, in RTG, we stick to same batch_size specified in conf.yml (for reproducibility)
+                # and hence divide batch_size across workers, so we divide learning rate instead of multiplying
+                # rate /= dtorch.world_size   #<-- this should have been okay, but see update:
+                # update: we have scaled the minibatch normalizer instead, so we dont need to mess with learning rate
             for p in self.param_groups:
                 p['lr'] = rate
             self._rate = rate

@@ -6,13 +6,13 @@ import os
 import socket
 from dataclasses import dataclass
 from typing import ClassVar
+
+
+import torch
 from torch import nn
 from torch.optim.optimizer import Optimizer
 from torch.cuda.amp import GradScaler
 import torch.distributed as dist
-
-import torch
-from torch import nn
 
 from rtg import log
 
@@ -34,6 +34,7 @@ class DistribTorch:
     visible_devices: str = get_env('CUDA_VISIBLE_DEVICES', '')
     max_norm = 10
     fp16 = False  # Manually enable by calling enable_fp16()
+    grad_accum = 1  # grad accumulation over these many batches
 
     _scaler = None
     _is_backend_ready = False
@@ -55,6 +56,14 @@ class DistribTorch:
             self._is_backend_ready = True
         return self
 
+    def init_trainer_args(self, args: dict):
+        if 'clip_grad_norm' in args:
+            self.clip_grad_norm(args['clip_grad_norm'])
+        if args.get('grad_accum'):
+            self.set_grad_accum(args['grad_accum'])
+        if args.get('fp16'):
+            self.enable_fp16()
+
     def enable_fp16(self):
         if not self.fp16:
             self.fp16 = True
@@ -62,6 +71,13 @@ class DistribTorch:
             log.info("Enabling FP16  /Automatic Mixed Precision training")
         else:
             log.warning(" fp16 is already enabled")
+
+    def set_grad_accum(self, interval: int):
+        if interval < 1:
+            log.warning(f"grad_accum is set to {interval}; updating to 1")
+            interval = 1
+        self.grad_accum = interval
+        log.info(f"Gradient accumulation interval set to {interval}")
 
     def clip_grad_norm(self, max_norm):
         assert max_norm
@@ -107,27 +123,30 @@ class DistribTorch:
             torch.distributed.barrier()
         # else we dont need it
 
-    def backward(self, loss):
+    def backward(self, loss, retain_graph=False):
         if torch.isnan(loss):
-            log.warning('loss is nan; backward() skipped')
-            return True
+            raise Exception('''Loss is nan; enable debug mode to know more (export NMT_DEBUG=true);
+    Or, here are some tips:
+    1. reduce the learning rate
+    2. reduce batch size
+    3. set trainer.init_args.clip_grad_norm to a small number e.g. 5.0''')
         if self.fp16:
             loss = self._scaler.scale(loss)
         if loss < 0:
             raise Exception('Loss is negative; looks like a numerical error (underflow or overflow?')
-        loss.backward()
+        loss.backward(retain_graph=retain_graph)
 
     def average_gradients(self, model):
         size = float(self.world_size)
         for param in model.parameters():
-            dist.all_reduce(param.grad.data, op=dist.reduce_op.SUM)
+            dist.all_reduce(param.grad.data, op=dist.ReduceOp.SUM)
             # TODO: ring reduce https://pytorch.org/tutorials/intermediate/dist_tuto.html#our-own-ring-allreduce
             param.grad.data /= size
 
     def step(self, optimizer: Optimizer):
         if self.is_distributed:
             self.average_gradients(self._model)
-            #TODO: Maybe we dont need to average every step ?
+            # TODO: Maybe we dont need to average every step ?
 
         if self._clip_grad_max_norm:
             if self.fp16:
@@ -142,3 +161,10 @@ class DistribTorch:
         else:
             optimizer.step()
         optimizer.zero_grad()
+
+    @property
+    def batch_size_scaler(self):
+        return max(self.world_size, 1) * max(self.grad_accum, 1)
+
+
+dtorch = DistribTorch.instance()
