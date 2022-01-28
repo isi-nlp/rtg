@@ -437,6 +437,7 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 #footer-text{color:rgba(0,0,0,.6);font-size:.9em}}
 @media amzn-kf8{#header,#content,#footnotes,#footer{padding:0}}
 </style>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
 <style>
 pre.rouge table td { padding: 5px; }
 pre.rouge table pre { margin: 0; }
@@ -699,78 +700,79 @@ pre.rouge {
 <li><a href="#conf-parent-child">2.6. Parent-Child Transfer</a></li>
 <li><a href="#conf-freeze-wt">2.7. Freezing some parts of model</a></li>
 <li><a href="#conf-share-data">2.8. Sharing Data between Experiments</a></li>
+<li><a href="#conf-vocab">2.9. Vocabulary Preprocessing</a>
+<ul class="sectlevel3">
+<li><a href="#_vocabulary_types">2.9.1. Vocabulary Types</a></li>
+<li><a href="#_character_coverage">2.9.2. Character coverage</a></li>
 </ul>
 </li>
-<li><a href="#conf-vocab">3. Vocabulary Preprocessing</a>
+<li><a href="#_sub_word_regularization">2.10. Sub-Word Regularization</a></li>
+</ul>
+</li>
+<li><a href="#avoid-oom">3. Avoiding Out-of-Memory</a>
 <ul class="sectlevel2">
-<li><a href="#_vocabulary_types">3.1. Vocabulary Types</a></li>
-<li><a href="#_character_coverage">3.2. Character coverage</a></li>
-<li><a href="#_sub_word_regularization">3.3. Sub-Word Regularization</a></li>
+<li><a href="#_trainer_memory">3.1. Trainer Memory</a></li>
+<li><a href="#_decoder_memory">3.2. Decoder Memory</a></li>
 </ul>
 </li>
-<li><a href="#avoid-oom">4. Avoiding Out-of-Memory</a>
+<li><a href="#migrate">4. Migration</a>
 <ul class="sectlevel2">
-<li><a href="#_trainer_memory">4.1. Trainer Memory</a></li>
-<li><a href="#_decoder_memory">4.2. Decoder Memory</a></li>
+<li><a href="#migrate-to-0_6">4.1. v0.5.0 or earlier to v0.6.0</a></li>
 </ul>
 </li>
-<li><a href="#migrate">5. Migration</a>
+<li><a href="#rtg-cli">5. RTG CLI</a>
 <ul class="sectlevel2">
-<li><a href="#migrate-to-0_6">5.1. v0.5.0 or earlier to v0.6.0</a></li>
+<li><a href="#_summary">5.1. Summary:</a></li>
+<li><a href="#rtg-pipe">5.2. <code>rtg-pipe</code>:  Pipeline</a></li>
+<li><a href="#rtg-prep">5.3. <code>rtg-prep</code>:  Prepare an experiment</a></li>
+<li><a href="#rtg-train">5.4. <code>rtg-train</code> : Train a Model</a></li>
+<li><a href="#rtg-decode">5.5. <code>rtg-decode</code>: Decoder</a></li>
+<li><a href="#rtg-decode-pro">5.6. <code>rtg-decode-pro</code>: Pro Decoder</a></li>
+<li><a href="#rtg-decode-fork">5.7. <code>rtg-fork</code>: Fork an experiment</a></li>
+<li><a href="#rtg-export">5.8. <code>rtg-export</code> Export</a></li>
 </ul>
 </li>
-<li><a href="#rtg-cli">6. RTG CLI</a>
+<li><a href="#_other_tools">6. Other tools:</a>
 <ul class="sectlevel2">
-<li><a href="#_summary">6.1. Summary:</a></li>
-<li><a href="#rtg-pipe">6.2. <code>rtg-pipe</code>:  Pipeline</a></li>
-<li><a href="#rtg-prep">6.3. <code>rtg-prep</code>:  Prepare an experiment</a></li>
-<li><a href="#rtg-train">6.4. <code>rtg-train</code> : Train a Model</a></li>
-<li><a href="#rtg-decode">6.5. <code>rtg-decode</code>: Decoder</a></li>
-<li><a href="#rtg-decode-pro">6.6. <code>rtg-decode-pro</code>: Pro Decoder</a></li>
-<li><a href="#rtg-decode-fork">6.7. <code>rtg-fork</code>: Fork an experiment</a></li>
-<li><a href="#rtg-export">6.8. <code>rtg-export</code> Export</a></li>
+<li><a href="#rtg-syscomb">6.1. <code>rtg-syscomb</code> System Combiner</a></li>
+<li><a href="#rtg-perplex">6.2. Perplexity</a></li>
+<li><a href="#line-bleu">6.3. Line Bleu</a></li>
+<li><a href="#rtg-oov">6.4. OOV</a></li>
+<li><a href="#cls-imb-seq-len">6.5. Class imbalance, Sequence lengths</a></li>
 </ul>
 </li>
-<li><a href="#_other_tools">7. Other tools:</a>
+<li><a href="#env-vars">7. Environment Variables</a>
 <ul class="sectlevel2">
-<li><a href="#rtg-syscomb">7.1. <code>rtg-syscomb</code> System Combiner</a></li>
-<li><a href="#rtg-perplex">7.2. Perplexity</a></li>
-<li><a href="#line-bleu">7.3. Line Bleu</a></li>
-<li><a href="#rtg-oov">7.4. OOV</a></li>
-<li><a href="#cls-imb-seq-len">7.5. Class imbalance, Sequence lengths</a></li>
+<li><a href="#_gpus">7.1. GPUs</a></li>
+<li><a href="#_fast_temporary_filesystem">7.2. Fast Temporary FileSystem</a></li>
+<li><a href="#_number_of_cpu_cores">7.3. Number of CPU Cores</a></li>
 </ul>
 </li>
-<li><a href="#env-vars">8. Environment Variables</a>
+<li><a href="#ddp">8. Distributed Data Parallel (DDP)</a></li>
+<li><a href="#fp16">9. FP16, Mixed Precision Training</a></li>
+<li><a href="#grad-clip">10. Gradient Clipping</a></li>
+<li><a href="#scaling-big">11. Scaling Big Using PySpark</a></li>
+<li><a href="#_rtg_serve">12. RTG Serve</a>
 <ul class="sectlevel2">
-<li><a href="#_gpus">8.1. GPUs</a></li>
-<li><a href="#_fast_temporary_filesystem">8.2. Fast Temporary FileSystem</a></li>
-<li><a href="#_number_of_cpu_cores">8.3. Number of CPU Cores</a></li>
+<li><a href="#_flask_installation">12.1. Flask Installation</a></li>
+<li><a href="#_running">12.2. Running</a></li>
+<li><a href="#_google_analytics_integration">12.3. Google Analytics Integration</a></li>
 </ul>
 </li>
-<li><a href="#ddp">9. Distributed Data Parallel (DDP)</a></li>
-<li><a href="#fp16">10. FP16, Mixed Precision Training</a></li>
-<li><a href="#grad-clip">11. Gradient Clipping</a></li>
-<li><a href="#scaling-big">12. Scaling Big Using PySpark</a></li>
-<li><a href="#_rtg_serve">13. RTG Serve</a>
+<li><a href="#_pre_process_and_post_process">13. Pre-process and post-process</a></li>
+<li><a href="#dev-env">14. Development Environment:</a>
 <ul class="sectlevel2">
-<li><a href="#_flask_installation">13.1. Flask Installation</a></li>
-<li><a href="#_running">13.2. Running</a></li>
-<li><a href="#_google_analytics_integration">13.3. Google Analytics Integration</a></li>
+<li><a href="#_run_tests">14.1. Run Tests</a></li>
+<li><a href="#_adding_a_new_model">14.2. Adding a new model</a></li>
 </ul>
 </li>
-<li><a href="#_pre_process_and_post_process">14. Pre-process and post-process</a></li>
-<li><a href="#dev-env">15. Development Environment:</a>
+<li><a href="#_release_instructions">15. Release instructions</a>
 <ul class="sectlevel2">
-<li><a href="#_run_tests">15.1. Run Tests</a></li>
-<li><a href="#_adding_a_new_model">15.2. Adding a new model</a></li>
+<li><a href="#_steps">15.1. Steps:</a></li>
+<li><a href="#_the_pypirc_file">15.2. The <code>.pypirc</code> file</a></li>
 </ul>
 </li>
-<li><a href="#_release_instructions">16. Release instructions</a>
-<ul class="sectlevel2">
-<li><a href="#_steps">16.1. Steps:</a></li>
-<li><a href="#_the_pypirc_file">16.2. The <code>.pypirc</code> file</a></li>
-</ul>
-</li>
+<li><a href="#_acknowledgements">Acknowledgements</a></li>
 </ul>
 </div>
 </div>
@@ -886,7 +888,7 @@ hyper params&#8201;&#8212;&#8201;required to reproduce experiments.</p>
 <table>
 <tr>
 <td class="icon">
-<div class="title">Note</div>
+<i class="fa icon-note" title="Note"></i>
 </td>
 <td class="content">
 This mode of setup is required only if you are developing (i.e. modifying RTG code).
@@ -941,7 +943,7 @@ export PYTHONPATH=$PWD # or add it to PYTHONPATH</pre>
 <table>
 <tr>
 <td class="icon">
-<div class="title">Note</div>
+<i class="fa icon-note" title="Note"></i>
 </td>
 <td class="content">
 The required libraries are automatically installed by <code>pip</code>, so manual installation is not required.
@@ -954,7 +956,7 @@ We are listing the requirements here for informative purposes only.
 <table>
 <tr>
 <td class="icon">
-<div class="title">Note</div>
+<i class="fa icon-note" title="Note"></i>
 </td>
 <td class="content">
 To view or modify the  version numbers of libraries, please go to <code>setup.py</code> at the root of this project.
@@ -1168,6 +1170,7 @@ such as BPE/char/words, and vocabulary size.</p>
   <span class="na">src_vocab</span><span class="pi">:</span> <span class="m">8000</span>
   <span class="na">tgt_vocab</span><span class="pi">:</span> <span class="m">8000</span>
   <span class="na">tied_emb</span><span class="pi">:</span> <span class="s">three-way</span>  <span class="c1"># choices: null, one-way, two-way, three-way</span>
+  <span class="c1"># self_attn_rel_pos: 8  # enable relative pos self attention with window=8</span>
 <span class="na">model_type</span><span class="pi">:</span> <span class="s">tfmnmt</span>  <span class="c1"># model type. tfmnmt is the transformer NMT model</span>
 <span class="na">optimizer</span><span class="pi">:</span>
   <span class="na">name</span><span class="pi">:</span> <span class="s">adam</span>
@@ -1530,9 +1533,6 @@ It is also possible to use <code>ADAMW</code> from <a href="https://arxiv.org/ab
 since weight decay is different in optimizers with variable step sizes.</p>
 </div>
 <div class="paragraph">
-<p>Note: When <code>inv_sqrt: false</code>, <code>lr</code> does nothing. When <code>inv_sqrt: true</code>, <code>constant</code> does nothing.</p>
-</div>
-<div class="paragraph">
 <p>An alternative optimizer may look like:</p>
 </div>
 <div class="listingblock">
@@ -1672,11 +1672,8 @@ where the forked experiment will have symbolic link to parent&#8217;s data.</p>
 </div>
 </div>
 </div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="conf-vocab">3. Vocabulary Preprocessing</h2>
-<div class="sectionbody">
+<div class="sect2">
+<h3 id="conf-vocab">2.9. Vocabulary Preprocessing</h3>
 <div class="paragraph">
 <p><a href="https://github.com/google/sentencepiece">Google&#8217;s sentencepiece</a> is an awesome lib for
 preprocessing the text datasets.
@@ -1694,8 +1691,8 @@ NLCoded can be enabled as:</p>
   <span class="s">codec_lib</span><span class="err">:</span> <span class="s">nlcodec</span>  <span class="c1"># default is sentpiece</span></code></pre>
 </div>
 </div>
-<div class="sect2">
-<h3 id="_vocabulary_types">3.1. Vocabulary Types</h3>
+<div class="sect3">
+<h4 id="_vocabulary_types">2.9.1. Vocabulary Types</h4>
 <div class="paragraph">
 <p>Both <code>sentpiece</code> or <code>nlcodec</code> support <code>pieces=</code> <code>bpe</code>, <code>char</code>, <code>word</code>.</p>
 </div>
@@ -1708,11 +1705,12 @@ NLCoded can be enabled as:</p>
 </div>
 </div>
 <div class="paragraph">
-<p>As of now, only <code>sentpiece</code> supports <code>pieces=unigram</code>.</p>
+<p>As of now, only <code>sentpiece</code> supports <code>pieces=unigram</code>.
+For classification experiments, <code>nlcodec</code> supports <code>pieces=class</code></p>
 </div>
 </div>
-<div class="sect2">
-<h3 id="_character_coverage">3.2. Character coverage</h3>
+<div class="sect3">
+<h4 id="_character_coverage">2.9.2. Character coverage</h4>
 <div class="paragraph">
 <p>For <code>bpe</code> and <code>char</code> vocabulary types, a useful trick is to exclude low frequency character and mark them as <code>UNK&#8217;s</code>.
 Usually expressed as percentage of character coverage in training corpus.
@@ -1729,15 +1727,13 @@ Here is how to set this for eg to 99.99% i.e. 0.9999 in <code>nlcodec</code></p>
 </div>
 </div>
 </div>
+</div>
 <div class="sect2">
-<h3 id="_sub_word_regularization">3.3. Sub-Word Regularization</h3>
+<h3 id="_sub_word_regularization">2.10. Sub-Word Regularization</h3>
 <div class="paragraph">
-<p>When using <code>codec_lib: nlcodec</code> and <code>pieces: bpe</code>, you have the option to add
-sub-word regularization to your training.
-Normally, text is split into the fewest tokens necessary to represent
-the sequence (greedy split).
-By occasionally splitting some tokens into its constituents (suboptimal split),
-we can represent the same sequence many different ways.
+<p>When using <code>codec_lib: nlcodec</code> and <code>pieces: bpe</code>, you have the option to add  sub-word regularization to your training.
+Normally, text is split into the fewest tokens necessary to represent  the sequence (greedy split).
+By occasionally splitting some tokens into its constituents (suboptimal split),  we can represent the same sequence many ways.
 This allows us to leverage less data more effectively.</p>
 </div>
 <div class="listingblock">
@@ -1752,13 +1748,13 @@ This allows us to leverage less data more effectively.</p>
 </div>
 </div>
 <div class="sect1">
-<h2 id="avoid-oom">4. Avoiding Out-of-Memory</h2>
+<h2 id="avoid-oom">3. Avoiding Out-of-Memory</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Out-of-memory is pretty common, and we have worked out ways to avoid that situation as much as possible.</p>
 </div>
 <div class="sect2">
-<h3 id="_trainer_memory">4.1. Trainer Memory</h3>
+<h3 id="_trainer_memory">3.1. Trainer Memory</h3>
 <div class="paragraph">
 <p>Let&#8217;s visualize the total required memory for training a model in the order of a 4D tensor: <code>[ ModelDim x Batch x SequenceLength x Vocabulary]</code></p>
 </div>
@@ -1811,7 +1807,7 @@ This <code>keep_in_mem</code> parameter informs the trainer to load training dat
 </div>
 </div>
 <div class="sect2">
-<h3 id="_decoder_memory">4.2. Decoder Memory</h3>
+<h3 id="_decoder_memory">3.2. Decoder Memory</h3>
 <div class="paragraph">
 <p>Since beam decoder is used, let&#8217;s visualize memory as <code>[Batch x Beams x Vocabulary x SequenceLength]</code></p>
 </div>
@@ -1837,10 +1833,10 @@ Right thing to do for long sequences will be to split long sentences in input an
 </div>
 </div>
 <div class="sect1">
-<h2 id="migrate">5. Migration</h2>
+<h2 id="migrate">4. Migration</h2>
 <div class="sectionbody">
 <div class="sect2">
-<h3 id="migrate-to-0_6">5.1. v0.5.0 or earlier to v0.6.0</h3>
+<h3 id="migrate-to-0_6">4.1. v0.5.0 or earlier to v0.6.0</h3>
 <div class="paragraph">
 <p>The optimizer block got a big update in v0.6.0, as a result it is not backward compatible.</p>
 </div>
@@ -1893,7 +1889,7 @@ Right thing to do for long sequences will be to split long sentences in input an
 </div>
 </div>
 <div class="sect1">
-<h2 id="rtg-cli">6. RTG CLI</h2>
+<h2 id="rtg-cli">5. RTG CLI</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>All the below CLI tools give you finer control to go step by step if you want to test only a part of the pipeline.
@@ -1913,7 +1909,7 @@ For end usage of the RTG toolkit, the workflow should be as simple as:</p>
 </ol>
 </div>
 <div class="sect2">
-<h3 id="_summary">6.1. Summary:</h3>
+<h3 id="_summary">5.1. Summary:</h3>
 <div class="paragraph">
 <p>The following command line tools are added when <code>rtg</code> is installed using pip.</p>
 </div>
@@ -1976,7 +1972,7 @@ For end usage of the RTG toolkit, the workflow should be as simple as:</p>
 </table>
 </div>
 <div class="sect2">
-<h3 id="rtg-pipe">6.2. <code>rtg-pipe</code>:  Pipeline</h3>
+<h3 id="rtg-pipe">5.2. <code>rtg-pipe</code>:  Pipeline</h3>
 <div class="paragraph">
 <p>This is the  CLI interface that most likely use.</p>
 </div>
@@ -1999,7 +1995,7 @@ optional arguments:
 </div>
 </div>
 <div class="sect2">
-<h3 id="rtg-prep">6.3. <code>rtg-prep</code>:  Prepare an experiment</h3>
+<h3 id="rtg-prep">5.3. <code>rtg-prep</code>:  Prepare an experiment</h3>
 <div class="listingblock">
 <div class="content">
 <pre>    $ python -m rtg.prep -h
@@ -2017,7 +2013,7 @@ optional arguments:
 </div>
 </div>
 <div class="sect2">
-<h3 id="rtg-train">6.4. <code>rtg-train</code> : Train a Model</h3>
+<h3 id="rtg-train">5.4. <code>rtg-train</code> : Train a Model</h3>
 <div class="listingblock">
 <div class="content">
 <pre>    $ python -m rtg.train -h
@@ -2058,7 +2054,7 @@ optional arguments:
 </div>
 </div>
 <div class="sect2">
-<h3 id="rtg-decode">6.5. <code>rtg-decode</code>: Decoder</h3>
+<h3 id="rtg-decode">5.5. <code>rtg-decode</code>: Decoder</h3>
 <div class="listingblock">
 <div class="content">
 <pre>usage: rtg.decode [-h] [-if [INPUT [INPUT ...]]] [-of [OUTPUT [OUTPUT ...]]]
@@ -2093,7 +2089,7 @@ optional arguments:
 </div>
 </div>
 <div class="sect2">
-<h3 id="rtg-decode-pro">6.6. <code>rtg-decode-pro</code>: Pro Decoder</h3>
+<h3 id="rtg-decode-pro">5.6. <code>rtg-decode-pro</code>: Pro Decoder</h3>
 <div class="paragraph">
 <p>Note: for simple use with defauls from conf.yml, use  <code>rtg-decode</code> or <code>python -m rtg.decode</code>.</p>
 </div>
@@ -2156,7 +2152,7 @@ optional arguments:
 </div>
 </div>
 <div class="sect2">
-<h3 id="rtg-decode-fork">6.7. <code>rtg-fork</code>: Fork an experiment</h3>
+<h3 id="rtg-decode-fork">5.7. <code>rtg-fork</code>: Fork an experiment</h3>
 <div class="listingblock">
 <div class="content">
 <pre>usage: rtg-fork [-h] [--conf | --no-conf] [--data | --no-data]
@@ -2183,7 +2179,7 @@ optional arguments:
 </div>
 </div>
 <div class="sect2">
-<h3 id="rtg-export">6.8. <code>rtg-export</code> Export</h3>
+<h3 id="rtg-export">5.8. <code>rtg-export</code> Export</h3>
 <div class="paragraph">
 <p>Export an experiment:</p>
 </div>
@@ -2219,10 +2215,10 @@ optional arguments:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_other_tools">7. Other tools:</h2>
+<h2 id="_other_tools">6. Other tools:</h2>
 <div class="sectionbody">
 <div class="sect2">
-<h3 id="rtg-syscomb">7.1. <code>rtg-syscomb</code> System Combiner</h3>
+<h3 id="rtg-syscomb">6.1. <code>rtg-syscomb</code> System Combiner</h3>
 <div class="listingblock">
 <div class="content">
 <pre>    python -m rtg.syscomb -h
@@ -2243,7 +2239,7 @@ optional arguments:
 </div>
 </div>
 <div class="sect2">
-<h3 id="rtg-perplex">7.2. Perplexity</h3>
+<h3 id="rtg-perplex">6.2. Perplexity</h3>
 <div class="paragraph">
 <p>Compute perplexity of a language model on a test set.</p>
 </div>
@@ -2273,7 +2269,7 @@ optional arguments:
 </div>
 </div>
 <div class="sect2">
-<h3 id="line-bleu">7.3. Line Bleu</h3>
+<h3 id="line-bleu">6.3. Line Bleu</h3>
 <div class="paragraph">
 <p>Computes BLEU per line</p>
 </div>
@@ -2304,7 +2300,7 @@ optional arguments:
 </div>
 </div>
 <div class="sect2">
-<h3 id="rtg-oov">7.4. OOV</h3>
+<h3 id="rtg-oov">6.4. OOV</h3>
 <div class="paragraph">
 <p>Compute Out-of-Vocabulary(OOV) rate</p>
 </div>
@@ -2324,7 +2320,7 @@ optional arguments:
 </div>
 </div>
 <div class="sect2">
-<h3 id="cls-imb-seq-len">7.5. Class imbalance, Sequence lengths</h3>
+<h3 id="cls-imb-seq-len">6.5. Class imbalance, Sequence lengths</h3>
 <div class="paragraph">
 <p>Computes class Imbalance on training data and reports mean and median sequence lengths
 Get the stats reported in <a href="https://arxiv.org/abs/2004.02334">Gowda and May 's Neural Machine Translation with Imbalanced Classes</a></p>
@@ -2357,10 +2353,10 @@ n_segs: 130,000</pre>
 </div>
 </div>
 <div class="sect1">
-<h2 id="env-vars">8. Environment Variables</h2>
+<h2 id="env-vars">7. Environment Variables</h2>
 <div class="sectionbody">
 <div class="sect2">
-<h3 id="_gpus">8.1. GPUs</h3>
+<h3 id="_gpus">7.1. GPUs</h3>
 <div class="paragraph">
 <p>By default, RTG uses all GPUs specified by <code>CUDA_VISIBLE_DEVICES</code> environment variable.</p>
 </div>
@@ -2392,7 +2388,7 @@ unset CUDA_VISIBLE_DEVICES</pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_fast_temporary_filesystem">8.2. Fast Temporary FileSystem</h3>
+<h3 id="_fast_temporary_filesystem">7.2. Fast Temporary FileSystem</h3>
 <div class="paragraph">
 <p>When shared compute grids with network file systems (NFS) are used, the disk IO can be too slow.
 It helps to move training data that is frequently read to a fast temporary file system.
@@ -2415,7 +2411,7 @@ we shall revise this decision again.</p>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_number_of_cpu_cores">8.3. Number of CPU Cores</h3>
+<h3 id="_number_of_cpu_cores">7.3. Number of CPU Cores</h3>
 <div class="listingblock">
 <div class="content">
 <pre class="rouge highlight"><code data-lang="bash"><span class="nb">export </span><span class="nv">RTG_CPUS</span><span class="o">=</span>10     <span class="c">#$SLURM_CPUS_ON_NODE</span>
@@ -2430,13 +2426,13 @@ we shall revise this decision again.</p>
 </div>
 </div>
 <div class="sect1">
-<h2 id="ddp">9. Distributed Data Parallel (DDP)</h2>
+<h2 id="ddp">8. Distributed Data Parallel (DDP)</h2>
 <div class="sectionbody">
 <div class="admonitionblock note">
 <table>
 <tr>
 <td class="icon">
-<div class="title">Note</div>
+<i class="fa icon-note" title="Note"></i>
 </td>
 <td class="content">
 This is a new feature to RTG and not all edge cases are tested.
@@ -2539,7 +2535,7 @@ python <span class="nt">-m</span> rtg.distrib.launch <span class="nt">-N</span> 
 </div>
 </div>
 <div class="sect1">
-<h2 id="fp16">10. FP16, Mixed Precision Training</h2>
+<h2 id="fp16">9. FP16, Mixed Precision Training</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Note that <code>rtg-pipe -h</code> has <code>-fp16, --fp16</code> CLI argument flag that can be used to enable mixed precision training.</p>
@@ -2552,7 +2548,7 @@ python <span class="nt">-m</span> rtg.distrib.launch <span class="nt">-N</span> 
 </div>
 </div>
 <div class="sect1">
-<h2 id="grad-clip">11. Gradient Clipping</h2>
+<h2 id="grad-clip">10. Gradient Clipping</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Gradient clipping is supported using <a href="https://pytorch.org/docs/stable/generated/torch.nn.utils.clip_grad_norm_.html"><code>torch.clip_grad_norm_</code></a>.</p>
@@ -2571,7 +2567,7 @@ python <span class="nt">-m</span> rtg.distrib.launch <span class="nt">-N</span> 
 </div>
 </div>
 <div class="sect1">
-<h2 id="scaling-big">12. Scaling Big Using PySpark</h2>
+<h2 id="scaling-big">11. Scaling Big Using PySpark</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>When dealing with big datasets, the traditional tools such as multiprocessing and SQLite3 simply aren&#8217;t enogh.
@@ -2645,7 +2641,7 @@ Also, the log message provides the Spark web UI address when spark session is in
 <table>
 <tr>
 <td class="icon">
-<div class="title">Warning</div>
+<i class="fa icon-warning" title="Warning"></i>
 </td>
 <td class="content">
 The multi-node spark distributed mode is not tested. (But it might work out of the box  if <code>"spark.master"</code> is correctly set)
@@ -2656,13 +2652,13 @@ The multi-node spark distributed mode is not tested. (But it might work out of t
 </div>
 </div>
 <div class="sect1">
-<h2 id="_rtg_serve">13. RTG Serve</h2>
+<h2 id="_rtg_serve">12. RTG Serve</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>RTG model can be served using Flask Server.</p>
 </div>
 <div class="sect2">
-<h3 id="_flask_installation">13.1. Flask Installation</h3>
+<h3 id="_flask_installation">12.1. Flask Installation</h3>
 <div class="listingblock">
 <div class="content">
 <pre class="rouge highlight"><code data-lang="commandline">$ pip install rtg[serve]</code></pre>
@@ -2673,7 +2669,7 @@ The multi-node spark distributed mode is not tested. (But it might work out of t
 </div>
 </div>
 <div class="sect2">
-<h3 id="_running">13.2. Running</h3>
+<h3 id="_running">12.2. Running</h3>
 <div class="listingblock">
 <div class="content">
 <pre class="rouge highlight"><code data-lang="commandline">$ python -m rtg.serve -h  # rtg-serve
@@ -2711,7 +2707,7 @@ To use basepath of <code>/v1</code>: <code>python -m rtg.serve -d runs/001-tfm -
 <table>
 <tr>
 <td class="icon">
-<div class="title">Note</div>
+<i class="fa icon-note" title="Note"></i>
 </td>
 <td class="content">
 batch decoding is yet to be supported. The current decoder decodes only one sentence at a time.
@@ -2747,7 +2743,7 @@ after properly URL encoding the <code>text1</code> <code>text2</code>. This shou
 </div>
 </div>
 <div class="sect2">
-<h3 id="_google_analytics_integration">13.3. Google Analytics Integration</h3>
+<h3 id="_google_analytics_integration">12.3. Google Analytics Integration</h3>
 <div class="paragraph">
 <p>Google Analytics is supported on web pages, however disabled by default.
 To enable set <code>GA_TAG</code> environment variable before starting <code>rtg.serve</code> process.</p>
@@ -2791,7 +2787,7 @@ uwsgi <span class="nt">--ini</span> examples/uwsgi.ini</code></pre>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_pre_process_and_post_process">14. Pre-process and post-process</h2>
+<h2 id="_pre_process_and_post_process">13. Pre-process and post-process</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>The input/source text given to the API must be pre-processed in the same settings as the preprocessing during training phase. So, we offer configurations to match the preprocessing:</p>
@@ -2889,10 +2885,10 @@ uwsgi <span class="nt">--ini</span> examples/uwsgi.ini</code></pre>
 </div>
 </div>
 <div class="sect1">
-<h2 id="dev-env">15. Development Environment:</h2>
+<h2 id="dev-env">14. Development Environment:</h2>
 <div class="sectionbody">
 <div class="sect2">
-<h3 id="_run_tests">15.1. Run Tests</h3>
+<h3 id="_run_tests">14.1. Run Tests</h3>
 <div class="paragraph">
 <p>Test cases are done using the <a href="https://docs.pytest.org/en/latest/"><code>pytest</code></a> framework.
 It can be installed using <code>pip install pytest</code></p>
@@ -2925,7 +2921,7 @@ It can be installed using <code>pip install pytest</code></p>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_adding_a_new_model">15.2. Adding a new model</h3>
+<h3 id="_adding_a_new_model">14.2. Adding a new model</h3>
 <div class="olist arabic">
 <ol class="arabic">
 <li>
@@ -2983,7 +2979,7 @@ It can be installed using <code>pip install pytest</code></p>
 <table>
 <tr>
 <td class="icon">
-<div class="title">Note</div>
+<i class="fa icon-note" title="Note"></i>
 </td>
 <td class="content">
 If your model is similar to existing model and match most of its API, you should reuse one of those trainers and generators.
@@ -2995,7 +2991,7 @@ If your model is similar to existing model and match most of its API, you should
 </div>
 </div>
 <div class="sect1">
-<h2 id="_release_instructions">16. Release instructions</h2>
+<h2 id="_release_instructions">15. Release instructions</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -3008,7 +3004,7 @@ If your model is similar to existing model and match most of its API, you should
 </ul>
 </div>
 <div class="sect2">
-<h3 id="_steps">16.1. Steps:</h3>
+<h3 id="_steps">15.1. Steps:</h3>
 <div class="olist arabic">
 <ol class="arabic">
 <li>
@@ -3018,7 +3014,7 @@ If your model is similar to existing model and match most of its API, you should
 <p>Remove old builds (if any)</p>
 <div class="literalblock">
 <div class="content">
-<pre>rm -r build dist *.egg-info`</pre>
+<pre>rm -r build dist *.egg-info</pre>
 </div>
 </div>
 </li>
@@ -3068,7 +3064,7 @@ If your model is similar to existing model and match most of its API, you should
 </div>
 </div>
 <div class="sect2">
-<h3 id="_the_pypirc_file">16.2. The <code>.pypirc</code> file</h3>
+<h3 id="_the_pypirc_file">15.2. The <code>.pypirc</code> file</h3>
 <div class="paragraph">
 <p>The rc file <code>~/.pypirc</code> should have something like this</p>
 </div>
@@ -3096,10 +3092,31 @@ If your model is similar to existing model and match most of its API, you should
 </div>
 </div>
 </div>
+<div class="sect1">
+<h2 id="_acknowledgements">Acknowledgements</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The research is based upon work supported by the Office of the Director of
+National Intelligence (ODNI), Intelligence Advanced Research Projects
+Activity (IARPA), via AFRL Contract #FA8650-17-C-9116.
+The views and conclusions contained herein are those of the authors and
+should not be interpreted as necessarily representing the official policies or
+endorsements, either expressed or implied, of the ODNI, IARPA, or the
+U.S. Government. The U.S. Government is authorized to reproduce and
+distribute reprints for Governmental purposes notwithstanding any
+copyright annotation thereon.</p>
+</div>
+<div class="paragraph">
+<p>This material is based on research sponsored by Air Force Research Laboratory (AFRL)
+under agreement number FA8750-19-1-1000. The U.S. Government is authorized to reproduce and
+distribute reprints for Government purposes notwithstanding any copyright notation therein.</p>
+</div>
+</div>
+</div>
 </div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2021-11-30 12:49:59 -0800
+Last updated 2022-01-27 23:39:56 -0800
 </div>
 </div>
 </body>

@@ -1,6 +1,7 @@
 = RTG Docs Versions
 :hide-uri-scheme:
 
+* link:v0.6.1[v0.6.1]
 * link:v0.6.0[v0.6.0]
 * link:v0.5.2[v0.5.2]
 
