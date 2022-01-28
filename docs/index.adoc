@@ -11,6 +11,7 @@ USC Information Sciences Institute  Natural Language Group
 :toc: left
 //injects google analytics to <head>
 :docinfo2:
+:icons: font
 :hide-uri-scheme:
 :source-highlighter: rouge
 
@@ -31,6 +32,10 @@ include::45-scaling.adoc[]
 
 include::50-serve.adoc[]
 
-
-
 include::60-develop.adoc[]
+
+:!sectnums:
+
+== Acknowledgements
+
+include::../ACKNOWLEDGMENT[]
