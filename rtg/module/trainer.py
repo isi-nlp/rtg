@@ -173,10 +173,6 @@ class SteppedTrainer:
         self.n_gpus = torch.cuda.device_count()
         self.device_ids = list(range(self.n_gpus))
         self.core_model = self.model.to(device)
-        if last_state_file:
-            self.load_state(chkpt_path=last_state_file)
-        else:
-            log.info("No earlier check point found. Looks like this is a fresh start")
 
         trainable_params = self.exp.config['optimizer'].get('trainable', {})
         if trainable_params:
@@ -188,6 +184,11 @@ class SteppedTrainer:
             trainable_params = self.model.parameters()
 
         self.core_opt = exp.get_optimizer(params=trainable_params)
+        if last_state_file:
+            self.load_state(chkpt_path=last_state_file)
+        else:
+            log.info("No earlier check point found. Looks like this is a fresh start")
+
         self.model = dtorch.maybe_distributed(self.core_model)
         self.opt = ScheduledOptimizer(start_step=self.start_step, schedule=exp.get_schedule(), optimizer=self.core_opt)
 
