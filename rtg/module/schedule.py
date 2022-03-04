@@ -41,15 +41,18 @@ class InverseSqrt(LRSchedule):
     warmup: int
     peak_lr: float
     init_lr: 0.0
+    constant: int = 1
 
     def __post_init__(self):
         assert self.init_lr < self.peak_lr, f'init_lr must be lower than peak_lr'
+        assert self.constant > 0
 
     def rate(self, step) -> float:
         if step <= self.warmup:
-            return self.init_lr + step * (self.peak_lr - self.init_lr) / self.warmup
+            lr = self.init_lr + step * (self.peak_lr - self.init_lr) / self.warmup
         else:
-            return self.peak_lr * self.warmup ** 0.5 * step ** -0.5
+            lr = self.peak_lr * self.warmup ** 0.5 * step ** -0.5
+        return self.constant * lr
 
 
 @dataclass
