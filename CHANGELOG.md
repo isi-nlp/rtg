@@ -8,6 +8,8 @@
 - `batch_size` is auto adjusted based on number of workers and gradient_accum (huh! finally)
 - `batch_size` normalizer in distributed training setting (fix! faster convergence now)
 - support for `byte` encoding added
+- Validation metrics; previously BLEU was teacher-forced similar to validation loss, now BLEU is from autoregressive output (resembling test time)
+- 
 - 
 
 # v0.6.0 : 20210921
