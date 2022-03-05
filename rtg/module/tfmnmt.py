@@ -399,8 +399,8 @@ def attention(query, key, value, mask=None, dropout=None, query_key_emb: 'Relati
         # for devising this concise code. I needed a lot of time to understand how this code works!
         #
         #scores = scores.masked_fill(mask == 0, -1e9)
-        #low_val = -2 ** 14 if dtorch.fp16 else -1e9  # -2**15 causes nan
-        low_val = -2 ** 13 if dtorch.fp16 else -1e9  # -2**15 causes nan
+        low_val = -2 ** 14 if dtorch.fp16 else -1e9  # -2**15 causes nan
+        #low_val = -2 ** 13 if dtorch.fp16 else -1e9  # -2**15 causes nan
         scores = scores.masked_fill(mask == 0, low_val)
     p_attn = F.softmax(scores, dim=-1)  # [BatchSize x Heads x Time=SeqLen x SeqLen ]
     if dropout is not None:
@@ -987,7 +987,7 @@ class SimpleLossFunction:
         else:
             total_toks = mask_out.shape[0] - mask_out.sum()
             # scale batch size back
-            total_toks *= dtorch.batch_size_scaler
+            # total_toks *= dtorch.batch_size_scaler
         assert total_toks > 0
 
         if not get_out and self.subcls_gen:
@@ -1045,7 +1045,7 @@ class ChunkedLossCompute(SimpleLossFunction):
         else:
             total_toks = mask_out.shape[0] * mask_out.shape[1] - mask_out.sum()
             # scale batch  size back
-            total_toks *= dtorch.batch_size_scaler
+            # total_toks *= dtorch.batch_size_scaler
         assert total_toks > 0 
 
         sub_vocab = None
