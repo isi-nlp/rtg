@@ -5,6 +5,7 @@
 import torch
 import rtg
 from rtg import log, yaml, TranslationExperiment as Experiment, device, BatchIterable
+from rtg.registry import ProblemType
 from rtg.module import NMTModel
 from rtg.utils import IO
 from rtg.module.schedule import ScheduledOptimizer
@@ -207,6 +208,7 @@ class SteppedTrainer:
                     for samp_num, sample in enumerate(self.samples):
                         self.tbd.add_text(f"sample/{samp_num}", " || ".join(sample), 0)
 
+        if exp.problem_type == ProblemType.TRANSLATION:
             from rtg.module.decoder import Decoder
             self.decoder = Decoder.new(self.exp, self.core_model)
 

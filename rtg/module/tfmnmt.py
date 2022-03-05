@@ -623,9 +623,10 @@ class TransformerTrainer(SteppedTrainer):
                 # skip the last time step (the one with EOS as input)
                 out = out[:, :-1, :]
                 # assumption:  y_seqs has EOS, and not BOS
-                loss, outs = self.loss_func(out, batch.y_seqs, train_mode=False, get_out=True)
-                outs = outs.tolist()
-                for out in outs:
+                max_len = max(20, batch.max_y_len - batch.max_x_len)
+                loss = self.loss_func(out, batch.y_seqs, train_mode=False, get_out=False)
+                outs = self.decoder.greedy_decode(x_seqs, x_lens=batch.x_len, max_len=max_len)
+                for score, out in outs:  # outs = outs.tolist()
                     hyp = self.exp.tgt_vocab.decode_ids(out, trunc_eos=True)
                     hyps_raw.append(hyp)
                     hyp = tgt_post_proc(hyp)   # detok, drop unk
@@ -757,7 +758,7 @@ class TransformerTrainer(SteppedTrainer):
         batch_count = -1
         stopper = None
         early_stopped_flag = self.exp.model_dir / '_EARLY_STOPPED'
-        if early_stopped_flag.exists():
+        if dtorch.is_global_main and early_stopped_flag.exists():
             early_stopped_flag.unlink()
         if early_stop:
             stopper = EarlyStopper(cur_step=self.start_step, **early_stop)
