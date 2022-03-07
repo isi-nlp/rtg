@@ -377,9 +377,6 @@ def attention(query, key, value, mask=None, dropout=None, query_key_emb: 'Relati
     # Beware: this is a batch multiplier!
     # See https://pytorch.org/docs/stable/torch.html?highlight=matmul#torch.matmul
     scores = torch.matmul(query, key.transpose(-2, -1))
-    # incase of mixed precision, force full float
-    
-    #scores = scores.float()
     if query_key_emb is not None:
         rel_scores = query_key_emb(query=query, key=key)
         scores = scores + rel_scores
@@ -399,8 +396,8 @@ def attention(query, key, value, mask=None, dropout=None, query_key_emb: 'Relati
         # for devising this concise code. I needed a lot of time to understand how this code works!
         #
         #scores = scores.masked_fill(mask == 0, -1e9)
-        low_val = -2 ** 14 if dtorch.fp16 else -1e9  # -2**15 causes nan
-        #low_val = -2 ** 13 if dtorch.fp16 else -1e9  # -2**15 causes nan
+        #low_val = -2 ** 14 if dtorch.fp16 else -1e9  # -2**15 causes nan on float16
+        low_val = -1e9        # now we use bfloat16, which is awesome
         scores = scores.masked_fill(mask == 0, low_val)
     p_attn = F.softmax(scores, dim=-1)  # [BatchSize x Heads x Time=SeqLen x SeqLen ]
     if dropout is not None:
@@ -787,7 +784,7 @@ class TransformerTrainer(SteppedTrainer):
                 y_seqs_in = torch.cat([bos_step, batch.y_seqs], dim=1)
                 y_mask = batch.make_autoreg_mask(y_seqs_in)
 
-                with autocast(enabled=dtorch.fp16):
+                with autocast(enabled=dtorch.fp16, dtype=torch.bfloat16):
                     loss = self._train_step(take_step, x_mask, x_seqs, y_mask, y_seqs_in, y_seqs_out)  #norm=max_toks
 
                 if stopper and take_step:

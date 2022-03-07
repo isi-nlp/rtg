@@ -9,7 +9,7 @@
 - `batch_size` normalizer in distributed training setting (fix! faster convergence now)
 - support for `byte` encoding added
 - Validation metrics; previously BLEU was teacher-forced similar to validation loss, now BLEU is from autoregressive output (resembling test time)
-- 
+  - Use bfloat16 for mixed precision training, requires torch 1.10+
 - 
 
 # v0.6.0 : 20210921

@@ -41,7 +41,7 @@ setuptools.setup(
         'tensorboard >= 2.6.0',
         'tqdm >= 4.45.0',
         'nlcodec >= 0.5',
-        'torch >= 1.8.0',
+        'torch >= 1.10',  # AMP with bfloat16 came in 1.10
         'sacremoses >= 0.0.45',
         'portalocker >= 2.0.0',
         'torchtext >= 0.10.0',
