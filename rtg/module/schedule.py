@@ -38,7 +38,8 @@ class Noam(LRSchedule):
 @register(SCHEDULE, 'inverse_root')
 @dataclass
 class InverseRoot(LRSchedule):
-
+    # for a visualization, see https://www.desmos.com/calculator/qadmmahb2t
+    
     warmup: int
     peak_lr: float
     init_lr: 0.0
