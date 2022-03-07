@@ -148,9 +148,16 @@ class DistribTorch:
 
     def average_gradients(self, model):
         size = float(self.world_size)
+        # dist.all_reduce_coalesced(list(model.parameters()), op=dist.ReduceOp.SUM)  # unavailable
+        futures = []
         for param in model.parameters():
-            dist.all_reduce(param.grad.data, op=dist.ReduceOp.SUM)
+            work = dist.all_reduce(param.grad.data, op=dist.ReduceOp.SUM, async_op=True)
+            futures.append((work, param))
             # TODO: ring reduce https://pytorch.org/tutorials/intermediate/dist_tuto.html#our-own-ring-allreduce
+            #param.grad.data /= size
+        
+        for work, param in futures:
+            work.wait()  # if not complete
             param.grad.data /= size
 
     def step(self, optimizer: Optimizer):
