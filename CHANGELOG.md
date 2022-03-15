@@ -1,4 +1,8 @@
-# v0.6.1 : WIP
+# v0.7 - WIP
+- 
+
+
+# v0.6.1 : 20220128
 - `rtg.fork` accepts multiple to_dir; thus supports cloning multiple times at once
 - Bug fix: early stopping on distributed parallel training
 - `rtg.tool.augment` to support data augmentations
