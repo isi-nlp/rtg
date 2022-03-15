@@ -1,6 +1,17 @@
-# v0.7 - WIP
-- 
-
+# v0.7 - 20220315
+- Big improvements:
+  - Autocast / mixed precision: `bfloat16` instead of `float16`. Now we can train larger models on larger batches using 16bit float ops without loss becoming infinity!  
+    - WARNING: we need pytorch 1.10 or newer. Please upgrade!
+  - validation BLEU scores are computed without teacher forcing i.e., similar to inference. BLEU is more realistic estimate of test time bleu
+    - WARNING: validations can be slower. Dont use too big validation set
+  - schedule:
+    - `inverse_sqrt` support scaler multiplier term, similar to `noam`
+    - `inverse_root` schedule added, generalization of `inverse_sqrt`
+- fixes
+  - `rtg.prep` CLI arguments works now
+  - optimizer state loading now works while resuming training
+  - parent model will be recreated if missing even after _PREPARED flag exists
+  
 
 # v0.6.1 : 20220128
 - `rtg.fork` accepts multiple to_dir; thus supports cloning multiple times at once
