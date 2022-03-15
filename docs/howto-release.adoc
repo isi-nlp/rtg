@@ -1,4 +1,4 @@
-==  Release instructions
+==  PyPI Release Instructions
 
 * PyPI release required twine : https://twine.readthedocs.io/en/latest/
 * Docs require asciidoctor: https://anaconda.org/conda-forge/asciidoctor
@@ -18,11 +18,11 @@
   twine upload -r testpypi dist/*
 
 . Make docs and link
+.. List a new version for docs: `docs/versions.adoc`
+
 .. Build docs
 
        docs/make-docs.sh      # docs
-
-.. List a new version for docs: `docs/versions.adoc`
 
 . Upload to **pypi**
 
@@ -52,3 +52,18 @@ password:<password_here>
 ----
 
 For the first time users of PyPI, you need to create an account at https://pypi.org/ AND https://test.pypi.org/. Yes, they are two different accounts! Make your life easy by using same userID and password.
+
+== Docker Release
+
+
+=== Docker for ARM64
+
+With Apple moving to ARM chips, running AMD64 docker images on ARM is not efficient.
+
+[source,bash]
+----
+cd dockers
+# find a suitable docker file to build; e.g., this one
+docker build . -f rtg-0.7-py39_tr110_cu114.dockerfile-t tgowda/rtg:0.7-py39_tr110_cu114
+----
+
