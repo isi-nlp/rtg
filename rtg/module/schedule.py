@@ -35,21 +35,47 @@ class Noam(LRSchedule):
                                                             step * self.warmup ** -1.5)
 
 
+@register(SCHEDULE, 'inverse_root')
+@dataclass
+class InverseRoot(LRSchedule):
+    # for a visualization, see https://www.desmos.com/calculator/qadmmahb2t
+    
+    warmup: int
+    peak_lr: float
+    init_lr: 0.0
+    constant: int = 1
+    decay_power: float = 0.5
+
+    def __post_init__(self):
+        assert self.init_lr < self.peak_lr, f'init_lr must be lower than peak_lr'
+        assert self.constant > 0
+        assert 0 < self.decay_power < 1, f'set 0.5 for sqrt, 0.3 for cube root etc. given {self.decay_power}'
+
+    def rate(self, step) -> float:
+        return self.constant * min(
+            self.init_lr + step * (self.peak_lr - self.init_lr) / self.warmup,
+            self.peak_lr * self.warmup ** self.decay_power * step ** -self.decay_power
+        )
+
+
 @register(SCHEDULE, 'inverse_sqrt')
 @dataclass
 class InverseSqrt(LRSchedule):
     warmup: int
     peak_lr: float
     init_lr: 0.0
+    constant: int = 1
 
     def __post_init__(self):
         assert self.init_lr < self.peak_lr, f'init_lr must be lower than peak_lr'
+        assert self.constant > 0
 
     def rate(self, step) -> float:
         if step <= self.warmup:
-            return self.init_lr + step * (self.peak_lr - self.init_lr) / self.warmup
+            lr = self.init_lr + step * (self.peak_lr - self.init_lr) / self.warmup
         else:
-            return self.peak_lr * self.warmup ** 0.5 * step ** -0.5
+            lr = self.peak_lr * self.warmup ** 0.5 * step ** -0.5
+        return self.constant * lr
 
 
 @dataclass

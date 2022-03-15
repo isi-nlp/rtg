@@ -378,7 +378,6 @@ def attention(query, key, value, mask=None, dropout=None, query_key_emb: 'Relati
     # See https://pytorch.org/docs/stable/torch.html?highlight=matmul#torch.matmul
     scores = torch.matmul(query, key.transpose(-2, -1))
     if query_key_emb is not None:
-        # the above impementation was memory inefficient, so rewrote this
         rel_scores = query_key_emb(query=query, key=key)
         scores = scores + rel_scores
     scores = scores / math.sqrt(d_k)
@@ -396,15 +395,18 @@ def attention(query, key, value, mask=None, dropout=None, query_key_emb: 'Relati
         # Now, if you got this, take a moment to thank http://nlp.seas.harvard.edu/rush.html
         # for devising this concise code. I needed a lot of time to understand how this code works!
         #
-        # scores = scores.masked_fill(mask == 0, -1e9)
-        low_val = -2 ** 14 if dtorch.fp16 else -1e9  # -2**15 causes nan
-        #low_val = -1e9
+        #scores = scores.masked_fill(mask == 0, -1e9)
+        #low_val = -2 ** 14 if dtorch.fp16 else -1e9  # -2**15 causes nan on float16
+        low_val = -1e9        # now we use bfloat16, which is awesome
         scores = scores.masked_fill(mask == 0, low_val)
     p_attn = F.softmax(scores, dim=-1)  # [BatchSize x Heads x Time=SeqLen x SeqLen ]
     if dropout is not None:
         p_attn = dropout(p_attn)
+        
     # Beware: this is a batch multiplier!
+    
     ctx_vals = torch.matmul(p_attn, value)
+    #ctx_vals = ctx_vals.to(value.dtype)  # p_attn maybe float, value maybe half
     return ctx_vals, p_attn
 
 class RelativePositionEmbedding(nn.Module):
@@ -618,9 +620,10 @@ class TransformerTrainer(SteppedTrainer):
                 # skip the last time step (the one with EOS as input)
                 out = out[:, :-1, :]
                 # assumption:  y_seqs has EOS, and not BOS
-                loss, outs = self.loss_func(out, batch.y_seqs, train_mode=False, get_out=True)
-                outs = outs.tolist()
-                for out in outs:
+                max_len = max(20, batch.max_y_len - batch.max_x_len)
+                loss = self.loss_func(out, batch.y_seqs, train_mode=False, get_out=False)
+                outs = self.decoder.greedy_decode(x_seqs, x_lens=batch.x_len, max_len=max_len)
+                for score, out in outs:  # outs = outs.tolist()
                     hyp = self.exp.tgt_vocab.decode_ids(out, trunc_eos=True)
                     hyps_raw.append(hyp)
                     hyp = tgt_post_proc(hyp)   # detok, drop unk
@@ -752,7 +755,7 @@ class TransformerTrainer(SteppedTrainer):
         batch_count = -1
         stopper = None
         early_stopped_flag = self.exp.model_dir / '_EARLY_STOPPED'
-        if early_stopped_flag.exists():
+        if dtorch.is_global_main and early_stopped_flag.exists():
             early_stopped_flag.unlink()
         if early_stop:
             stopper = EarlyStopper(cur_step=self.start_step, **early_stop)
@@ -781,8 +784,8 @@ class TransformerTrainer(SteppedTrainer):
                 y_seqs_in = torch.cat([bos_step, batch.y_seqs], dim=1)
                 y_mask = batch.make_autoreg_mask(y_seqs_in)
 
-                with autocast(enabled=dtorch.fp16):
-                    loss = self._train_step(take_step, x_mask, x_seqs, y_mask, y_seqs_in, y_seqs_out)
+                with autocast(enabled=dtorch.fp16, dtype=torch.bfloat16):
+                    loss = self._train_step(take_step, x_mask, x_seqs, y_mask, y_seqs_in, y_seqs_out)  #norm=max_toks
 
                 if stopper and take_step:
                     stopper.step()
@@ -847,13 +850,13 @@ class TransformerTrainer(SteppedTrainer):
         dtorch.barrier()
         return early_stopped_flag.exists()
 
-    def _train_step(self, take_step: bool, x_mask, x_seqs, y_mask, y_seqs_in, y_seqs_out):
+    def _train_step(self, take_step: bool, x_mask, x_seqs, y_mask, y_seqs_in, y_seqs_out, norm=None):
         # [Batch x Time x D]
         out = self.model(x_seqs, y_seqs_in, x_mask, y_mask)
         # skip the last time step (the one with EOS as input)
         out = out[:, :-1, :]
         # assumption:  y_seqs has EOS, and not BOS
-        loss = self.loss_func(out, y_seqs_out, train_mode=True, take_step=take_step)
+        loss = self.loss_func(out, y_seqs_out, train_mode=True, take_step=take_step, norm=norm)
         return loss
 
     def _log_resources(self, batch):
@@ -973,12 +976,16 @@ class SimpleLossFunction:
             sub_vocab = torch.cat([sub_vocab, neg_classes])
         return sub_vocab, tgt_rev_idx
 
-    def __call__(self, x_feats, y_seqs, train_mode=True, take_step=True, get_out=False):
+    def __call__(self, x_feats, y_seqs, train_mode=True, take_step=True, get_out=False, norm=None):
         # B x T x D --> B x T x V
         mask_out = (y_seqs == self.vocab.pad_idx).view(-1, 1)
-        total_toks = mask_out.shape[0] - mask_out.sum()
-        # scale batch size back
-        total_toks *= dtorch.batch_size_scaler
+        if norm:
+            total_toks = norm
+        else:
+            total_toks = mask_out.shape[0] - mask_out.sum()
+            # scale batch size back
+            # total_toks *= dtorch.batch_size_scaler
+        assert total_toks > 0
 
         if not get_out and self.subcls_gen:
             sub_vocab, y_seqs = self.get_sub_vocab(y_seqs)
@@ -1011,7 +1018,7 @@ class ChunkedLossCompute(SimpleLossFunction):
         if self.criterion.reduction == 'macro':
             raise Exception('ChunkedLoss doesnt support reduction=macro; set chunk_size=0 to disable ChunkedLoss')
 
-    def __call__(self, y_feats, y_seqs, train_mode=True, chunk_size=None, take_step=True, get_out=False):
+    def __call__(self, y_feats, y_seqs, train_mode=True, chunk_size=None, take_step=True, get_out=False, norm=None):
         """
         :param y_feats:
         :param y_seqs:
@@ -1030,9 +1037,13 @@ class ChunkedLossCompute(SimpleLossFunction):
         out_chunks = []
         count = 0
         mask_out = (y_seqs == self.vocab.pad_idx)
-        total_toks = mask_out.shape[0] * mask_out.shape[1] - mask_out.sum()
-        # scale batch  size back
-        total_toks *= dtorch.batch_size_scaler
+        if norm:
+            total_toks = norm
+        else:
+            total_toks = mask_out.shape[0] * mask_out.shape[1] - mask_out.sum()
+            # scale batch  size back
+            # total_toks *= dtorch.batch_size_scaler
+        assert total_toks > 0 
 
         sub_vocab = None
         if not get_out and self.subcls_gen:
@@ -1060,6 +1071,7 @@ class ChunkedLossCompute(SimpleLossFunction):
             total += loss.detach().item()
             if train_mode:
                 dtorch.backward(loss)
+        assert count > 0
         total /= count
         if train_mode:
             if _y_feats.grad is None:

@@ -7,7 +7,7 @@ from torch import nn
 from torch import Tensor
 import torch.nn.functional as F
 import abc
-from rtg.registry import CRITERION, register
+from rtg.registry import CRITERION, register, ProblemType
 from rtg import log
 from rtg.exp import TranslationExperiment as Experiment
 from pathlib import Path
@@ -28,6 +28,8 @@ class Criterion(nn.Module, abc.ABC):
         self.exp = exp
         self._step = step
         self.pad_idx = self.exp.tgt_vocab.pad_idx
+        if self.exp.problem_type == ProblemType.CLASSIFICATION:
+            self.pad_idx = -1  # no padding required
         self.input_type = input_type
         self.reduction = reduction
 
@@ -227,7 +229,7 @@ class KLDivergence(SparseCrossEntropy):
         if 'macro' in self.reduction:
             assert self.label_smoothing > 0., 'reduce=macro requires label_smoothing > 0'
 
-    def forward(self, inputs, targets, normalizer:float, mask_out=None):
+    def forward(self, inputs, targets, normalizer: float, mask_out=None):
         # logits: [N x C] targets: [N]
         N, C = inputs.shape
         assert targets.shape[0] == inputs.shape[0]
@@ -236,9 +238,13 @@ class KLDivergence(SparseCrossEntropy):
         dense_targets = get_dense_targets(labels=targets, n_labels=C, label_smoothing=self.label_smoothing,
                                           ignore_idx=self.pad_idx)
         weight = self.get_weights(inputs, targets)
-        return kl_div(inputs=inputs, targets=dense_targets, normalizer=normalizer,
+        loss = kl_div(inputs=inputs, targets=dense_targets, normalizer=normalizer,
                       reduction=self.reduction, weight=weight, mask_out=mask_out,
                       input_type=self.input_type, infinitesimal=self.infinitesimal)
+        if loss < 0:
+            log.warning("Loss is negative")
+            pass
+        return loss
 
 
 @register(kind=CRITERION, name="focal_loss")

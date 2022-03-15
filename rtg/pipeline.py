@@ -332,7 +332,7 @@ class Pipeline:
             self.exp.reload()  # with updated config and vocabs from global_main
         # train on all
         if debug:
-            log.warning("<<<Anomoly detection enabled; this is very slow; use this only for debugging/hunting bugs>>>")
+            log.warning("<<<Anomaly detection enabled; this is very slow; use this only for debugging/hunting bugs>>>")
             with torch.autograd.detect_anomaly():
                 self.exp.train()
         else:

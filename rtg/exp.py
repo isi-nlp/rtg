@@ -85,6 +85,7 @@ class BaseExperiment:
             if self._shared_field_file.exists() else None
 
         self.last_state_file = self.model_dir / 'last_state.pt'
+        self.parent_model_state = self.data_dir / 'parent_model_state.pt'
 
     @property
     def problem_type(self):
@@ -259,12 +260,12 @@ class BaseExperiment:
         return None
 
     def pre_process(self, args=None, force=False):
+        if 'parent' in self.config and not self.parent_model_state.exists():
+            self.inherit_parent()
         if self.has_prepared() and not force:
             log.warning("Already prepared")
             return
         args = args if args else self.config['prep']
-        if 'parent' in self.config:
-            self.inherit_parent()
 
         if 'same_data' in args:
             data = Path(args['same_data']) / 'data'
@@ -413,7 +414,7 @@ class TranslationExperiment(BaseExperiment):
             self.mono_valid_src = self.data_dir / 'mono.valid.src.gz'
             self.mono_valid_tgt = self.data_dir / 'mono.valid.tgt.gz'
 
-        self.parent_model_state = self.data_dir / 'parent_model_state.pt'
+
 
     @property
     def problem_type(self):
@@ -815,7 +816,8 @@ class TranslationExperiment(BaseExperiment):
 
     def pre_process(self, args=None, force=False):
         args = args or self.config['prep']
-        super(TranslationExperiment, self).pre_process(args, )
+        super(TranslationExperiment, self).pre_process(args)
+
         if self.has_prepared() and not force:
             log.warning("Already prepared")
             return

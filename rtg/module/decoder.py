@@ -396,17 +396,17 @@ class Decoder:
         else:  # all others go from source as input to target as output
             return self.exp.tgt_vocab
 
-    def decode_sentence(self, line: str, max_len=20, prepared=False, **args) -> List[StrHypothesis]:
+    def decode_sentence(self, line: str, max_len=20, prepared=False, add_bos=False, **args) -> List[StrHypothesis]:
 
         line = line.strip()
         if prepared:
             in_seq = [int(t) for t in line.split()]
-            if in_seq[0] != self.bos_val:
+            if add_bos and in_seq[0] != self.bos_val:
                 in_seq.insert(0, self.bos_val)
             if in_seq[-1] != self.eos_val:
                 in_seq.append(self.eos_val)
         else:
-            in_seq = self.inp_vocab.encode_as_ids(line, add_eos=True, add_bos=False)
+            in_seq = self.inp_vocab.encode_as_ids(line, add_eos=True, add_bos=add_bos)
         in_seqs = tensor(in_seq, dtype=torch.long).view(1, -1)
         in_lens = tensor([len(in_seq)], dtype=torch.long)
         if self.debug:

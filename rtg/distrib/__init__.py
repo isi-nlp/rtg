@@ -43,6 +43,8 @@ class DistribTorch:
     _model: nn.Module = None
     _clip_grad_max_norm = None
 
+    _n_skips = 0
+
     def setup(self):
         log.info("DistribTorch setup()")
         if self.world_size > 1:
@@ -124,23 +126,38 @@ class DistribTorch:
         # else we dont need it
 
     def backward(self, loss, retain_graph=False):
+        
         if torch.isnan(loss):
+            if self._n_skips < self.grad_accum - 1:
+                log.warning(f"Loss is nan; skipping. n_skips={self._n_skips} grad_accum={self.grad_accum}")
+                self._n_skips += 1
+                return
+            # else crash
             raise Exception('''Loss is nan; enable debug mode to know more (export NMT_DEBUG=true);
     Or, here are some tips:
     1. reduce the learning rate
     2. reduce batch size
     3. set trainer.init_args.clip_grad_norm to a small number e.g. 5.0''')
+    
         if self.fp16:
             loss = self._scaler.scale(loss)
         if loss < 0:
-            raise Exception('Loss is negative; looks like a numerical error (underflow or overflow?')
+            raise Exception('Loss is negative; looks like a numerical error (underflow or overflow?)')
         loss.backward(retain_graph=retain_graph)
+        self._n_skips = 0 # reset
 
     def average_gradients(self, model):
         size = float(self.world_size)
+        # dist.all_reduce_coalesced(list(model.parameters()), op=dist.ReduceOp.SUM)  # unavailable
+        futures = []
         for param in model.parameters():
-            dist.all_reduce(param.grad.data, op=dist.ReduceOp.SUM)
+            work = dist.all_reduce(param.grad.data, op=dist.ReduceOp.SUM, async_op=True)
+            futures.append((work, param))
             # TODO: ring reduce https://pytorch.org/tutorials/intermediate/dist_tuto.html#our-own-ring-allreduce
+            #param.grad.data /= size
+        
+        for work, param in futures:
+            work.wait()  # if not complete
             param.grad.data /= size
 
     def step(self, optimizer: Optimizer):
@@ -153,7 +170,7 @@ class DistribTorch:
                 # Unscales the gradients of optimizer's assigned params in-place
                 self._scaler.unscale_(optimizer)
             # Since the gradients of optimizer's assigned params are unscaled, clips as usual:
-            torch.nn.utils.clip_grad_norm_(self._model.parameters(), self._clip_grad_max_norm)
+            torch.nn.utils.clip_grad_norm_(self._model.parameters(), self._clip_grad_max_norm) #  error_if_nonfinite=False
 
         if self.fp16:
             self._scaler.step(optimizer)
