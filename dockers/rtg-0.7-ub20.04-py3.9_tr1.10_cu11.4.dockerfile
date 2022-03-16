@@ -36,7 +36,7 @@ ENV PATH="/home/rtguser/.local/bin:/usr/local/cuda/bin:${PATH}"
 #COPY --chown=rtguser:rtguser . /home/rtguser/rtg/
 #   && cd /home/rtguser/rtg && pip install --editable . \
 
-RUN pip install --user torch==1.10 flask==1.1.2 uwsgi rtg==0.7  \
+RUN pip install --user torch==1.10.2 flask==2.0.3 uwsgi rtg==0.7  \
    && pip cache purge
 
 CMD bash
