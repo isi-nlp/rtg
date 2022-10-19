@@ -78,4 +78,15 @@ docker buildx build --platform linux/amd64,linux/arm64 . -f rtg-0.7-py39_tr110_c
 ----
 
 
+.Build and Release Models
+
+[source,bash]
+----
+docker buildx use mybuilder
+docker buildx build --platform linux/amd64,linux/arm64 . \
+  -f rtg-model-0.7.2-600toEng-v2.0.dockerfile -t tgowda/rtg-model:v0.7.2-600toEng-v2.0 --push
+----
+
+
+
 

@@ -1,8 +1,3 @@
-# What is this: USC ISI Coral team's MT pipeline
-# Authors:
-#      - Thamme Gowda
-# Created : March 15, 2022
-
 FROM tgowda/rtg:0.7.1-ub20.04-py3.9_tr1.10_cu11.4
 # Download pretrained model from rtg demo website
 
