@@ -27,7 +27,7 @@ exp = None
 app = Flask(__name__)
 app.config['JSON_AS_ASCII'] = False
 
-bp = Blueprint('nmt', __name__, template_folder='templates')
+bp = Blueprint('nmt', __name__, template_folder='templates', static_folder='static')
 
 sys_info = {
     'RTG Version': rtg.__version__,
@@ -199,8 +199,10 @@ def parse_args():
 # uwsgi can take CLI args too
 # uwsgi --http 127.0.0.1:5000 --module rtg.serve.app:app --pyargv "rtgv0.5-768d9L6L-512K64K-datav1"
 cli_args = parse_args()
+
 attach_translate_route(cli_args)
 app.register_blueprint(bp, url_prefix=cli_args.get('base'))
+
 if cli_args.pop('debug'):
     app.debug = True
 
