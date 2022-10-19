@@ -23,6 +23,7 @@
       <div id="loading-progress" style="display: none;" class="spinner-border text-success float-left" role="status">
         <span class="sr-only">Loading...</span>
       </div>
+      <small id="time"></small>
       <button type="submit" class="btn btn-primary float-right btn-success" onclick="copyToClipboard()">Copy to Clipboard</button>
       </div>
   </div>
@@ -65,6 +66,8 @@ window.onload = function() {
 
     posting.done(function(data) {
         $('#target').text(data.translation.join('\n'));
+	console.log(data.time)
+	$('#time').html(`${data.time}${data.time_unit}`)
     });
     posting.fail(function() {
       alert("Something went wrong🤒! Check console logs.")

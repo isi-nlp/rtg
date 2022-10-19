@@ -417,7 +417,8 @@ class Decoder:
         in_seqs = torch.full((batch_size, max_len), fill_value=self.exp.src_vocab.pad_idx, dtype=torch.long)
         for i, src_seq in enumerate(src_seqs):
             in_seqs[i, :len(src_seq)] = torch.tensor(src_seq, dtype=torch.long)
-        in_lens = tensor(in_lens, dtype=torch.long)
+        in_lens = tensor(in_lens, dtype=torch.long).to(device)
+        in_seqs = in_seqs.to(device)
 
         batch_beams: List[List[Hypothesis]] = self.beam_decode(in_seqs, in_lens, max_len, **args)
         result = []
