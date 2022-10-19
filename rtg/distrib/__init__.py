@@ -34,6 +34,7 @@ class DistribTorch:
     visible_devices: str = get_env('CUDA_VISIBLE_DEVICES', '')
     max_norm = 10
     fp16 = False  # Manually enable by calling enable_fp16()
+    fp16_dtype = torch.float16
     grad_accum = 1  # grad accumulation over these many batches
 
     _scaler = None
@@ -67,6 +68,11 @@ class DistribTorch:
             self.enable_fp16()
 
     def enable_fp16(self):
+        try:
+            self.fp16_dtype = torch.bfloat16 # if supported
+            log.info('BFLOAT16 maybe supported; trying to upgrade')
+        except:
+            log.info('BFLOAT16 is not supported')
         if not self.fp16:
             self.fp16 = True
             self._scaler = GradScaler(enabled=self.fp16)

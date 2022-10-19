@@ -52,7 +52,7 @@ setuptools.setup(
     extra_requires={
         'big': ['pyspark >= 3.0'],
         'extras': ['scipy >= 1.4'],
-        'serve': ['flask >= 1.1.2'],
+        'serve': ['flask >= 2.1'],
     },
     python_requires='>=3.7',
     entry_points={

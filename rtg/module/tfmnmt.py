@@ -783,8 +783,7 @@ class TransformerTrainer(SteppedTrainer):
                 y_seqs_out = batch.y_seqs
                 y_seqs_in = torch.cat([bos_step, batch.y_seqs], dim=1)
                 y_mask = batch.make_autoreg_mask(y_seqs_in)
-
-                with autocast(enabled=dtorch.fp16, dtype=torch.bfloat16):
+                with autocast(enabled=dtorch.fp16, dtype=dtorch.fp16_dtype):
                     loss = self._train_step(take_step, x_mask, x_seqs, y_mask, y_seqs_in, y_seqs_out)  #norm=max_toks
 
                 if stopper and take_step:

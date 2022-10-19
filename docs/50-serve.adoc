@@ -51,8 +51,8 @@ NOTE: batch decoding is yet to be supported. The current decoder decodes only on
 An example POST request:
 ----
  curl --data "source=Comment allez-vous?" --data "source=Bonne journée" http://localhost:6060/translate
-
 ----
+
 [source,json]
 ----
 {
@@ -63,11 +63,86 @@ An example POST request:
   "translation": [
     "How are you?",
     "Have a nice day"
-  ]
+  ],
+  "dec_args": {
+    "beam_size": 4,
+    "lp_alpha": 0.6,
+    "max_len": 50,
+    "num_hyp": 1
+  },
+  "score": [
+    -6,
+    -3
+  ],
+  "time": 4.5281,
+  "time_unit": "s",
 }
 ----
 You can also request like GET method as `http://localhost:6060/translate?source=text1&source=text2`
-after properly URL encoding the `text1` `text2`. This should only be used for quick testing in your web browser.
+after proper URL encoding the `text1` `text2`. This should only be used for quick testing in your web browser.
+
+=== Advanced Decoder Args
+You may pass the following optional arguments to API:
+
+* `beam_size` - Number of beams to use for decoding
+* `num_hyp` - Number of hypotheses to return in response
+* `max_len` - Maximum length (relative to source length) to wait for end-of-seq token
+* `lp_alpha` - Length penalty
+
+All these arguments take default values from conf.yml, but you may also set at runtime via arguments to rest API.
+Example:
+
+[source,bash]
+----
+curl --data "source=Comment allez-vous?" --data "source=Bonne journée" "http://localhost:6060/translate?beam_size=6&num_hyp=4&lp_alpha=0.0"
+----
+
+[source,json]
+----
+{
+  "dec_args": {
+    "beam_size": 6,
+    "lp_alpha": 0,
+    "max_len": 50,
+    "num_hyp": 4
+  },
+  "source": [
+    "Comment allez @-@ vous ?",
+    "Bonne journée"
+  ],
+  "time": 6.4446,
+  "time_unit": "s",
+  "translation": [
+    [
+      "How do you do, sir?.",
+      "- How are you? - Fine.",
+      "How do you do?",
+      "How do you do?"
+    ],
+    [
+      "Have a nice day.",
+      "Have a good day",
+      "Good day",
+      "Have a good day.."
+    ]
+  ],
+  "score": [
+    [
+      -8.3406,
+      -8.3871,
+      -9.1363,
+      -9.1478
+    ],
+    [
+      -3.7928,
+      -3.8259,
+      -3.8653,
+      -3.8789
+    ]
+  ],
+}
+----
+
 
 === Google Analytics Integration
 
