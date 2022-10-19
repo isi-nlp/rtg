@@ -7,6 +7,8 @@ import os
 import sys
 import platform
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
+import copy
+import time
 
 import numpy as np
 import rtg
@@ -35,15 +37,15 @@ sys_info = {
     'Platform Version': platform.version(),
     'Processor':  platform.processor(),
     'CPU Memory Used': max_RSS()[1],
-    'GPU': '[unavailable]',
+    'Cuda': '[unavailable]',
 }
 if torch.cuda.is_available():
-    sys_info['GPU'] = str(torch.cuda.get_device_properties(rtg.device))
+    sys_info['Cuda'] = str(torch.cuda.get_device_properties(rtg.device))
     sys_info['Cuda Version'] = torch.version.cuda
 else:
     log.warning("CUDA unavailable")
 
-log.info(f"System Info: ${sys_info}")
+log.info(f"System Info: {sys_info}")
 
 
 def render_template(*args, **kwargs):
@@ -92,6 +94,7 @@ def attach_translate_route(cli_args):
 
     @bp.route("/translate", methods=["POST", "GET"])
     def translate():
+        start_t = time.time()
         if request.method not in ("POST", "GET"):
             return "GET and POST are supported", 400
         if request.method == 'GET':
@@ -102,17 +105,43 @@ def attach_translate_route(cli_args):
                 sources = [sources]
         if not sources:
             return "Please submit 'source' parameter", 400
-        prep = request.args.get('prep', "True").lower() in ("true", "yes", "y", "t")
+        prep = request.values.get('prep', "True").lower() in ("true", "yes", "y", "t", "1")
         if prep:
             sources = [src_prep(sent) for sent in sources]
-        translations = []
-        for source in sources:
-            translated = decoder.decode_sentence(source, **dec_args)[0][1]
-            if prep:
-                translated = tgt_postp(translated)
-            translations.append(translated)
 
-        res = dict(source=sources, translation=translations)
+        _dec_args = copy.deepcopy(dec_args)
+        num_hyp = _dec_args['num_hyp'] = int(request.values.get('num_hyp') or '1')
+        if num_hyp < 1 or num_hyp > 20:
+            return f'{num_hyp=} is invalid; expected range [1, 20]', 400
+
+        if 'lp_alpha' in request.values:
+            _dec_args['lp_alpha'] = float(request.values['lp_alpha'])
+        if 'max_len' in request.values:
+            _dec_args['max_len'] = int(request.values['max_len'])
+        if 'beam_size' in request.values:
+            _dec_args['beam_size'] = int(request.values['beam_size'])
+        if num_hyp > _dec_args.get('beam_size', 1):
+            _dec_args['beam_size'] =  num_hyp
+
+        translations = []
+        scores = []
+        batch_outs = decoder.decode_sentences(sources, **_dec_args)
+        for outs in batch_outs:
+            if not num_hyp or num_hyp == 1: # return only one-best as str; old-api
+                score, translated = outs[0]
+                scores.append(round(score.item()))
+                if prep:
+                    translated = tgt_postp(translated)
+                translations.append(translated)
+            else: # n-best as arr; new api
+                scores.append([round(score.item(), FLOAT_POINTS) for score, _ in outs])
+                hyps = [hyp for _, hyp in outs]
+                if prep:
+                    hyps = [tgt_postp(hyp) for hyp in hyps]
+                translations.append(hyps)
+        res = dict(source=sources, translation=translations, score=scores,
+                   dec_args=_dec_args,
+                   time=time.time() - start_t, time_unit='s')
         return jsonify(res)
 
     @bp.route("/visual", methods=["POST", "GET"])

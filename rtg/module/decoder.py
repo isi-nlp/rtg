@@ -396,33 +396,40 @@ class Decoder:
         else:  # all others go from source as input to target as output
             return self.exp.tgt_vocab
 
-    def decode_sentence(self, line: str, max_len=20, prepared=False, add_bos=False, **args) -> List[StrHypothesis]:
+    def decode_sentences(self, sources: List[str], max_len=20, prepared=False, add_bos=False, **args) -> List[List[StrHypothesis]]:
+        batch_size = len(sources)
+        assert batch_size > 0
+        src_seqs, in_lens = [], []
+        for source in sources:
+            line = source.strip()
+            if prepared:
+                in_seq = [int(t) for t in line.split()]
+                if add_bos and in_seq[0] != self.bos_val:
+                    in_seq.insert(0, self.bos_val)
+                if in_seq[-1] != self.eos_val:
+                    in_seq.append(self.eos_val)
+            else:
+                in_seq = self.inp_vocab.encode_as_ids(line, add_eos=True, add_bos=add_bos)
+            src_seqs.append(in_seq)
+            in_lens.append(len(in_seq))
+        # pad seqs for batching
+        max_len = max(in_lens)
+        in_seqs = torch.full((batch_size, max_len), fill_value=self.exp.src_field.pad_idx, dtype=torch.long)
+        for i, src_seq in enumerate(src_seqs):
+            in_seqs[i, :len(src_seq)] = torch.tensor(src_seq, dtype=torch.long)
+        in_lens = tensor(in_lens, dtype=torch.long)
 
-        line = line.strip()
-        if prepared:
-            in_seq = [int(t) for t in line.split()]
-            if add_bos and in_seq[0] != self.bos_val:
-                in_seq.insert(0, self.bos_val)
-            if in_seq[-1] != self.eos_val:
-                in_seq.append(self.eos_val)
-        else:
-            in_seq = self.inp_vocab.encode_as_ids(line, add_eos=True, add_bos=add_bos)
-        in_seqs = tensor(in_seq, dtype=torch.long).view(1, -1)
-        in_lens = tensor([len(in_seq)], dtype=torch.long)
-        if self.debug:
-            greedy_score, greedy_out = self.greedy_decode(in_seqs, in_lens, max_len, **args)[0]
-            greedy_out = self.out_vocab.decode_ids(greedy_out, trunc_eos=True)
-            log.debug(f'Greedy : score: {greedy_score:.4f} :: {greedy_out}')
-
-        beams: List[List[Hypothesis]] = self.beam_decode(in_seqs, in_lens, max_len, **args)
-        beams = beams[0]  # first sentence, the only one we passed to it as input
+        batch_beams: List[List[Hypothesis]] = self.beam_decode(in_seqs, in_lens, max_len, **args)
         result = []
-        for i, (score, beam_toks) in enumerate(beams):
-            out = self.out_vocab.decode_ids(beam_toks, trunc_eos=True)
-            if self.debug:
-                log.debug(f"Beam {i}: score:{score:.4f} :: {out}")
-            result.append((score, out))
+        for beams in batch_beams:
+            result.append([])
+            for score, beam_toks in beams:
+                out = self.out_vocab.decode_ids(beam_toks, trunc_eos=True)
+                result[-1].append((score, out))
         return result
+
+    def decode_sentence(self, line: str,*args, **kwargs) -> List[StrHypothesis]:
+        return self.decode_sentences([line], *args, **kwargs)[0]
 
     def decode_visualize(self, line: str, target=None, max_len=20, reduction=None, **args):
         line = line.strip()
