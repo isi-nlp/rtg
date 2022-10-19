@@ -56,14 +56,26 @@ For the first time users of PyPI, you need to create an account at https://pypi.
 == Docker Release
 
 
-=== Docker for ARM64
+With Apple moving to ARM chips, running x64/AMD64 docker images on ARM64/AARCH64 is not efficient,
+Follow instructions at https://www.docker.com/blog/multi-arch-images/ to build multi-arch images. 
 
-With Apple moving to ARM chips, running AMD64 docker images on ARM is not efficient.
+.Docker setup
+[source,bash]
+----
+docker buildx ls
+docker buildx create --name mybuilder
+docker buildx use mybuilder
+docker buildx inspect --bootstrap
+# You should see in ouput: Platforms: linux/amd64, linux/arm64, linux/arm/v7, linux/arm/v6
+----
 
 [source,bash]
 ----
 cd dockers
+
 # find a suitable docker file to build; e.g., this one
-docker build . -f rtg-0.7-py39_tr110_cu114.dockerfile-t tgowda/rtg:0.7-py39_tr110_cu114
+docker buildx build --platform linux/amd64,linux/arm64 . -f rtg-0.7-py39_tr110_cu114.dockerfile-t tgowda/rtg:0.7-py39_tr110_cu114 --push
 ----
+
+
 
