@@ -291,9 +291,9 @@ class FocalLoss(TemperedCriterion):
 @register(kind=CRITERION, name="binary_cross_entropy")
 class BinaryCrossEntropy(Criterion):
 
-    def __init__(self, exp: Experiment, label_smoothing=0.1):
+    def __init__(self, exp: Experiment, label_smoothing=0.1, step=0):
         assert 0 <= label_smoothing < 1
-        super().__init__(input_type='logits', exp=exp)
+        super().__init__(input_type='logits', exp=exp, step=step)
         self.bce_loss = nn.BCEWithLogitsLoss(reduction='none')
         self.smoothing = label_smoothing
 

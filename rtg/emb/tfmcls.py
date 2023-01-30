@@ -290,6 +290,10 @@ class TransformerClassifier(Model):
     def model_dim(self):
         return self.classifier.d_model
 
+    @property
+    def vocab_size(self) -> int:
+        return self.classifier.n_classes
+
     def encode(self, src, src_mask):
         tok_repr = self.encoder(self.src_embed(src), src_mask)
         return self.compressor(tok_repr, src_mask)
