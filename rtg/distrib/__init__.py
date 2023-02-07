@@ -69,10 +69,12 @@ class DistribTorch:
 
     def enable_fp16(self):
         try:
-            self.fp16_dtype = torch.bfloat16 # if supported
-            log.info('BFLOAT16 maybe supported; trying to upgrade')
+            if torch.cuda.is_bf16_supported():
+                log.info('BFLOAT16 is supported; upgrading...')
+                self.fp16_dtype = torch.bfloat16 # if supported
         except:
-            log.info('BFLOAT16 is not supported')
+            log.info('BFLOAT16 is not supported. using FLOAT16')
+
         if not self.fp16:
             self.fp16 = True
             self._scaler = GradScaler(enabled=self.fp16)
