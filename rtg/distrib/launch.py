@@ -3,7 +3,7 @@
 import os
 import subprocess
 import sys
-from argparse import ArgumentParser, REMAINDER, ArgumentDefaultsHelpFormatter as HelpFormatter
+from argparse import ArgumentParser, REMAINDER, ArgumentDefaultsHelpFormatter
 from typing import List, Tuple
 
 import torch
@@ -15,53 +15,44 @@ def parse_args(args=None):
     parser = ArgumentParser(
         description="PyTorch distributed training launch helper utilty that will spawn up "
                     "multiple distributed processes",
-        formatter_class=HelpFormatter)
+        formatter_class=ArgumentDefaultsHelpFormatter)
 
     # Optional arguments for the launch helper
-    parser.add_argument("-N", "--nodes", type=int, default=1,
+    parser.add_argument("-N", "--nodes", metavar='INT', type=int, default=1,
                         help="The number of nodes to use for distributed "
                              "training")
-    parser.add_argument("-r", "--node-rank", type=int, default=0,
+    parser.add_argument("-r", "--node-rank", metavar='INT', type=int, default=0,
                         help="The rank of the node for multi-node distributed "
                              "training")
 
-    parser.add_argument("-P", "--procs-per-node", type=int, default=1,
+    parser.add_argument("-P", "--procs-per-node", metavar='INT', type=int, default=1,
                         help="The number of processes to launch on each node with one gpu each, "
                              "for GPU training, this is recommended to be set "
                              "to the number of GPUs in your system so that "
                              "each process can be bound to a single GPU.")
 
-    parser.add_argument("-G", "--gpus-per-proc", type=int, default=0,
+    parser.add_argument("-G", "--gpus-per-proc", metavar='INT', type=int, default=0,
                         help="Number of GPUs to assign to each process. ")
-    parser.add_argument("--master-addr", default="127.0.0.1", type=str,
+    parser.add_argument("--master-addr", metavar='HostOrIP', default="127.0.0.1", type=str,
                         help="Master node (rank 0)'s address, should be either "
                              "the IP address or the hostname of node 0, for "
                              "single node multi-proc training, the "
                              "--master_addr can simply be 127.0.0.1")
-    parser.add_argument("--master-port", default=29500, type=int,
+    parser.add_argument("--master-port", metavar="Port", default=29500, type=int,
                         help="Master node (rank 0)'s free port that needs to "
                              "be used for communciation during distributed "
                              "training")
 
-    # exclusive
-    group = parser.add_mutually_exclusive_group(required=False)
-    group.add_argument("-m", "--module", default=False, action="store_true",
-                       help="Changes each process to interpret the launch script "
-                            "as a python module, executing with the same behavior as"
-                            "'python -m'.")
-    group.add_argument("--no_python", default=False, action="store_true",
-                       help="Do not prepend the training script with \"python\" - just exec "
-                            "it directly. Useful when the script is not a Python script.")
-
+    parser.add_argument("-m", "--module", dest='is_module', default=False, action="store_true",
+                       help="Treats the <script> argument as python module and executes CLI with 'python -m <script>'.")
     # positional
-    parser.add_argument("training_script", type=str,
-                        help="The full path to the single GPU training "
-                             "program/script to be launched in parallel, "
-                             "followed by all the arguments for the "
+    parser.add_argument("script", type=str, default='rtg-pipe',
+                        help="The full path to the training script (or qualified module name if -m/--module) "
+                             "to be launched in parallel, followed by all the arguments for the "
                              "training script")
 
     # rest from the training program
-    parser.add_argument('training_script_args', nargs=REMAINDER)
+    parser.add_argument('script_args', help="arguments to script or module", nargs=REMAINDER)
     return parser.parse_args(args)
 
 
@@ -97,19 +88,11 @@ def main(args=None):
     if avail_gpus > 0 >= assum_gpus:
         print("WARNING: GPUs are available but the --gpus-per-proc is not set.", file=sys.stderr)
 
-    with_python = not args.no_python
     cmd = []
-    if with_python:
-        cmd += [sys.executable, "-u"]
-        if args.module:
-            cmd.append("-m")
-    else:
-        if args.module:
-            raise ValueError(
-                "Don't use both the '--no_python' flag and the '--module' flag at the same time.")
-
-    cmd.append(args.training_script)
-    cmd.extend(args.training_script_args)
+    if args.is_module:
+        cmd += [sys.executable, "-u", "-m"] 
+    cmd.append(args.script)
+    cmd.extend(args.script_args)
 
     processes = []
     for local_rank in range(0, args.procs_per_node):
