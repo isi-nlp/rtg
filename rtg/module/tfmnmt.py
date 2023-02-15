@@ -394,10 +394,10 @@ def attention(query, key, value, mask=None, dropout=None, query_key_emb: 'Relati
         #
         # Now, if you got this, take a moment to thank http://nlp.seas.harvard.edu/rush.html
         # for devising this concise code. I needed a lot of time to understand how this code works!
-        #
-        #scores = scores.masked_fill(mask == 0, -1e9)
-        #low_val = -2 ** 14 if dtorch.fp16 else -1e9  # -2**15 causes nan on float16
-        low_val = -1e9        # now we use bfloat16, which is awesome
+        low_val = -1e9
+        if dtorch.fp16 and dtorch.fp16_dtype is torch.float16:
+            # not all GPUs support bfloat16. so if float16 ...
+            low_val = -2 ** 14
         scores = scores.masked_fill(mask == 0, low_val)
     p_attn = F.softmax(scores, dim=-1)  # [BatchSize x Heads x Time=SeqLen x SeqLen ]
     if dropout is not None:
