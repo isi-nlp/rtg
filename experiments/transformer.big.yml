@@ -75,6 +75,7 @@ trainer:
   batch_size: 2600
   check_point: 1000
   keep_models: 10
+  valid_full_decode: false     # true = validations runs greedy decode (slow); false=teacher forcing (fast)
   steps: 200000
 updated_at: '2019-03-09T21:15:33.707183'
 seed: 12345

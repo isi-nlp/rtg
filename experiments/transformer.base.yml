@@ -61,8 +61,9 @@ tester:
 trainer:
   init_args:
     chunk_size: 10   # generation in chunks of time steps to reduce memory consumption
-  batch_size: 4200   # not exceeding these many tokens (including paddings). in tensor2tensor it is mean batch size
+  batch_size: [4200, 200]  # [max_toks, max_sents] which ever limit hits fast
   check_point: 1000  # how often to checkpoint?
+  valid_full_decode: false   # true = validations runs greedy decode (slow); false=teacher forcing (fast)
   keep_models: 10   # how many checkpoints to keep on disk (small enough to save disk, large enough for checkpt averaging
   steps: 200000   # how many steps to train
 updated_at: '2019-03-09T21:15:33.707183'

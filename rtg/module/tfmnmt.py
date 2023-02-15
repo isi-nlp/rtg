@@ -579,10 +579,12 @@ class TransformerTrainer(SteppedTrainer):
                                                 opt=self.opt, vocab=exp.tgt_vocab,
                                                 chunk_size=chunk_size, clip_grad_norm=clip_grad_norm)
 
-    def run_valid_epoch(self, data_iter: BatchIterable, dec_bos_cut=False) -> Dict[str, float]:
+    def run_valid_epoch(self, data_iter: BatchIterable, dec_bos_cut=False, full_decode=False) -> Dict[str, float]:
         """
         :param data_iter: data iterator
         :param dec_bos_cut: cut first step of input as first step of decoder
+        :param full_decode: When True => runs full (greedy) decode in inference mode, which is slow.
+                         False => Teacher forcing i.e. parallelizable and fast (however, BLEU scores are inaccurate)
         :return: dictionary of metrics including loss, bleu
         """
         start = time.time()
@@ -621,9 +623,15 @@ class TransformerTrainer(SteppedTrainer):
                 out = out[:, :-1, :]
                 # assumption:  y_seqs has EOS, and not BOS
                 max_len = max(20, batch.max_y_len - batch.max_x_len)
-                loss = self.loss_func(out, batch.y_seqs, train_mode=False, get_out=False)
-                outs = self.decoder.greedy_decode(x_seqs, x_lens=batch.x_len, max_len=max_len)
-                for score, out in outs:  # outs = outs.tolist()
+                if full_decode:
+                    loss = self.loss_func(out, batch.y_seqs, train_mode=False, get_out=False)
+                    # runs full autoregressive decode, this is slooow
+                    outs = self.decoder.greedy_decode(x_seqs, x_lens=batch.x_len, max_len=max_len)
+                    outs = [out for _, out in outs]
+                else: # fast, but not in inference mode: y_seqs are used as input 
+                    loss, outs = self.loss_func(out, batch.y_seqs, train_mode=False, get_out=True)
+                    outs = outs.tolist()
+                for out in outs: 
                     hyp = self.exp.tgt_vocab.decode_ids(out, trunc_eos=True)
                     hyps_raw.append(hyp)
                     hyp = tgt_post_proc(hyp)   # detok, drop unk
@@ -694,7 +702,7 @@ class TransformerTrainer(SteppedTrainer):
     def train(self, steps: int, check_point: int, batch_size: int,
               check_pt_callback: Optional[Callable] = None, fine_tune=False, dec_bos_cut=False,
               keep_models=10, sort_by='eq_len_rand_batch', log_interval: int = 10,
-              keep_in_mem=False, early_stop=None, **args):
+              keep_in_mem=False, early_stop=None, valid_full_decode=False, **args):
 
         """
         :param steps: how many optimizer steps to train (also, means how many batches)
@@ -706,6 +714,7 @@ class TransformerTrainer(SteppedTrainer):
         :param keep_models: how many checkpts to keep
         :param keep_in_mem: keep training data in memory
         :param early_stop: {patience: N validations, by: loss, enabled: True}
+        :param valid_full_decode: True => validations run full decode (slow). False => validate with teacher forcing (fast)
         :param args: any extra args
         :return:
         """
@@ -812,7 +821,7 @@ class TransformerTrainer(SteppedTrainer):
                     if dtorch.is_global_main:
                         train_state.train_mode(False)
                         with torch.no_grad():
-                            val_metrics = self.run_valid_epoch(val_data, dec_bos_cut=dec_bos_cut)
+                            val_metrics = self.run_valid_epoch(val_data, dec_bos_cut=dec_bos_cut, full_decode=valid_full_decode)
                             val_loss = val_metrics['loss']
                             self.make_check_point(train_loss, val_loss=val_loss, keep_models=keep_models,
                                                   log_embedding=log_embedding)
