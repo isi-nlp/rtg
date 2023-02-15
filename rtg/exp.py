@@ -984,6 +984,9 @@ class TranslationExperiment(BaseExperiment):
         for path in (raw_src, raw_tgt):
             assert Path(path).exists(), f'File at {path} does not exist; it is required'
         raw_path = Path(raw_src), Path(raw_tgt)
+        if not self.valid_file.exists():
+            # maybe it got deleted. It means we need to recreate it
+            self._pre_process_parallel('valid_src', 'valid_tgt', self.valid_file)
         return BatchIterable(self.valid_file, batch_size=batch_size, sort_desc=sort_desc,
                              batch_first=batch_first, shuffle=shuffle, field=self.tgt_vocab,
                              keep_in_mem=True, raw_path=raw_path, y_is_cls=y_is_cls,
