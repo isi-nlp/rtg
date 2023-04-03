@@ -313,8 +313,9 @@ class BinaryCrossEntropy(Criterion):
 
         # num_toks = batch_size - pad_mask.sum()
         # mean_loss = per_tok_loss.sum() / num_toks
-        per_tok_loss = per_time_per_class_loss.sum(dim=-1) / normalizer
-        return per_tok_loss
+        per_tok_loss = per_time_per_class_loss.sum(dim=-1)
+        avg_loss = per_tok_loss.sum() / normalizer
+        return avg_loss
 
 
 @register(kind=CRITERION, name="smooth_kld")
