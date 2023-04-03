@@ -115,36 +115,44 @@ class ClassificationExperiment(TranslationExperiment):
 
         # check if files are parallel
         self.check_line_count('validation', args['valid_src'], args['valid_tgt'])
-        if 'spark' in self.config:
-            log.warning(f"Spark backend detected: line count on training data is skipped")
-        else:
-            log.warning(f"Going to count lines. If this is a big dataset, it will take long time")
-            self.check_line_count('training', args['train_src'], args['train_tgt'])
-
         xt_args = dict(no_split_toks=args.get('no_split_toks'),
                        char_coverage=args.get('char_coverage', 0),
                        min_co_ev=args.get('src_min_co_ev', args.get('min_co_ev', None)))
+        if force or not self._src_field_file.exists():
+            src_corpus = []
+            if args.get('train_src') and not args.get('train_src').startswith('stdin:'):
+                src_corpus.append(args['train_src'])
+            if args.get('mono_src'):
+                src_corpus.append(args['mono_src'])
 
-        src_corpus = [args[key] for key in ['train_src', 'mono_src'] if args.get(key)]
-        max_src_size = args.get('max_src_types', args.get('max_types', None))
-        assert max_src_size, 'prep.max_src_types or prep.max_types must be defined'
-        self.src_field = self._make_vocab("src", self._src_field_file, args['pieces'],
-                                          vocab_size=max_src_size, corpus=src_corpus, **xt_args)
+            assert src_corpus, 'prep.train_src (not stdin) or prep.mono_src must be defined'
+            max_src_size = args.get('max_src_types', args.get('max_types', None))
+            assert max_src_size, 'prep.max_src_types or prep.max_types must be defined'
+            self.src_field = self._make_vocab("src", self._src_field_file, args['pieces'],
+                                            vocab_size=max_src_size, corpus=src_corpus, **xt_args)
+        
+        if force or not self._tgt_field_file.exists():
+            # target vocabulary; class names. treat each line as a word
+            tgt_corpus = []
+            if args.get('train_tgt') and not args.get('train_tgt').startswith('stdin:'):
+                tgt_corpus.append(args['train_tgt'])
+            if args.get('mono_tgt'):
+                tgt_corpus.append(args['mono_tgt'])
+            assert tgt_corpus, 'prep.train_tgt (not stdin) or prep.mono_tgt must be defined'
 
-        # target vocabulary; class names. treat each line as a word
-        tgt_corpus = [args[key] for key in ['train_tgt'] if args.get(key)]
-
-        self.tgt_field = self._make_vocab("tgt", self._tgt_field_file, 'class',
-                                          corpus=tgt_corpus, vocab_size=-1)
+            self.tgt_field = self._make_vocab("tgt", self._tgt_field_file, 'class',
+                                            corpus=tgt_corpus, vocab_size=-1)
         n_classes = self.config['model_args'].get('tgt_vocab')
         if len(self.tgt_field) != n_classes:
             log.warning(f'model_args.tgt_vocab={n_classes},'
                         f' but found {len(self.tgt_field)} cls in {tgt_corpus}')
 
         train_file = self.train_db
-
-        self._pre_process_parallel('train_src', 'train_tgt', out_file=train_file, args=args,
-                                   line_check=False)
+        if args.get('train_src', '').startswith('stdin:') or args.get('train_tgt', '').startswith('stdin:'):
+            log.info('skipping binarization of training data since it is stdin')
+        else:
+            self._pre_process_parallel('train_src', 'train_tgt', out_file=train_file, args=args,
+                                    line_check=False)
         self._pre_process_parallel('valid_src', 'valid_tgt', out_file=self.valid_file, args=args,
                                    line_check=False)
 
@@ -160,7 +168,7 @@ class ClassificationExperiment(TranslationExperiment):
             raise ValueError('parent.shrink not supported for this model yet')
         super(ClassificationExperiment, self).inherit_parent()
 
-    def get_predictions(self, model, input: (str, Path, List[str]),
+    def get_predictions(self, model, input: Union[str, Path, List[str]],
                         batch_size: Union[int, Tuple[int, int]], max_len=256):
         """
         :param model:
@@ -465,11 +473,11 @@ class ClassifierTrainer(SteppedTrainer):
                             f'Please increase the steps or clear the existing models')
 
         train_data = self.exp.get_train_data(
-            batch_size=batch_size, steps=batches - start_batch, sort_by=sort_by, batch_first=True,
+            batch_size=[max_toks, max_sents], steps=batches - start_batch, sort_by=sort_by, batch_first=True,
             keep_in_mem=keep_in_mem, fine_tune=fine_tune, y_is_cls=True)
         val_data = None
         if dtorch.is_global_main:
-            val_data = self.exp.get_val_data(batch_size=max_toks, shuffle=False, batch_first=True,
+            val_data = self.exp.get_val_data(batch_size=[max_toks, max_sents], shuffle=False, batch_first=True,
                                              sort_desc=False, y_is_cls=True)
 
         train_state = TrainerState(self.model, check_point=check_point, unit='item')

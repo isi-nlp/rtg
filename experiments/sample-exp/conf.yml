@@ -12,6 +12,7 @@ model_args:
   dropout: 0.2
   activation: relu
   tied_emb: three-way
+  self_attn_rel_pos: 0
 model_type: tfmnmt
 optimizer:
   name: adam
@@ -40,8 +41,8 @@ prep:
   shared_vocab: true
   src_len: 128
   tgt_len: 128
-  train_src: experiments/sample-data/sampl.test.fr.tok
-  train_tgt: experiments/sample-data/sampl.test.en.tok
+  train_src: stdin:text:0
+  train_tgt: stdin:text:1
   truncate: false
   valid_src: experiments/sample-data/sampl.valid.fr.tok
   valid_tgt: experiments/sample-data/sampl.valid.en.tok
@@ -69,5 +70,8 @@ trainer:
   check_point: 200
   keep_models: 10
   steps: 500
-updated_at: '2020-02-26T13:01:58.856517'
+updated_at: '2023-04-02T17:31:16.680724'
 seed: 12345
+rtg_version:
+  previous:
+  last_worked: 0.7.3-dev

@@ -478,3 +478,52 @@ Since beam decoder is used, let's visualize memory as `[Batch x Beams x Vocabula
 `rtg-decode` has `--max-src-len` argument which can be used to hard limit the max length of source sentences.
 `--max-src-len` can be degrade test performance since it drops out words.
 Right thing to do for long sequences will be to split long sentences in input and merge the outputs after decoding.
+
+
+== Training from STDIN stream
+
+Since `v0.7.2`, training model from STDIN is supported. 
+
+INFO: Thanks/Credits to Marian-NMT and Augmentibatch team for the idea!
+
+Firstly, edit the `conf.yml` as follows
+
+[source, yaml]
+----
+prep:
+    # ... other args
+    train_src: stdin:text:0
+    train_src: stdin:text:1
+   
+----
+This informs that we will be reading from STDIN, and the first column is source, and second column is target.
+
+WARNING: `text:0` and `text:1` are placeholders at the moment and they dont have any effect. In the future we plan to expand support for binarized data from stdin as well as selecting desired columns from stdin. Currrntly, we only support text data from stdin and first two columns are assumed to be source and target.
+
+Since we are not specifying training data, we cannot learn vocabularies! So this will assume that you already have vocabulary files placed inside `experiment-dir/data`. To learn vocabulary from your own training data as part of pipeline, set paths as `mono_src` and `mono_tgt` as follows:
+
+[source, yaml]
+----
+prep:
+    # ... other args
+    mono_src: 
+      - path/to/train.src
+    mono_tgt:
+      - path/to/train.tgt  
+----
+
+Then, run the training process as follows:
+
+[source, bash]
+----
+while true; do paste train.src train.tgt | shuf; done | rtg-pipe experiment-dir
+----
+
+To use multiprocessing/Multi-GPU, use `rtg-launch` to launch the training process. 
+
+[source, bash]
+----
+rtg-launch -P 4 -G 1 "while true; do paste train.src train.tgt | shuf; done | rtg-pipe experiment-dir"
+----
+
+Here we have `| shuf` to shuffle the data inside an infinite loop, thus creating infinite stream of training examples. 

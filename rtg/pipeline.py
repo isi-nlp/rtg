@@ -328,8 +328,10 @@ class Pipeline:
         if dtorch.is_global_main:
             self.exp.pre_process()
         dtorch.barrier()
-        if not self.exp.read_only:
+        if not self.exp.src_vocab or not self.exp.tgt_vocab:
+        #if not self.exp.read_only:
             self.exp.reload()  # with updated config and vocabs from global_main
+        assert self.exp.src_vocab and self.exp.tgt_vocab, "Vocabs are not loaded"
         # train on all
         if debug:
             log.warning("<<<Anomaly detection enabled; this is very slow; use this only for debugging/hunting bugs>>>")

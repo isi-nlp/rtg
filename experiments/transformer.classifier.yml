@@ -64,9 +64,9 @@ tester:
   max_len: 256
 
 trainer:
-  batch_size: 1024
-  check_point: 250
+  batch_size: [10240, 64]  # max_toks, max_lines   -- whichever reaches first
+  check_point: 500
   keep_models: 10
-  steps: 3000
+  steps: 20000
   sort_by: random
 updated_at: '2021-07-31T19:29:42.341722'

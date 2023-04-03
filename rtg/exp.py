@@ -1,6 +1,7 @@
 import copy
 import os
 import random
+import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 from functools import partial
@@ -16,7 +17,9 @@ import tqdm
 
 import rtg
 from rtg import log, yaml, device
-from rtg.data.dataset import (TSVData, BatchIterable, LoopingIterable, SqliteFile, GenerativeBatchIterable)
+from rtg.data.dataset import (
+    TSVData, StreamData, BatchIterable, LoopingIterable,
+    SqliteFile, GenerativeBatchIterable)
 from rtg.data.codec import Field, SPField, NLField, PretrainMatchField
 from rtg.utils import IO, line_count
 from rtg.registry import CRITERION, OPTIMIZER, SCHEDULE, MODEL
@@ -281,7 +284,7 @@ class BaseExperiment:
             self._prepared_flag.touch()
 
     def inherit_parent(self):
-        raise NotImplemented()
+        raise NotImplementedError()
 
     def train(self, args=None):
         raise NotImplementedError()
@@ -438,27 +441,35 @@ class TranslationExperiment(BaseExperiment):
     def pre_process_parallel(self, args: Dict[str, Any]):
         # check if files are parallel
         self.check_line_count('validation', args['valid_src'], args['valid_tgt'])
-        if 'spark' in self.config:
-            log.warning(f"Spark backend detected: line count on training data is skipped")
-        else:
-            log.warning(f"Going to count lines. If this is a big dataset, it will take long time")
-            self.check_line_count('training', args['train_src'], args['train_tgt'])
-
         xt_args = dict(no_split_toks=args.get('no_split_toks'),
                        char_coverage=args.get('char_coverage', 0))
         min_co_ev = args.get('min_co_ev', None)
         pieces = args['pieces']
+        
+        def get_conf_paths(*keys):
+            paths = []
+            for key in keys:
+                val = args.get(key)
+                if val:
+                    if isinstance(val, list):
+                        paths.extend(val)
+                    else:
+                        paths.append(val)
+            paths = [p for p in paths if not p.startswith('stdin:')]
+            return paths
+
+        src_corpus = get_conf_paths('train_src', 'mono_src')
+        tgt_corpus = get_conf_paths('train_tgt', 'mono_tgt')
         if args.get('shared_vocab'):  # shared vocab
             assert 'max_types' in args, f'prep.max_types is required when prep.shared_vocab=true'
             max_types = args['max_types']
-            corpus = [args[key] for key in ['train_src', 'train_tgt', 'mono_src', 'mono_tgt']
-                      if args.get(key)]
+            corpus = src_corpus + tgt_corpus
+            assert len(corpus) > 0, f'no corpus found for creating shared vocab'
             assert isinstance(pieces, str), f'shared vocab cant support different pieces for src, tgt;' \
                                             f' given pieces={pieces}. Either set shared_vocab=false or pieces=<a string>'
             self.shared_field = self._make_vocab("shared", self._shared_field_file, pieces, max_types,
                                                  corpus=corpus, min_co_ev=min_co_ev, **xt_args)
         else:  # separate vocabularies
-            src_corpus = [args[key] for key in ['train_src', 'mono_src'] if args.get(key)]
             src_min_co_ev = args.get('src_min_co_ev', min_co_ev)
             tgt_min_co_ev = args.get('tgt_min_co_ev', min_co_ev)
             src_pieces = tgt_pieces = pieces
@@ -471,14 +482,18 @@ class TranslationExperiment(BaseExperiment):
             max_tgt_types = args.get('max_tgt_types', args.get('max_types'))
             assert max_src_types and max_tgt_types, 'prep.{max_src_types,max_tgt_types} are required' \
                                                     ' when prep.shared_vocab=false'
-            self.src_field = self._make_vocab("src", self._src_field_file, src_pieces, max_src_types, corpus=src_corpus,
-                                              min_co_ev=src_min_co_ev, **xt_args)
+            assert len(src_corpus) > 1, f'no corpus found for creating src vocab'
+            assert len(tgt_corpus) > 1, f'no corpus found for creating tgt vocab'
+            self.src_field = self._make_vocab("src", self._src_field_file, src_pieces, max_src_types,
+                                              corpus=src_corpus, min_co_ev=src_min_co_ev, **xt_args)
             # target vocabulary
-            tgt_corpus = [args[key] for key in ['train_tgt', 'mono_tgt'] if args.get(key)]
-            self.tgt_field = self._make_vocab("src", self._tgt_field_file, tgt_pieces, max_tgt_types, corpus=tgt_corpus,
-                                              min_co_ev=tgt_min_co_ev, **xt_args)
+            self.tgt_field = self._make_vocab("src", self._tgt_field_file, tgt_pieces, max_tgt_types,
+                                              corpus=tgt_corpus, min_co_ev=tgt_min_co_ev, **xt_args)
         train_file = self.train_db
-        self._pre_process_parallel('train_src', 'train_tgt', out_file=train_file, args=args,
+        if args.get('train_src', '').startswith('stdin:') or args.get('train_tgt', '').startswith('stdin:'):
+            log.info(f"skip binarizing training data since it is from stdin")
+        else:
+            self._pre_process_parallel('train_src', 'train_tgt', out_file=train_file, args=args,
                                    line_check=False)
         self._pre_process_parallel('valid_src', 'valid_tgt', out_file=self.valid_file, args=args,
                                    line_check=False)
@@ -941,6 +956,19 @@ class TranslationExperiment(BaseExperiment):
     def get_train_data(self, batch_size:  Union[int, Tuple[int, int]], steps: int = 0, sort_by='eq_len_rand_batch',
                        batch_first=True, shuffle=False, fine_tune=False, keep_in_mem=False,
                        split_ratio: float = 0., dynamic_epoch=False, y_is_cls=False):
+        train_src = self.config.get('prep', {}).get('train_src', '').lower()
+        train_tgt = self.config.get('prep', {}).get('train_tgt', '').lower()
+        assert train_src.startswith('stdin:') == train_tgt.startswith('stdin:'),\
+            'Assert both train_src and train_tgt should be from stdin or none' 
+        if train_src.startswith('stdin:'):
+            # TODO: implement :{raw/bin}:idx for stdin
+            log.info(f'==Reading train data from stdin==')
+            vocab_mappers = [self.src_vocab.encode_as_ids, self.tgt_vocab.encode_as_ids]
+            stream = StreamData(sys.stdin, vocabs=vocab_mappers, sort_by=sort_by)
+            train_data = BatchIterable(
+                data_path=stream, batch_size=batch_size, field=self.tgt_vocab, sort_by=None,
+                batch_first=batch_first, shuffle=False, y_is_cls=y_is_cls, **self._get_batch_args())
+            return train_data
 
         data_path = self.train_db if self.train_db.exists() else self.train_file
         if fine_tune:

@@ -107,7 +107,7 @@ def main(args=None):
             my_env["CUDA_VISIBLE_DEVICES"] = device_ids
 
         # spawn the processes
-        process = subprocess.Popen(cmd, env=my_env)
+        process = subprocess.Popen(cmd, env=my_env, shell=True, cwd=os.getcwd())
         processes.append((cmd, process))
 
     timeout = 10

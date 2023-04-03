@@ -1,11 +1,12 @@
 import math
 import os
+import io
 import pickle
 import random
 import sqlite3
 from itertools import zip_longest
 from pathlib import Path
-from typing import List, Iterator, Tuple, Union, Iterable, Dict, Any, Optional
+from typing import List, Iterator, Tuple, Union, Iterable, Dict, Any, Optional, Callable
 import torch
 from tqdm import tqdm
 import numpy as np
@@ -69,6 +70,44 @@ class NLDbExample(IdExample):
     def __init__(self, id, x, y):
         super().__init__(x, y, id)
 
+class StreamData(Iterable[IdExample]):
+
+    """Stream data from an io.TextIOWrapper or an Iterator that can be read once.
+    Applies vocabulary mapping to field in each line.
+    """
+    def __init__(self, stream: io.TextIOWrapper, vocabs:List[Callable[[str], List[int]]], delim='\t', **kwargs) -> None:
+        """Creates a stream of IdExample objects from a stream of text lines; applies vocab mapping to each field.
+
+        Args:
+            stream: a stream of text lines or an iterator 
+            vocabs: a list of callables in the order of input fields. Each callable should map a string to an array of integer (e.g, vocab.encode_as_ids)
+            delim: delimiter to split lines in the stream into columns. Defaults to '\t'.
+        """
+        self.stream = stream
+        self.vocabs = vocabs
+        assert len(self.vocabs) >= 2, "Expected at least 2 vocabs"
+        self.delim = delim
+        self.exhausted = False
+        if kwargs:
+            log.warning(f"Unused kwargs: {kwargs}")
+
+    def __iter__(self) -> Iterator[IdExample]:
+        assert not self.exhausted, "StreamData is exhausted. This source can be read only once."
+        for idx, line in enumerate(self.stream):            
+            if isinstance(line, (list, tuple)):
+                row = line    # already split
+            else:
+                row = line.split(self.delim)
+            assert len(row) >= len(self.vocabs), f"Expected at least {len(self.vocabs)} fields, but got {len(row)}"
+            x, y = row[0].strip(), row[1].strip()
+            if not x or not y:
+                log.warning(f"Skipping empty line in stream. Current idx: {idx}")
+                continue
+            x_vocab, y_vocab = self.vocabs[0], self.vocabs[1]
+            x, y = x_vocab(x), y_vocab(y)
+            yield IdExample(x, y, id=idx)
+        self.exhausted = True
+        log.warning('StreamData is exhausted')
 
 class TSVData(Iterable[IdExample]):
 
@@ -571,30 +610,38 @@ class BatchIterable(Iterable[Batch]):
             self.max_toks, self.max_sents = batch_size
         self.batch_first = batch_first
         self.sort_by = sort_by
-        self.data_path = data_path
+
         self.keep_in_mem = keep_in_mem
         self.y_is_cls = y_is_cls
         self.device = device
-        if not isinstance(data_path, Path):
-            data_path = Path(data_path)
-
-        assert data_path.exists(), f'Invalid State: Training data doesnt exist;' \
-                                   f' Please remove _PREPARED and rerun.'
-        self.data_path = data_path
-
-        if any([data_path.name.endswith(suf) for suf in ('.nldb', '.nldb.tmp')]):
-            assert sort_by == 'random', f'sort_by={sort_by} is not supported for nldb. Try "random"'
-            from nlcodec.db import MultipartDb
-            self.data = MultipartDb.load(data_path, shuffle=shuffle, rec_type=NLDbExample)
-            self.n_batches = -1
-        elif any([data_path.name.endswith(suf) for suf in ('.db', '.db.tmp')]):
-            self.data = SqliteFile(data_path, sort_by=sort_by, **kwargs)
-            self.n_batches = len(self._make_eq_len_batch_ids())
+        if isinstance(data_path, StreamData):
+            self.data = data_path
+            self.data_path = None
+            self.n_batches = -1   # unknown
+            assert not shuffle  # Not supported here; streams should take care of it
+            assert not sort_by
+            assert not raw_path
+            assert not keep_in_mem
         else:
-            if sort_by:
-                raise Exception(f'sort_by={sort_by} not supported for TSV data')
-            self.data = TSVData(data_path, shuffle=shuffle, longest_first=False, **kwargs)
-            self.n_batches = len(self.data)
+            self.data_path = data_path
+            if not isinstance(data_path, Path):
+                data_path = Path(data_path)
+            assert data_path.exists(), f'Invalid State: Training data doesnt exist;' \
+                                    f' Please remove _PREPARED and rerun.'
+            self.data_path = data_path
+            if any([data_path.name.endswith(suf) for suf in ('.nldb', '.nldb.tmp')]):
+                assert sort_by == 'random', f'sort_by={sort_by} is not supported for nldb. Try "random"'
+                from nlcodec.db import MultipartDb
+                self.data = MultipartDb.load(data_path, shuffle=shuffle, rec_type=NLDbExample)
+                self.n_batches = -1
+            elif any([data_path.name.endswith(suf) for suf in ('.db', '.db.tmp')]):
+                self.data = SqliteFile(data_path, sort_by=sort_by, **kwargs)
+                self.n_batches = len(self._make_eq_len_batch_ids())
+            else:
+                if sort_by:
+                    raise Exception(f'sort_by={sort_by} not supported for TSV data')
+                self.data = TSVData(data_path, shuffle=shuffle, longest_first=False, **kwargs)
+                self.n_batches = len(self.data)
 
         if raw_path:  # for logging and validation BLEU
             # Only narrower use case is supported
