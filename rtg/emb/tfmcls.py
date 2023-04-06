@@ -410,7 +410,7 @@ class ClassifierTrainer(SteppedTrainer):
                     pred_ids += top1_idx.tolist()
                     pred_probs += top1_probs.tolist()
                 start = time.time()
-
+        loss_avg = total_loss / num_batches
         class_names = self.exp.tgt_vocab.class_names
         metrics = ClsMetric(prediction=pred_ids, truth=label_ids, clsmap=class_names)
         pred_names = [class_names[pi] for pi in pred_ids]
@@ -430,17 +430,26 @@ class ClassifierTrainer(SteppedTrainer):
             self.tbd.add_scalars('val_precision', dict(zip(metrics.clsmap, metrics.precision)),
                                  step)
             self.tbd.add_scalars('val_recall', dict(zip(metrics.clsmap, metrics.recall)), step)
+
+        metrics_dict['loss'] = loss_avg
         log_conf_mat = len(class_names) < 40
         log.info(f"validation at step={step}\n{metrics.format(confusion=log_conf_mat)}")
-        val_metric_dir = self.exp.work_dir / 'validations'
-        val_metric_dir.mkdir(exist_ok=True)
-        (val_metric_dir / f'validation-{step:06d}.score.csv').write_text(metrics.format(delim=','))
-        with (val_metric_dir / f'validation-{step:06d}.out.tsv').open('w') as out:
-            for p_name, p_prob in zip(pred_names, pred_probs):
-                out.write(f'{p_name}\t{p_prob:g}\n')
+        if not self.exp.read_only:
+            val_metric_dir = self.exp.work_dir / 'validations'
+            val_metric_dir.mkdir(exist_ok=True)
+            (val_metric_dir / f'validation-{step:06d}.score.csv').write_text(metrics.format(delim=','))
+            with (val_metric_dir / f'validation-{step:06d}.out.tsv').open('w') as out:
+                for p_name, p_prob in zip(pred_names, pred_probs):
+                    out.write(f'{p_name}\t{p_prob:g}\n')
 
-        loss_avg = total_loss / num_batches
-        metrics_dict['loss'] = loss_avg
+            path = self.exp.model_dir / 'validation.metrics.tsv'
+            write_header = not path.exists()
+            with path.open('a') as out:
+                if write_header:
+                    header = ['step'] + list(metrics_dict.keys())
+                    out.write('\t'.join(header) + '\n')
+                rec = [self.opt.curr_step] + list(metrics_dict.values())
+                out.write('\t'.join(f'{v:g}' for v in rec) + '\n')
         return loss_avg, metrics_dict
 
     def train(self, steps: int, check_point: int, batch_size: int, log_interval=10,

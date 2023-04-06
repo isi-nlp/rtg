@@ -74,6 +74,7 @@ class ClsMetric:
         builder.append(["MacroF1", f"{self.macro_f1:.2f} %"])
         builder.append(["MicroF1", f"{self.micro_f1:.2f} %"])
         builder.append(["Accuracy", f"{self.accuracy:.2f} %"])
+        builder.append(["Maccuracy", f"{self.maccuracy:.2f} %"])
         builder.append([])
         row = ["[Class]"] + [col for col in self.col_head]
         builder.append(row)
