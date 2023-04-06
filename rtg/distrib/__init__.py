@@ -134,7 +134,7 @@ class DistribTorch:
         # else we dont need it
 
     def backward(self, loss, retain_graph=False):
-        
+
         if torch.isnan(loss):
             if self._n_skips < self.grad_accum - 1:
                 log.warning(f"Loss is nan; skipping. n_skips={self._n_skips} grad_accum={self.grad_accum}")
@@ -146,7 +146,7 @@ class DistribTorch:
     1. reduce the learning rate
     2. reduce batch size
     3. set trainer.init_args.clip_grad_norm to a small number e.g. 5.0''')
-    
+
         if self.fp16:
             loss = self._scaler.scale(loss)
         if loss < 0:
@@ -163,7 +163,7 @@ class DistribTorch:
             futures.append((work, param))
             # TODO: ring reduce https://pytorch.org/tutorials/intermediate/dist_tuto.html#our-own-ring-allreduce
             #param.grad.data /= size
-        
+
         for work, param in futures:
             work.wait()  # if not complete
             param.grad.data /= size

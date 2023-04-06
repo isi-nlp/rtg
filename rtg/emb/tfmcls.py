@@ -130,7 +130,7 @@ class ClassificationExperiment(TranslationExperiment):
             assert max_src_size, 'prep.max_src_types or prep.max_types must be defined'
             self.src_field = self._make_vocab("src", self._src_field_file, args['pieces'],
                                             vocab_size=max_src_size, corpus=src_corpus, **xt_args)
-        
+
         if force or not self._tgt_field_file.exists():
             # target vocabulary; class names. treat each line as a word
             tgt_corpus = []
@@ -415,10 +415,16 @@ class ClassifierTrainer(SteppedTrainer):
         metrics = ClsMetric(prediction=pred_ids, truth=label_ids, clsmap=class_names)
         pred_names = [class_names[pi] for pi in pred_ids]
 
+        metrics_dict = {
+            'accuracy': metrics.accuracy,
+            'macrof1': metrics.macro_f1,
+            'microf1': metrics.micro_f1,
+            'macro_precision': metrics.macro_precision,
+            'macro_recall': metrics.macro_recall,
+            'maccuracy': metrics.maccuracy
+        }
         step = self.opt.curr_step
-        self.tbd.add_scalars('val_performance',
-                             dict(macrof1=metrics.macro_f1, accuracy=metrics.accuracy,
-                                  microf1=metrics.micro_f1), step)
+        self.tbd.add_scalars('val_performance', metrics_dict, step)
         if len(class_names) < 40:
             self.tbd.add_scalars('val_f1', dict(zip(metrics.clsmap, metrics.f1)), step)
             self.tbd.add_scalars('val_precision', dict(zip(metrics.clsmap, metrics.precision)),
@@ -434,7 +440,8 @@ class ClassifierTrainer(SteppedTrainer):
                 out.write(f'{p_name}\t{p_prob:g}\n')
 
         loss_avg = total_loss / num_batches
-        return loss_avg, metrics
+        metrics_dict['loss'] = loss_avg
+        return loss_avg, metrics_dict
 
     def train(self, steps: int, check_point: int, batch_size: int, log_interval=10,
               check_pt_callback: Optional[Callable] = None, keep_models=10, sort_by='random',
@@ -528,7 +535,7 @@ class ClassifierTrainer(SteppedTrainer):
                     if dtorch.is_global_main:
                         train_state.train_mode(False)
                         with torch.no_grad():
-                            val_loss, val_scores = self.run_valid_epoch(val_data)
+                            val_loss, val_metrics = self.run_valid_epoch(val_data)
                             self.make_check_point(train_loss, val_loss=val_loss,
                                                   keep_models=keep_models)
                             if check_pt_callback:
@@ -538,7 +545,9 @@ class ClassifierTrainer(SteppedTrainer):
                         train_state.train_mode(True)
 
                         if stopper:
-                            stopper.validation(val_loss)
+                            score = val_metrics.get(stopper.by, None)
+                            assert score is not None, f'early stop by {stopper.by} is invalid; try {val_metrics.keys()}'
+                            stopper.validation(score)
                             if stopper.is_stop():
                                 log.info(f"Stopping at {stopper.cur_step} because {stopper.by}"
                                          f" didnt improve over {stopper.patience} checkpoints")
