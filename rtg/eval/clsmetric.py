@@ -57,6 +57,8 @@ class ClsMetric:
         self.macro_recall = np.mean(self.recall)
         self.micro_f1 = np.sum(self.f1 * self.total_gold) / np.sum(self.total_gold)
         self.accuracy = 100 * self.confusion.diagonal().sum() / np.sum(self.total_gold)
+        # harmonic mean of macrof1 and accuracy
+        self.maccuracy = (2 * self.macro_f1 * self.accuracy + epsilon ) / (self.macro_f1 + self.accuracy + epsilon)
 
     @classmethod
     def confusion_matrix(cls, n_classes, prediction, truth):
