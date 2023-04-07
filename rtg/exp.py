@@ -959,12 +959,12 @@ class TranslationExperiment(BaseExperiment):
         train_src = self.config.get('prep', {}).get('train_src', '').lower()
         train_tgt = self.config.get('prep', {}).get('train_tgt', '').lower()
         assert train_src.startswith('stdin:') == train_tgt.startswith('stdin:'),\
-            'Assert both train_src and train_tgt should be from stdin or none' 
+            'Assert both train_src and train_tgt should be from stdin or none'
         if train_src.startswith('stdin:'):
             # TODO: implement :{raw/bin}:idx for stdin
             log.info(f'==Reading train data from stdin==')
             vocab_mappers = [self.src_vocab.encode_as_ids, self.tgt_vocab.encode_as_ids]
-            stream = StreamData(sys.stdin, vocabs=vocab_mappers, sort_by=sort_by)
+            stream = StreamData(sys.stdin, vocabs=vocab_mappers, sort_by=sort_by, **self._get_batch_args())
             train_data = BatchIterable(
                 data_path=stream, batch_size=batch_size, field=self.tgt_vocab, sort_by=None,
                 batch_first=batch_first, shuffle=False, y_is_cls=y_is_cls, **self._get_batch_args())

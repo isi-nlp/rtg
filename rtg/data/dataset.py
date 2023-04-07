@@ -22,6 +22,7 @@ TokRawRecord = Tuple[List[str], List[str]]
 MonoSeqRecord = List[Union[int, str]]
 ParallelSeqRecord = Tuple[MonoSeqRecord, MonoSeqRecord]
 TokStream = Union[Iterator[Iterator[str]], Iterator[str]]
+MAX_SEQ_LEN = 512
 
 
 class IdExample:
@@ -70,12 +71,15 @@ class NLDbExample(IdExample):
     def __init__(self, id, x, y):
         super().__init__(x, y, id)
 
+
 class StreamData(Iterable[IdExample]):
 
     """Stream data from an io.TextIOWrapper or an Iterator that can be read once.
     Applies vocabulary mapping to field in each line.
     """
-    def __init__(self, stream: io.TextIOWrapper, vocabs:List[Callable[[str], List[int]]], delim='\t', **kwargs) -> None:
+    def __init__(self, stream: io.TextIOWrapper, vocabs:List[Callable[[str], List[int]]], delim='\t',
+                 truncate: bool = False, max_src_len: int = MAX_SEQ_LEN, max_tgt_len: int = MAX_SEQ_LEN,
+                 **kwargs) -> None:
         """Creates a stream of IdExample objects from a stream of text lines; applies vocab mapping to each field.
 
         Args:
@@ -88,12 +92,15 @@ class StreamData(Iterable[IdExample]):
         assert len(self.vocabs) >= 2, "Expected at least 2 vocabs"
         self.delim = delim
         self.exhausted = False
+        self.truncate = truncate
+        self.max_src_len, self.max_tgt_len = max_src_len, max_tgt_len
         if kwargs:
             log.warning(f"Unused kwargs: {kwargs}")
+        self.n_skips = 0
 
     def __iter__(self) -> Iterator[IdExample]:
         assert not self.exhausted, "StreamData is exhausted. This source can be read only once."
-        for idx, line in enumerate(self.stream):            
+        for idx, line in enumerate(self.stream):
             if isinstance(line, (list, tuple)):
                 row = line    # already split
             else:
@@ -105,14 +112,21 @@ class StreamData(Iterable[IdExample]):
                 continue
             x_vocab, y_vocab = self.vocabs[0], self.vocabs[1]
             x, y = x_vocab(x), y_vocab(y)
+            if self.truncate:
+                x, y = x[:self.max_src_len], y[:self.max_tgt_len]
+            elif len(x) > self.max_src_len or len(y) > self.max_tgt_len:
+                # Skipping line with length > max_len. Current idx: {idx}
+                self.n_skips += 1
+                continue
             yield IdExample(x, y, id=idx)
         self.exhausted = True
         log.warning('StreamData is exhausted')
 
+
 class TSVData(Iterable[IdExample]):
 
     def __init__(self, path: Union[str, Path], in_mem=False, shuffle=False, longest_first=True,
-                 max_src_len: int = 512, max_tgt_len: int = 512, truncate: bool = False):
+                 max_src_len: int = MAX_SEQ_LEN, max_tgt_len: int = MAX_SEQ_LEN, truncate: bool = False):
         """
         :param path: path to TSV file have parallel sequences
         :param in_mem: hold data in memory instead of reading from file for subsequent pass.
@@ -327,7 +341,7 @@ class SqliteFile(Iterable[IdExample]):
         return known_queries[sort_by]
 
     def __init__(self, path: Path, sort_by='random', len_rand=2,
-                 max_src_len: int = 512, max_tgt_len: int = 512, truncate: bool = False):
+                 max_src_len: int = MAX_SEQ_LEN, max_tgt_len: int = MAX_SEQ_LEN, truncate: bool = False):
 
         log.info(f"{type(self)} Args: {get_my_args()}")
         self.path = path
@@ -690,8 +704,9 @@ class BatchIterable(Iterable[Batch]):
                 max_len = max(max_len, this_len)
             else:
                 if this_len > self.max_toks:
-                    raise Exception(f'Unable to make a batch of {self.max_toks} toks'
+                    log.warn(f'Unable to make a batch of {self.max_toks} toks'
                                     f' with a seq of x_len:{len(ex.x)} y_len:{len(ex.y)}')
+                    continue
                 # yield the current batch
                 yield Batch(batch, sort_dec=self.sort_desc, batch_first=self.batch_first,
                             field=self.field, device=self.device, y_is_cls=self.y_is_cls)
