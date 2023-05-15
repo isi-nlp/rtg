@@ -8,8 +8,7 @@ from pathlib import Path
 
 import torch
 
-from rtg import (Pipeline, TranslationExperiment, __version__, dtorch,
-                 load_conf, log)
+from rtg import Pipeline, TranslationExperiment, __version__, dtorch, load_conf, log
 
 
 def parse_args():

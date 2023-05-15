@@ -164,10 +164,8 @@ class RoBERTaMT(TransformerNMT):
         assert len(self.encoder.layers) == len(enc_layer_map)
         assert len(self.decoder.layers) == len(dec_layer_map)
 
-        from fairseq.modules.multihead_attention import \
-            MultiheadAttention as YourAttn
-        from fairseq.modules.transformer_sentence_encoder_layer import \
-            TransformerSentenceEncoderLayer
+        from fairseq.modules.multihead_attention import MultiheadAttention as YourAttn
+        from fairseq.modules.transformer_sentence_encoder_layer import TransformerSentenceEncoderLayer
 
         pieces = {
             'all',

@@ -4,8 +4,7 @@ transformation of text
 import html
 from functools import partial
 
-from sacremoses import (MosesDetokenizer, MosesPunctNormalizer, MosesTokenizer,
-                        MosesTruecaser)
+from sacremoses import MosesDetokenizer, MosesPunctNormalizer, MosesTokenizer, MosesTruecaser
 
 from ..registry import TRANSFORM, TRANSFORMS
 from ..utils import shell_pipe

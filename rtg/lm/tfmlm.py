@@ -16,9 +16,14 @@ from rtg import Batch, BatchIterable
 from rtg import TranslationExperiment as Experiment
 from rtg import device, log
 from rtg.common import LangModel, SteppedTrainer, TrainerState
-from rtg.nmt.tfmnmt import (Embeddings, Generator, MultiHeadedAttention,
-                            PositionalEncoding, PositionwiseFeedForward,
-                            TransformerTrainer)
+from rtg.nmt.tfmnmt import (
+    Embeddings,
+    Generator,
+    MultiHeadedAttention,
+    PositionalEncoding,
+    PositionwiseFeedForward,
+    TransformerTrainer,
+)
 
 """"In NMT, DecoderLayer also has source attention.
 But here, decoder layer is just like Encoder layer: self_attn and feed forward"""

@@ -18,8 +18,14 @@ import tqdm
 import rtg
 from rtg import IO, device, line_count, log, yaml
 from rtg.data.codec import Field, NLField, PretrainMatchField, SPField
-from rtg.data.dataset import (BatchIterable, GenerativeBatchIterable,
-                              LoopingIterable, SqliteFile, StreamData, TSVData)
+from rtg.data.dataset import (
+    BatchIterable,
+    GenerativeBatchIterable,
+    LoopingIterable,
+    SqliteFile,
+    StreamData,
+    TSVData,
+)
 from rtg.registry import CRITERION, MODEL, OPTIMIZER, SCHEDULE
 
 from .distrib import dtorch

@@ -7,15 +7,13 @@ import sqlite3
 import time
 from itertools import zip_longest
 from pathlib import Path
-from typing import (Any, Callable, Dict, Iterable, Iterator, List, Optional,
-                    Tuple, Union)
+from typing import Any, Callable, Dict, Iterable, Iterator, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
 from tqdm import tqdm
 
-from rtg import (IO, cpu_device, device, get_my_args, line_count, log, max_RSS,
-                 maybe_compress)
+from rtg import IO, cpu_device, device, get_my_args, line_count, log, max_RSS, maybe_compress
 from rtg.data.codec import Field
 
 Array = np.ndarray

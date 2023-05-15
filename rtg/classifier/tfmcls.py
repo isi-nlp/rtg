@@ -15,12 +15,27 @@ import torch.nn.functional as F
 import tqdm
 from torch.cuda.amp import autocast
 
-from rtg import (EarlyStopper, Model, ProblemType, SteppedTrainer,
-                 TrainerState, TranslationExperiment, device, dtorch, log)
+from rtg import (
+    EarlyStopper,
+    Model,
+    ProblemType,
+    SteppedTrainer,
+    TrainerState,
+    TranslationExperiment,
+    device,
+    dtorch,
+    log,
+)
 from rtg.eval.clsmetric import ClsMetric
-from rtg.nmt.tfmnmt import (BatchIterable, Embeddings, Encoder, EncoderLayer,
-                            MultiHeadedAttention, PositionalEncoding,
-                            PositionwiseFeedForward)
+from rtg.nmt.tfmnmt import (
+    BatchIterable,
+    Embeddings,
+    Encoder,
+    EncoderLayer,
+    MultiHeadedAttention,
+    PositionalEncoding,
+    PositionwiseFeedForward,
+)
 from rtg.registry import MODEL, ProblemType, register
 from rtg.utils import IO, get_my_args
 
