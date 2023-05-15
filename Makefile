@@ -11,3 +11,5 @@ reformat:
 test:
 	python -m pytest   # unit tests
 
+retest:
+	python -m pytest  -x --lf  # unit tests

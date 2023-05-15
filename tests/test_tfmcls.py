@@ -7,8 +7,8 @@ from pathlib import Path
 import tempfile
 import shutil
 
-import rtg
-from rtg import load_conf, log, registry
+
+from rtg import load_conf, log, registry, RTG_PATH, MODEL
 from rtg.cli.pipeline import Pipeline
 from . import sanity_check_experiment
 
@@ -24,7 +24,7 @@ def copy_head(inp: Path, out: Path, head: int):
 
 
 def setup_dataset():
-    root = rtg.RTG_PATH / '.data'
+    root = RTG_PATH / '.data'
     data_dir = Path(__file__).parent / 'test-data'
     dbpedia_dir = data_dir / 'dbpedia'
     flag = dbpedia_dir / '_VALID'
