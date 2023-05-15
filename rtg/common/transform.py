@@ -22,20 +22,23 @@ text_transformers = {
     'no_op': lambda x: x,
     'space_tok': lambda x: ' '.join(x.strip().split()),  # removes extra white spaces
     'space_detok': lambda toks: ' '.join(toks.split()),  # removes extra white spaces
-    'moses_tok': partial(MosesTokenizer().tokenize, escape=False, return_str=True,
-                         aggressive_dash_splits=True,
-                         protected_patterns=MosesTokenizer.WEB_PROTECTED_PATTERNS),
+    'moses_tok': partial(
+        MosesTokenizer().tokenize,
+        escape=False,
+        return_str=True,
+        aggressive_dash_splits=True,
+        protected_patterns=MosesTokenizer.WEB_PROTECTED_PATTERNS,
+    ),
     'moses_detok': moses_detok,
     'moses_truecase': partial(MosesTruecaser().truecase, return_str=True),
     'lowercase': lambda x: x.lower(),
     'drop_unk': lambda x: x.replace('<unk>', ''),
     'html_unescape': html.unescape,
-    'punct_norm': MosesPunctNormalizer().normalize
+    'punct_norm': MosesPunctNormalizer().normalize,
 }
 
 
 class TextTransform:
-
     def __init__(self, chain):
         self.chain = chain
         # self.pipeline = [transformers[key] for key in chain]
@@ -56,10 +59,12 @@ class TextTransform:
             elif name in text_transformers:
                 chain.append(text_transformers[name])
             else:
-                raise Exception(f'Text transformer "{name}" unknown; Known: {text_transformers.keys()}'
-                                f'\n Also, you may use shell commandline prefixing the hasbang "#!"'
-                                f'\nExample: #!tokenizer.perl'
-                                f'\n    #!/path/to/tokenizer.perl -en | sed \'/<old>/<new>/\'')
+                raise Exception(
+                    f'Text transformer "{name}" unknown; Known: {text_transformers.keys()}'
+                    f'\n Also, you may use shell commandline prefixing the hasbang "#!"'
+                    f'\nExample: #!tokenizer.perl'
+                    f'\n    #!/path/to/tokenizer.perl -en | sed \'/<old>/<new>/\''
+                )
         return cls(chain=chain)
 
     @classmethod

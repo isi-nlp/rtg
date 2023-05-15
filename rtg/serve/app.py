@@ -35,7 +35,7 @@ sys_info = {
     'Python Version': sys.version,
     'Platform': platform.platform(),
     'Platform Version': platform.version(),
-    'Processor':  platform.processor(),
+    'Processor': platform.processor(),
     'CPU Memory Used': max_RSS()[1],
     'Cuda': '[unavailable]',
 }
@@ -53,7 +53,6 @@ def render_template(*args, **kwargs):
 
 
 def jsonify(obj):
-
     def _jsonify(ob):
         if ob is None or isinstance(ob, (int, bool, str)):
             return ob
@@ -121,27 +120,32 @@ def attach_translate_route(cli_args):
         if 'beam_size' in request.values:
             _dec_args['beam_size'] = int(request.values['beam_size'])
         if num_hyp > _dec_args.get('beam_size', 1):
-            _dec_args['beam_size'] =  num_hyp
+            _dec_args['beam_size'] = num_hyp
 
         translations = []
         scores = []
         batch_outs = decoder.decode_sentences(sources, **_dec_args)
         for outs in batch_outs:
-            if not num_hyp or num_hyp == 1: # return only one-best as str; old-api
+            if not num_hyp or num_hyp == 1:  # return only one-best as str; old-api
                 score, translated = outs[0]
                 scores.append(round(score.item()))
                 if prep:
                     translated = tgt_postp(translated)
                 translations.append(translated)
-            else: # n-best as arr; new api
+            else:  # n-best as arr; new api
                 scores.append([round(score.item(), FLOAT_POINTS) for score, _ in outs])
                 hyps = [hyp for _, hyp in outs]
                 if prep:
                     hyps = [tgt_postp(hyp) for hyp in hyps]
                 translations.append(hyps)
-        res = dict(source=sources, translation=translations, score=scores,
-                   dec_args=_dec_args,
-                   time=time.time() - start_t, time_unit='s')
+        res = dict(
+            source=sources,
+            translation=translations,
+            score=scores,
+            dec_args=_dec_args,
+            time=time.time() - start_t,
+            time_unit='s',
+        )
         return jsonify(res)
 
     @bp.route("/visual", methods=["POST", "GET"])
@@ -158,7 +162,12 @@ def attach_translate_route(cli_args):
             return "Please submit 'source' argument having a source sentence", 400
         if not isinstance(source, str):
             return f"Expected 'source' to be a string, but given {source}", 400
-        prep = request.args.get('prep', "true").lower() in ("true", "yes", "y", "t")  # query param is always string
+        prep = request.args.get('prep', "true").lower() in (
+            "true",
+            "yes",
+            "y",
+            "t",
+        )  # query param is always string
         if prep:
             source = src_prep(source)
             target = target and tgt_prep(target)
@@ -175,8 +184,9 @@ def attach_translate_route(cli_args):
     @bp.route("/about", methods=["GET"])
     def about():
         def_desc = "Model description is unavailable; please update conf.yml"
-        return render_template('about.html', model_desc=exp.config.get("description", def_desc),
-                               sys_info=sys_info)
+        return render_template(
+            'about.html', model_desc=exp.config.get("description", def_desc), sys_info=sys_info
+        )
 
 
 def parse_args():
@@ -190,8 +200,9 @@ def parse_args():
     parser.add_argument("-p", "--port", type=int, help="port to run server on", default=6060)
     parser.add_argument("-ho", "--host", help="Host address to bind.", default='0.0.0.0')
     parser.add_argument("-b", "--base", help="Base prefix path for all the URLs")
-    parser.add_argument("-msl", "--max-src-len", type=int, default=250,
-                        help="max source len; longer seqs will be truncated")
+    parser.add_argument(
+        "-msl", "--max-src-len", type=int, default=250, help="max source len; longer seqs will be truncated"
+    )
     args = vars(parser.parse_args())
     return args
 
@@ -208,6 +219,7 @@ if cli_args.pop('debug'):
 
 # register a home page if needed
 if cli_args.get('base'):
+
     @app.route('/')
     def home():
         return render_template('home.html', demo_url=cli_args.get('base'))

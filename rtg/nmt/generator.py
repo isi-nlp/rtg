@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 #
-# Author: Thamme Gowda [tg (at) isi (dot) edu] 
+# Author: Thamme Gowda [tg (at) isi (dot) edu]
 # Created: 3/9/19
 
 import abc
@@ -20,7 +20,6 @@ INTERACTIVE = False
 
 # TODO: simplify the generators
 class GeneratorFactory(abc.ABC):
-
     def __init__(self, model, field: Field, **kwargs):
         self.model = model
         self.field = field
@@ -31,7 +30,6 @@ class GeneratorFactory(abc.ABC):
 
 
 class Seq2SeqGenerator(GeneratorFactory):
-
     def __init__(self, model: RNNMT, field, x_seqs, x_lens):
         super().__init__(model, field=field)
         # [S, B, d], [S, B, d] <-- [S, B], [B]
@@ -46,7 +44,6 @@ class Seq2SeqGenerator(GeneratorFactory):
 
 
 class T2TGenerator(GeneratorFactory):
-
     multi_label_warned = False
 
     def __init__(self, model: TransformerNMT, field, x_seqs, x_lens=None, multi_label=False):
@@ -68,7 +65,6 @@ class T2TGenerator(GeneratorFactory):
 
 
 class MTfmGenerator(GeneratorFactory):
-
     def __init__(self, model: TransformerNMT, field, x_seqs, x_lens=None):
         super().__init__(model, field)
         x_mask = (x_seqs != field.pad_idx).unsqueeze(1)
@@ -79,8 +75,8 @@ class MTfmGenerator(GeneratorFactory):
         log_probs = self.model.generator(out[:, -1])
         return log_probs
 
-class TfmExtEembGenerator(T2TGenerator):
 
+class TfmExtEembGenerator(T2TGenerator):
     def __init__(self, model: TransformerNMT, x_seqs, x_lens=None):
         super().__init__(model, x_seqs, x_seqs)
         self.src_ext_emb = self.model.src_ext_emb(x_seqs)
@@ -88,10 +84,10 @@ class TfmExtEembGenerator(T2TGenerator):
     def generate_next(self, past_ys):
         tgt_ext_emb = self.model.tgt_ext_emb(past_ys)
         y_mask = subsequent_mask(past_ys.size(1))
-        out = self.model.decode(self.memory, self.x_mask, past_ys, y_mask,
-                                self.src_ext_emb, tgt_ext_emb)
+        out = self.model.decode(self.memory, self.x_mask, past_ys, y_mask, self.src_ext_emb, tgt_ext_emb)
         log_probs = self.model.generator(out[:, -1])
         return log_probs
+
 
 class ComboGenerator(GeneratorFactory):
     from rtg.syscomb import Combo
@@ -108,7 +104,6 @@ class ComboGenerator(GeneratorFactory):
 
 
 class RnnLmGenerator(GeneratorFactory):
-
     def __init__(self, model: RnnLm, field, x_seqs, x_lens):
         super().__init__(model, field)
         self.dec_hids = None
@@ -131,7 +126,6 @@ class RnnLmGenerator(GeneratorFactory):
 
 
 class TfmLmGenerator(GeneratorFactory):
-
     def __init__(self, model: TfmLm, field, x_seqs, x_lens):
         super().__init__(model, field)
         if INTERACTIVE:

@@ -31,7 +31,7 @@ class Pipeline:
     def __post_init__(self):
         self.tests_types = {
             ProblemType.TRANSLATION: self.run_translation_tests,
-            ProblemType.CLASSIFICATION: self.run_classification_tests
+            ProblemType.CLASSIFICATION: self.run_classification_tests,
         }
 
     def pre_checks(self):
@@ -97,11 +97,20 @@ class Pipeline:
         IO.write_lines(macrof1_file, macrof1_str)
         return bleu.score
 
-    def decode_eval_file(self, decoder, src: Union[Path, List[str]], out_file: Path,
-                         ref: Optional[Union[Path, List[str]]],
-                         lowercase: bool = True, **dec_args) -> float:
-        if out_file.exists() and out_file.stat().st_size > 0 and line_count(out_file) == (
-                len(src) if isinstance(src, list) else line_count(src)):
+    def decode_eval_file(
+        self,
+        decoder,
+        src: Union[Path, List[str]],
+        out_file: Path,
+        ref: Optional[Union[Path, List[str]]],
+        lowercase: bool = True,
+        **dec_args,
+    ) -> float:
+        if (
+            out_file.exists()
+            and out_file.stat().st_size > 0
+            and line_count(out_file) == (len(src) if isinstance(src, list) else line_count(src))
+        ):
             log.warning(f"{out_file} exists and has desired number of lines. Skipped...")
         else:
             if isinstance(src, Path):
@@ -115,13 +124,23 @@ class Pipeline:
         if ref:
             return self.evaluate_mt_file(detok_hyp, ref, lowercase=lowercase)
 
-    def tune_decoder_params(self, exp: Experiment, tune_src: str, tune_ref: str, batch_size: int,
-                            trials: int = 10, lowercase=True,
-                            beam_size=(1, 4, 8), ensemble=(1, 5, 10), lp_alpha=(0.0, 0.4, 0.6),
-                            suggested: List[Tuple[int, int, float]] = None,
-                            **fixed_args):
+    def tune_decoder_params(
+        self,
+        exp: Experiment,
+        tune_src: str,
+        tune_ref: str,
+        batch_size: int,
+        trials: int = 10,
+        lowercase=True,
+        beam_size=(1, 4, 8),
+        ensemble=(1, 5, 10),
+        lp_alpha=(0.0, 0.4, 0.6),
+        suggested: List[Tuple[int, int, float]] = None,
+        **fixed_args,
+    ):
         _, _, _, tune_args = inspect.getargvalues(inspect.currentframe())
         from rtg.nmt.decoder import Decoder
+
         tune_args.update(fixed_args)
         ex_args = ['exp', 'self', 'fixed_args', 'batch_size', 'max_len']
         if trials == 0:
@@ -174,9 +193,17 @@ class Pipeline:
                     name = f'tune_step{step}_beam{b_s}_ens{ens}_lp{lp_a:.2f}'
                     log.info(name)
                     out_file = tune_dir / f'{name}.out.tsv'
-                    score = self.decode_eval_file(decoder, tune_src, out_file, tune_ref,
-                                                  batch_size=eff_batch_size, beam_size=b_s,
-                                                  lp_alpha=lp_a, lowercase=lowercase, **fixed_args)
+                    score = self.decode_eval_file(
+                        decoder,
+                        tune_src,
+                        out_file,
+                        tune_ref,
+                        batch_size=eff_batch_size,
+                        beam_size=b_s,
+                        lp_alpha=lp_a,
+                        lowercase=lowercase,
+                        **fixed_args,
+                    )
                     memory[(b_s, ens, lp_a)] = score
             best_params = sorted(memory.items(), key=lambda x: x[1], reverse=True)[0][0]
             return dict(zip(['beam_size', 'ensemble', 'lp_alpha'], best_params)), tune_args
@@ -187,7 +214,8 @@ class Pipeline:
 
     def run_classification_tests(self, exp=None, args=None):
         from rtg.classifier.tfmcls import ClassificationExperiment
-        exp:ClassificationExperiment = exp or self.exp
+
+        exp: ClassificationExperiment = exp or self.exp
         assert exp.problem_type is ProblemType.CLASSIFICATION
         args = args or exp.config['tester']
         suite: Dict[str, List] = args['suite']
@@ -195,8 +223,9 @@ class Pipeline:
         log.info(f"Found {len(suite)} suite :: {suite.keys()}")
 
         eval_args = dict(
-            batch_size = args.get('batch_size') or self.exp.config['trainer']['batch_size'],
-            max_len = args.get('max_len', 256))
+            batch_size=args.get('batch_size') or self.exp.config['trainer']['batch_size'],
+            max_len=args.get('max_len', 256),
+        )
         ens = args.get('ensemble', 1)
         _, step = exp.get_last_saved_model()
         model = exp.load_model(ensemble=ens)
@@ -222,7 +251,8 @@ class Pipeline:
                         orig_rel = os.path.relpath(orig, link.parent)
                         link.symlink_to(orig_rel)
                 metric, top1_labels, top1_probs = exp.evaluate_classifier(
-                    model, input=src_link, labels=label_link, **eval_args)
+                    model, input=src_link, labels=label_link, **eval_args
+                )
 
                 log.info(metric.format(delim='\t'))
 
@@ -241,6 +271,7 @@ class Pipeline:
 
     def run_translation_tests(self, exp=None, args=None):
         from rtg.nmt.decoder import Decoder
+
         exp = exp or self.exp
         args = args or exp.config['tester']
         suite: Dict[str, List] = args.get('suite')
@@ -263,7 +294,8 @@ class Pipeline:
             if 'tune_ref' not in tune_args:
                 tune_args['tune_ref'] = prep_args.get('valid_ref', prep_args['valid_tgt'])
             best_params, tuner_args_ext = self.tune_decoder_params(
-                exp=exp, max_len=max_len, batch_size=batch_size, **tune_args)
+                exp=exp, max_len=max_len, batch_size=batch_size, **tune_args
+            )
             log.info(f"tuner args = {tuner_args_ext}")
             log.info(f"Tuning complete: best_params: {best_params}")
             dec_args['tune'].update(tuner_args_ext)  # Update the config file with default args
@@ -278,8 +310,15 @@ class Pipeline:
         lp_alpha = best_params.get('lp_alpha', 0.0)
         eff_batch_size = batch_size // beam_size
 
-        dec_args.update(dict(beam_size=beam_size, lp_alpha=lp_alpha, ensemble=ensemble,
-                             max_len=max_len, batch_size=batch_size))
+        dec_args.update(
+            dict(
+                beam_size=beam_size,
+                lp_alpha=lp_alpha,
+                ensemble=ensemble,
+                max_len=max_len,
+                batch_size=batch_size,
+            )
+        )
         exp.persist_state()  # update the config
 
         assert step > 0, 'looks like no model is saved or invalid experiment dir'
@@ -312,9 +351,16 @@ class Pipeline:
                 out_file = test_dir / f'{name}.out.tsv' if not out_file else out_file
                 out_file.parent.mkdir(parents=True, exist_ok=True)
 
-                self.decode_eval_file(decoder, src_link, out_file, ref_link,
-                                      batch_size=eff_batch_size, beam_size=beam_size,
-                                      lp_alpha=lp_alpha, max_len=max_len)
+                self.decode_eval_file(
+                    decoder,
+                    src_link,
+                    out_file,
+                    ref_link,
+                    batch_size=eff_batch_size,
+                    beam_size=beam_size,
+                    lp_alpha=lp_alpha,
+                    max_len=max_len,
+                )
             except Exception as e:
                 log.exception(f"Something went wrong with '{name}' test")
                 err = test_dir / f'{name}.err'
@@ -331,12 +377,14 @@ class Pipeline:
             self.exp.pre_process()
         dtorch.barrier()
         if not self.exp.src_vocab or not self.exp.tgt_vocab:
-        #if not self.exp.read_only:
+            # if not self.exp.read_only:
             self.exp.reload()  # with updated config and vocabs from global_main
         assert self.exp.src_vocab and self.exp.tgt_vocab, "Vocabs are not loaded"
         # train on all
         if debug:
-            log.warning("<<<Anomaly detection enabled; this is very slow; use this only for debugging/hunting bugs>>>")
+            log.warning(
+                "<<<Anomaly detection enabled; this is very slow; use this only for debugging/hunting bugs>>>"
+            )
             with torch.autograd.detect_anomaly():
                 self.exp.train()
         else:
@@ -345,9 +393,11 @@ class Pipeline:
         if run_tests:
             if self.exp.problem_type in self.tests_types:
                 if dtorch.is_global_main:
-                    self.exp.reload()    # if user changed config for tests while training
+                    self.exp.reload()  # if user changed config for tests while training
                     with torch.no_grad():
                         self.tests_types[self.exp.problem_type]()
             else:
-                log.warning(f"{self.exp.problem_type} dont have test runner yet. "
-                            f"Known runners: {self.tests_types}. Please fix me")
+                log.warning(
+                    f"{self.exp.problem_type} dont have test runner yet. "
+                    f"Known runners: {self.tests_types}. Please fix me"
+                )

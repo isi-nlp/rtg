@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 #
-# Author: Thamme Gowda [tg (at) isi (dot) edu] 
+# Author: Thamme Gowda [tg (at) isi (dot) edu]
 # Created: 7/7/20
 import math
 from pathlib import Path
@@ -39,9 +39,12 @@ def get_spark_session(config: Dict[str, str]) -> SparkSession:
 
 
 class BigTranslationExperiment(TranslationExperiment):
-
-    def __init__(self, work_dir: Union[str, Path], read_only=False,
-                 config: Union[str, Path, Optional[Dict[str, Any]]] = None):
+    def __init__(
+        self,
+        work_dir: Union[str, Path],
+        read_only=False,
+        config: Union[str, Path, Optional[Dict[str, Any]]] = None,
+    ):
         super().__init__(work_dir=work_dir, read_only=read_only, config=config)
         assert self.codec_name == 'nlcodec', 'only nlcodec is supported for big experiments'
         self.train_file = self.train_db = self.data_dir / "train.nldb"
@@ -52,8 +55,15 @@ class BigTranslationExperiment(TranslationExperiment):
         if 'spark.master' not in self.spark_conf:
             self.spark_conf['spark.master'] = f'local[{cpu_count}]'
 
-    def _pre_process_parallel(self, src_key: str, tgt_key: str, out_file: Path,
-                              args: Optional[Dict[str, Any]] = None, line_check=False, **kwargs):
+    def _pre_process_parallel(
+        self,
+        src_key: str,
+        tgt_key: str,
+        out_file: Path,
+        args: Optional[Dict[str, Any]] = None,
+        line_check=False,
+        **kwargs,
+    ):
         """
         Pre process records of a parallel corpus
         :param args: all arguments for 'prep' task
@@ -68,8 +78,8 @@ class BigTranslationExperiment(TranslationExperiment):
             if 'train' in out_file.name:
                 log.warning(f"set .nldb extension to enable spark")
             return super()._pre_process_parallel(
-                src_key=src_key, tgt_key=tgt_key, out_file=out_file, args=args,
-                line_check=line_check)
+                src_key=src_key, tgt_key=tgt_key, out_file=out_file, args=args, line_check=line_check
+            )
 
         args = args if args else self.config['prep']
         log.info(f"Going to prep files {src_key} and {tgt_key}")
@@ -79,22 +89,39 @@ class BigTranslationExperiment(TranslationExperiment):
         with log_resources(f"create {out_file.name}"):
             with spark_session(config=self.spark_conf) as spark:
                 rdd, total = read_raw_parallel_recs(
-                    spark, src_path=args[src_key], tgt_path=args[tgt_key],
-                    truncate=args['truncate'], src_len=args['src_len'], tgt_len=args['tgt_len'],
+                    spark,
+                    src_path=args[src_key],
+                    tgt_path=args[tgt_key],
+                    truncate=args['truncate'],
+                    src_len=args['src_len'],
+                    tgt_len=args['tgt_len'],
                     src_tokenizer=self.src_vocab.encode_as_ids,
-                    tgt_tokenizer=self.tgt_vocab.encode_as_ids)
+                    tgt_tokenizer=self.tgt_vocab.encode_as_ids,
+                )
 
-                id_rdd = rdd.map(lambda r: (r[0], (r[1], r[2])))    # (id, (x, y))
+                id_rdd = rdd.map(lambda r: (r[0], (r[1], r[2])))  # (id, (x, y))
                 max_part_size = args.get('max_part_size', 1_000_000)
                 n_parts = math.ceil(total / max_part_size)
-                log.info(f"Writing to {out_file}; {n_parts} parts,"
-                         f" not exceeding {max_part_size:,} records in each part")
-                
-                rdd_as_db(id_rdd, db_path=out_file, field_names=['x', 'y'], overwrite=True,
-                          repartition=n_parts)
+                log.info(
+                    f"Writing to {out_file}; {n_parts} parts,"
+                    f" not exceeding {max_part_size:,} records in each part"
+                )
 
-    def _make_vocab(self, name: str, vocab_file: Path, model_type: str, vocab_size: int,
-                    corpus: List, no_split_toks: List[str] = None, char_coverage=0, min_co_ev=None) -> Field:
+                rdd_as_db(
+                    id_rdd, db_path=out_file, field_names=['x', 'y'], overwrite=True, repartition=n_parts
+                )
+
+    def _make_vocab(
+        self,
+        name: str,
+        vocab_file: Path,
+        model_type: str,
+        vocab_size: int,
+        corpus: List,
+        no_split_toks: List[str] = None,
+        char_coverage=0,
+        min_co_ev=None,
+    ) -> Field:
         if vocab_file.exists():
             log.info(f"{vocab_file} exists. Skipping the {name} vocab creation")
             return self.Field(str(vocab_file))
@@ -112,12 +139,28 @@ class BigTranslationExperiment(TranslationExperiment):
             with spark_session(config=self.spark_conf) as spark:
                 flat_uniq_corpus = list(flat_uniq_corpus)
                 log.info(f"Going to build {name} vocab from {len(flat_uniq_corpus)} files ")
-                return self.Field.train(model_type, vocab_size, str(vocab_file),
-                                        flat_uniq_corpus, no_split_toks=no_split_toks,
-                                        char_coverage=char_coverage, spark=spark, **xt_args)
+                return self.Field.train(
+                    model_type,
+                    vocab_size,
+                    str(vocab_file),
+                    flat_uniq_corpus,
+                    no_split_toks=no_split_toks,
+                    char_coverage=char_coverage,
+                    spark=spark,
+                    **xt_args,
+                )
 
-    def get_train_data(self, batch_size: Tuple[int, int], steps: int = 0, sort_by='eq_len_rand_batch',
-                       batch_first=True, shuffle=False, fine_tune=False, keep_in_mem=False, **kwargs):
+    def get_train_data(
+        self,
+        batch_size: Tuple[int, int],
+        steps: int = 0,
+        sort_by='eq_len_rand_batch',
+        batch_first=True,
+        shuffle=False,
+        fine_tune=False,
+        keep_in_mem=False,
+        **kwargs,
+    ):
         if kwargs:
             log.warning(f"The following args are ignored:{kwargs}")
         data_path = self.train_file
@@ -131,11 +174,23 @@ class BigTranslationExperiment(TranslationExperiment):
         assert data_path.name.endswith(".nldb")
 
         vocab = self.tgt_vocab
-        batch_meta = NBatchMeta(pad_idx=vocab.pad_idx, bos_idx=vocab.bos_idx, eos_idx=vocab.eos_idx,
-                                add_bos_x=False, add_bos_y=False, add_eos_x=True, add_eos_y=True)
-        
-        batches = NBatchIterable(data_path=data_path, batch_size=batch_size, sort_by=sort_by,
-                                 batch_first=batch_first, batch_meta=batch_meta)
+        batch_meta = NBatchMeta(
+            pad_idx=vocab.pad_idx,
+            bos_idx=vocab.bos_idx,
+            eos_idx=vocab.eos_idx,
+            add_bos_x=False,
+            add_bos_y=False,
+            add_eos_x=True,
+            add_eos_y=True,
+        )
+
+        batches = NBatchIterable(
+            data_path=data_path,
+            batch_size=batch_size,
+            sort_by=sort_by,
+            batch_first=batch_first,
+            batch_meta=batch_meta,
+        )
 
         data = TLoopingIterable(batches, steps)
         return data
@@ -194,16 +249,23 @@ class TLoopingIterable(LoopingIterable):
             log.info(f"Epoch {self.epoch} complete.")
 
 
-def read_raw_parallel_recs(spark, src_path: Union[str, Path], tgt_path: Union[str, Path],
-                           truncate: bool, src_len: int, tgt_len: int, src_tokenizer,
-                           tgt_tokenizer) -> Tuple[RDD, int]:
+def read_raw_parallel_recs(
+    spark,
+    src_path: Union[str, Path],
+    tgt_path: Union[str, Path],
+    truncate: bool,
+    src_len: int,
+    tgt_len: int,
+    src_tokenizer,
+    tgt_tokenizer,
+) -> Tuple[RDD, int]:
     raw_df, n_recs = read_bitext(spark, src_path, tgt_path, src_name='x', tgt_name='y')
-    tok_rdd = (raw_df.rdd
-               .filter(lambda r: r.x and r.y)  # exclude None
-               .map(lambda r: (r.idx, src_tokenizer(r.x), tgt_tokenizer(r.y)))
-               .filter(lambda r: len(r[1]) > 0 and len(r[2]) > 0)
-               # exclude empty, if tokenizer created any
-               )
+    tok_rdd = (
+        raw_df.rdd.filter(lambda r: r.x and r.y)  # exclude None
+        .map(lambda r: (r.idx, src_tokenizer(r.x), tgt_tokenizer(r.y)))
+        .filter(lambda r: len(r[1]) > 0 and len(r[2]) > 0)
+        # exclude empty, if tokenizer created any
+    )
     if truncate:
         tok_rdd = tok_rdd.map(lambda r: (r[0], r[1][:src_len], r[2][:tgt_len]))
     else:
@@ -212,8 +274,9 @@ def read_raw_parallel_recs(spark, src_path: Union[str, Path], tgt_path: Union[st
     return tok_rdd, n_recs
 
 
-def read_bitext(spark, src_file: Union[str, Path], tgt_file: Union[str, Path],
-                src_name='src_raw', tgt_name='tgt_raw') -> Tuple[DataFrame, int]:
+def read_bitext(
+    spark, src_file: Union[str, Path], tgt_file: Union[str, Path], src_name='src_raw', tgt_name='tgt_raw'
+) -> Tuple[DataFrame, int]:
     if not isinstance(src_file, str):
         src_file = str(src_file)
     if not isinstance(tgt_file, str):
@@ -227,9 +290,13 @@ def read_bitext(spark, src_file: Union[str, Path], tgt_file: Union[str, Path],
     log.info(f"Found {n_src:,} parallel records in {src_file, tgt_file}")
 
     def with_idx(sdf):
-        new_schema = StructType(sdf.schema.fields + [StructField("idx", LongType(), False), ])
-        return sdf.rdd.zipWithIndex().map(lambda row: row[0] + (row[1],)).toDF(
-            schema=new_schema)
+        new_schema = StructType(
+            sdf.schema.fields
+            + [
+                StructField("idx", LongType(), False),
+            ]
+        )
+        return sdf.rdd.zipWithIndex().map(lambda row: row[0] + (row[1],)).toDF(schema=new_schema)
 
     src_df = with_idx(src_df)
     tgt_df = with_idx(tgt_df)

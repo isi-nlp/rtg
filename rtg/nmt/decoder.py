@@ -1,4 +1,3 @@
-
 import time
 import traceback
 from io import StringIO
@@ -78,17 +77,17 @@ class DecoderBatch:
         return (self.max_len + self.max_len_buffer) * self.line_count
 
     def as_tensors(self, device):
-        seqs = torch.zeros(self.line_count, self.max_len, device=device,
-                           dtype=torch.long)
+        seqs = torch.zeros(self.line_count, self.max_len, device=device, dtype=torch.long)
         lens = torch.zeros(self.line_count, device=device, dtype=torch.long)
         for i, seq in enumerate(self.seqs):
-            seqs[i, :len(seq)] = torch.tensor(seq, dtype=torch.long)
+            seqs[i, : len(seq)] = torch.tensor(seq, dtype=torch.long)
             lens[i] = len(seq)
         return seqs, lens
 
     @classmethod
-    def from_lines(cls, lines: Iterator[str], batch_size: int, vocab: Field, sort=True,
-                   max_src_len=0, max_len_buffer=0):
+    def from_lines(
+        cls, lines: Iterator[str], batch_size: int, vocab: Field, sort=True, max_src_len=0, max_len_buffer=0
+    ):
         """
         Note: this changes the order based on sequence length if sort=True
         :param lines: stream of input lines
@@ -103,8 +102,10 @@ class DecoderBatch:
         for i, line in enumerate(lines):
             line = line.strip()
             if not line:
-                log.warning(f"line {i + 1} was empty. inserting a dot (.). "
-                            f"Empty lines are problematic when you want line-by-line alignment...")
+                log.warning(
+                    f"line {i + 1} was empty. inserting a dot (.). "
+                    f"Empty lines are problematic when you want line-by-line alignment..."
+                )
                 line = "."
             cols = line.split('\t')
             id, ref = None, None
@@ -140,8 +141,9 @@ class DecoderBatch:
 class Decoder:
     default_beam_size = 5
 
-    def __init__(self, model, gen_factory: Type[GeneratorFactory], exp: Experiment, gen_args=None,
-                 debug=debug_mode):
+    def __init__(
+        self, model, gen_factory: Type[GeneratorFactory], exp: Experiment, gen_args=None, debug=debug_mode
+    ):
         self.model = model
         self.exp = exp
         self.gen_factory = gen_factory
@@ -155,8 +157,9 @@ class Decoder:
         (log.info if self.dec_bos_cut else log.debug)(f"dec_bos_cut={self.dec_bos_cut}")
 
     def generator(self, x_seqs, x_lens):
-        return self.gen_factory(self.model, field=self.exp.tgt_vocab,
-                                x_seqs=x_seqs, x_lens=x_lens, **self.gen_args)
+        return self.gen_factory(
+            self.model, field=self.exp.tgt_vocab, x_seqs=x_seqs, x_lens=x_lens, **self.gen_args
+        )
 
     @classmethod
     def combo_new(cls, exp: Experiment, model_paths: List[str], weights: List[float]):
@@ -166,13 +169,20 @@ class Decoder:
         model_paths = [Path(m) for m in model_paths]
         models = load_models(model_paths, exp)
         from rtg.syscomb import Combo
+
         combo = Combo(models)
         return cls.new(exp, model=combo, model_type='combo')
 
     @classmethod
-    def new(cls, exp: Experiment, model=None, gen_args=None,
-            model_paths: Optional[List[str]] = None,
-            ensemble: int = 1, model_type: Optional[str] = None):
+    def new(
+        cls,
+        exp: Experiment,
+        model=None,
+        gen_args=None,
+        model_paths: Optional[List[str]] = None,
+        ensemble: int = 1,
+        model_type: Optional[str] = None,
+    ):
         """
         create a new decoder
         :param exp: experiment
@@ -197,6 +207,7 @@ class Decoder:
 
         model = model.eval().to(device=device)
         from rtg.registry import CRITERION
+
         if exp.config.get(CRITERION, {}).get('name') == 'binary_cross_entropy':
             log.info("((Going to decode in multi-label mode))")
             gen_args = gen_args or {}
@@ -218,8 +229,7 @@ class Decoder:
             x_seqs = x_seqs[:, 1:]
             x_lens -= 1
         else:
-            ys = torch.full(size=(batch_size, 1), fill_value=self.bos_val, dtype=torch.long,
-                            device=device)
+            ys = torch.full(size=(batch_size, 1), fill_value=self.bos_val, dtype=torch.long, device=device)
         gen = self.generator(x_seqs, x_lens)
         scores = torch.zeros(batch_size, device=device)
         actives = ys[:, -1] != self.eos_val
@@ -263,8 +273,9 @@ class Decoder:
         shape[dim] *= n  # reduce to original num of dims but given dim has n times more
         return x.contiguous().view(*shape)
 
-    def beam_decode(self, x_seqs, x_lens, max_len, beam_size=default_beam_size, num_hyp=1,
-                    lp_alpha: float = 0., **args) -> List[List[Hypothesis]]:
+    def beam_decode(
+        self, x_seqs, x_lens, max_len, beam_size=default_beam_size, num_hyp=1, lp_alpha: float = 0.0, **args
+    ) -> List[List[Hypothesis]]:
         """
         Beam decoder
         :param x_seqs: input x_seqs as a padded tensor
@@ -289,8 +300,9 @@ class Decoder:
             x_seqs = x_seqs[:, 1:]  # cut
             x_lens -= 1
         else:
-            ys = torch.full((batch_size, beam_size, 1), fill_value=self.bos_val,
-                            device=device, dtype=torch.long)
+            ys = torch.full(
+                (batch_size, beam_size, 1), fill_value=self.bos_val, device=device, dtype=torch.long
+            )
 
         # repeat x_seqs and x_lens beam times
         beamed_x_seqs = self.repeat_adjacent(x_seqs, n=beam_size, dim=0)
@@ -298,8 +310,7 @@ class Decoder:
         gen = self.generator(beamed_x_seqs, beamed_x_lens)
         scores = torch.zeros(batch_size, beam_size, device=device)
         actives = ys[:, :, 0] != self.eos_val
-        lengths = torch.full((batch_size, beam_size), fill_value=max_len, device=device,
-                             dtype=torch.long)
+        lengths = torch.full((batch_size, beam_size), fill_value=max_len, device=device, dtype=torch.long)
         max_x_len = x_lens.max().item()
         for t in range(1, max_x_len + max_len + 1):
             if actives.sum() == 0:  # all sequences Ended
@@ -313,8 +324,9 @@ class Decoder:
                 # Note: since sequences are duplicated, to start with
                 # we need to pick the top k beams from a single beam
                 # How? mask out all beams, except the first beam
-                beam_mask = torch.full((batch_size, beam_size, 1), fill_value=1, device=device,
-                                       dtype=torch.bool)
+                beam_mask = torch.full(
+                    (batch_size, beam_size, 1), fill_value=1, device=device, dtype=torch.bool
+                )
                 beam_mask[:, 0, :] = 0
                 log_prob.masked_fill_(mask=beam_mask, value=float('-inf'))
 
@@ -344,10 +356,15 @@ class Decoder:
             # task: rearrange ys based on the newer ranking of beams
             # ys_idx: [Beams] --> [Beams x 1] --> [Beams x Beams]
             #          --> [1 x Beams x Beams] --> [Batch x Beams * Beams]
-            ys_idx = torch.arange(beam_size, device=device) \
-                .unsqueeze(-1).expand(-1, beam_size) \
-                .unsqueeze(0).expand(batch_size, -1, -1).contiguous() \
+            ys_idx = (
+                torch.arange(beam_size, device=device)
+                .unsqueeze(-1)
+                .expand(-1, beam_size)
+                .unsqueeze(0)
+                .expand(batch_size, -1, -1)
+                .contiguous()
                 .view(batch_size, beam_size * beam_size)
+            )
             # [Batch x Beams] <- [Batch x Beams*Beams] as per the topk next_scores of beams
             ys_idx = ys_idx.gather(dim=1, index=next_words_idxs)
             ys_idx = ys_idx.unsqueeze(-1).expand_as(ys)  # expand along time dim
@@ -378,10 +395,7 @@ class Decoder:
     def inp_vocab(self) -> Field:
         # the choice of vocabulary can be tricky, because of bidirectional model
         if self.exp.model_type == 'binmt':
-            return {
-                'E1': self.exp.src_vocab,
-                'E2': self.exp.tgt_vocab
-            }[self.gen_args['path'][:2]]
+            return {'E1': self.exp.src_vocab, 'E2': self.exp.tgt_vocab}[self.gen_args['path'][:2]]
         else:  # all others go from source as input to target as output
             return self.exp.src_vocab
 
@@ -389,14 +403,13 @@ class Decoder:
     def out_vocab(self) -> Field:
         # the choice of vocabulary can be tricky, because of bidirectional model
         if self.exp.model_type == 'binmt':
-            return {
-                'D1': self.exp.src_vocab,
-                'D2': self.exp.tgt_vocab
-            }[self.gen_args['path'][-2:]]
+            return {'D1': self.exp.src_vocab, 'D2': self.exp.tgt_vocab}[self.gen_args['path'][-2:]]
         else:  # all others go from source as input to target as output
             return self.exp.tgt_vocab
 
-    def decode_sentences(self, sources: List[str], max_len=20, prepared=False, add_bos=False, **args) -> List[List[StrHypothesis]]:
+    def decode_sentences(
+        self, sources: List[str], max_len=20, prepared=False, add_bos=False, **args
+    ) -> List[List[StrHypothesis]]:
         batch_size = len(sources)
         assert batch_size > 0
         src_seqs, in_lens = [], []
@@ -416,7 +429,7 @@ class Decoder:
         max_len = max(in_lens)
         in_seqs = torch.full((batch_size, max_len), fill_value=self.exp.src_vocab.pad_idx, dtype=torch.long)
         for i, src_seq in enumerate(src_seqs):
-            in_seqs[i, :len(src_seq)] = torch.tensor(src_seq, dtype=torch.long)
+            in_seqs[i, : len(src_seq)] = torch.tensor(src_seq, dtype=torch.long)
         in_lens = tensor(in_lens, dtype=torch.long).to(device)
         in_seqs = in_seqs.to(device)
 
@@ -429,7 +442,7 @@ class Decoder:
                 result[-1].append((score, out))
         return result
 
-    def decode_sentence(self, line: str,*args, **kwargs) -> List[StrHypothesis]:
+    def decode_sentence(self, line: str, *args, **kwargs) -> List[StrHypothesis]:
         return self.decode_sentences([line], *args, **kwargs)[0]
 
     def decode_visualize(self, line: str, target=None, max_len=20, reduction=None, **args):
@@ -450,8 +463,8 @@ class Decoder:
             x_mask = (in_seqs != self.inp_vocab.pad_idx).unsqueeze(1)
             y_mask = TrainerBatch.make_autogres_mask_(tgt_in_seqs, self.out_vocab.pad_idx)
             out_feats = self.model(in_seqs, tgt_in_seqs, x_mask, y_mask)
-            #self.model.generator(out_feats)
-            x_probs = self.model.generator(out_feats, score='log_probs')   # B=1 x T x V
+            # self.model.generator(out_feats)
+            x_probs = self.model.generator(out_feats, score='log_probs')  # B=1 x T x V
             out_ids = tgt_seqs[0, 1:]  # Skip BOS  # [T]
             x_probs = x_probs.squeeze(0)  # T x V
             force_score = x_probs.gather(1, out_ids.view(-1, 1))
@@ -477,10 +490,21 @@ class Decoder:
         xx_attn, yy_attn, yx_attn = attns
         out_line = self.out_vocab.decode_ids(out_ids, trunc_eos=True)
         out_toks = [self.out_vocab.bos_tok] + self.out_vocab.tokenize(out_line) + [self.out_vocab.eos_tok]
-        result = dict(source=line, translation=out_line, score=score,
-                      in_ids=in_seq, in_toks=in_toks, out_ids=out_ids, out_toks=out_toks,
-                      source_length=len(in_toks), target_lenth=len(out_toks),
-                      xx_attn=xx_attn, yy_attn=yy_attn, yx_attn=yx_attn, reduction=reduction)
+        result = dict(
+            source=line,
+            translation=out_line,
+            score=score,
+            in_ids=in_seq,
+            in_toks=in_toks,
+            out_ids=out_ids,
+            out_toks=out_toks,
+            source_length=len(in_toks),
+            target_lenth=len(out_toks),
+            xx_attn=xx_attn,
+            yy_attn=yy_attn,
+            yx_attn=yx_attn,
+            reduction=reduction,
+        )
         return result
 
     def next_word_distr(self, past_seq, x_seqs=None, x_lens=None):
@@ -497,15 +521,17 @@ class Decoder:
     def decode_interactive(self, **args):
         import sys
         import readline
-        helps = [(':quit', 'Exit'),
-                 (':help', 'Print this help message'),
-                 (':beam_size <n>', 'Set beam size to n'),
-                 (':lp_alpha <n>', 'Set length penalty alpha'),
-                 (':num_hyp <k>', 'Print top k hypotheses'),
-                 (':debug', 'Flip debug flag'),
-                 (':models', 'show all available models of this experiment'),
-                 (':model <number>', 'reload shell with the model chosen by <number>')
-                 ]
+
+        helps = [
+            (':quit', 'Exit'),
+            (':help', 'Print this help message'),
+            (':beam_size <n>', 'Set beam size to n'),
+            (':lp_alpha <n>', 'Set length penalty alpha'),
+            (':num_hyp <k>', 'Print top k hypotheses'),
+            (':debug', 'Flip debug flag'),
+            (':models', 'show all available models of this experiment'),
+            (':model <number>', 'reload shell with the model chosen by <number>'),
+        ]
         if self.exp.model_type == 'binmt':
             helps.append((':path <path>', 'BiNMT modules: {E1D1, E2D2, E1D2E2D1, E2D2E1D2}'))
 
@@ -516,6 +542,7 @@ class Decoder:
         global debug_mode
         print("Launching Interactive shell...")
         import rtg.nmt.generator as gen
+
         gen.INTERACTIVE = True
         print_cmds()
         print_state = True
@@ -556,8 +583,7 @@ class Decoder:
                     for i, mod_path in enumerate(self.exp.list_models()):
                         print(f"\t{i}\t{mod_path}")
                 elif line.startswith(":model"):
-                    mod_idxs = [int(x) for x in
-                                line.replace(":model", "").replace("=", "").strip().split()]
+                    mod_idxs = [int(x) for x in line.replace(":model", "").replace("=", "").strip().split()]
                     models = self.exp.list_models()
                     mod_paths = []
                     for mod_idx in mod_idxs:
@@ -586,15 +612,29 @@ class Decoder:
     def _remove_null_vals(args: Dict):
         return {k: v for k, v in args.items() if v is not None}  # remove None args
 
-    def decode_file(self, inp: Iterator[str], out: StringIO, beam_size=default_beam_size,
-                    num_hyp=1, batch_size=1, max_src_len=-1, **args):
+    def decode_file(
+        self,
+        inp: Iterator[str],
+        out: StringIO,
+        beam_size=default_beam_size,
+        num_hyp=1,
+        batch_size=1,
+        max_src_len=-1,
+        **args,
+    ):
         args = self._remove_null_vals(args)
-        log.info(f"Args to decoder : {args} and num_hyp={num_hyp} "
-                 f"batch_size={batch_size} max_src_len={max_src_len}")
+        log.info(
+            f"Args to decoder : {args} and num_hyp={num_hyp} "
+            f"batch_size={batch_size} max_src_len={max_src_len}"
+        )
 
         batches: Iterator[DecoderBatch] = DecoderBatch.from_lines(
-            inp, batch_size=batch_size, vocab=self.inp_vocab, max_src_len=max_src_len,
-            max_len_buffer=args.get('max_len', 1))
+            inp,
+            batch_size=batch_size,
+            vocab=self.inp_vocab,
+            max_src_len=max_src_len,
+            max_len_buffer=args.get('max_len', 1),
+        )
 
         def _decode_all():
             buffer = []
@@ -605,8 +645,9 @@ class Decoder:
                 for batch in data_bar:
                     in_seqs, in_lens = batch.as_tensors(device=device)
                     if beam_size > 1:
-                        batched_hyps: List[List[Hypothesis]] = self.beam_decode(in_seqs, in_lens,
-                                                                                num_hyp=num_hyp, **args)
+                        batched_hyps: List[List[Hypothesis]] = self.beam_decode(
+                            in_seqs, in_lens, num_hyp=num_hyp, **args
+                        )
                     else:
                         batched_hyps: List[Hypothesis] = self.greedy_decode(in_seqs, in_lens, **args)
                         batched_hyps: List[List[Hypothesis]] = [[h] for h in batched_hyps]
@@ -648,8 +689,7 @@ class Decoder:
             if num_hyp > 1:
                 out.write('\n')
 
-    def decode_stream(self, inp: Iterator[str], out: StringIO,
-                      max_src_len=-1, **args):
+    def decode_stream(self, inp: Iterator[str], out: StringIO, max_src_len=-1, **args):
         args = self._remove_null_vals(args)
         log.info(f"Args to decoder : {args} max_src_len={max_src_len}")
 

@@ -1,8 +1,7 @@
-
 import tempfile
 import shutil
 
-from rtg import load_conf,  TranslationExperiment
+from rtg import load_conf, TranslationExperiment
 from rtg.cli.pipeline import Pipeline
 from . import sanity_check_experiment
 

@@ -9,23 +9,25 @@ import torch
 from rtg import __version__, log, dtorch, load_conf, TranslationExperiment, Pipeline
 
 
-
 def parse_args():
     parser = argparse.ArgumentParser(prog="rtg-pipe", description="RTG Pipeline CLI")
     parser.add_argument('-v', '--version', action='version', version=f'%(prog)s {__version__}')
     parser.add_argument("exp", metavar='EXP_DIR', help="Working directory of experiment", type=Path)
-    parser.add_argument("conf", metavar='conf.yml', type=Path, nargs='?',
-                        help="Config File. By default <work_dir>/conf.yml is used")
-    parser.add_argument("-G", "--gpu-only", action="store_true", default=False,
-                        help="Crash if no GPU is available")
-    parser.add_argument("-fp16", "--fp16", action="store_true", default=False,
-                        help="Float 16")
+    parser.add_argument(
+        "conf",
+        metavar='conf.yml',
+        type=Path,
+        nargs='?',
+        help="Config File. By default <work_dir>/conf.yml is used",
+    )
+    parser.add_argument(
+        "-G", "--gpu-only", action="store_true", default=False, help="Crash if no GPU is available"
+    )
+    parser.add_argument("-fp16", "--fp16", action="store_true", default=False, help="Float 16")
 
     # multi-gpu / multi-node
-    parser.add_argument("--local_rank", "--local-rank", type=int, default=-1,
-                        help="Multi-GPU - Local rank")
-    parser.add_argument("--master-port", type=int, default=-1,
-                        help="Master port (for multi-node SLURM jobs)")
+    parser.add_argument("--local_rank", "--local-rank", type=int, default=-1, help="Multi-GPU - Local rank")
+    parser.add_argument("--master-port", type=int, default=-1, help="Master port (for multi-node SLURM jobs)")
     dtorch.setup()
     args = parser.parse_args()
     if args.fp16:
@@ -45,19 +47,22 @@ def parse_args():
     if conf.get('model_type') == 'tfmcls':
         log.info("Classification experiment")
         from rtg.classifier.tfmcls import ClassificationExperiment
+
         ExpFactory = ClassificationExperiment
     elif conf.get('spark', {}):
         log.info("Big experiment mode enabled; checking pyspark backend")
         try:
             import pyspark
+
             log.info("pyspark is available")
         except:
             log.warning("unable to import pyspark. Please do 'pip install pyspark' and run again")
             raise
         from rtg.big.exp import BigTranslationExperiment
+
         ExpFactory = BigTranslationExperiment
 
-    read_only = not dtorch.is_global_main # only main can modify experiment
+    read_only = not dtorch.is_global_main  # only main can modify experiment
     exp = ExpFactory(args.exp, config=conf_file, read_only=read_only)
     dtorch.barrier()
     return exp

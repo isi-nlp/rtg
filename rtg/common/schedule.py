@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 #
-# Author: Thamme Gowda [tg (at) isi (dot) edu] 
+# Author: Thamme Gowda [tg (at) isi (dot) edu]
 # Created: 4/26/21
 from dataclasses import dataclass
 
@@ -17,7 +17,6 @@ __all__ = ['LRSchedule', 'Noam', 'InverseRoot', 'InverseSqrt', 'ScheduledOptimiz
 
 @dataclass
 class LRSchedule:
-
     def __call__(self, *args, **kwargs) -> float:
         return self.rate(*args, **kwargs)
 
@@ -33,8 +32,7 @@ class Noam(LRSchedule):
     model_dim: int
 
     def rate(self, step) -> float:
-        return self.constant * self.model_dim ** -0.5 * min(step ** -0.5,
-                                                            step * self.warmup ** -1.5)
+        return self.constant * self.model_dim**-0.5 * min(step**-0.5, step * self.warmup**-1.5)
 
 
 @register(SCHEDULE, 'inverse_root')
@@ -56,7 +54,7 @@ class InverseRoot(LRSchedule):
     def rate(self, step) -> float:
         return self.constant * min(
             self.init_lr + step * (self.peak_lr - self.init_lr) / self.warmup,
-            self.peak_lr * self.warmup ** self.decay_power * step ** -self.decay_power
+            self.peak_lr * self.warmup**self.decay_power * step**-self.decay_power,
         )
 
 
@@ -76,7 +74,7 @@ class InverseSqrt(LRSchedule):
         if step <= self.warmup:
             lr = self.init_lr + step * (self.peak_lr - self.init_lr) / self.warmup
         else:
-            lr = self.peak_lr * self.warmup ** 0.5 * step ** -0.5
+            lr = self.peak_lr * self.warmup**0.5 * step**-0.5
         return self.constant * lr
 
 
@@ -98,14 +96,14 @@ class ScheduledOptimizer:
         if self.schedule is not None:
             rate = self.schedule.rate(step=self._step)
             # if dtorch.world_size > 1:
-                # assumption: batch_size was divided across workers
-                # Refer to: https://arxiv.org/pdf/1706.02677.pdf
-                # Usually, batch_size is multiplied when more GPUs are added
-                #           rate *= dtorch.world_size   #  <-- this is harmful
-                # but, in RTG, we stick to same batch_size specified in conf.yml (for reproducibility)
-                # and hence divide batch_size across workers, so we divide learning rate instead of multiplying
-                # rate /= dtorch.world_size   #<-- this should have been okay, but see update:
-                # update: we have scaled the minibatch normalizer instead, so we dont need to mess with learning rate
+            # assumption: batch_size was divided across workers
+            # Refer to: https://arxiv.org/pdf/1706.02677.pdf
+            # Usually, batch_size is multiplied when more GPUs are added
+            #           rate *= dtorch.world_size   #  <-- this is harmful
+            # but, in RTG, we stick to same batch_size specified in conf.yml (for reproducibility)
+            # and hence divide batch_size across workers, so we divide learning rate instead of multiplying
+            # rate /= dtorch.world_size   #<-- this should have been okay, but see update:
+            # update: we have scaled the minibatch normalizer instead, so we dont need to mess with learning rate
             for p in self.param_groups:
                 p['lr'] = rate
             self._rate = rate
@@ -133,6 +131,8 @@ class ScheduledOptimizer:
     @classmethod
     def get_vaswani_etal_opt(cls, model_params, model_dim=512):
         """The optimizer used in Attention is all you need"""
-        return cls(start_step=0,
-                   schedule=Noam(warmup=4000, constant=2, model_dim=model_dim),
-                   optimizer=optim.Adam(model_params, lr=0, betas=(0.9, 0.98), eps=1e-9))
+        return cls(
+            start_step=0,
+            schedule=Noam(warmup=4000, constant=2, model_dim=model_dim),
+            optimizer=optim.Adam(model_params, lr=0, betas=(0.9, 0.98), eps=1e-9),
+        )

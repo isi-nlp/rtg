@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 #
-# Author: Thamme Gowda [tg (at) isi (dot) edu] 
+# Author: Thamme Gowda [tg (at) isi (dot) edu]
 # Created: 8/4/21
 
 from rtg import log
@@ -13,5 +13,7 @@ def config_checks(config):
         help_url = 'https://isi-nlp.github.io/rtg/v0.6.0/#migrate-to-0_6'
         log.warning("Kindly migrate the 'optim' config block to new and improved schema")
         log.info(f"For migration info visit {help_url}")
-        raise ValueError(f'Config migration to new version is required; see {help_url};\n '
-                         f'You have {dict(config).keys()}; expected {OPTIMIZER}, {CRITERION} but not optim')
+        raise ValueError(
+            f'Config migration to new version is required; see {help_url};\n '
+            f'You have {dict(config).keys()}; expected {OPTIMIZER}, {CRITERION} but not optim'
+        )

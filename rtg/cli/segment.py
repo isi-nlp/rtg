@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 #
 # An interactive CLI interface to sentence piece processor
-# Author: Thamme Gowda [tg (at) isi (dot) edu] 
+# Author: Thamme Gowda [tg (at) isi (dot) edu]
 # Created: 2/19/19
 
 import argparse
@@ -9,7 +9,7 @@ import sys
 from rtg import TranslationExperiment as Experiment, log
 
 
-def run_all(exp: Experiment, inp, side: str='shared', is_ids: bool = False, is_merge: bool = False):
+def run_all(exp: Experiment, inp, side: str = 'shared', is_ids: bool = False, is_merge: bool = False):
     """
 
     :param exp: Experiment
@@ -25,11 +25,10 @@ def run_all(exp: Experiment, inp, side: str='shared', is_ids: bool = False, is_m
         (False, False): vocab.encode_as_pieces,
         (False, True): vocab.encode_as_ids,
         (True, False): vocab.detokenize,
-        (True, True): vocab.decode_ids
+        (True, True): vocab.decode_ids,
     }[is_merge, is_ids]
     log.info(f"Reading from {inp.name}")
     for line in inp:
-
         # prep
         rec = line.strip()
         if is_merge:
@@ -61,19 +60,20 @@ def write_all(lines, out):
 
 
 def main():
-    p = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-                                description="Segment tokens using the model's vocabulary (e.g. BPE)")
+    p = argparse.ArgumentParser(
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        description="Segment tokens using the model's vocabulary (e.g. BPE)",
+    )
     p.add_argument('exp', help='Path to experiment which has vocabulary files under <exp>/data/')
-    p.add_argument('-i', '--inp', type=argparse.FileType('r'), default=sys.stdin,
-                   help='Input file path')
-    p.add_argument('-o', '--out', type=argparse.FileType('w'), default=sys.stdout,
-                   help='Output file path')
-    p.add_argument('-s', '--side', default='shared', choices={'src', 'tgt', 'shared'},
-                   help='vocabulary side;')
-    p.add_argument('--ids', dest='is_ids', action='store_true',
-                   help='Word Ids instead of pieces')
-    p.add_argument('--merge', dest='is_merge', action='store_true',
-                   help='Merge or detokenize or decode or undo splits')
+    p.add_argument('-i', '--inp', type=argparse.FileType('r'), default=sys.stdin, help='Input file path')
+    p.add_argument('-o', '--out', type=argparse.FileType('w'), default=sys.stdout, help='Output file path')
+    p.add_argument(
+        '-s', '--side', default='shared', choices={'src', 'tgt', 'shared'}, help='vocabulary side;'
+    )
+    p.add_argument('--ids', dest='is_ids', action='store_true', help='Word Ids instead of pieces')
+    p.add_argument(
+        '--merge', dest='is_merge', action='store_true', help='Merge or detokenize or decode or undo splits'
+    )
     args = vars(p.parse_args())
     args['exp'] = Experiment(args.pop('exp'), read_only=True)
     out = args.pop('out')

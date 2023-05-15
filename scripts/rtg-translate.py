@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 #
-# Author: Thamme Gowda [tg (at) isi (dot) edu] 
+# Author: Thamme Gowda [tg (at) isi (dot) edu]
 # Created: 8/10/21
 
 
@@ -15,8 +15,8 @@ log.basicConfig(level=log.INFO)
 DEF_API = "http://localhost:6060/translate"
 DEF_BATCHSIZE = 10
 
-class RTGClient:
 
+class RTGClient:
     def __init__(self, api_url: str):
         log.info(f"Creating RTG API Client for {api_url}")
         self.api_url = api_url
@@ -25,7 +25,7 @@ class RTGClient:
         assert isinstance(sents, list)
         assert len(sents) > 0
         assert isinstance(sents[0], str)
-        sents = [s.strip() or '.' for s in sents]    # insert dot for empty
+        sents = [s.strip() or '.' for s in sents]  # insert dot for empty
 
         data = {'source': sents}
         resp = requests.post(self.api_url, json=data)
@@ -36,8 +36,7 @@ class RTGClient:
         assert len(result) == len(sents)
         return result
 
-    def translate_all(self, sents: Union[List[str], Iterator[str]], batch_size: int,
-                      tsv_mode=False):
+    def translate_all(self, sents: Union[List[str], Iterator[str]], batch_size: int, tsv_mode=False):
         buffer = []
         ids = []
         total = len(sents) if hasattr(sents, '__len__') else None
@@ -70,8 +69,7 @@ def main(**args):
     client = RTGClient(api_url=args['api'])
     sents = args['inp']
 
-    result = client.translate_all(sents=sents, batch_size=args['batch_size'],
-                                  tsv_mode=args.get('tsv'))
+    result = client.translate_all(sents=sents, batch_size=args['batch_size'], tsv_mode=args.get('tsv'))
     out = args['out']
     count = 1
     for sent in result:
@@ -79,20 +77,20 @@ def main(**args):
         count += 1
     log.info(f"Wrote {count} lines to {out}")
 
+
 def parse_args():
     import argparse
     import sys
     import io
+
     stdin = io.TextIOWrapper(sys.stdin.buffer, encoding='utf-8', errors='ignore')
     stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='ignore')
     p = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     p.add_argument('-a', '--api', default=DEF_API, help='API URL')
     p.add_argument('-b', '--batch-size', default=DEF_BATCHSIZE, help='Batch size')
-    p.add_argument('-i', '--inp', type=argparse.FileType('r'), default=stdin,
-                   help='Input file path')
-    p.add_argument('-o', '--out', type=argparse.FileType('w'), default=stdout,
-                   help='Output file path')
+    p.add_argument('-i', '--inp', type=argparse.FileType('r'), default=stdin, help='Input file path')
+    p.add_argument('-o', '--out', type=argparse.FileType('w'), default=stdout, help='Output file path')
     p.add_argument('-tsv', '--tsv', action='store_true', help='Input is TSV of <id>\\t<text>')
 
     return p.parse_args()

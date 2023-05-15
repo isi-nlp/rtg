@@ -6,7 +6,7 @@
 import torch
 import torch.nn as nn
 from typing import List, Mapping
-from .tfmnmt import (TransformerNMT, EncoderLayer, DecoderLayer, Generator)
+from .tfmnmt import TransformerNMT, EncoderLayer, DecoderLayer, Generator
 from rtg import TranslationExperiment as Experiment, log
 from rtg.data.codec import PretrainMatchField
 from rtg.utils import get_my_args
@@ -23,8 +23,7 @@ class RobertaGenerator(Generator):
         super().__init__(d_model, vocab)
         self.dense = nn.Linear(d_model, d_model)
         self.layer_norm = nn.LayerNorm(d_model)
-        self.activation = dict(relu=nn.ReLU, gelu=nn.GELU, elu=nn.ELU,
-                               leaky_relu=nn.LeakyReLU)[activation]
+        self.activation = dict(relu=nn.ReLU, gelu=nn.GELU, elu=nn.ELU, leaky_relu=nn.LeakyReLU)[activation]
 
     def forward(self, x, score=None, *args, **kwargs):
         assert not args, f'Support for {args} are removed. Please use "{score}" argument'
@@ -46,9 +45,17 @@ class RoBERTaMT(TransformerNMT):
         self.generator.activation = self.encoder.layers[0].feed_forward.activation
 
     @classmethod
-    def make_model(cls, src_vocab:int, tgt_vocab:int, model_id='pytorch/fairseq:xlmr.base',
-                   inner_args=None, init=True, exp: Experiment = None,
-                   enc_layer_map=None, dec_layer_map=None):
+    def make_model(
+        cls,
+        src_vocab: int,
+        tgt_vocab: int,
+        model_id='pytorch/fairseq:xlmr.base',
+        inner_args=None,
+        init=True,
+        exp: Experiment = None,
+        enc_layer_map=None,
+        dec_layer_map=None,
+    ):
         """
         Helper: Construct a model from hyper parameters."
         :return: model, args
@@ -63,13 +70,15 @@ class RoBERTaMT(TransformerNMT):
             roberta.eval()
             ma = roberta.args
             n_layers_max = ma.encoder_layers
+
             def validate_layer_idxs(layer_idxs):
-                if layer_idxs: # check list of integers and each idx is valid
+                if layer_idxs:  # check list of integers and each idx is valid
                     assert isinstance(layer_idxs, list) and isinstance(layer_idxs[0], int)
                     assert all(0 <= idx < n_layers_max for idx in layer_idxs)
-                else: # default one to one copy
+                else:  # default one to one copy
                     layer_idxs = list(range(n_layers_max))
                 return layer_idxs
+
             save_args['enc_layer_map'] = enc_layer_map = validate_layer_idxs(enc_layer_map)
             save_args['dec_layer_map'] = dec_layer_map = validate_layer_idxs(dec_layer_map)
 
@@ -85,7 +94,8 @@ class RoBERTaMT(TransformerNMT):
                 attn_dropout=ma.attention_dropout,
                 dropout=ma.dropout,
                 activation=ma.activation_fn,
-                tied_emb='three-way')
+                tied_emb='three-way',
+            )
 
         assert isinstance(exp.tgt_vocab, PretrainMatchField)
         assert isinstance(exp.src_vocab, PretrainMatchField)
@@ -103,7 +113,6 @@ class RoBERTaMT(TransformerNMT):
         log.info(f"Mapped rows. Total skips = {skips}")
 
     def maybe_init_from_parent(self, exp: Experiment):
-
         tgt_emb_map = exp.tgt_vocab.new_idx2old_idx
         src_emb_map = exp.src_vocab.new_idx2old_idx
         args = exp.model_args
@@ -116,14 +125,24 @@ class RoBERTaMT(TransformerNMT):
         hub_api = torch.hub.load(group, model_name)
         # hub_api = torch.hub.load('pytorch/fairseq', 'xlmr.base.v0')
         roberta: 'RobertaEncoder' = hub_api.model.decoder
-        self.init_from_roberta(roberta, args['init'],
-                               src_emb_map=src_emb_map, tgt_emb_map=tgt_emb_map,
-                               enc_layer_map=enc_layer_map, dec_layer_map=dec_layer_map)
+        self.init_from_roberta(
+            roberta,
+            args['init'],
+            src_emb_map=src_emb_map,
+            tgt_emb_map=tgt_emb_map,
+            enc_layer_map=enc_layer_map,
+            dec_layer_map=dec_layer_map,
+        )
 
-    def init_from_roberta(self, roberta: 'RobertaEncoder', init: List[str],
-                          src_emb_map: Mapping[int, int],
-                          tgt_emb_map: Mapping[int, int],
-                          enc_layer_map: List[int], dec_layer_map: List[int]):
+    def init_from_roberta(
+        self,
+        roberta: 'RobertaEncoder',
+        init: List[str],
+        src_emb_map: Mapping[int, int],
+        tgt_emb_map: Mapping[int, int],
+        enc_layer_map: List[int],
+        dec_layer_map: List[int],
+    ):
         """
 
         :param roberta:
@@ -141,12 +160,18 @@ class RoBERTaMT(TransformerNMT):
         assert len(self.encoder.layers) == len(enc_layer_map)
         assert len(self.decoder.layers) == len(dec_layer_map)
 
-        from fairseq.modules.transformer_sentence_encoder_layer import \
-            TransformerSentenceEncoderLayer
+        from fairseq.modules.transformer_sentence_encoder_layer import TransformerSentenceEncoderLayer
         from fairseq.modules.multihead_attention import MultiheadAttention as YourAttn
 
-        pieces = {'all', 'src_in_emb', 'tgt_in_emb', 'tgt_out_emb', 'enc_layers', 'dec_layers',
-                  'generator_dense'}
+        pieces = {
+            'all',
+            'src_in_emb',
+            'tgt_in_emb',
+            'tgt_out_emb',
+            'enc_layers',
+            'dec_layers',
+            'generator_dense',
+        }
         for it in init:
             assert it in pieces, f'Valid args are {pieces}'
 
@@ -160,9 +185,9 @@ class RoBERTaMT(TransformerNMT):
         else:
             log.info("init src_in_emb: NO")
 
-        if ('all' in init or 'tgt_in_emb' in init):
+        if 'all' in init or 'tgt_in_emb' in init:
             log.info("init tgt_in_emb: YES")
-            #self.tgt_embed[0].lut.weight.data.copy_(rob_embs.data)
+            # self.tgt_embed[0].lut.weight.data.copy_(rob_embs.data)
             self.map_rows(rob_embs.data, self.tgt_embed[0].lut.weight.data, mapping=tgt_emb_map)
         else:
             log.info("init tgt_in_emb: NO")
@@ -171,12 +196,13 @@ class RoBERTaMT(TransformerNMT):
             log.info("init tgt_out_emb: YES")
             self.map_rows(rob.lm_head.weight.data, self.generator.proj.weight.data, mapping=tgt_emb_map)
             self.map_rows(rob.lm_head.bias.data, self.generator.proj.bias.data, mapping=tgt_emb_map)
-            #self.generator.proj.weight.data.copy_(rob.lm_head.weight.data)
-            #self.generator.proj.bias.data.copy_(rob.lm_head.bias.data)
+            # self.generator.proj.weight.data.copy_(rob.lm_head.weight.data)
+            # self.generator.proj.bias.data.copy_(rob.lm_head.bias.data)
         else:
             log.info("init tgt_out_emb: NO")
 
         from rtg.nmt.tfmnmt import MultiHeadedAttention as MyAttn
+
         def copy_weights(source: nn.Module, target: nn.Module):
             assert type(target) is type(source)
             target.load_state_dict(source.state_dict())

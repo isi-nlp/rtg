@@ -22,13 +22,19 @@ class Embedder(nn.Embedding):
     For the inverse operation see  `Generator` module
     """
 
-    def __init__(self, name: str, vocab_size: int, emb_size: int,
-                 weights: Optional[torch.Tensor] = None, freeze: bool = False, pad_idx=PAD_IDX):
+    def __init__(
+        self,
+        name: str,
+        vocab_size: int,
+        emb_size: int,
+        weights: Optional[torch.Tensor] = None,
+        freeze: bool = False,
+        pad_idx=PAD_IDX,
+    ):
         self.name = name
         self.vocab_size = vocab_size
         self.emb_size = emb_size
-        super(Embedder, self).__init__(self.vocab_size, self.emb_size, padding_idx=pad_idx,
-                                       _weight=weights)
+        super(Embedder, self).__init__(self.vocab_size, self.emb_size, padding_idx=pad_idx, _weight=weights)
         self.weight.requires_grad = not freeze
 
 
@@ -52,9 +58,15 @@ class Generator(nn.Module):
 
 
 class SeqEncoder(nn.Module):
-
-    def __init__(self, embedder: Embedder, hid_size: int, n_layers: int,
-                 bidirectional: bool = True, dropout=0.5, ext_embedder: Embedder = None):
+    def __init__(
+        self,
+        embedder: Embedder,
+        hid_size: int,
+        n_layers: int,
+        bidirectional: bool = True,
+        dropout=0.5,
+        ext_embedder: Embedder = None,
+    ):
         super().__init__()
         self.emb: Embedder = embedder
         self.dropout = nn.Dropout(dropout)
@@ -69,11 +81,14 @@ class SeqEncoder(nn.Module):
         if self.bidirectional:
             assert hid_size % 2 == 0
             hid_size = hid_size // 2
-        self.rnn_node = nn.LSTM(self.emb_size, hid_size,
-                                num_layers=self.n_layers,
-                                bidirectional=self.bidirectional,
-                                batch_first=True,
-                                dropout=dropout if n_layers > 1 else 0)
+        self.rnn_node = nn.LSTM(
+            self.emb_size,
+            hid_size,
+            num_layers=self.n_layers,
+            bidirectional=self.bidirectional,
+            batch_first=True,
+            dropout=dropout if n_layers > 1 else 0,
+        )
         # if external embeddings are provided
         self.ext_embedder = ext_embedder
         # The output feature vectors vectors
@@ -93,14 +108,14 @@ class SeqEncoder(nn.Module):
         embedded = self.dropout(embedded)
         packed = nn.utils.rnn.pack_padded_sequence(embedded, input_lengths, batch_first=True)
         outputs, hidden = self.rnn_node(packed, hidden)
-        outputs, output_lengths = nn.utils.rnn.pad_packed_sequence(outputs, batch_first=True,
-                                                                   padding_value=PAD_IDX)
+        outputs, output_lengths = nn.utils.rnn.pad_packed_sequence(
+            outputs, batch_first=True, padding_value=PAD_IDX
+        )
         # Sum bidirectional outputs
         # outputs = outputs[:, :, :self.hid_size] + outputs[:, :, self.hid_size:]
         dec_state = self.to_dec_state(hidden)
         if self.ext_embedder is not None:
-            ext_embs = self.ext_embedder(input_seqs).view(batch_size, seq_len,
-                                                          self.ext_embedder.emb_size)
+            ext_embs = self.ext_embedder(input_seqs).view(batch_size, seq_len, self.ext_embedder.emb_size)
             ext_embs = self.dropout(ext_embs)
             outputs = torch.cat((outputs, ext_embs), dim=-1)
         return outputs, dec_state
@@ -121,12 +136,13 @@ class SeqEncoder(nn.Module):
 
         # lnhn and lncn hold compact representation
         # duplicate for decoder layers
-        return (lnhn.expand(self.n_layers, *lnhn.shape).contiguous(),
-                lncn.expand(self.n_layers, *lncn.shape).contiguous())
+        return (
+            lnhn.expand(self.n_layers, *lnhn.shape).contiguous(),
+            lncn.expand(self.n_layers, *lncn.shape).contiguous(),
+        )
 
 
 class SeqDecoder(nn.Module):
-
     def __init__(self, prev_emb_node: Embedder, generator: Generator, n_layers: int, dropout=0.5):
         super(SeqDecoder, self).__init__()
         self.prev_emb = prev_emb_node
@@ -135,9 +151,14 @@ class SeqDecoder(nn.Module):
         self.n_layers = n_layers
         self.emb_size = self.prev_emb.emb_size
         self.hid_size = self.generator.vec_size
-        self.rnn_node = nn.LSTM(self.emb_size, self.hid_size, num_layers=self.n_layers,
-                                bidirectional=False, batch_first=True,
-                                dropout=dropout if n_layers > 1 else 0)
+        self.rnn_node = nn.LSTM(
+            self.emb_size,
+            self.hid_size,
+            num_layers=self.n_layers,
+            bidirectional=False,
+            batch_first=True,
+            dropout=dropout if n_layers > 1 else 0,
+        )
 
     def forward(self, enc_outs: Optional, prev_out, last_hidden, gen_probs=True, log_probs=True):
         # Note: we run this one step at a time
@@ -182,10 +203,7 @@ class AttnModel(nn.Module):
         elif att_type == 'general':
             self.attn_W = nn.Linear(self.inp_size, self.out_size)
         self.attn_type = att_type
-        self.attn_func = {
-            'dot': self.dot_attn,
-            'general': self.general_attn
-        }[self.attn_type]
+        self.attn_func = {'dot': self.dot_attn, 'general': self.general_attn}[self.attn_type]
 
     @staticmethod
     def dot_attn(this_rnn_out, encoder_outs):
@@ -215,9 +233,15 @@ class AttnModel(nn.Module):
 
 
 class AttnSeqDecoder(SeqDecoder):
-    def __init__(self, prev_emb_node: Embedder, generator: Generator, n_layers: int,
-                 ctx_size: Optional[int] = None,
-                 dropout: float = 0.5, attention='dot'):
+    def __init__(
+        self,
+        prev_emb_node: Embedder,
+        generator: Generator,
+        n_layers: int,
+        ctx_size: Optional[int] = None,
+        dropout: float = 0.5,
+        attention='dot',
+    ):
         super(AttnSeqDecoder, self).__init__(prev_emb_node, generator, n_layers, dropout=dropout)
 
         if attention and type(attention) is bool:
@@ -295,7 +319,6 @@ class Seq2SeqBridge(nn.Module):
 
 @register(MODEL, 'rnnmt')
 class RNNMT(NMTModel):
-
     def __init__(self, enc: SeqEncoder, dec: SeqDecoder, bridge: Seq2SeqBridge = None):
         super(RNNMT, self).__init__()
         self.enc: SeqEncoder = enc
@@ -346,8 +369,7 @@ class RNNMT(NMTModel):
     def forward(self, batch: Batch):
         assert batch.batch_first
         batch_size = len(batch)
-        enc_outs, enc_hids = self.encode(batch.x_seqs, batch.x_len, hids=None,
-                                         max_y_len=batch.max_y_len)
+        enc_outs, enc_hids = self.encode(batch.x_seqs, batch.x_len, hids=None, max_y_len=batch.max_y_len)
 
         dec_inps = tensor([[batch.bos_val]] * batch_size, dtype=torch.long)
         dec_hids = enc_hids
@@ -370,9 +392,19 @@ class RNNMT(NMTModel):
         return outp_probs.t()
 
     @staticmethod
-    def make_model(src_lang, tgt_lang, src_vocab: int, tgt_vocab: int, emb_size: int = 300,
-                   hid_size: int = 300, n_layers: int = 2, attention='general', dropout=0.33,
-                   tied_emb: Optional[str] = 'three-way', exp: Experiment = None):
+    def make_model(
+        src_lang,
+        tgt_lang,
+        src_vocab: int,
+        tgt_vocab: int,
+        emb_size: int = 300,
+        hid_size: int = 300,
+        n_layers: int = 2,
+        attention='general',
+        dropout=0.33,
+        tied_emb: Optional[str] = 'three-way',
+        exp: Experiment = None,
+    ):
         args = {
             'src_lang': src_lang,
             'tgt_lang': tgt_lang,
@@ -383,7 +415,7 @@ class RNNMT(NMTModel):
             'n_layers': n_layers,
             'attention': attention,
             'dropout': dropout,
-            'tied_emb': tied_emb
+            'tied_emb': tied_emb,
         }
         log.info(f"Make RNN NMT model, args= {args}")
         src_embedder = Embedder(src_lang, src_vocab, emb_size)
@@ -408,30 +440,36 @@ class RNNMT(NMTModel):
                 aln_emb_weights = torch.load(str(exp.ext_emb_src_file))
                 rows, cols = aln_emb_weights.shape
                 log.info(f"Loaded aligned embeddings: shape={aln_emb_weights.shape}")
-                assert rows == src_vocab, \
-                    f'aln_emb_src vocabulary ({rows})' \
-                    f' should be same as src_vocab ({src_vocab})'
+                assert rows == src_vocab, (
+                    f'aln_emb_src vocabulary ({rows})' f' should be same as src_vocab ({src_vocab})'
+                )
 
-                ext_embedder = Embedder(name=src_lang,
-                                        vocab_size=rows,
-                                        emb_size=cols,
-                                        weights=aln_emb_weights,
-                                        freeze=True)
+                ext_embedder = Embedder(
+                    name=src_lang, vocab_size=rows, emb_size=cols, weights=aln_emb_weights, freeze=True
+                )
                 if attention != 'general':
-                    log.warning("Using attention=general because it is necessary for"
-                                " aligned embeddings")
+                    log.warning("Using attention=general because it is necessary for" " aligned embeddings")
                     attention = 'general'
                     args['attention'] = attention
 
-        enc = SeqEncoder(src_embedder, hid_size, n_layers=n_layers, bidirectional=True,
-                         dropout=dropout, ext_embedder=ext_embedder)
+        enc = SeqEncoder(
+            src_embedder,
+            hid_size,
+            n_layers=n_layers,
+            bidirectional=True,
+            dropout=dropout,
+            ext_embedder=ext_embedder,
+        )
         if attention:
             log.info(f"Using attention={attention} models for decoding")
-            dec = AttnSeqDecoder(tgt_embedder, tgt_generator,
-                                 ctx_size=enc.out_size,
-                                 n_layers=n_layers,
-                                 dropout=dropout,
-                                 attention=attention)
+            dec = AttnSeqDecoder(
+                tgt_embedder,
+                tgt_generator,
+                ctx_size=enc.out_size,
+                n_layers=n_layers,
+                dropout=dropout,
+                attention=attention,
+            )
         else:
             log.info("NOT Using attention models for decoding")
             dec = SeqDecoder(tgt_embedder, tgt_generator, n_layers=n_layers, dropout=dropout)
@@ -448,7 +486,9 @@ class RNNMT(NMTModel):
     @classmethod
     def make_generator(cls, *args, **kwargs):
         from rtg.nmt.generator import Seq2SeqGenerator
+
         return Seq2SeqGenerator(*args, **kwargs)
+
 
 def aeq(*items):
     for i in items[1:]:
@@ -458,7 +498,6 @@ def aeq(*items):
 
 
 class SimpleLossFunction:
-
     def __init__(self, optim):
         self.optim = optim
 
@@ -476,15 +515,13 @@ class SimpleLossFunction:
 
 
 class SteppedRNNMTTrainer(SteppedTrainer):
-
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.loss_func = SimpleLossFunction(optim=self.opt)
 
     def run_valid_epoch(self, data_iter: BatchIterable) -> float:
         state = TrainerState(self.model, -1)
-        with tqdm(data_iter, total=data_iter.num_batches, unit='batch',
-                  dynamic_ncols=True) as data_bar:
+        with tqdm(data_iter, total=data_iter.num_batches, unit='batch', dynamic_ncols=True) as data_bar:
             for i, batch in enumerate(data_bar):
                 batch = batch.to(device)
                 # Step clear gradients
@@ -497,26 +534,42 @@ class SteppedRNNMTTrainer(SteppedTrainer):
                 del batch
         return state.running_loss()
 
-    def train(self, steps: int, check_point: int, batch_size: int, fine_tune=False,
-              check_pt_callback: Optional[Callable] = None, **args):
-        log.info(f'Going to train for {steps} steps; batch_size={batch_size}; '
-                 f'check point size:{check_point}; fine tune={fine_tune}')
+    def train(
+        self,
+        steps: int,
+        check_point: int,
+        batch_size: int,
+        fine_tune=False,
+        check_pt_callback: Optional[Callable] = None,
+        **args,
+    ):
+        log.info(
+            f'Going to train for {steps} steps; batch_size={batch_size}; '
+            f'check point size:{check_point}; fine tune={fine_tune}'
+        )
         keep_models = args.get('keep_models', 4)  # keep last _ models and delete the old
         sort_by = args.get('sort_by', 'random')
         if steps <= self.start_step:
-            raise Exception(f'The model was already trained to {self.start_step} steps. '
-                            f'Please increase the steps or clear the existing models')
-        train_data = self.exp.get_train_data(batch_size=batch_size, steps=steps - self.start_step,
-                                             sort_by=sort_by, shuffle=True, batch_first=True,
-                                             fine_tune=fine_tune)
-        val_data = self.exp.get_val_data(batch_size, shuffle=False, batch_first=True,
-                                         sort_desc=True)
+            raise Exception(
+                f'The model was already trained to {self.start_step} steps. '
+                f'Please increase the steps or clear the existing models'
+            )
+        train_data = self.exp.get_train_data(
+            batch_size=batch_size,
+            steps=steps - self.start_step,
+            sort_by=sort_by,
+            shuffle=True,
+            batch_first=True,
+            fine_tune=fine_tune,
+        )
+        val_data = self.exp.get_val_data(batch_size, shuffle=False, batch_first=True, sort_desc=True)
 
         train_state = TrainerState(self.model, check_point=check_point)
         train_state.train_mode(True)
         unsaved_state = False
-        with tqdm(train_data, initial=self.start_step, total=steps, unit='batch',
-                  dynamic_ncols=True) as data_bar:
+        with tqdm(
+            train_data, initial=self.start_step, total=steps, unit='batch', dynamic_ncols=True
+        ) as data_bar:
             for batch in data_bar:
                 batch = batch.to(device)
                 # Step clear gradients
@@ -526,9 +579,9 @@ class SteppedRNNMTTrainer(SteppedTrainer):
 
                 loss = self.loss_func(outp_log_probs, batch, True)
                 unsaved_state = True
-                self.tbd.add_scalars('training', {'step_loss': loss,
-                                                  'learn_rate': self.opt.curr_lr},
-                                     self.opt.curr_step)
+                self.tbd.add_scalars(
+                    'training', {'step_loss': loss, 'learn_rate': self.opt.curr_lr}, self.opt.curr_step
+                )
                 bar_msg, is_check_pt = train_state.step(batch.y_toks, loss)
                 bar_msg += f', LR={self.opt.curr_lr:g}'
                 data_bar.set_postfix_str(bar_msg, refresh=False)
@@ -540,9 +593,7 @@ class SteppedRNNMTTrainer(SteppedTrainer):
                     val_loss = self.run_valid_epoch(val_data)
                     self.make_check_point(train_loss, val_loss=val_loss, keep_models=keep_models)
                     if check_pt_callback:
-                        check_pt_callback(model=self.model,
-                                          step=self.opt.curr_step,
-                                          train_loss=train_loss)
+                        check_pt_callback(model=self.model, step=self.opt.curr_step, train_loss=train_loss)
                     train_state.train_mode(True)
                     unsaved_state = False
 
@@ -556,30 +607,29 @@ class SteppedRNNMTTrainer(SteppedTrainer):
 
 def __test_seq2seq_model__():
     """
-        batch_size = 4
-        p = '/Users/tg/work/me/rtg/saral/runs/1S-rnn-basic'
-        exp = Experiment(p)
-        steps = 3000
-        check_pt = 100
-        trainer = SteppedRNNNMTTrainer(exp=exp, lr=0.01, warmup_steps=100)
-        trainer.train(steps=steps, check_point=check_pt, batch_size=batch_size)
+    batch_size = 4
+    p = '/Users/tg/work/me/rtg/saral/runs/1S-rnn-basic'
+    exp = Experiment(p)
+    steps = 3000
+    check_pt = 100
+    trainer = SteppedRNNNMTTrainer(exp=exp, lr=0.01, warmup_steps=100)
+    trainer.train(steps=steps, check_point=check_pt, batch_size=batch_size)
     """
     from rtg.data.dummy import DummyExperiment
     from rtg.module.decoder import Decoder
 
     vocab_size = 50
     batch_size = 30
-    exp = DummyExperiment("tmp.work", config={'model_type': 'seq'
-                                                            '2seq'},
-                          read_only=True, vocab_size=vocab_size)
+    exp = DummyExperiment(
+        "tmp.work", config={'model_type': 'seq' '2seq'}, read_only=True, vocab_size=vocab_size
+    )
     emb_size = 100
     model_dim = 100
     steps = 3000
     check_pt = 100
 
     assert 2 == Batch.bos_val
-    src = tensor([[4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
-                  [13, 12, 11, 10, 9, 8, 7, 6, 5, 4]])
+    src = tensor([[4, 5, 6, 7, 8, 9, 10, 11, 12, 13], [13, 12, 11, 10, 9, 8, 7, 6, 5, 4]])
     src_lens = tensor([src.size(1)] * src.size(0))
 
     for reverse in (False,):
@@ -587,8 +637,16 @@ def __test_seq2seq_model__():
         #  first, just copy the numbers, i.e. y = x
         #  second, reverse the numbers y=(V + reserved - x)
         log.info(f"====== REVERSE={reverse}; VOCAB={vocab_size}======")
-        model, args = RNNMT.make_model('DummyA', 'DummyB', vocab_size, vocab_size, attention='dot',
-                                       emb_size=emb_size, hid_size=model_dim, n_layers=1)
+        model, args = RNNMT.make_model(
+            'DummyA',
+            'DummyB',
+            vocab_size,
+            vocab_size,
+            attention='dot',
+            emb_size=emb_size,
+            hid_size=model_dim,
+            n_layers=1,
+        )
         trainer = SteppedRNNMTTrainer(exp=exp, model=model, lr=0.01, warmup_steps=100)
         decr = Decoder.new(exp, model)
 
@@ -597,8 +655,9 @@ def __test_seq2seq_model__():
             for score, seq in res:
                 log.info(f'{score:.4f} :: {seq}')
 
-        trainer.train(steps=steps, check_point=check_pt, batch_size=batch_size,
-                      check_pt_callback=check_pt_callback)
+        trainer.train(
+            steps=steps, check_point=check_pt, batch_size=batch_size, check_pt_callback=check_pt_callback
+        )
 
 
 if __name__ == '__main__':

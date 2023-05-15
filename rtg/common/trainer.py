@@ -1,13 +1,13 @@
 #!/usr/bin/env python
 #
-# Author: Thamme Gowda [tg at isi dot edu] 
+# Author: Thamme Gowda [tg at isi dot edu]
 # Created: 10/17/18
 import torch
 import rtg
 from rtg import log, yaml, device, IO, ProblemType
 
 
-from rtg.common import (TranslationExperiment as Experiment, NMTModel, ScheduledOptimizer)
+from rtg.common import TranslationExperiment as Experiment, NMTModel, ScheduledOptimizer
 from rtg.data import BatchIterable
 
 from abc import abstractmethod
@@ -61,8 +61,7 @@ class TrainerState:
     def progress_bar_msg(self, **kwargs):
         extra = ' '.join(f'{k}={v}' for k, v in kwargs.items())
         elapsed = time.time() - self.start
-        return f'avgLoss:{self.running_loss():.4f},' \
-               f' {int(self.total_toks / elapsed)}{self.unit}/s {extra}'
+        return f'avgLoss:{self.running_loss():.4f},' f' {int(self.total_toks / elapsed)}{self.unit}/s {extra}'
 
     def is_check_point(self):
         return self.steps == self.check_point
@@ -73,20 +72,21 @@ class EarlyStopper:
     """
     A data model to track early stopping state
     """
+
     enabled: bool = True
     by: str = 'loss'
     minimize: Optional[bool] = None
     patience: int = 15
     min_steps: int = 0
     cur_step: int = 0
-    signi_round: int = 4   # integer either positive or negative
+    signi_round: int = 4  # integer either positive or negative
     # these many digits are significant round(100, -1) => 30.0  round(100, 1) => 33.3
     measures: List[float] = field(default_factory=list)  # could be loss or accuracy
 
     buf = 3  # take average of these many points; avoids weird dips and surges as stop
 
     def __post_init__(self):
-        if self.minimize is None:   # None => not set, we resolve it
+        if self.minimize is None:  # None => not set, we resolve it
             self.minimize = self.by in ('loss',)  # else maximize
 
         if self.enabled:
@@ -113,9 +113,9 @@ class EarlyStopper:
             return False
 
         # The old value; with some buffer around to avoid weird dips and surges
-        old = (self.measures[-self.patience - self.buf: -self.patience])
+        old = self.measures[-self.patience - self.buf : -self.patience]
         old = sum(old) / len(old)  # mean
-        recent = self.measures[-self.patience:]  # the patience of seeing the post mark
+        recent = self.measures[-self.patience :]  # the patience of seeing the post mark
 
         if self.minimize:
             # older value is smaller than or same as best of recent => time to stop
@@ -134,7 +134,7 @@ class NoOpSummaryWriter(SummaryWriter):
     """
 
     def __init__(self, *args, **kwargs):
-        #super().__init__(*args, **kwargs)
+        # super().__init__(*args, **kwargs)
         # super will create dirs, which we dont want
         pass
 
@@ -155,9 +155,10 @@ class SteppedTrainer:
     """
     A base class for Trainers that use step based training (not epoch based training)
     """
-    def __init__(self, exp: Experiment,
-                 model: Optional[NMTModel] = None,
-                 model_factory: Optional[Callable] = None):
+
+    def __init__(
+        self, exp: Experiment, model: Optional[NMTModel] = None, model_factory: Optional[Callable] = None
+    ):
         self.last_step = -1
         last_state_file = None
         self.exp = exp
@@ -180,10 +181,11 @@ class SteppedTrainer:
 
         trainable_params = self.exp.config['optimizer'].get('trainable', {})
         if trainable_params:
-            if dtorch.is_distributed:   # model is wrapped in DP or DistributedDP
+            if dtorch.is_distributed:  # model is wrapped in DP or DistributedDP
                 log.warning(f">> Using more than 1 GPU with 'trainable' params is NOT tested")
             trainable_params = self.core_model.get_trainable_params(
-                include=trainable_params.get('include'), exclude=trainable_params.get('exclude'))
+                include=trainable_params.get('include'), exclude=trainable_params.get('exclude')
+            )
         else:
             trainable_params = self.model.parameters()
 
@@ -194,12 +196,14 @@ class SteppedTrainer:
             log.info("No earlier check point found. Looks like this is a fresh start")
 
         self.model = dtorch.maybe_distributed(self.core_model)
-        self.opt = ScheduledOptimizer(start_step=self.start_step, schedule=exp.get_schedule(), optimizer=self.core_opt)
+        self.opt = ScheduledOptimizer(
+            start_step=self.start_step, schedule=exp.get_schedule(), optimizer=self.core_opt
+        )
 
         if self.exp.read_only:
             self.tbd = NoOpSummaryWriter()
         else:
-            self.tbd = SummaryWriter(log_dir=str(exp.work_dir / 'tensorboard' ))
+            self.tbd = SummaryWriter(log_dir=str(exp.work_dir / 'tensorboard'))
             self.exp.persist_state()
 
         self.samples = None
@@ -213,6 +217,7 @@ class SteppedTrainer:
 
         if exp.problem_type == ProblemType.TRANSLATION:
             from rtg.nmt.decoder import Decoder
+
             self.decoder = Decoder.new(self.exp, self.core_model)
 
         if self.start_step <= 1:
@@ -256,6 +261,7 @@ class SteppedTrainer:
 
     def create_criterion(self):
         from ..registry import CRITERION, CRITERIA
+
         cri_conf = self.exp.config[CRITERION]
         cri_name, cri_args = cri_conf['name'], cri_conf.get('args') or {}
         assert cri_name in CRITERIA, f'Criterion {cri_name} unknown; known={CRITERIA.keys()}'
@@ -296,15 +302,13 @@ class SteppedTrainer:
             return
         for i, (line, ref) in enumerate(self.samples):
             step_num = self.opt.curr_step
-            result = self.decoder.decode_sentence(line, beam_size=beam_size, num_hyp=num_hyp,
-                                                  max_len=max_len)
+            result = self.decoder.decode_sentence(line, beam_size=beam_size, num_hyp=num_hyp, max_len=max_len)
             outs = [f"hyp{j}: {score:.3f} :: {out}" for j, (score, out) in enumerate(result)]
             self.tbd.add_text(f'sample/{i}', " || ".join(outs), step_num)
             outs = '\n'.join(outs)
             log.info(f"==={i}===\nSRC:{line}\nREF:{ref}\n{outs}")
 
-    def make_check_point(self, train_loss: float, val_loss: float, keep_models: int,
-                         log_embedding=False):
+    def make_check_point(self, train_loss: float, val_loss: float, keep_models: int, log_embedding=False):
         """
         Check point the model
         :param train_loss: training loss value
@@ -317,20 +321,22 @@ class SteppedTrainer:
         if step_num == self.last_step:
             log.warning("Ignoring checkpt request")
             return  # calling multiple times doesnt save
-        log.info(f"Checkpoint at optimizer step {step_num}. Training Loss {train_loss:g},"
-                 f" Validation Loss:{val_loss:g}")
+        log.info(
+            f"Checkpoint at optimizer step {step_num}. Training Loss {train_loss:g},"
+            f" Validation Loss:{val_loss:g}"
+        )
         self.show_samples()
 
-        self.tbd.add_scalars(f'losses', {'train_loss': train_loss,
-                                         'valid_loss': val_loss}, step_num)
+        self.tbd.add_scalars(f'losses', {'train_loss': train_loss, 'valid_loss': val_loss}, step_num)
         if log_embedding:
             # TODO: add metadata (text) of each subword
             # TODO: Update tag to include tie configuration
-            self.tbd.add_embedding(self.model.generator.proj.weight,
-                                   global_step=step_num, tag=f'Target embeddings')
+            self.tbd.add_embedding(
+                self.model.generator.proj.weight, global_step=step_num, tag=f'Target embeddings'
+            )
 
         # Unwrap model state from DataParallel and persist
-        model = (self.model.module if hasattr(self.model, 'module') else self.model)
+        model = self.model.module if hasattr(self.model, 'module') else self.model
         state = {
             'model_state': model.state_dict(),
             'optim_state': self.opt.optimizer.state_dict(),
@@ -345,8 +351,7 @@ class SteppedTrainer:
         if dtorch.fp16:
             state['amp_state'] = dtorch._scaler.state_dict()
 
-        self.exp.store_model(step_num, state, train_score=train_loss,
-                             val_score=val_loss, keep=keep_models)
+        self.exp.store_model(step_num, state, train_score=train_loss, val_score=val_loss, keep=keep_models)
         self.last_step = step_num
 
     @abstractmethod
@@ -359,8 +364,14 @@ class SteppedTrainer:
         raise NotImplementedError()
 
     @abstractmethod
-    def train(self, steps: int, check_point: int, batch_size: int,
-              check_pt_callback: Optional[Callable] = None, **args):
+    def train(
+        self,
+        steps: int,
+        check_point: int,
+        batch_size: int,
+        check_pt_callback: Optional[Callable] = None,
+        **args,
+    ):
         """
         Train the model
         :param steps: number of steps to train

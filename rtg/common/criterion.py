@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 #
-# Author: Thamme Gowda [tg (at) isi (dot) edu] 
+# Author: Thamme Gowda [tg (at) isi (dot) edu]
 # Created: 2020-01-23
 import torch
 from torch import nn
@@ -14,12 +14,23 @@ from pathlib import Path
 import math
 
 # List of  items to export for * import
-__all__ = ['Criterion', 'SparseCrossEntropy', 'KLDivergence', 'FocalLoss', 'BinaryCrossEntropy',
-              'SmoothKLD', 'TripletLoss', 'SmoothKLDAndTripletLoss', 'kl_div', 'get_dense_targets']
+__all__ = [
+    'Criterion',
+    'SparseCrossEntropy',
+    'KLDivergence',
+    'FocalLoss',
+    'BinaryCrossEntropy',
+    'SmoothKLD',
+    'TripletLoss',
+    'SmoothKLDAndTripletLoss',
+    'kl_div',
+    'get_dense_targets',
+]
 
 
 class Criterion(nn.Module, abc.ABC):
     """Base class for Criterion functions"""
+
     infinitesimal = 1e-8
 
     def __init__(self, input_type: str, exp: Experiment, reduction='micro', step: int = 0):
@@ -42,7 +53,6 @@ class Criterion(nn.Module, abc.ABC):
 
 
 class TemperedCriterion(Criterion):
-
     def __init__(self, *args, weight_calm_time=0, **kwargs):
         super(TemperedCriterion, self).__init__(*args, **kwargs)
         # self.eos_idx = exp.tgt_vocab.eos_idx
@@ -57,15 +67,15 @@ class TemperedCriterion(Criterion):
             # hot from the start, enabled; full hot
             self._temperature = 1
         else:
-            """ visualization: https://www.desmos.com/calculator/gbeiw5q9jh 
-                   exp(-(1 - log(c)/c)^(t-c))
+            """visualization: https://www.desmos.com/calculator/gbeiw5q9jh
+            exp(-(1 - log(c)/c)^(t-c))
             """
             assert self.weight_calm_time > 1
             t = self._step
             c = self.weight_calm_time
             assert t >= 0
             assert c >= 1
-            self._temperature = math.exp(-(1 - math.log(c) / c) ** (t - c))
+            self._temperature = math.exp(-((1 - math.log(c) / c) ** (t - c)))
             if t % 500 == 0:
                 log.info(f"\tThe temperature at time={t} is {self._temperature:g}")
         assert 0 <= self._temperature <= 1, f'temperature={self._temperature} is not in [0, 1]'
@@ -110,16 +120,29 @@ def smooth_labels(labels, n_labels, smooth_rate, ignore_idx=-1, weight=None):
 
 def get_dense_targets(labels, n_labels, label_smoothing, ignore_idx=-1, weight=None):
     if label_smoothing > 0.0:
-        dense_targets = smooth_labels(labels=labels, n_labels=n_labels, smooth_rate=label_smoothing,
-                                      ignore_idx=ignore_idx, weight=weight)
+        dense_targets = smooth_labels(
+            labels=labels,
+            n_labels=n_labels,
+            smooth_rate=label_smoothing,
+            ignore_idx=ignore_idx,
+            weight=weight,
+        )
     else:
         assert weight is None, 'weight is supported only if label_smoothing > 0'
         dense_targets = F.one_hot(labels, num_classes=n_labels).float().to(labels.device)
     return dense_targets
 
 
-def kl_div(inputs: Tensor, targets: Tensor, normalizer: float=0, reduction='none', mask_out=None, weight=None,
-           input_type='log_probs', infinitesimal=1e-8) -> Tensor:
+def kl_div(
+    inputs: Tensor,
+    targets: Tensor,
+    normalizer: float = 0,
+    reduction='none',
+    mask_out=None,
+    weight=None,
+    input_type='log_probs',
+    infinitesimal=1e-8,
+) -> Tensor:
     assert input_type == 'log_probs'
     assert inputs.shape == targets.shape
     tot_classes = inputs.shape[1]
@@ -154,7 +177,6 @@ def kl_div(inputs: Tensor, targets: Tensor, normalizer: float=0, reduction='none
 
 @register(kind=CRITERION, name="sparse_cross_entropy")
 class SparseCrossEntropy(TemperedCriterion):
-
     def __init__(self, *args, input_type='log_probs', weight=None, **kwargs):
         super().__init__(*args, input_type=input_type, **kwargs)
         self.weight_by = weight
@@ -186,7 +208,9 @@ class SparseCrossEntropy(TemperedCriterion):
                 cls_freqs = self.exp.get_class_freqs()
                 assert len(cls_freqs) == n_classes
                 freqs = [f for idx, c, f in cls_freqs]
-                assert all(f >= 0 for f in freqs), 'frequency cannot be negative, but some are found to be negative'
+                assert all(
+                    f >= 0 for f in freqs
+                ), 'frequency cannot be negative, but some are found to be negative'
                 freqs = torch.tensor(freqs)
                 high = freqs.max()
                 if self.weight_by == 'inv_freq':
@@ -224,27 +248,34 @@ class SparseCrossEntropy(TemperedCriterion):
 
 @register(kind=CRITERION, name="kl_divergence")
 class KLDivergence(SparseCrossEntropy):
-
-    def __init__(self, *args, label_smoothing=0., **kwargs):
+    def __init__(self, *args, label_smoothing=0.0, **kwargs):
         super().__init__(*args, **kwargs)
         assert 0 <= label_smoothing <= 1
         self.label_smoothing = label_smoothing
         assert self.reduction in ('micro', 'macro', 'macro+micro')
         if 'macro' in self.reduction:
-            assert self.label_smoothing > 0., 'reduce=macro requires label_smoothing > 0'
+            assert self.label_smoothing > 0.0, 'reduce=macro requires label_smoothing > 0'
 
     def forward(self, inputs, targets, normalizer: float, mask_out=None):
         # logits: [N x C] targets: [N]
         N, C = inputs.shape
         assert targets.shape[0] == inputs.shape[0]
-        #if mask_out is None and mask_pad:
+        # if mask_out is None and mask_pad:
         #    mask_out = (targets == self.pad_idx).unsqueeze(1)  # [N] -> [N, 1]
-        dense_targets = get_dense_targets(labels=targets, n_labels=C, label_smoothing=self.label_smoothing,
-                                          ignore_idx=self.pad_idx)
+        dense_targets = get_dense_targets(
+            labels=targets, n_labels=C, label_smoothing=self.label_smoothing, ignore_idx=self.pad_idx
+        )
         weight = self.get_weights(inputs, targets)
-        loss = kl_div(inputs=inputs, targets=dense_targets, normalizer=normalizer,
-                      reduction=self.reduction, weight=weight, mask_out=mask_out,
-                      input_type=self.input_type, infinitesimal=self.infinitesimal)
+        loss = kl_div(
+            inputs=inputs,
+            targets=dense_targets,
+            normalizer=normalizer,
+            reduction=self.reduction,
+            weight=weight,
+            mask_out=mask_out,
+            input_type=self.input_type,
+            infinitesimal=self.infinitesimal,
+        )
         if loss < 0:
             log.warning("Loss is negative")
             pass
@@ -253,9 +284,10 @@ class KLDivergence(SparseCrossEntropy):
 
 @register(kind=CRITERION, name="focal_loss")
 class FocalLoss(TemperedCriterion):
-
     def __init__(self, *args, gamma=0.0, **kwargs):
-        assert not kwargs.get('weight'), 'focal_loss does not accept argument "weight"; try setting "gamma" value'
+        assert not kwargs.get(
+            'weight'
+        ), 'focal_loss does not accept argument "weight"; try setting "gamma" value'
         super(FocalLoss, self).__init__(*args, input_type='log_probs', **kwargs)
         assert gamma >= 0.0
         self.gamma = gamma
@@ -266,7 +298,9 @@ class FocalLoss(TemperedCriterion):
         assert targets.shape[0] == inputs.shape[0]
         weights = self.get_weights(inputs=inputs, targets=targets)
         losses = F.cross_entropy(input=inputs, target=targets, reduction='none')
-        assert losses.shape == weights.shape, f'Shape mis match: losses:{losses.shape} == weights:{weights.shape}'
+        assert (
+            losses.shape == weights.shape
+        ), f'Shape mis match: losses:{losses.shape} == weights:{weights.shape}'
         losses = torch.mul(losses, weights)
         if mask_out is not None:
             # mask_out = targets.eq(self.pad_idx)
@@ -282,26 +316,25 @@ class FocalLoss(TemperedCriterion):
         else:
             raise Exception(f'{self.input_type} not supported')
         gamma = self.gamma
-        label_probs = probs.gather(dim=1, index=targets.view(-1, 1))    # [N, 1]
+        label_probs = probs.gather(dim=1, index=targets.view(-1, 1))  # [N, 1]
         if tempered:
             tempr = self.temperature
             assert 0 <= tempr <= 1
             gamma = gamma * tempr
-        label_probs = label_probs.detach().squeeze(1)   # [N]
+        label_probs = label_probs.detach().squeeze(1)  # [N]
         weight = (1 - label_probs).pow(gamma)
         return weight  # [N]
 
 
 @register(kind=CRITERION, name="binary_cross_entropy")
 class BinaryCrossEntropy(Criterion):
-
     def __init__(self, exp: Experiment, label_smoothing=0.1, step=0):
         assert 0 <= label_smoothing < 1
         super().__init__(input_type='logits', exp=exp, step=step)
         self.bce_loss = nn.BCEWithLogitsLoss(reduction='none')
         self.smoothing = label_smoothing
 
-    def forward(self, logits, targets, normalizer:float, mask_out=None):
+    def forward(self, logits, targets, normalizer: float, mask_out=None):
         # logits: [B x V] targets: [B]
         assert targets.shape[0] == logits.shape[0]
         targets = targets.unsqueeze(1)
@@ -313,7 +346,7 @@ class BinaryCrossEntropy(Criterion):
         per_time_per_class_loss = self.bce_loss(logits, truth_full)
         if mask_out is not None:
             # pad_mask = targets == self.pad_idx
-            per_time_per_class_loss.masked_fill_(mask=mask_out, value=0.)
+            per_time_per_class_loss.masked_fill_(mask=mask_out, value=0.0)
 
         # num_toks = batch_size - pad_mask.sum()
         # mean_loss = per_tok_loss.sum() / num_toks
@@ -361,8 +394,16 @@ class SmoothKLD(Criterion):
 class TripletLoss(Criterion):
     # Note: Triplet loss doesnt work fully yet; it sorta works and then overfits
 
-    def __init__(self, exp: Experiment, embedding: nn.Embedding, margin: float = 0.,
-                 neg_region: float = 0.05, mode: str = 'dot', neg_sampling: str = 'random', step=0):
+    def __init__(
+        self,
+        exp: Experiment,
+        embedding: nn.Embedding,
+        margin: float = 0.0,
+        neg_region: float = 0.05,
+        mode: str = 'dot',
+        neg_sampling: str = 'random',
+        step=0,
+    ):
         # TODO: whats the right margin?
         super().__init__(input_type='embedding', exp=exp)
         self.embedding = embedding
@@ -418,22 +459,37 @@ class TripletLoss(Criterion):
             raise Exception(self.mode + ' not supported')
         if mask_out is not None:
             # triplet_loss = triplet_loss.masked_fill(targets == self.pad_idx, 0)
-            triplet_loss = triplet_loss.masked_fill(mask_out, 0.)
+            triplet_loss = triplet_loss.masked_fill(mask_out, 0.0)
         return triplet_loss
 
 
 @register(kind=CRITERION, name="smooth_kld_and_triplet_loss")
 class SmoothKLDAndTripletLoss(Criterion):
-
-    def __init__(self, exp: Experiment, embedding: nn.Embedding, margin: float = 0.,
-                 neg_region: float = 0.05, mode: str = 'dot', neg_sampling: str = 'random',
-                 label_smoothing: float = 0.1, alpha: float = 1.0, step=0):
+    def __init__(
+        self,
+        exp: Experiment,
+        embedding: nn.Embedding,
+        margin: float = 0.0,
+        neg_region: float = 0.05,
+        mode: str = 'dot',
+        neg_sampling: str = 'random',
+        label_smoothing: float = 0.1,
+        alpha: float = 1.0,
+        step=0,
+    ):
         super().__init__(input_type='identity', exp=exp)
         self.embeddings = embedding.weight
-        self.smoothKLD = SmoothKLD(n_classes=embedding.weight.shape[0],
-                                   label_smoothing=label_smoothing, exp=exp)
-        self.tripletLoss = TripletLoss(embedding=embedding, margin=margin, neg_region=neg_region,
-                                       mode=mode, neg_sampling=neg_sampling, exp=exp)
+        self.smoothKLD = SmoothKLD(
+            n_classes=embedding.weight.shape[0], label_smoothing=label_smoothing, exp=exp
+        )
+        self.tripletLoss = TripletLoss(
+            embedding=embedding,
+            margin=margin,
+            neg_region=neg_region,
+            mode=mode,
+            neg_sampling=neg_sampling,
+            exp=exp,
+        )
         self.alpha = alpha
 
     def forward(self, x, targets, normalizer, mask_out=None):
@@ -447,9 +503,15 @@ class SmoothKLDAndTripletLoss(Criterion):
 
 @register(kind=CRITERION, name="dice_loss")
 class DiceLoss(Criterion):
-
-    def __init__(self, exp: Experiment = None, reduction='micro', gamma=0.0, additive_smoothing=1,
-                 label_smoothing=0.0, squared_denominator=False):
+    def __init__(
+        self,
+        exp: Experiment = None,
+        reduction='micro',
+        gamma=0.0,
+        additive_smoothing=1,
+        label_smoothing=0.0,
+        squared_denominator=False,
+    ):
         super().__init__(exp=exp, input_type='logits', reduction=reduction)
         if gamma > 0.0:
             log.warning(">>>>> gamma, ɣ > 0,  is not well tested;")
@@ -465,22 +527,26 @@ class DiceLoss(Criterion):
         assert targets.shape[0] == probs.shape[0]
         mask_in = None
         if mask_out is not None:
-            #mask_in = (targets != self.pad_idx).unsqueeze(1).float()  # [N] -> [N, 1]
+            # mask_in = (targets != self.pad_idx).unsqueeze(1).float()  # [N] -> [N, 1]
             mask_in = ~mask_out
-        dense_targets = get_dense_targets(labels=targets, n_labels=C, label_smoothing=self.label_smoothing,
-                                          ignore_idx=self.pad_idx)
+        dense_targets = get_dense_targets(
+            labels=targets, n_labels=C, label_smoothing=self.label_smoothing, ignore_idx=self.pad_idx
+        )
         weight = None
         if self.gamma > 0.0:
             weight = (1 - probs).pow(self.gamma)
-        loss = self.dice_loss(inputs=inputs, targets=dense_targets, normalizer=normalizer,
-                              mask_in=mask_in, weight=weight)
+        loss = self.dice_loss(
+            inputs=inputs, targets=dense_targets, normalizer=normalizer, mask_in=mask_in, weight=weight
+        )
         return loss
 
     def dice_loss(self, inputs: Tensor, targets: Tensor, normalizer, mask_in=None, weight=None):
         assert inputs.shape == targets.shape, f'{inputs.shape} == {targets.shape}?'
         assert len(inputs.shape) == 2  # two dims: [Batch, Classes]
         assert weight is None, f'weight is not supported as of now'
-        assert self.reduction == 'micro', f'reduction={self.reduction} is not supported; only micro is supported now'
+        assert (
+            self.reduction == 'micro'
+        ), f'reduction={self.reduction} is not supported; only micro is supported now'
         # y: target p: input  both are distributions
         # intersection = y . p     ; batch dot product
         intersection = torch.mul(targets, inputs).sum(dim=-1)  # [N, C] [N, C] --> [N]
@@ -500,7 +566,6 @@ class DiceLoss(Criterion):
 
 @register(kind=CRITERION, name="squared_error")
 class SquaredError(Criterion):
-
     def __init__(self, *args, label_smoothing: float = 0.1, **kwargs):
         super().__init__(*args, **kwargs)
         self.label_smoothing = label_smoothing
@@ -512,8 +577,9 @@ class SquaredError(Criterion):
         # 'target' is expected word Ids, originally [B, T] but here [B.T]
         assert x.shape[0] == target.shape[0]
         n_labels = x.shape[1]
-        smooth_truth = smooth_labels(labels=target, n_labels=n_labels, smooth_rate=self.label_smoothing,
-                                     ignore_idx=self.pad_idx)
+        smooth_truth = smooth_labels(
+            labels=target, n_labels=n_labels, smooth_rate=self.label_smoothing, ignore_idx=self.pad_idx
+        )
         if mask_out is not None:
             # mask = target.eq(self.pad_idx).unsqueeze(1)
             smooth_truth.masked_fill_(mask_out, 0)

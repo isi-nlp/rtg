@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # Computes BLEU score per line
-# Author: Thamme Gowda [tg (at) isi (dot) edu] 
+# Author: Thamme Gowda [tg (at) isi (dot) edu]
 # Created: 1/7/19
 
 from typing import List, Union
@@ -26,16 +26,17 @@ def n_gram_precision(cand: List[str], ref: List[str], n: int) -> float:
     """
     assert n > 0
     # Make ngrams out of sequence
-    cand_grams = [tuple(cand[i: i + n]) for i in range(len(cand) - n + 1)]
+    cand_grams = [tuple(cand[i : i + n]) for i in range(len(cand) - n + 1)]
     if not cand_grams:
         # sequence is shorter than n
-        return 1.0    # precision of emty is fine, recall is bad
-    ref_grams = [tuple(ref[i: i + n]) for i in range(len(ref) - n + 1)]
+        return 1.0  # precision of emty is fine, recall is bad
+    ref_grams = [tuple(ref[i : i + n]) for i in range(len(ref) - n + 1)]
     # Count of ngrams
     cand_grams_ct = Counter(cand_grams)
     ref_grams_ct = Counter(ref_grams)
-    precise_grams_ct = sum(min(cgram_ct, ref_grams_ct.get(cgram, 0))
-                           for cgram, cgram_ct in cand_grams_ct.items())
+    precise_grams_ct = sum(
+        min(cgram_ct, ref_grams_ct.get(cgram, 0)) for cgram, cgram_ct in cand_grams_ct.items()
+    )
     precision = precise_grams_ct / len(cand_grams)
     return precision
 
@@ -60,14 +61,17 @@ def sentence_bleu(cand: Union[str, List[str]], ref: Union[str, List[str]], n: in
     brevity_penalty = min(1.0, len(cand) / len(ref))  # TODO: exponent
     bleu_score = brevity_penalty * precision
     if log.getLogger().isEnabledFor(level=log.DEBUG):
-        msg = f'score={bleu_score:g} brev_penalty={brevity_penalty:g} precisions:{n_precisions}' \
-              f' precision={precision:g} || cand:{cand} || ref:{ref}'
+        msg = (
+            f'score={bleu_score:g} brev_penalty={brevity_penalty:g} precisions:{n_precisions}'
+            f' precision={precision:g} || cand:{cand} || ref:{ref}'
+        )
         log.debug(msg)
     return bleu_score
 
 
 def nltk_sentence_bleu(cand, ref):
     from nltk.translate.bleu_score import sentence_bleu as nltk_sent_bleu
+
     assert type(cand) is type(ref)
 
     if isinstance(cand, str):
@@ -79,8 +83,10 @@ def nltk_sentence_bleu(cand, ref):
 def main(cands, refs, n, out, no_refs=False, no_cands=False):
     for cand, ref in zip_longest(cands, refs):
         if cand is None or ref is None:
-            raise Exception("Candidate and reference files have unequal lengths."
-                            " Expected same line count in both files")
+            raise Exception(
+                "Candidate and reference files have unequal lengths."
+                " Expected same line count in both files"
+            )
         cand, ref = cand.strip(), ref.strip()
         score = sentence_bleu(cand, ref, n=n)
         score2 = nltk_sentence_bleu(cand, ref)
@@ -97,24 +103,34 @@ def main(cands, refs, n, out, no_refs=False, no_cands=False):
 if __name__ == '__main__':
     stdin = io.TextIOWrapper(sys.stdin.buffer, encoding='utf-8', errors='ignore', newline='\n')
     stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='ignore')
-    p = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-                                description="Computes BLEU score per record.")
-    p.add_argument('-c', '--cands', type=argparse.FileType('r'), default=stdin,
-                   help='Candidate (aka output from NLG system) file')
-    p.add_argument('-r', '--refs', type=argparse.FileType('r'), default=stdin,
-                   help='Reference (aka human label) file')
-    p.add_argument('-n', '--n', type=int, default=4,
-                   help='maximum n as in ngram.')
-    p.add_argument('-nr', '--no-refs', help='Do not write references to --out',
-                   action='store_true')
-    p.add_argument('-nc', '--no-cands', help='Do not write candidates to --out',
-                   action='store_true')
-    p.add_argument('-o', '--out', type=argparse.FileType('w'), default=stdout,
-                   help='Output file path to store the result.')
+    p = argparse.ArgumentParser(
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter, description="Computes BLEU score per record."
+    )
+    p.add_argument(
+        '-c',
+        '--cands',
+        type=argparse.FileType('r'),
+        default=stdin,
+        help='Candidate (aka output from NLG system) file',
+    )
+    p.add_argument(
+        '-r', '--refs', type=argparse.FileType('r'), default=stdin, help='Reference (aka human label) file'
+    )
+    p.add_argument('-n', '--n', type=int, default=4, help='maximum n as in ngram.')
+    p.add_argument('-nr', '--no-refs', help='Do not write references to --out', action='store_true')
+    p.add_argument('-nc', '--no-cands', help='Do not write candidates to --out', action='store_true')
+    p.add_argument(
+        '-o',
+        '--out',
+        type=argparse.FileType('w'),
+        default=stdout,
+        help='Output file path to store the result.',
+    )
     p.add_argument('-v', '--verbose', action='store_true', help='verbose mode')
     args = vars(p.parse_args())
-    assert not(args['cands'] == stdin and args['refs'] == stdin), \
-        'Only one of --refs and --cands can be read from STDIN'
+    assert not (
+        args['cands'] == stdin and args['refs'] == stdin
+    ), 'Only one of --refs and --cands can be read from STDIN'
 
     if args.pop('verbose'):
         log.getLogger().setLevel(level=log.DEBUG)

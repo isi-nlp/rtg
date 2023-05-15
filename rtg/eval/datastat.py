@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 #
-# Author: Thamme Gowda [tg (at) isi (dot) edu] 
+# Author: Thamme Gowda [tg (at) isi (dot) edu]
 # Created: 5/27/20
 from pathlib import Path
 from rtg import TranslationExperiment, log
@@ -28,15 +28,17 @@ def get_stats(data, n, limit=-1):
     n_effective = n - n_zero_types
     probs = freqs / total_toks
     imbalance = 0.5 * np.sum(np.abs(1 / n_effective - probs))
-    res = dict(n_seqs=n_seqs,
-               total_toks=total_toks,
-               mean_len=np.mean(lens),
-               median_len=np.median(lens),
-               max_len=np.max(lens),
-               EMD=imbalance,
-               n=n,
-               zero_types=n_zero_types,
-               effective_n=n_effective)
+    res = dict(
+        n_seqs=n_seqs,
+        total_toks=total_toks,
+        mean_len=np.mean(lens),
+        median_len=np.median(lens),
+        max_len=np.max(lens),
+        EMD=imbalance,
+        n=n,
+        zero_types=n_zero_types,
+        effective_n=n_effective,
+    )
     return freqs, res
 
 
@@ -48,13 +50,19 @@ def main(args=None):
 
     def get_data():
         batch_size = 4096  # tokens
-        data = exp.get_train_data(batch_size=batch_size, steps=0, batch_first=True, fine_tune=False,
-                                  shuffle=False, keep_in_mem=False, sort_by=None)
+        data = exp.get_train_data(
+            batch_size=batch_size,
+            steps=0,
+            batch_first=True,
+            fine_tune=False,
+            shuffle=False,
+            keep_in_mem=False,
+            sort_by=None,
+        )
         for batch in data:
-            seqs, lens = (batch.x_seqs, batch.x_len) if side == 'src' \
-                else (batch.y_seqs, batch.y_len)
+            seqs, lens = (batch.x_seqs, batch.x_len) if side == 'src' else (batch.y_seqs, batch.y_len)
             for i in range(len(batch)):
-                yield seqs[i][:lens[i]].tolist()
+                yield seqs[i][: lens[i]].tolist()
 
     vocab = exp.src_vocab if side == 'src' else exp.tgt_vocab
     n = len(vocab)
@@ -92,14 +100,19 @@ def main(args=None):
 def parse_args():
     import argparse
     import sys
+
     p = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     p.add_argument('exp', type=Path, help='Path to experiment')
     p.add_argument('side', choices=['src', 'tgt'])
-    p.add_argument('-mr', '--max-recs', type=int, default=0,
-                   help='Limit to --max-recs on training data; useful for quick testing on large datasets.'
-                        'a value <= 0 implies no limit (default)')
-    p.add_argument('-o', '--out', type=argparse.FileType('w'), default=sys.stdout,
-                   help='Output file path')
+    p.add_argument(
+        '-mr',
+        '--max-recs',
+        type=int,
+        default=0,
+        help='Limit to --max-recs on training data; useful for quick testing on large datasets.'
+        'a value <= 0 implies no limit (default)',
+    )
+    p.add_argument('-o', '--out', type=argparse.FileType('w'), default=sys.stdout, help='Output file path')
     return p.parse_args()
 
 

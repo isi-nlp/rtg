@@ -21,4 +21,3 @@ def test_distrib_train():
         args = f'-N 1 -P 3 -G 0 -m rtg.pipeline {tmp_dir}'.split()
         p_args = launch.parse_args(args)
         launch.main(p_args)
-

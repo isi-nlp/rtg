@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 #
-# Author: Thamme Gowda [tg (at) isi (dot) edu] 
+# Author: Thamme Gowda [tg (at) isi (dot) edu]
 # Created: 6/18/21
 
 #!/usr/bin/env python
@@ -13,12 +13,12 @@ from typing import List, Union
 from torch import Tensor
 import numpy as np
 from collections import Counter
+
 log.basicConfig(level=log.INFO)
 Array = Union[List[int], Tensor, np.ndarray]
 
 
 class ClsMetric:
-
     def __init__(self, prediction: Array, truth: Array, clsmap: List[str]):
         """
         :param prediction: List of predictions (class index)
@@ -40,7 +40,7 @@ class ClsMetric:
         self.correct = self.confusion.diagonal()
         self.precision = 100 * self.correct / (self.total_preds + epsilon)
         self.recall = 100 * self.correct / (self.total_gold + epsilon)
-        self.f1 = (2 * self.precision * self.recall / (self.precision + self.recall + epsilon))
+        self.f1 = 2 * self.precision * self.recall / (self.precision + self.recall + epsilon)
         self.col_head = ['Refs', 'Preds', 'Correct', 'Precisn', 'Recall', 'F1']
         rows = [
             self.total_gold,  # refs
@@ -48,7 +48,7 @@ class ClsMetric:
             self.correct,  # correct
             self.precision,  # precision
             self.recall,  # recall
-            self.f1  # f1
+            self.f1,  # f1
         ]
         self.summary = np.array(rows, dtype=np.float32)
 
@@ -58,7 +58,9 @@ class ClsMetric:
         self.micro_f1 = np.sum(self.f1 * self.total_gold) / np.sum(self.total_gold)
         self.accuracy = 100 * self.confusion.diagonal().sum() / np.sum(self.total_gold)
         # harmonic mean of macrof1 and accuracy
-        self.maccuracy = (2 * self.macro_f1 * self.accuracy + epsilon ) / (self.macro_f1 + self.accuracy + epsilon)
+        self.maccuracy = (2 * self.macro_f1 * self.accuracy + epsilon) / (
+            self.macro_f1 + self.accuracy + epsilon
+        )
 
     @classmethod
     def confusion_matrix(cls, n_classes, prediction, truth):
@@ -95,8 +97,7 @@ class ClsMetric:
                 row = [cls_name] + [f'{cell}' for cell in row] + [f'{self.total_gold[cls_idx]}']
                 builder.append(row)
 
-            row = ["[TotPreds]"] + [f'{cell}' for cell in self.total_preds] \
-                  + [f'{self.total_gold.sum()}']
+            row = ["[TotPreds]"] + [f'{cell}' for cell in self.total_preds] + [f'{self.total_gold.sum()}']
             builder.append(row)
 
         body = '\n'.join([delim.join(row) for row in builder])
@@ -107,9 +108,9 @@ def main(**args):
     args = args or vars(parse_args())
     preds = [l.strip() for l in args['preds']]
     labels = [l.strip() for l in args['labels']]
-    freqs = list(sorted(Counter(preds + labels).items(), key=lambda x:x[1], reverse=True))
+    freqs = list(sorted(Counter(preds + labels).items(), key=lambda x: x[1], reverse=True))
     clsmap = [lbl for lbl, freq in freqs]
-    clsidx = {c:i for i, c in enumerate(clsmap)}
+    clsidx = {c: i for i, c in enumerate(clsmap)}
     preds = [clsidx[c] for c in preds]
     labels = [clsidx[c] for c in labels]
     metric = ClsMetric(prediction=preds, truth=labels, clsmap=clsmap)
@@ -119,15 +120,15 @@ def main(**args):
 
 def parse_args():
     import argparse
+
     p = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
-    p.add_argument('-p', '--preds', type=argparse.FileType('r'), required=True,
-                   help='Predictions file path')
-    p.add_argument('-l', '--labels', type=argparse.FileType('r'), required=True,
-                   help='Labels file path')
+    p.add_argument('-p', '--preds', type=argparse.FileType('r'), required=True, help='Predictions file path')
+    p.add_argument('-l', '--labels', type=argparse.FileType('r'), required=True, help='Labels file path')
     p.add_argument('-d', '--delim', default=',', help='Delimiter')
-    p.add_argument('-c', '--confusion', action='store_true', help='Also compute confusion matrix')    
+    p.add_argument('-c', '--confusion', action='store_true', help='Also compute confusion matrix')
     return p.parse_args()
+
 
 def __test():
     preds = [0, 0, 1, 1, 0, 1, 0, 1]
@@ -136,6 +137,6 @@ def __test():
     metric = ClsMetric(prediction=preds, truth=truth, clsmap=clsmap)
     print(metric.format(delim=','))
 
+
 if __name__ == '__main__':
     main()
-

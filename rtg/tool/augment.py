@@ -24,7 +24,9 @@ log.basicConfig(level=log.INFO)
 def read_raw_parallel_lines(*streams):
     assert len(streams) >= 2
     for lines in itertools.zip_longest(*streams):
-        assert all(x is not None for x in lines), 'Input has unequal number of segments; parallel segments expected'
+        assert all(
+            x is not None for x in lines
+        ), 'Input has unequal number of segments; parallel segments expected'
         yield tuple(line.strip() for line in lines)
 
 
@@ -38,10 +40,10 @@ def max_RSS(who=resource.RUSAGE_SELF) -> Tuple[int, str]:
     mem = resource.getrusage(who).ru_maxrss
     h_mem = mem
     if 'darwin' in sys.platform:  # "man getrusage 2" says we get bytes
-        h_mem /= 10 ** 3  # bytes to kilo
+        h_mem /= 10**3  # bytes to kilo
     unit = 'KB'
-    if h_mem >= 10 ** 3:
-        h_mem /= 10 ** 3  # kilo to mega
+    if h_mem >= 10**3:
+        h_mem /= 10**3  # kilo to mega
         unit = 'MB'
     return mem, f'{int(h_mem):,}{unit}'
 
@@ -73,13 +75,11 @@ class RandomWordAugment(RandomAugment):
 
 
 class WordDropout(RandomWordAugment):
-
     def augment(self, toks: List[Any], positions: Set[int]):
         return [x for i, x in enumerate(toks) if i not in positions]
 
 
 class WordShuffle(RandomWordAugment):
-
     def augment(self, toks: List[Any], positions: Set[int]):
         from_pos = list(positions)
         to_pos = [random.randrange(0, len(toks)) for _ in positions]
@@ -135,7 +135,9 @@ class Augmentor:
     @property
     def inp_recs(self):
         if not self._inp_recs:
-            log.warning(f"Going to buffer data; this may consume all the memory crash. Current usage={max_RSS()[1]}.")
+            log.warning(
+                f"Going to buffer data; this may consume all the memory crash. Current usage={max_RSS()[1]}."
+            )
             with self.src_in.open(encoding='utf8') as src, self.tgt_in.open(encoding='utf8') as tgt:
                 recs = read_raw_parallel_lines(src, tgt)
                 self._inp_recs = list(recs)
@@ -176,7 +178,7 @@ class Augmentor:
     def buffered_cartesian(self, recs: List[Tuple[str, str]], max_src_len: int, max_tgt_len: int):
         n = len(recs)
         mem = set()
-        tot = n ** 2
+        tot = n**2
         while len(mem) < tot:
             # generate a random number [0, n**2]
             # think of number is like a cell in big square, wrap the cell_idx to row_idx and col_idx
@@ -193,8 +195,19 @@ class Augmentor:
             tgt = recs[x][1] + ' ' + recs[y][1]
             yield src, tgt
 
-    def run(self, copy=False, noise_src=False, denoise_tgt=False, concat=0, reverse_src=False, reverse_tgt=False, **args):
-        assert copy or noise_src or denoise_tgt or concat or reverse_src or reverse_tgt, 'no augmentations are enabled'
+    def run(
+        self,
+        copy=False,
+        noise_src=False,
+        denoise_tgt=False,
+        concat=0,
+        reverse_src=False,
+        reverse_tgt=False,
+        **args,
+    ):
+        assert (
+            copy or noise_src or denoise_tgt or concat or reverse_src or reverse_tgt
+        ), 'no augmentations are enabled'
         _ = self.inp_recs  # load recs
         if copy:
             log.info("copying input to output")
@@ -234,7 +247,7 @@ class Augmentor:
                     assert side == 'tgt'
                     src = transform(tgt)
                     tag = 'DENOISE_TGT'
-                if not src or not tgt: # this was not augmented, so skip
+                if not src or not tgt:  # this was not augmented, so skip
                     continue
                 src, tgt = ' '.join(src), ' '.join(tgt)
                 self.write_rec(src, tgt, tag)
@@ -244,14 +257,19 @@ class Augmentor:
             max_tgt_len = args['max_tgt_len']
             assert max_src_len > 0
             assert max_tgt_len > 0
-            short_recs = [(s, t) for s, t in self.inp_recs if
-                          (len(s) < int(0.7 * max_src_len)) and (len(t) < int(0.7 * max_tgt_len))]
+            short_recs = [
+                (s, t)
+                for s, t in self.inp_recs
+                if (len(s) < int(0.7 * max_src_len)) and (len(t) < int(0.7 * max_tgt_len))
+            ]
 
             n_samples = int(self.n_inp_recs * concat)
             total_samples = len(short_recs) ** 2 - len(short_recs)  # approximation
             fraction = n_samples / total_samples
-            log.info(f"Sampling {self.n_inp_recs:,} x {concat} = {n_samples:,} out of {total_samples:g}"
-                     f" total possible concats (approx.). fraction={fraction:g}")
+            log.info(
+                f"Sampling {self.n_inp_recs:,} x {concat} = {n_samples:,} out of {total_samples:g}"
+                f" total possible concats (approx.). fraction={fraction:g}"
+            )
             recs = self.buffered_cartesian(recs=short_recs, max_src_len=max_src_len, max_tgt_len=max_tgt_len)
             i = 0
             for src, tgt in tqdm(recs, desc="Writing concats", total=n_samples):
@@ -290,37 +308,95 @@ def parse_args():
     io_p.add_argument("-mo", '--meta-out', type=Path, help="Metadata output file path", required=True)
 
     copy_p = parser.add_argument_group("copy")
-    copy_p.add_argument("-cp", "--copy", action="store_true", help="Copy input to output. default=%(default)s")
+    copy_p.add_argument(
+        "-cp", "--copy", action="store_true", help="Copy input to output. default=%(default)s"
+    )
     noise_p = parser.add_argument_group("noise")
-    noise_p.add_argument("-ns", "--noise-src", action="store_true",
-                         help="augment (noise(source), target) records "
-                              " See -wd and -ws to control noise rate. default=%(default)s")
-    noise_p.add_argument("-dt", "--denoise-tgt", action="store_true",
-                         help="Augment (noise(target),target) records."
-                              " See -wd and -ws to control noise rate. default=%(default)s")
-    noise_p.add_argument("-wd", "--word-drop", metavar="RATE", type=float, default=0.1,
-                         help="What percent of words are to be dropped.")
-    noise_p.add_argument("-ws", "--word-shuffle", metavar="RATE", type=bound_float, default=0.1,
-                         help="What percent of words to shuffle? Range: [0, 1], default=%(default)s")
-    noise_p.add_argument("-wr", "--word-random", metavar="RATE", type=bound_float, default=0.1,
-                         help="What percent of words to randomly replace? default=%(default)s")
+    noise_p.add_argument(
+        "-ns",
+        "--noise-src",
+        action="store_true",
+        help="augment (noise(source), target) records "
+        " See -wd and -ws to control noise rate. default=%(default)s",
+    )
+    noise_p.add_argument(
+        "-dt",
+        "--denoise-tgt",
+        action="store_true",
+        help="Augment (noise(target),target) records."
+        " See -wd and -ws to control noise rate. default=%(default)s",
+    )
+    noise_p.add_argument(
+        "-wd",
+        "--word-drop",
+        metavar="RATE",
+        type=float,
+        default=0.1,
+        help="What percent of words are to be dropped.",
+    )
+    noise_p.add_argument(
+        "-ws",
+        "--word-shuffle",
+        metavar="RATE",
+        type=bound_float,
+        default=0.1,
+        help="What percent of words to shuffle? Range: [0, 1], default=%(default)s",
+    )
+    noise_p.add_argument(
+        "-wr",
+        "--word-random",
+        metavar="RATE",
+        type=bound_float,
+        default=0.1,
+        help="What percent of words to randomly replace? default=%(default)s",
+    )
 
     cat_p = parser.add_argument_group("concatenation")
-    cat_p.add_argument("-cat", "--cat", "--concat", dest='concat', metavar='RATIO', type=float, default=0.0,
-                       help="RATIO greater than 0 enables random parallel sentence concatenation. default=%(default)s."
-                            " Number of augmentations = RATIO*|INPUT|. See -msl and -mtl to control lengths")
-    cat_p.add_argument("-msl", "--max-src-len", metavar='N_CHARS', type=int, default=200,
-                       help="Maximum chars in source sequence. Active iff -cat > 0. default=%(default)s")
-    cat_p.add_argument("-mtl", "--max-tgt-len", metavar='N_CHARS', type=int, default=200,
-                       help="Maximum chars in target sequence. Active iff -cat > 0. default=%(default)s")
+    cat_p.add_argument(
+        "-cat",
+        "--cat",
+        "--concat",
+        dest='concat',
+        metavar='RATIO',
+        type=float,
+        default=0.0,
+        help="RATIO greater than 0 enables random parallel sentence concatenation. default=%(default)s."
+        " Number of augmentations = RATIO*|INPUT|. See -msl and -mtl to control lengths",
+    )
+    cat_p.add_argument(
+        "-msl",
+        "--max-src-len",
+        metavar='N_CHARS',
+        type=int,
+        default=200,
+        help="Maximum chars in source sequence. Active iff -cat > 0. default=%(default)s",
+    )
+    cat_p.add_argument(
+        "-mtl",
+        "--max-tgt-len",
+        metavar='N_CHARS',
+        type=int,
+        default=200,
+        help="Maximum chars in target sequence. Active iff -cat > 0. default=%(default)s",
+    )
 
     rev_p = parser.add_argument_group("reverse")
-    rev_p.add_argument("-rs", "--reverse-src", dest='reverse_src', action='store_true',
-                       help="Enables augmentation of (reversed(src.split()), tgt). Words are split by white space."
-                            " default=%(default)s. Number of augmentations = |INPUT|.")
-    rev_p.add_argument("-rt", "--reverse-tgt", dest='reverse_tgt', action='store_true',
-                       help="Enables augmentation having (reversed(tgt.split()), tgt). Words are split by white space."
-                            " default=%(default)s. Number of augmentations = |INPUT|.")
+    rev_p.add_argument(
+        "-rs",
+        "--reverse-src",
+        dest='reverse_src',
+        action='store_true',
+        help="Enables augmentation of (reversed(src.split()), tgt). Words are split by white space."
+        " default=%(default)s. Number of augmentations = |INPUT|.",
+    )
+    rev_p.add_argument(
+        "-rt",
+        "--reverse-tgt",
+        dest='reverse_tgt',
+        action='store_true',
+        help="Enables augmentation having (reversed(tgt.split()), tgt). Words are split by white space."
+        " default=%(default)s. Number of augmentations = |INPUT|.",
+    )
     return parser.parse_args()
 
 

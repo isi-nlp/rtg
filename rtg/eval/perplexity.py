@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 #
-# Author: Thamme Gowda [tg (at) isi (dot) edu] 
+# Author: Thamme Gowda [tg (at) isi (dot) edu]
 # Created: 2/8/19
 import argparse
 import sys
@@ -35,8 +35,7 @@ def log_perplexity(decoder: Decoder, test_data: TextIO):
     Note: log perplexity is a practical solution to deal with floating point underflow
     """
     lines = (line.strip() for line in test_data)
-    test_seqs = [decoder.out_vocab.encode_as_ids(line, add_bos=True, add_eos=True)
-                 for line in lines]
+    test_seqs = [decoder.out_vocab.encode_as_ids(line, add_bos=True, add_eos=True) for line in lines]
     count = 0
     total = 0.0
     for seq in tqdm(test_seqs, dynamic_ncols=True):
@@ -50,25 +49,35 @@ def log_perplexity(decoder: Decoder, test_data: TextIO):
             word_idx = seq[step]
             log_prob = decoder.next_word_distr(history)[0, word_idx]
             total += log_prob
-    log_pp = -1/count * total
+    log_pp = -1 / count * total
     return log_pp.item()
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(prog='rtg.eval.perplexity',
-                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser = argparse.ArgumentParser(
+        prog='rtg.eval.perplexity', formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
     parser.add_argument("work_dir", help="Working/Experiment directory", type=str)
-    parser.add_argument("model_path", type=str, nargs='*',
-                        help="Path to model's checkpoint. "
-                             "If not specified, a best model (based on the score on validation set)"
-                             " from the experiment directory will be used."
-                             " If multiple paths are specified, then an ensembling is performed by"
-                             " averaging the param weights")
-    parser.add_argument("-t", '--test', default=sys.stdin,
-                        type=argparse.FileType('r', encoding='utf-8', errors='ignore'),
-                        help='test file path. default is STDIN')
-    parser.add_argument("-en", '--ensemble', type=int, default=1,
-                        help='Ensemble best --ensemble models by averaging them')
+    parser.add_argument(
+        "model_path",
+        type=str,
+        nargs='*',
+        help="Path to model's checkpoint. "
+        "If not specified, a best model (based on the score on validation set)"
+        " from the experiment directory will be used."
+        " If multiple paths are specified, then an ensembling is performed by"
+        " averaging the param weights",
+    )
+    parser.add_argument(
+        "-t",
+        '--test',
+        default=sys.stdin,
+        type=argparse.FileType('r', encoding='utf-8', errors='ignore'),
+        help='test file path. default is STDIN',
+    )
+    parser.add_argument(
+        "-en", '--ensemble', type=int, default=1, help='Ensemble best --ensemble models by averaging them'
+    )
 
     args = vars(parser.parse_args())
     return args
@@ -82,8 +91,9 @@ def main():
     exp = Experiment(args.pop('work_dir'), read_only=True)
 
     assert exp.model_type.endswith('lm'), 'Only for Language models'
-    decoder = Decoder.new(exp, gen_args=gen_args, model_paths=args.pop('model_path', None),
-                          ensemble=args.pop('ensemble', 1))
+    decoder = Decoder.new(
+        exp, gen_args=gen_args, model_paths=args.pop('model_path', None), ensemble=args.pop('ensemble', 1)
+    )
 
     log_pp = log_perplexity(decoder, args['test'])
     print(f'Log perplexity: {log_pp:g}')

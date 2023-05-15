@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 #
-# Author: Thamme Gowda [tg (at) isi (dot) edu] 
+# Author: Thamme Gowda [tg (at) isi (dot) edu]
 # Created: 1/3/19
 from pathlib import Path
 from typing import List, Optional, Union
@@ -38,7 +38,6 @@ class RnnLmWrapper(nn.Module):
         pass  # No Op
 
     def decode(self, ys, gen_probs=True, log_probs=False):
-
         seq_len = ys.shape[1]
         if seq_len == 1:
             # Note: we need to keep track of rnn_state; but the API was designed for the transformer
@@ -49,8 +48,9 @@ class RnnLmWrapper(nn.Module):
             self.prev_seq_len = 0
         assert seq_len == self.prev_seq_len + 1
         last_ys = ys[:, -1]
-        out_probs, self.rnn_state, _ = self.model(None, last_ys, last_hidden=self.rnn_state,
-                                                  gen_probs=gen_probs, log_probs=log_probs)
+        out_probs, self.rnn_state, _ = self.model(
+            None, last_ys, last_hidden=self.rnn_state, gen_probs=gen_probs, log_probs=log_probs
+        )
         self.prev_seq_len += 1
         return out_probs
 
@@ -62,8 +62,9 @@ class RnnLmWrapper(nn.Module):
         rnn_state = None
         x_mem = None
         for i in range(max_time):
-            result[:, i, :], rnn_state, _ = self.model(x_mem, y_seqs[:, i], last_hidden=rnn_state,
-                                                       gen_probs=gen_probs, log_probs=log_probs)
+            result[:, i, :], rnn_state, _ = self.model(
+                x_mem, y_seqs[:, i], last_hidden=rnn_state, gen_probs=gen_probs, log_probs=log_probs
+            )
         return result
 
 
@@ -106,14 +107,17 @@ class Combo(nn.Module):
 
     wrappers = dict(rnnlm=RnnLmWrapper, tfmlm=TfmLmWrapper)
 
-    def __init__(self, models: List[NMTModel], model_paths: Optional[List[Path]] = None,
-                 w: Optional[List[float]] = None):
+    def __init__(
+        self,
+        models: List[NMTModel],
+        model_paths: Optional[List[Path]] = None,
+        w: Optional[List[float]] = None,
+    ):
         super().__init__()
         assert type(models) is list
         # TODO: check if list breaks the computation graph? we don't want to propagate the loss
         # Optionally wrap models in wrappers
-        models = [self.wrappers[m.model_type](m) if m.model_type in self.wrappers
-                  else m for m in models]
+        models = [self.wrappers[m.model_type](m) if m.model_type in self.wrappers else m for m in models]
         self.models = models
         self.model_paths = model_paths
         self.n_models = len(models)
@@ -145,14 +149,12 @@ class Combo(nn.Module):
 
         x_seqs = batch.x_seqs
         x_mask = (batch.x_seqs != batch.pad_val).unsqueeze(1)
-        bos_step = torch.full((len(batch), 1), fill_value=batch.bos_val, dtype=torch.long,
-                              device=device)
+        bos_step = torch.full((len(batch), 1), fill_value=batch.bos_val, dtype=torch.long, device=device)
         y_seqs_with_bos = torch.cat([bos_step, batch.y_seqs], dim=1)
         y_mask = batch.make_autoreg_mask(y_seqs_with_bos)
 
         for i, model in enumerate(self.models):
-            distr_i = model(x_seqs, y_seqs_with_bos, x_mask, y_mask,
-                            gen_probs=True, log_probs=False)
+            distr_i = model(x_seqs, y_seqs_with_bos, x_mask, y_mask, gen_probs=True, log_probs=False)
             distr_i = distr_i[:, :-1, :]  # Skip the output after the EOS time step
             # assumption: model did not give log_probs, it gave raw probs (sums to 1)
             distr_i = w_probs[i] * distr_i.detach()
@@ -187,9 +189,9 @@ class Combo(nn.Module):
 
 
 class SysCombTrainer:
-
-    def __init__(self, models: List[Path], exp: Union[Path, TranslationExperiment],
-                 lr: float = 1e-4, smoothing=0.1):
+    def __init__(
+        self, models: List[Path], exp: Union[Path, TranslationExperiment], lr: float = 1e-4, smoothing=0.1
+    ):
         if isinstance(exp, Path):
             exp = TranslationExperiment(exp)
         self.w_file = exp.work_dir / f'combo-weights.yml'
@@ -207,13 +209,14 @@ class SysCombTrainer:
             log.info(f"restoring previously stored weights {wt}")
 
         from rtg.nmt.decoder import load_models
+
         combo = Combo(load_models(models, exp), model_paths=models, w=wt)
         self.combo = combo.to(device)
         self.exp = exp
         self.optim = torch.optim.Adam(combo.parameters(), lr=lr)
-        self.criterion = SmoothKLD(vocab_size=combo.vocab_size,
-                                   padding_idx=exp.tgt_vocab.pad_idx,
-                                   smoothing=smoothing)
+        self.criterion = SmoothKLD(
+            vocab_size=combo.vocab_size, padding_idx=exp.tgt_vocab.pad_idx, smoothing=smoothing
+        )
 
     def train(self, steps: int, batch_size: int):
         log.info(f"Going to train for {steps}")
@@ -227,8 +230,7 @@ class SysCombTrainer:
                 progress_msg = f'loss={loss:g}, weights={wt_str}'
                 data_bar.set_postfix_str(progress_msg, refresh=False)
 
-        weights = dict(zip([str(x) for x in self.combo.model_paths],
-                           self.combo.model_weights.tolist()))
+        weights = dict(zip([str(x) for x in self.combo.model_paths], self.combo.model_weights.tolist()))
         log.info(f" Training finished. {weights}")
         with IO.writer(self.w_file) as wtr:
             yaml.dump(dict(weights=weights), wtr, default_flow_style=False)

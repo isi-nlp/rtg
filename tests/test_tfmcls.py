@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 #
-# Author: Thamme Gowda [tg (at) isi (dot) edu] 
+# Author: Thamme Gowda [tg (at) isi (dot) edu]
 # Created: 6/15/21
 import random
 from pathlib import Path
@@ -31,6 +31,7 @@ def setup_dataset():
 
     if not flag.exists():
         from torchtext.datasets import DBpedia
+
         dbpedia_dir.mkdir(exist_ok=True, parents=True)
         test = list(DBpedia(root=root, split='test'))
         train = list(DBpedia(root=root, split='train'))
@@ -40,8 +41,7 @@ def setup_dataset():
         valid, train = train[:ten_per], train[ten_per:]
 
         fargs = dict(mode='w', encoding='utf8', errors='ignore')
-        for name, data, head in [('train', train, 10_000), ('valid', valid, 1_000),
-                                 ('test', test, None)]:
+        for name, data, head in [('train', train, 10_000), ('valid', valid, 1_000), ('test', test, None)]:
             log.info(f"Writing {name}")
             text_f = dbpedia_dir / f'{name}.text'
             label_f = dbpedia_dir / f'{name}.label'
@@ -60,7 +60,7 @@ def test_tfmcls_model():
         return
 
     tmp_dir = tempfile.mkdtemp()
-    #tmp_dir = Path('tmp.dbpedia-exp')
+    # tmp_dir = Path('tmp.dbpedia-exp')
     config = load_conf('experiments/transformer.classifier.yml')
     exp = registry[MODEL]['tfmcls'].Experiment(tmp_dir, config=config, read_only=False)
     exp.config['trainer'].update(dict(steps=50, check_point=25))

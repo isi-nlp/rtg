@@ -25,9 +25,27 @@ TokStream = Union[Iterator[Iterator[str]], Iterator[str]]
 MAX_SEQ_LEN = 512
 
 
-__all__ = ['IdExample', 'NLDbExample', 'BatchIterable', 'Batch', 'LoopingIterable', 'GenerativeBatchIterable',
-            'TSVData', 'StreamData', 'InMemoryData', 'SqliteFile', 'TokenizerTask', 'MonoSeqRecord',
-           'ParallelSeqRecord', 'RawRecord', 'TokRawRecord', 'TokStream', 'MAX_SEQ_LEN', 'Array']
+__all__ = [
+    'IdExample',
+    'NLDbExample',
+    'BatchIterable',
+    'Batch',
+    'LoopingIterable',
+    'GenerativeBatchIterable',
+    'TSVData',
+    'StreamData',
+    'InMemoryData',
+    'SqliteFile',
+    'TokenizerTask',
+    'MonoSeqRecord',
+    'ParallelSeqRecord',
+    'RawRecord',
+    'TokRawRecord',
+    'TokStream',
+    'MAX_SEQ_LEN',
+    'Array',
+]
+
 
 class IdExample:
     __slots__ = 'x', 'y', 'id', 'x_raw', 'y_raw', 'x_len', 'y_len'
@@ -70,6 +88,7 @@ class NLDbExample(IdExample):
     """
     # NLDd has (id, x, y) where as here (x, y, id) ; I think NLDb is doing correctly
     """
+
     __slots__ = 'x', 'y', 'id'
 
     def __init__(self, id, x, y):
@@ -81,13 +100,21 @@ class StreamData(Iterable[IdExample]):
     """Stream data from an io.TextIOWrapper or an Iterator that can be read once.
     Applies vocabulary mapping to field in each line.
     """
-    def __init__(self, stream: io.TextIOWrapper, vocabs:List[Callable[[str], List[int]]], delim='\t',
-                 truncate: bool = False, max_src_len: int = MAX_SEQ_LEN, max_tgt_len: int = MAX_SEQ_LEN,
-                 **kwargs) -> None:
+
+    def __init__(
+        self,
+        stream: io.TextIOWrapper,
+        vocabs: List[Callable[[str], List[int]]],
+        delim='\t',
+        truncate: bool = False,
+        max_src_len: int = MAX_SEQ_LEN,
+        max_tgt_len: int = MAX_SEQ_LEN,
+        **kwargs,
+    ) -> None:
         """Creates a stream of IdExample objects from a stream of text lines; applies vocab mapping to each field.
 
         Args:
-            stream: a stream of text lines or an iterator 
+            stream: a stream of text lines or an iterator
             vocabs: a list of callables in the order of input fields. Each callable should map a string to an array of integer (e.g, vocab.encode_as_ids)
             delim: delimiter to split lines in the stream into columns. Defaults to '\t'.
         """
@@ -106,10 +133,12 @@ class StreamData(Iterable[IdExample]):
         assert not self.exhausted, "StreamData is exhausted. This source can be read only once."
         for idx, line in enumerate(self.stream):
             if isinstance(line, (list, tuple)):
-                row = line    # already split
+                row = line  # already split
             else:
                 row = line.split(self.delim)
-            assert len(row) >= len(self.vocabs), f"Expected at least {len(self.vocabs)} fields, but got {len(row)}"
+            assert len(row) >= len(
+                self.vocabs
+            ), f"Expected at least {len(self.vocabs)} fields, but got {len(row)}"
             x, y = row[0].strip(), row[1].strip()
             if not x or not y:
                 log.warning(f"Skipping empty line in stream. Current idx: {idx}")
@@ -117,7 +146,7 @@ class StreamData(Iterable[IdExample]):
             x_vocab, y_vocab = self.vocabs[0], self.vocabs[1]
             x, y = x_vocab(x), y_vocab(y)
             if self.truncate:
-                x, y = x[:self.max_src_len], y[:self.max_tgt_len]
+                x, y = x[: self.max_src_len], y[: self.max_tgt_len]
             elif len(x) > self.max_src_len or len(y) > self.max_tgt_len:
                 # Skipping line with length > max_len. Current idx: {idx}
                 self.n_skips += 1
@@ -128,9 +157,16 @@ class StreamData(Iterable[IdExample]):
 
 
 class TSVData(Iterable[IdExample]):
-
-    def __init__(self, path: Union[str, Path], in_mem=False, shuffle=False, longest_first=True,
-                 max_src_len: int = MAX_SEQ_LEN, max_tgt_len: int = MAX_SEQ_LEN, truncate: bool = False):
+    def __init__(
+        self,
+        path: Union[str, Path],
+        in_mem=False,
+        shuffle=False,
+        longest_first=True,
+        max_src_len: int = MAX_SEQ_LEN,
+        max_tgt_len: int = MAX_SEQ_LEN,
+        truncate: bool = False,
+    ):
         """
         :param path: path to TSV file have parallel sequences
         :param in_mem: hold data in memory instead of reading from file for subsequent pass.
@@ -159,8 +195,8 @@ class TSVData(Iterable[IdExample]):
                 x = self._parse(rec[0].strip())
                 y = self._parse(rec[1].strip()) if len(rec) > 1 else None
                 if self.truncate:  # truncate long recs
-                    x = x[:self.max_src_len]
-                    y = y if y is None else y[:self.max_tgt_len]
+                    x = x[: self.max_src_len]
+                    y = y if y is None else y[: self.max_tgt_len]
                 elif len(x) > self.max_src_len or (0 if y is None else len(y)) > self.max_tgt_len:
                     continue  # skip long recs
                 if not x or (y is not None and len(y) == 0):  # empty on one side
@@ -207,8 +243,9 @@ class TSVData(Iterable[IdExample]):
         TSVData.write_lines(lines, path)
 
     @staticmethod
-    def read_raw_parallel_lines(src_path: Union[str, Path], tgt_path: Union[str, Path]) \
-            -> Iterator[RawRecord]:
+    def read_raw_parallel_lines(
+        src_path: Union[str, Path], tgt_path: Union[str, Path]
+    ) -> Iterator[RawRecord]:
         with IO.reader(src_path) as src_lines, IO.reader(tgt_path) as tgt_lines:
             # if you get an exception here --> files have un equal number of lines
             recs = ((src.strip(), tgt.strip()) for src, tgt in zip_longest(src_lines, tgt_lines))
@@ -216,10 +253,15 @@ class TSVData(Iterable[IdExample]):
             yield from recs
 
     @staticmethod
-    def read_raw_parallel_recs(src_path: Union[str, Path], tgt_path: Union[str, Path],
-                               truncate: bool, src_len: int, tgt_len: int, src_tokenizer,
-                               tgt_tokenizer) \
-            -> Iterator[ParallelSeqRecord]:
+    def read_raw_parallel_recs(
+        src_path: Union[str, Path],
+        tgt_path: Union[str, Path],
+        truncate: bool,
+        src_len: int,
+        tgt_len: int,
+        src_tokenizer,
+        tgt_tokenizer,
+    ) -> Iterator[ParallelSeqRecord]:
         recs = TSVData.read_raw_parallel_lines(src_path, tgt_path)
 
         recs = ((src_tokenizer(x), tgt_tokenizer(y)) for x, y in recs)
@@ -261,7 +303,6 @@ class TokenizerTask:
 
 
 class InMemoryData:
-
     def __init__(self, stream: Iterator[IdExample]):
         self.data = []
         self.ids: Dict[Any, int] = {}
@@ -314,6 +355,7 @@ class SqliteFile(Iterable[IdExample]):
         x_seq and y_seq were np.array(, dtyp=np.int32).tobytes()
 
     """
+
     CUR_VERSION = 1
 
     TABLE_STATEMENT = f"""CREATE TABLE IF NOT EXISTS data (
@@ -334,19 +376,27 @@ class SqliteFile(Iterable[IdExample]):
         assert len_rand >= 1
         select_no_sort = 'SELECT * from data'
         template = f"{select_no_sort} ORDER BY %s + (RANDOM() %% %d) %s"
-        known_queries = dict(y_len_asc=template % ('y_len', len_rand, 'ASC'),
-                             y_len_desc=template % ('y_len', len_rand, 'DESC'),
-                             x_len_asc=template % ('x_len', len_rand, 'ASC'),
-                             x_len_desc=template % ('x_len', len_rand, 'DESC'),
-                             random=cls.READ_RANDOM,
-                             eq_len_rand_batch=template % ('y_len', len_rand, 'DESC'))
+        known_queries = dict(
+            y_len_asc=template % ('y_len', len_rand, 'ASC'),
+            y_len_desc=template % ('y_len', len_rand, 'DESC'),
+            x_len_asc=template % ('x_len', len_rand, 'ASC'),
+            x_len_desc=template % ('x_len', len_rand, 'DESC'),
+            random=cls.READ_RANDOM,
+            eq_len_rand_batch=template % ('y_len', len_rand, 'DESC'),
+        )
         known_queries[None] = known_queries['none'] = select_no_sort
-        assert sort_by in known_queries, ('sort_by must be one of ' + str(known_queries.keys()))
+        assert sort_by in known_queries, 'sort_by must be one of ' + str(known_queries.keys())
         return known_queries[sort_by]
 
-    def __init__(self, path: Path, sort_by='random', len_rand=2,
-                 max_src_len: int = MAX_SEQ_LEN, max_tgt_len: int = MAX_SEQ_LEN, truncate: bool = False):
-
+    def __init__(
+        self,
+        path: Path,
+        sort_by='random',
+        len_rand=2,
+        max_src_len: int = MAX_SEQ_LEN,
+        max_tgt_len: int = MAX_SEQ_LEN,
+        truncate: bool = False,
+    ):
         log.info(f"{type(self)} Args: {get_my_args()}")
         self.path = path
         assert path.exists()
@@ -386,7 +436,7 @@ class SqliteFile(Iterable[IdExample]):
                 continue
             if len(x) > self.max_src_len or len(y) > self.max_tgt_len:
                 if self.truncate:
-                    x, y = x[:self.max_src_len], y[:self.max_tgt_len]
+                    x, y = x[: self.max_src_len], y[: self.max_tgt_len]
                 else:  # skip this record
                     continue
             yield IdExample(x=x, y=y, id=id)
@@ -425,9 +475,12 @@ class SqliteFile(Iterable[IdExample]):
                 x_seq = np.array(x_seq, dtype=np.int32)
             if y_seq is not None and not isinstance(y_seq, np.ndarray):
                 y_seq = np.array(y_seq, dtype=np.int32)
-            values = (x_seq.tobytes(),
-                      None if y_seq is None else y_seq.tobytes(),
-                      len(x_seq), len(y_seq) if y_seq is not None else -1)
+            values = (
+                x_seq.tobytes(),
+                None if y_seq is None else y_seq.tobytes(),
+                len(x_seq),
+                len(y_seq) if y_seq is not None else -1,
+            )
             cur.execute(cls.INSERT_STMT, values)
             count += 1
         cur.close()
@@ -471,8 +524,7 @@ def padded_sequence_mask(lengths, max_len=None, device=device):
     max_len = max_len if max_len else lengths.max()
     batch_size = lengths.size(0)
     # create a row [0, 1, ... s] and duplicate this row batch_size times --> [B, S]
-    seq_range_expand = torch.arange(0, max_len, dtype=torch.long,
-                                    device=device).expand(batch_size, max_len)
+    seq_range_expand = torch.arange(0, max_len, dtype=torch.long, device=device).expand(batch_size, max_len)
     # make lengths vectors to [B x 1] and duplicate columns to [B, S]
     seq_length_expand = lengths.unsqueeze(1).expand_as(seq_range_expand)
     return seq_range_expand < seq_length_expand  # 0 if padding, 1 otherwise
@@ -482,13 +534,24 @@ class Batch:
     """
     An object of this class holds a batch of examples
     """
+
     _x_attrs = ['x_len', 'x_seqs']
     _y_attrs = ['y_len', 'y_seqs', 'ys']
     _all_attrs = _x_attrs + _y_attrs
 
-    def __init__(self, batch: List[IdExample], sort_dec=False, batch_first=True,
-                 add_eos_x=True, add_eos_y=True, add_bos_x=False, add_bos_y=False,
-                 y_is_cls=False, field: Field = None, device=cpu_device):
+    def __init__(
+        self,
+        batch: List[IdExample],
+        sort_dec=False,
+        batch_first=True,
+        add_eos_x=True,
+        add_eos_y=True,
+        add_bos_x=False,
+        add_bos_y=False,
+        y_is_cls=False,
+        field: Field = None,
+        device=cpu_device,
+    ):
         """
 
         :param batch: List fo Examples
@@ -528,10 +591,11 @@ class Batch:
         self.max_x_len = self.x_len.max()
 
         # create x_seqs on CPU RAM and move to GPU at once
-        self.x_seqs = torch.full(size=(self._len, self.max_x_len), fill_value=self.pad_val,
-                                 dtype=torch.long, device=device)
+        self.x_seqs = torch.full(
+            size=(self._len, self.max_x_len), fill_value=self.pad_val, dtype=torch.long, device=device
+        )
         for i, ex in enumerate(batch):
-            self.x_seqs[i, :len(ex.x)] = torch.tensor(ex.x, dtype=torch.long, device=device)
+            self.x_seqs[i, : len(ex.x)] = torch.tensor(ex.x, dtype=torch.long, device=device)
         self.x_seqs = self.x_seqs.to(device)
         if not batch_first:  # transpose
             self.x_seqs = self.x_seqs.t()
@@ -543,8 +607,7 @@ class Batch:
         self.has_y = first_y is not None
         if self.has_y:
             if y_is_cls:
-                ys = torch.full(size=(self._len,), fill_value=self.pad_val,
-                                dtype=torch.long, device=device)
+                ys = torch.full(size=(self._len,), fill_value=self.pad_val, dtype=torch.long, device=device)
                 for i, ex in enumerate(batch):
                     y = ex.y
                     if hasattr(y, '__len__'):
@@ -557,10 +620,11 @@ class Batch:
                 self.y_len = torch.tensor([len(e.y) for e in batch], device=device)
                 self.y_toks = self.y_len.sum().float().item()
                 self.max_y_len = self.y_len.max().item()
-                y_seqs = torch.full(size=(self._len, self.max_y_len), fill_value=self.pad_val,
-                                    dtype=torch.long, device=device)
+                y_seqs = torch.full(
+                    size=(self._len, self.max_y_len), fill_value=self.pad_val, dtype=torch.long, device=device
+                )
                 for i, ex in enumerate(batch):
-                    y_seqs[i, :len(ex.y)] = torch.tensor(ex.y, dtype=torch.long)
+                    y_seqs[i, : len(ex.y)] = torch.tensor(ex.y, dtype=torch.long)
                 self.y_seqs = y_seqs.to(device)
                 if not batch_first:  # transpose
                     self.y_seqs = self.y_seqs.t()
@@ -604,12 +668,22 @@ class Batch:
 
 
 class BatchIterable(Iterable[Batch]):
-
     # This should have been called as Dataset
-    def __init__(self, data_path: Union[str, Path], batch_size: Union[int, Tuple[int, int]], field: Field,
-                 sort_desc: bool = False, batch_first: bool = True, shuffle: bool = False,
-                 sort_by: str = None, keep_in_mem=False, raw_path: Tuple[Path, Path] = None,
-                 device=cpu_device, y_is_cls=False, **kwargs):
+    def __init__(
+        self,
+        data_path: Union[str, Path],
+        batch_size: Union[int, Tuple[int, int]],
+        field: Field,
+        sort_desc: bool = False,
+        batch_first: bool = True,
+        shuffle: bool = False,
+        sort_by: str = None,
+        keep_in_mem=False,
+        raw_path: Tuple[Path, Path] = None,
+        device=cpu_device,
+        y_is_cls=False,
+        **kwargs,
+    ):
         """
         Iterator for reading training data in batches
         :param data_path: path to TSV file
@@ -635,7 +709,7 @@ class BatchIterable(Iterable[Batch]):
         if isinstance(data_path, StreamData):
             self.data = data_path
             self.data_path = None
-            self.n_batches = -1   # unknown
+            self.n_batches = -1  # unknown
             assert not shuffle  # Not supported here; streams should take care of it
             assert not sort_by
             assert not raw_path
@@ -644,12 +718,14 @@ class BatchIterable(Iterable[Batch]):
             self.data_path = data_path
             if not isinstance(data_path, Path):
                 data_path = Path(data_path)
-            assert data_path.exists(), f'Invalid State: Training data doesnt exist;' \
-                                    f' Please remove _PREPARED and rerun.'
+            assert data_path.exists(), (
+                f'Invalid State: Training data doesnt exist;' f' Please remove _PREPARED and rerun.'
+            )
             self.data_path = data_path
             if any([data_path.name.endswith(suf) for suf in ('.nldb', '.nldb.tmp')]):
                 assert sort_by == 'random', f'sort_by={sort_by} is not supported for nldb. Try "random"'
                 from nlcodec.db import MultipartDb
+
                 self.data = MultipartDb.load(data_path, shuffle=shuffle, rec_type=NLDbExample)
                 self.n_batches = -1
             elif any([data_path.name.endswith(suf) for suf in ('.db', '.db.tmp')]):
@@ -684,8 +760,10 @@ class BatchIterable(Iterable[Batch]):
                             self.data.data[idx].x_raw = src
                             self.data.data[idx].y_raw = tgt
                     else:
-                        log.warning(f'Raw={len(raw_data)}, but bin={len(self.data)} segs '
-                                    f'Try setting prep.truncate=true to truncate instead of skip of recs.')
+                        log.warning(
+                            f'Raw={len(raw_data)}, but bin={len(self.data)} segs '
+                            f'Try setting prep.truncate=true to truncate instead of skip of recs.'
+                        )
                         log.warning("This disables BLEU logging on validation")
                 log.info(f"saving in-memory to {in_mem_file}")
                 with in_mem_file.open('wb') as wrt:
@@ -708,18 +786,32 @@ class BatchIterable(Iterable[Batch]):
                 max_len = max(max_len, this_len)
             else:
                 if this_len > self.max_toks:
-                    log.warn(f'Unable to make a batch of {self.max_toks} toks'
-                                    f' with a seq of x_len:{len(ex.x)} y_len:{len(ex.y)}')
+                    log.warn(
+                        f'Unable to make a batch of {self.max_toks} toks'
+                        f' with a seq of x_len:{len(ex.x)} y_len:{len(ex.y)}'
+                    )
                     continue
                 # yield the current batch
-                yield Batch(batch, sort_dec=self.sort_desc, batch_first=self.batch_first,
-                            field=self.field, device=self.device, y_is_cls=self.y_is_cls)
+                yield Batch(
+                    batch,
+                    sort_dec=self.sort_desc,
+                    batch_first=self.batch_first,
+                    field=self.field,
+                    device=self.device,
+                    y_is_cls=self.y_is_cls,
+                )
                 batch = [ex]  # new batch
                 max_len = this_len
         if batch:
             log.debug(f"\nLast batch, size={len(batch)}")
-            batch = Batch(batch, sort_dec=self.sort_desc, batch_first=self.batch_first,
-                        field=self.field, device=self.device, y_is_cls=self.y_is_cls)
+            batch = Batch(
+                batch,
+                sort_dec=self.sort_desc,
+                batch_first=self.batch_first,
+                field=self.field,
+                device=self.device,
+                y_is_cls=self.y_is_cls,
+            )
             this_size = hasattr(batch, 'y_toks') and batch.y_toks or batch.x_toks
             if this_size < 0.05 * self.max_toks:
                 log.warning(f"Skipped a batch having {this_size} tokens; required batch_size={self.max_toks}")
@@ -747,8 +839,10 @@ class BatchIterable(Iterable[Batch]):
                 max_len = max(max_len, this_len)
             else:
                 if this_len > self.max_toks:
-                    raise Exception(f'Unable to make a batch of {self.max_toks} toks'
-                                    f' with a seq of x_len:{x_len} y_len:{y_len}')
+                    raise Exception(
+                        f'Unable to make a batch of {self.max_toks} toks'
+                        f' with a seq of x_len:{x_len} y_len:{y_len}'
+                    )
                 batches.append(maybe_compress(batch))
                 batch = [id]  # new batch
                 max_len = this_len
@@ -763,7 +857,9 @@ class BatchIterable(Iterable[Batch]):
         if time.time() - self.last_read_start > 2 * 60:
             # Avoid frequent log messages; give 2 min gap
             self.last_read_start = time.time()
-            log.info(f"Reading data {self.n_reads + 1} sth time; eq_len batches={len(batches)}. Shuffling🔀...")
+            log.info(
+                f"Reading data {self.n_reads + 1} sth time; eq_len batches={len(batches)}. Shuffling🔀..."
+            )
         if not batches:
             raise Exception(f'Found no training data. Please check config and {self.data_path}')
         random.shuffle(batches)
@@ -771,8 +867,14 @@ class BatchIterable(Iterable[Batch]):
         for batch_ids in batches:
             batch = list(self.data.get_all_ids(batch_ids))
             # batch = [Example(r['x'], r.get('y')) for r in batch]
-            batch = Batch(batch, sort_dec=self.sort_desc, batch_first=self.batch_first,
-                        field=self.field, device=self.device, y_is_cls=self.y_is_cls)
+            batch = Batch(
+                batch,
+                sort_dec=self.sort_desc,
+                batch_first=self.batch_first,
+                field=self.field,
+                device=self.device,
+                y_is_cls=self.y_is_cls,
+            )
             this_size = hasattr(batch, 'y_toks') and batch.y_toks or batch.x_toks
             if this_size < 0.05 * self.max_toks:
                 log.warning(f"Skipped a batch having {this_size} tokens; required batch_size={self.max_toks}")
@@ -815,10 +917,18 @@ class LoopingIterable(Iterable[Batch]):
 
 
 class GenerativeBatchIterable(Iterable[Batch]):
-
-    def __init__(self, file_creator: callable, batches: int, batch_size: int, field: Field,
-                 dynamic_epoch: bool = False, batch_first: bool = True, shuffle: bool = True,
-                 sort_by: str = 'eq_len_rand_batch', **kwargs):
+    def __init__(
+        self,
+        file_creator: callable,
+        batches: int,
+        batch_size: int,
+        field: Field,
+        dynamic_epoch: bool = False,
+        batch_first: bool = True,
+        shuffle: bool = True,
+        sort_by: str = 'eq_len_rand_batch',
+        **kwargs,
+    ):
         self.file_creator = file_creator
         self.total = batches
         self.batch_size = batch_size
@@ -834,8 +944,13 @@ class GenerativeBatchIterable(Iterable[Batch]):
     def generate_data(self) -> Iterable[Batch]:
         file_name = self.file_creator()
         data = BatchIterable(
-            file_name, batch_size=self.batch_size, field=self.field, sort_by=self.sort_by,
-            batch_first=self.batch_first, shuffle=self.shuffle, **self.kwargs
+            file_name,
+            batch_size=self.batch_size,
+            field=self.field,
+            sort_by=self.sort_by,
+            batch_first=self.batch_first,
+            shuffle=self.shuffle,
+            **self.kwargs,
         )
         return data
 

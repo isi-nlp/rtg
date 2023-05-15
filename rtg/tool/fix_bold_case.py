@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 #
-# Author: Thamme Gowda [tg (at) isi (dot) edu] 
+# Author: Thamme Gowda [tg (at) isi (dot) edu]
 # Created: 2019-07-18
 
 
@@ -12,7 +12,7 @@ from typing import List
 log.basicConfig(level=log.INFO)
 
 
-def fix_bold_text(seq:List[str], min_evidence: int = 3):
+def fix_bold_text(seq: List[str], min_evidence: int = 3):
     flags = [tok.isupper() for tok in seq]
 
     flags[0] = 1 if flags[0] else 0
@@ -26,7 +26,7 @@ def fix_bold_text(seq:List[str], min_evidence: int = 3):
     return seq, fixing
 
 
-def main(inp, out, min_evidence:int):
+def main(inp, out, min_evidence: int):
     seqs = (line.strip().split() for line in inp)
     modified = 0
     count = 0
@@ -40,11 +40,26 @@ def main(inp, out, min_evidence:int):
 
 if __name__ == '__main__':
     p = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    p.add_argument('-i', '--inp', type=argparse.FileType('r'), default=sys.stdin,
-                   help='Input file path. one seq per line')
-    p.add_argument('-o', '--out', type=argparse.FileType('w'), default=sys.stdout,
-                   help='Output file path Format: One seq per line')
-    p.add_argument('-m', '--min-evidence', type=int, default=3,
-                   help='Minimum number of consecutive bold tokens to trigger the fixing')
+    p.add_argument(
+        '-i',
+        '--inp',
+        type=argparse.FileType('r'),
+        default=sys.stdin,
+        help='Input file path. one seq per line',
+    )
+    p.add_argument(
+        '-o',
+        '--out',
+        type=argparse.FileType('w'),
+        default=sys.stdout,
+        help='Output file path Format: One seq per line',
+    )
+    p.add_argument(
+        '-m',
+        '--min-evidence',
+        type=int,
+        default=3,
+        help='Minimum number of consecutive bold tokens to trigger the fixing',
+    )
     args = vars(p.parse_args())
     main(**args)

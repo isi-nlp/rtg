@@ -10,6 +10,7 @@ import multiprocessing as mp
 debug_mode = os.environ.get('NMT_DEBUG', False)
 
 import torch
+
 device_name = 'cuda:0' if torch.cuda.is_available() else 'cpu'
 device = torch.device(device_name)
 cpu_device = torch.device('cpu')
@@ -27,6 +28,7 @@ profiler = None
 
 if os.environ.get('NMT_PROFILER') == 'memory':
     import memory_profiler
+
     profiler = memory_profiler.profile
     log.info('Setting memory profiler')
 
@@ -55,5 +57,5 @@ from rtg.lm import *
 from rtg.classifier import *
 
 
-#from rtg.registry import __register_all
-#__register_all()
+# from rtg.registry import __register_all
+# __register_all()

@@ -1,21 +1,22 @@
 #!/usr/bin/env python
 #
-# Author: Thamme Gowda [tg (at) isi (dot) edu] 
+# Author: Thamme Gowda [tg (at) isi (dot) edu]
 # Created: 3/9/19
 import logging
 import os
 
 __all__ = ['Logger']
 
-class Logger(logging.Logger):
 
+class Logger(logging.Logger):
     def __init__(self, name='rtg', file=None, file_level=logging.DEBUG, console_level=logging.INFO):
         super().__init__(name, level=logging.DEBUG)
         # create formatter and add it to the handlers
         # formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
         self.formatter = logging.Formatter(
             '[%(asctime)s] p%(process)s {%(module)s:%(lineno)d} %(levelname)s - %(message)s',
-            datefmt='%m-%d %H:%M:%S')
+            datefmt='%m-%d %H:%M:%S',
+        )
         self.console_level = console_level
         self.file_level = file_level
 
@@ -57,13 +58,11 @@ class Logger(logging.Logger):
 
     def __getstate__(self):
         state = self.__dict__.copy()
-        state['handlers'] = []     # empty this list, dont pickle
-        del state["fh"]            # Don't pickle fh
-        del state["ch"]            # Don't pickle ch
+        state['handlers'] = []  # empty this list, dont pickle
+        del state["fh"]  # Don't pickle fh
+        del state["ch"]  # Don't pickle ch
         return state
 
     def __setstate__(self, state):
         self.__dict__.update(state)
-        self.setup_handlers()    # re-setup handlers
-
-
+        self.setup_handlers()  # re-setup handlers

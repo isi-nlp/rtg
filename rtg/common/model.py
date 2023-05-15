@@ -8,7 +8,6 @@ __all__ = ['Model', 'LangModel', 'NMTModel']
 
 
 class Model(nn.Module):
-
     def init_params(self, scheme='xavier'):
         assert scheme == 'xavier'  # only supported scheme as of now
         # Initialize parameters with xavier uniform
@@ -58,7 +57,6 @@ class Model(nn.Module):
         else:
             log.info("NOT initialising from parent model")
 
-
     def get_trainable_params(self, include=None, exclude=None):
         """
         sub-selects parameters of the model that the optimizer can mess to reach an optima.
@@ -68,15 +66,18 @@ class Model(nn.Module):
         :return:
         """
         if include or exclude:
-            raise NotImplementedError(f'Sub-selection of trainable params is not implemented for'
-                                      f' "{self.model_type}", please do get_trainable_params(...)')
+            raise NotImplementedError(
+                f'Sub-selection of trainable params is not implemented for'
+                f' "{self.model_type}", please do get_trainable_params(...)'
+            )
         else:
             log.info("Treating all parameters as trainable parameters")
-            return list(self.parameters())   # default include all
+            return list(self.parameters())  # default include all
 
 
 class LangModel(Model, metaclass=ABCMeta):
     """base class for all models that generate sequence"""
+
     experiment_type = BaseExperiment
 
     @classmethod
@@ -86,7 +87,8 @@ class LangModel(Model, metaclass=ABCMeta):
 
 
 class NMTModel(LangModel, metaclass=ABCMeta):
-    """"
+    """ "
     base class for all Sequence to sequence (NMT) models
     """
+
     experiment_type = TranslationExperiment

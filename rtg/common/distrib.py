@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 #
-# Author: Thamme Gowda [tg (at) isi (dot) edu] 
+# Author: Thamme Gowda [tg (at) isi (dot) edu]
 # Created: 7/10/20
 import os
 import socket
@@ -22,7 +22,6 @@ __all__ = ['dtorch', 'DistribTorch']
 
 @dataclass()
 class DistribTorch:
-
     host_name: str = socket.gethostname()
     pid: int = os.getpid()
     get_env = os.environ.get
@@ -73,7 +72,7 @@ class DistribTorch:
         try:
             if torch.cuda.is_bf16_supported():
                 log.info('BFLOAT16 is supported; upgrading...')
-                self.fp16_dtype = torch.bfloat16 # if supported
+                self.fp16_dtype = torch.bfloat16  # if supported
         except:
             log.info('BFLOAT16 is not supported. using FLOAT16')
 
@@ -116,7 +115,7 @@ class DistribTorch:
             if not self._is_backend_ready:
                 self.setup()
         self._model = module
-        return module    # don't wrap
+        return module  # don't wrap
 
     @property
     def is_distributed(self):
@@ -136,25 +135,26 @@ class DistribTorch:
         # else we dont need it
 
     def backward(self, loss, retain_graph=False):
-
         if torch.isnan(loss):
             if self._n_skips < self.grad_accum - 1:
                 log.warning(f"Loss is nan; skipping. n_skips={self._n_skips} grad_accum={self.grad_accum}")
                 self._n_skips += 1
                 return
             # else crash
-            raise Exception('''Loss is nan; enable debug mode to know more (export NMT_DEBUG=true);
+            raise Exception(
+                '''Loss is nan; enable debug mode to know more (export NMT_DEBUG=true);
     Or, here are some tips:
     1. reduce the learning rate
     2. reduce batch size
-    3. set trainer.init_args.clip_grad_norm to a small number e.g. 5.0''')
+    3. set trainer.init_args.clip_grad_norm to a small number e.g. 5.0'''
+            )
 
         if self.fp16:
             loss = self._scaler.scale(loss)
         if loss < 0:
             raise Exception('Loss is negative; looks like a numerical error (underflow or overflow?)')
         loss.backward(retain_graph=retain_graph)
-        self._n_skips = 0 # reset
+        self._n_skips = 0  # reset
 
     def average_gradients(self, model):
         size = float(self.world_size)
@@ -164,7 +164,7 @@ class DistribTorch:
             work = dist.all_reduce(param.grad.data, op=dist.ReduceOp.SUM, async_op=True)
             futures.append((work, param))
             # TODO: ring reduce https://pytorch.org/tutorials/intermediate/dist_tuto.html#our-own-ring-allreduce
-            #param.grad.data /= size
+            # param.grad.data /= size
 
         for work, param in futures:
             work.wait()  # if not complete
@@ -180,7 +180,9 @@ class DistribTorch:
                 # Unscales the gradients of optimizer's assigned params in-place
                 self._scaler.unscale_(optimizer)
             # Since the gradients of optimizer's assigned params are unscaled, clips as usual:
-            torch.nn.utils.clip_grad_norm_(self._model.parameters(), self._clip_grad_max_norm) #  error_if_nonfinite=False
+            torch.nn.utils.clip_grad_norm_(
+                self._model.parameters(), self._clip_grad_max_norm
+            )  #  error_if_nonfinite=False
 
         if self.fp16:
             self._scaler.step(optimizer)

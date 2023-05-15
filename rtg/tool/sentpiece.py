@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 #
-# Author: Thamme Gowda [tg (at) isi (dot) edu] 
+# Author: Thamme Gowda [tg (at) isi (dot) edu]
 # Created: 11/7/18
 
 import argparse
@@ -41,17 +41,16 @@ def main(model, inp, out, ids, detokenize):
 
 
 if __name__ == '__main__':
-    p = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-                                description="Sentence piece segmentation")
+    p = argparse.ArgumentParser(
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter, description="Sentence piece segmentation"
+    )
     p.add_argument('-m', '--model', required=True, help='Sentence piece model path')
-    p.add_argument('-i', '--inp', type=argparse.FileType('r'), default=sys.stdin,
-                   help='Input file path')
-    p.add_argument('-o', '--out', type=argparse.FileType('w'), default=sys.stdout,
-                   help='Output file path')
-    p.add_argument('-id', '--ids', action='store_true',
-                   help='Ids (integers) instead of text pieces (strings)')
+    p.add_argument('-i', '--inp', type=argparse.FileType('r'), default=sys.stdin, help='Input file path')
+    p.add_argument('-o', '--out', type=argparse.FileType('w'), default=sys.stdout, help='Output file path')
+    p.add_argument(
+        '-id', '--ids', action='store_true', help='Ids (integers) instead of text pieces (strings)'
+    )
     p.add_argument('-d', '--detokenize', action='store_true', help='Detokenize or undo tokenize')
 
     args = vars(p.parse_args())
     main(**args)
-

@@ -24,24 +24,41 @@ BATCH_SIZE = 500
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Force decode and attention visualization",
-                                     formatter_class=ArgFormatter)
+    parser = argparse.ArgumentParser(
+        description="Force decode and attention visualization", formatter_class=ArgFormatter
+    )
     parser.add_argument("exp_dir", help="Experiment directory", type=str)
-    parser.add_argument("-s", "--src", type=argparse.FileType('r', encoding='utf-8'), default=sys.stdin,
-                        help="Source file having <seg1><delim><seg2>. Default: STDIN")
-    parser.add_argument("-r", "--ref", type=argparse.FileType('r', encoding='utf-8'), required=True,
-                        help="Reference file having <ref1><delim><ref2>")
+    parser.add_argument(
+        "-s",
+        "--src",
+        type=argparse.FileType('r', encoding='utf-8'),
+        default=sys.stdin,
+        help="Source file having <seg1><delim><seg2>. Default: STDIN",
+    )
+    parser.add_argument(
+        "-r",
+        "--ref",
+        type=argparse.FileType('r', encoding='utf-8'),
+        required=True,
+        help="Reference file having <ref1><delim><ref2>",
+    )
     parser.add_argument("-d", "--delim", default='\t', help="Delimiter: default:\\t")
 
-    parser.add_argument("-of", '--output', type=argparse.FileType('w', encoding='utf-8', errors='ignore'),
-                        default=sys.stdout, help='Output File path. default is STDOUT')
-    parser.add_argument("-b", '--batch-size', type=int, default=BATCH_SIZE, help='batch size; number of sentences')
+    parser.add_argument(
+        "-of",
+        '--output',
+        type=argparse.FileType('w', encoding='utf-8', errors='ignore'),
+        default=sys.stdout,
+        help='Output File path. default is STDOUT',
+    )
+    parser.add_argument(
+        "-b", '--batch-size', type=int, default=BATCH_SIZE, help='batch size; number of sentences'
+    )
     args = vars(parser.parse_args())
     return args
 
 
 def make_batches(recs, batch_size=BATCH_SIZE):
-
     def separate_cols(b):
         n_cols = len(b[0])
         return [[x[a] for x in b] for a in range(n_cols)]
@@ -60,8 +77,12 @@ def get_attns(decoder, srcs, refs, max_len=MAX_LEN):
     model = decoder.model
     assert model.cache_attn
     n_seqs = len(srcs)
-    src_seqs_list = [decoder.inp_vocab.encode_as_ids(src, add_eos=True, add_bos=False)[:max_len] for src in srcs]
-    tgt_seqs_list = [decoder.out_vocab.encode_as_ids(ref, add_eos=True, add_bos=True)[:max_len] for ref in refs]
+    src_seqs_list = [
+        decoder.inp_vocab.encode_as_ids(src, add_eos=True, add_bos=False)[:max_len] for src in srcs
+    ]
+    tgt_seqs_list = [
+        decoder.out_vocab.encode_as_ids(ref, add_eos=True, add_bos=True)[:max_len] for ref in refs
+    ]
 
     max_src_len = max(len(s) for s in src_seqs_list)
     max_tgt_len = max(len(s) for s in tgt_seqs_list)
@@ -70,8 +91,8 @@ def get_attns(decoder, srcs, refs, max_len=MAX_LEN):
     for i in range(n_seqs):
         src = src_seqs_list[i]
         tgt = tgt_seqs_list[i]
-        src_seqs[i, :len(src)] = tensor(src)
-        tgt_seqs[i, :len(tgt)] = tensor(tgt)
+        src_seqs[i, : len(src)] = tensor(src)
+        tgt_seqs[i, : len(tgt)] = tensor(tgt)
 
     tgt_in_seqs = tgt_seqs[:, :-1]  # skip EOS
     x_mask = (src_seqs != decoder.inp_vocab.pad_idx).unsqueeze(1)
@@ -79,6 +100,7 @@ def get_attns(decoder, srcs, refs, max_len=MAX_LEN):
     out_feats = model(src_seqs, tgt_in_seqs, x_mask, y_mask)
     attns = [model.encoder.self_attn, model.decoder.self_attn, model.decoder.src_attn]
     return attns, (src_seqs_list, tgt_seqs_list)
+
 
 """
 def compute_attn_bleed(attn: Tensor, cross_over: Tuple[int, int], epsilon=1e-6):
@@ -115,13 +137,14 @@ def avg_attn_bleed_fast(attn, cross_over: Tuple[int, int], exclude_eos=False):
     attn = attn.view(-1, n_ref, n_src)
 
     counter = torch.arange(n_src, device=device)
-    good_mask = torch.cat([(counter < src_x).repeat(tgt_x, 1),
-                        (counter >= src_x).repeat(n_ref - tgt_x, 1)], dim=0)
-    if exclude_eos:     # dont consider EOS, i.e. last token, os bleeding
+    good_mask = torch.cat(
+        [(counter < src_x).repeat(tgt_x, 1), (counter >= src_x).repeat(n_ref - tgt_x, 1)], dim=0
+    )
+    if exclude_eos:  # dont consider EOS, i.e. last token, os bleeding
         good_mask[:, -1] = True
         good_mask[-1, :] = True
-    #good_score = attn.masked_fill(good_mask, 0).sum()
-    #bleed_score = attn.masked_fill(~good_mask, 0).sum()
+    # good_score = attn.masked_fill(good_mask, 0).sum()
+    # bleed_score = attn.masked_fill(~good_mask, 0).sum()
     good_score = attn.masked_select(good_mask).sum()
     bleed_score = attn.masked_select(~good_mask).sum()
     total_mass = attn.shape[0] * n_ref * 1.0
@@ -138,7 +161,7 @@ def corpus_bleed_rate(batches, decoder: Decoder, output: TextIO, exclude_eos=Fal
         enc_attn, dec_attn, xattn = attns
         for i in range(batch_size):
             src_len, ref_len = len(src_seq[i]), len(ref_seq[i]) - 1
-            i_xttn = xattn[i][:, :, :ref_len, :src_len]   # exclude pads
+            i_xttn = xattn[i][:, :, :ref_len, :src_len]  # exclude pads
             # rate = avg_attn_bleed(i_xttn, (src_idxs[i], ref_idxs[i]))
             rate = avg_attn_bleed_fast(i_xttn, (src_idxs[i], ref_idxs[i]), exclude_eos=exclude_eos)
             output.write(f'{rate:.4f}\n')
@@ -172,6 +195,7 @@ def compute_bleed(exp, **cli_args):
             ref1_ids = decoder.out_vocab.encode_as_ids(refs[0], add_bos=True, add_eos=False)
             rec = (joiner.join(srcs), joiner.join(refs), len(src1_ids), len(ref1_ids))
             yield rec
+
     recs = _prep_input()
     batches = make_batches(recs, batch_size=batch_size)
     bleed_rate = corpus_bleed_rate(batches, decoder, output, exclude_eos=True)

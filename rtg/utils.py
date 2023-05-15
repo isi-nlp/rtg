@@ -18,7 +18,6 @@ from rtg import log
 __all__ = ['line_count', 'get_my_args', 'IO', 'max_RSS', 'maybe_compress', 'shell_pipe']
 
 
-
 def line_count(path, ignore_blanks=False):
     """count number of lines in file
     :param path: file path
@@ -57,15 +56,13 @@ class IO:
         self.errors = errors if errors else 'replace'
 
     def __enter__(self):
-
         if self.path.name.endswith(".gz"):  # gzip mode
             self.fd = gzip.open(self.path, self.mode, encoding=self.encoding, errors=self.errors)
         else:
             if 'b' in self.mode:  # binary mode doesnt take encoding or errors
                 self.fd = self.path.open(self.mode)
             else:
-                self.fd = self.path.open(self.mode, encoding=self.encoding, errors=self.errors,
-                                         newline='\n')
+                self.fd = self.path.open(self.mode, encoding=self.encoding, errors=self.errors, newline='\n')
         return self.fd
 
     def __exit__(self, _type, value, traceback):
@@ -173,6 +170,7 @@ class IO:
                 except:
                     pass
 
+
 def max_RSS(who=resource.RUSAGE_SELF) -> Tuple[int, str]:
     """Gets memory usage of current process, maximum so far.
     Maximum so far, since the system call API doesnt provide "current"
@@ -183,10 +181,10 @@ def max_RSS(who=resource.RUSAGE_SELF) -> Tuple[int, str]:
     mem = resource.getrusage(who).ru_maxrss
     h_mem = mem
     if 'darwin' in sys.platform:  # "man getrusage 2" says we get bytes
-        h_mem /= 10 ** 3  # bytes to kilo
+        h_mem /= 10**3  # bytes to kilo
     unit = 'KB'
-    if h_mem >= 10 ** 3:
-        h_mem /= 10 ** 3  # kilo to mega
+    if h_mem >= 10**3:
+        h_mem /= 10**3  # kilo to mega
         unit = 'MB'
     return mem, f'{int(h_mem)}{unit}'
 
@@ -203,8 +201,9 @@ def maybe_compress(arr, frugal=False):
 
 
 def shell_pipe(cmd_line, input, cwd=None):
-    with subprocess.Popen(cmd_line, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                          shell=True, text=True, cwd=cwd) as proc:
+    with subprocess.Popen(
+        cmd_line, stdin=subprocess.PIPE, stdout=subprocess.PIPE, shell=True, text=True, cwd=cwd
+    ) as proc:
         try:
             proc.stdin.write(f'{input}')
             proc.stdin.close()
@@ -214,4 +213,3 @@ def shell_pipe(cmd_line, input, cwd=None):
             return output
         finally:
             proc.terminate()
-

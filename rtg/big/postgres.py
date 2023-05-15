@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 #
-# Author: Thamme Gowda [tg (at) isi (dot) edu] 
+# Author: Thamme Gowda [tg (at) isi (dot) edu]
 # Created: 7/12/20
 
 import shutil
@@ -15,6 +15,7 @@ def download_file(url, path, fair_on_error=True):
     try:
         log.info(f"Trying to download {url} --> {path}")
         import requests
+
         r = requests.get(url)
         with open(path, 'wb') as f:
             f.write(r.content)
@@ -29,6 +30,7 @@ def download_file(url, path, fair_on_error=True):
 def setup_jdbc():
     # add postgres jdbc driver
     import pyspark
+
     PG_JDBC_URL = 'https://jdbc.postgresql.org/download/postgresql-42.2.14.jar'
     jars_dir = Path(pyspark.__file__).parent / 'jars'
     if jars_dir.exists():
@@ -39,8 +41,10 @@ def setup_jdbc():
             jar_path = jars_dir / (PG_JDBC_URL.split('/')[-1])
             download_file(PG_JDBC_URL, jar_path, fair_on_error=False)
     else:
-        log.warning("pyspark jars are not detected. "
-                    "You may need to manually configure postgres JDBC to spark config")
+        log.warning(
+            "pyspark jars are not detected. "
+            "You may need to manually configure postgres JDBC to spark config"
+        )
 
 
 def run_command(cmd_line: str, fail_on_error=True):
@@ -60,7 +64,6 @@ def run_command(cmd_line: str, fail_on_error=True):
 
 
 class PostgresServer:
-
     def __init__(self, db_dir: Path, log_dir: Path, dbname='rtg', superuser='postgres', port=5433):
         self.db_dir = db_dir
         self.init_flag = db_dir / "_RTG_INIT_SUCCESS"
@@ -80,29 +83,30 @@ class PostgresServer:
             f'initdb -D {db_dir} ',  # initialize
             f'pg_ctl start -o "-F -p {port}" -D {db_dir}  -l {log_file} ',  # start
             f'createuser -p {port} -s {superuser}',  # at least one superuser is needed
-            f'createdb -p {port} {dbname}'  # create db
+            f'createdb -p {port} {dbname}',  # create db
         ]
         self.start_cmd = f'pg_ctl start -o "-F -p {port}" -D {db_dir} -l {log_file}'
         self.stop_cmd = f'pg_ctl stop -o "-F -p {port}" -D {db_dir}'
 
     def write_df(self, df, table_name: str, mode="overwrite"):
-
         log.info(f"writing dataframe to {self.url}; table={table_name} mode={mode}")
-        return (df.write
-                .mode(mode)
-                .format("jdbc")
-                .option("url", self.url)
-                .option("dbtable", table_name)
-                .option("driver", "org.postgresql.Driver")
-                .save())
+        return (
+            df.write.mode(mode)
+            .format("jdbc")
+            .option("url", self.url)
+            .option("dbtable", table_name)
+            .option("driver", "org.postgresql.Driver")
+            .save()
+        )
 
     def read_df(self, spark, table_name: str):
-        return (spark.read
-                .format("jdbc")
-                .option("url", self.url)
-                .option("dbtable", table_name)
-                .option("driver", "org.postgresql.Driver")
-                .load())
+        return (
+            spark.read.format("jdbc")
+            .option("url", self.url)
+            .option("dbtable", table_name)
+            .option("driver", "org.postgresql.Driver")
+            .load()
+        )
 
     def start(self):
         if self.init_flag.exists():

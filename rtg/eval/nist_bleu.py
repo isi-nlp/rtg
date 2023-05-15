@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 #
-# Author: Thamme Gowda [tg (at) isi (dot) edu] 
+# Author: Thamme Gowda [tg (at) isi (dot) edu]
 # Created: 2020-03-03
 
 import argparse
@@ -29,6 +29,7 @@ def nist_bleu(refs: List[List[Sentence]], hyps: List[Sentence], n=4):
 
     return nist_score.corpus_nist(refs, hyps, n=n)
 
+
 def ws_tokenize(line: str, lower_case=False) -> List[str]:
     if lower_case:
         line = line.lower()
@@ -39,15 +40,16 @@ def read_lines(stream, tokenizer):
     for line in stream:
         yield tokenizer(line)
 
+
 def parse_args():
     p = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    p.add_argument('--hyp', type=argparse.FileType('r'), default=sys.stdin,
-                   help='Input file path')
+    p.add_argument('--hyp', type=argparse.FileType('r'), default=sys.stdin, help='Input file path')
     p.add_argument('--ref', type=argparse.FileType('r'), required=True, help='Reference')
     p.add_argument('-n', type=int, default=4, help='Max n-grams')
     p.add_argument('-f', type=int, default=3, help='Floating point precision')
-    p.add_argument('-lc', dest='case_insensitive', action='store_true', default=False,
-                   help='Case insensitive')
+    p.add_argument(
+        '-lc', dest='case_insensitive', action='store_true', default=False, help='Case insensitive'
+    )
     args = vars(p.parse_args())
     return args
 

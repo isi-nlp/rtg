@@ -12,7 +12,18 @@ from typing import Any, Dict, Type, Callable
 from rtg import log
 from torch import optim
 
-__all__ = ['ProblemType', 'ModelSpec', 'MODELS', 'OPTIMIZERS', 'SCHEDULES', 'CRITERIA', 'TRANSFORMS', 'register', 'registry', 'snake_case' ]
+__all__ = [
+    'ProblemType',
+    'ModelSpec',
+    'MODELS',
+    'OPTIMIZERS',
+    'SCHEDULES',
+    'CRITERIA',
+    'TRANSFORMS',
+    'register',
+    'registry',
+    'snake_case',
+]
 
 
 class ProblemType(str, Enum):
@@ -39,10 +50,12 @@ OPTIMIZERS: Dict[str, Type[optim.Optimizer]] = dict(
     adagrad=optim.Adagrad,
     adam_w=optim.AdamW,
     adadelta=optim.Adadelta,
-    sparse_adam=optim.SparseAdam)
+    sparse_adam=optim.SparseAdam,
+)
 try:
     # this is still experimental
     import adabound
+
     OPTIMIZERS['ada_bound'] = adabound.AdaBound
 except:
     pass
@@ -53,15 +66,15 @@ SCHEDULES: Dict[str, Any] = {}
 CRITERION = 'criterion'
 CRITERIA: Dict[str, Any] = {}
 
-TRANSFORM = 'transform'     # pre and post processing
-TRANSFORMS: Dict[str, Callable[[str], str]] = {}   # str -> str
+TRANSFORM = 'transform'  # pre and post processing
+TRANSFORMS: Dict[str, Callable[[str], str]] = {}  # str -> str
 
 registry = {
     MODEL: MODELS,
     OPTIMIZER: OPTIMIZERS,
     SCHEDULE: SCHEDULES,
     CRITERION: CRITERIA,
-    TRANSFORM: TRANSFORMS
+    TRANSFORM: TRANSFORMS,
 }
 
 
@@ -95,10 +108,13 @@ def register(kind, name=None):
         assert _name, f'name is required for {cls}'
         assert isinstance(_name, str), f'name={_name} is not a string'
         assert _name not in registry[kind], f'{_name} model type is already registered.'
-        m = ModelSpec(name=_name, Model=getattr(cls, 'make_model'),
-                      Trainer=getattr(cls, 'make_trainer'),
-                      Generator=getattr(cls, 'make_generator', None),
-                      Experiment=getattr(cls, 'experiment_type'))
+        m = ModelSpec(
+            name=_name,
+            Model=getattr(cls, 'make_model'),
+            Trainer=getattr(cls, 'make_trainer'),
+            Generator=getattr(cls, 'make_generator', None),
+            Experiment=getattr(cls, 'experiment_type'),
+        )
         registry[kind][_name] = m
         log.debug(f"registering model: {_name}")
         return cls
@@ -116,6 +132,7 @@ def register(kind, name=None):
 def __register_all():
     # import, so register() calls can happen
     from importlib import import_module
+
     modules = [
         'rtg.nmt.tfmnmt',
         'rtg.nmt.rnnmt',
@@ -139,6 +156,7 @@ def __register_all():
 
 if __name__ == '__main__':
     from .common.exp import BaseExperiment
+
     # a simple test case
 
     @register(MODEL)

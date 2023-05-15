@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 #
-# Author: Thamme Gowda [tg (at) isi (dot) edu] 
+# Author: Thamme Gowda [tg (at) isi (dot) edu]
 # Created: 6/17/21
 from rtg.data.codec import NLField
 import tempfile
@@ -9,7 +9,6 @@ import shutil
 
 
 class TestNLField:
-
     def test_train_class(self):
         args = dict(model_type="class", vocab_size=-1)
         tmp_dir = Path(tempfile.mkdtemp())

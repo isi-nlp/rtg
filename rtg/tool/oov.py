@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 #
-# Author: Thamme Gowda [tg (at) isi (dot) edu] 
+# Author: Thamme Gowda [tg (at) isi (dot) edu]
 # Created: 12/1/18
 
 import argparse
@@ -43,15 +43,23 @@ def main(train, tests):
         oov_tok_rate = 100 * oov_rate(train_stats, test_stats, kind='token')
         tot_test_toks = sum(count for tok, count in test_stats.items())
         tot_test_types = len(test_stats)
-        print(f'{name}\t{oov_type_rate:g}% of {tot_test_types} types '
-              f'\t {oov_tok_rate:g}% of {tot_test_toks} tokens', )
+        print(
+            f'{name}\t{oov_type_rate:g}% of {tot_test_types} types '
+            f'\t {oov_tok_rate:g}% of {tot_test_toks} tokens',
+        )
 
 
 if __name__ == '__main__':
     p = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    p.add_argument('-tr', '--train', type=argparse.FileType('r'), help='Train file path',
-                   required=True)
-    p.add_argument('-ts', '--test', dest='tests', type=argparse.FileType('r'), default=[sys.stdin],
-                   help='Test file paths', nargs='*')
+    p.add_argument('-tr', '--train', type=argparse.FileType('r'), help='Train file path', required=True)
+    p.add_argument(
+        '-ts',
+        '--test',
+        dest='tests',
+        type=argparse.FileType('r'),
+        default=[sys.stdin],
+        help='Test file paths',
+        nargs='*',
+    )
     args = vars(p.parse_args())
     main(**args)

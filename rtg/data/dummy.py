@@ -14,18 +14,27 @@ class BatchIterable:
     # TODO: How to specify Type Hint for this as Iterable[Batch]
     """Dummy equivalent of dataprep.BatchIterable"""
 
-    def __init__(self, vocab_size, batch_size, n_batches, min_seq_len=5, max_seq_len=20,
-                 n_reserved_toks=Batch.eos_val + 1, reverse=True, batch_first=False):
+    def __init__(
+        self,
+        vocab_size,
+        batch_size,
+        n_batches,
+        min_seq_len=5,
+        max_seq_len=20,
+        n_reserved_toks=Batch.eos_val + 1,
+        reverse=True,
+        batch_first=False,
+    ):
         """
-         "Generate random data for a src-tgt copy task."
-         :param vocab_size: Vocabulary size
-         :param batch_size:
-         :param n_batches: number of batches to produce
-         :param n_reserved_toks:  number of reserved tokens (such as pad, EOS, BOS, UNK etc)
-         :param reverse: reverse the target
-         :param batch_first: first dimension is batch
-         :return:
-         """
+        "Generate random data for a src-tgt copy task."
+        :param vocab_size: Vocabulary size
+        :param batch_size:
+        :param n_batches: number of batches to produce
+        :param n_reserved_toks:  number of reserved tokens (such as pad, EOS, BOS, UNK etc)
+        :param reverse: reverse the target
+        :param batch_first: first dimension is batch
+        :return:
+        """
 
         self.vocab_size = vocab_size
         self.batch_size = batch_size
@@ -54,49 +63,64 @@ class DummyExperiment(Experiment):
     this produces random data and leaves no trace on disk
     """
 
-    def __init__(self, work_dir: Union[str, Path], read_only=True,
-                 config: Optional[Dict[str, Any]] = None, vocab_size: int = 20,
-                 train_batches=30, val_batches=5):
+    def __init__(
+        self,
+        work_dir: Union[str, Path],
+        read_only=True,
+        config: Optional[Dict[str, Any]] = None,
+        vocab_size: int = 20,
+        train_batches=30,
+        val_batches=5,
+    ):
         super().__init__(work_dir, read_only, config)
         self.vocab_size = vocab_size
         self.train_batches = train_batches
         self.val_batches = val_batches
 
-    def get_train_data(self, batch_size: int, steps: int = 0, sort_desc=True, sort_by='random',
-                       batch_first=True, shuffle=False, copy_xy=False, fine_tune=False):
-        train_data = BatchIterable(self.vocab_size, batch_size, self.train_batches,
-                                   reverse=False, batch_first=batch_first)
+    def get_train_data(
+        self,
+        batch_size: int,
+        steps: int = 0,
+        sort_desc=True,
+        sort_by='random',
+        batch_first=True,
+        shuffle=False,
+        copy_xy=False,
+        fine_tune=False,
+    ):
+        train_data = BatchIterable(
+            self.vocab_size, batch_size, self.train_batches, reverse=False, batch_first=batch_first
+        )
         if steps > 0:
             train_data = LoopingIterable(train_data, steps)
         return train_data
 
-    def get_val_data(self, batch_size: int, sort_desc=True, batch_first=True,
-                     shuffle=False, copy_xy=False):
+    def get_val_data(self, batch_size: int, sort_desc=True, batch_first=True, shuffle=False, copy_xy=False):
         assert not shuffle, 'Not supported'
         assert not copy_xy, 'Not supported'
-        val_data = BatchIterable(self.vocab_size, batch_size, self.val_batches,
-                                 reverse=False, batch_first=batch_first)
+        val_data = BatchIterable(
+            self.vocab_size, batch_size, self.val_batches, reverse=False, batch_first=batch_first
+        )
         return val_data
 
 
 def parse_args():
-    p = argparse.ArgumentParser(description='Generates random data for testing',
-                                formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    p = argparse.ArgumentParser(
+        description='Generates random data for testing',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
     p.add_argument('exp', type=Path, help="path to experiment directory")
-    p.add_argument('-s', '--seed', type=int, default=0,
-                   help='seed for reproducing the randomness. 0 is no seed.')
+    p.add_argument(
+        '-s', '--seed', type=int, default=0, help='seed for reproducing the randomness. 0 is no seed.'
+    )
     p.add_argument('-mn', '--min-len', type=int, default=4, help='Minimum length sequence')
     p.add_argument('-mx', '--max-len', type=int, default=15, help='Maximum length sequence')
-    p.add_argument('-v', '--vocab', dest='vocab_size', type=int, default=200,
-                   help='Vocabulary size')
-    p.add_argument('-r', '--reserved', dest='num_reserved',
-                   type=int, default=4, help='Reserved tokens')
+    p.add_argument('-v', '--vocab', dest='vocab_size', type=int, default=200, help='Vocabulary size')
+    p.add_argument('-r', '--reserved', dest='num_reserved', type=int, default=4, help='Reserved tokens')
     p.add_argument('-nt', '--num-train', type=int, default=1000, help='Number of train sequences')
     p.add_argument('-nv', '--num-val', type=int, default=500, help='Number of validation seqs')
-    p.add_argument('--rev-vocab', action="store_true",
-                   help="Reverse the target side vocabulary")
-    p.add_argument('--rev-seq', action="store_true",
-                   help="Reverse the target side sequence order")
+    p.add_argument('--rev-vocab', action="store_true", help="Reverse the target side vocabulary")
+    p.add_argument('--rev-seq', action="store_true", help="Reverse the target side sequence order")
     return vars(p.parse_args())
 
 
@@ -160,20 +184,16 @@ def main(args):
             'truncate': True,
             'src_len': args['max_len'],
             'tgt_len': args['max_len'],
-        }}
+        }
+    }
 
     if args.get('rev_vocab'):
         # shared vocabulary would be confusing
-        config['prep'].update({
-            'shared_vocab': False,
-            'max_src_types': args['vocab_size'],
-            'max_tgt_types': args['vocab_size']
-        })
+        config['prep'].update(
+            {'shared_vocab': False, 'max_src_types': args['vocab_size'], 'max_tgt_types': args['vocab_size']}
+        )
     else:
-        config['prep'].update({
-            'shared_vocab': True,
-            'max_types': args['vocab_size']
-        })
+        config['prep'].update({'shared_vocab': True, 'max_types': args['vocab_size']})
     exp = Experiment(work_dir, config=config)
     exp.store_config()
 

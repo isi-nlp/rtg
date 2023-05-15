@@ -15,12 +15,27 @@ import torch.nn.functional as F
 import tqdm
 from torch.cuda.amp import autocast
 
-from rtg import (EarlyStopper, Model, ProblemType, SteppedTrainer,
-                 TrainerState, TranslationExperiment, device, dtorch, log)
+from rtg import (
+    EarlyStopper,
+    Model,
+    ProblemType,
+    SteppedTrainer,
+    TrainerState,
+    TranslationExperiment,
+    device,
+    dtorch,
+    log,
+)
 from rtg.eval.clsmetric import ClsMetric
-from rtg.nmt.tfmnmt import (BatchIterable, Embeddings, Encoder, EncoderLayer,
-                            MultiHeadedAttention, PositionalEncoding,
-                            PositionwiseFeedForward)
+from rtg.nmt.tfmnmt import (
+    BatchIterable,
+    Embeddings,
+    Encoder,
+    EncoderLayer,
+    MultiHeadedAttention,
+    PositionalEncoding,
+    PositionwiseFeedForward,
+)
 from rtg.registry import MODEL, ProblemType, register
 from rtg.utils import IO, get_my_args
 
@@ -73,8 +88,8 @@ class Classifier(nn.Module):
 
 class ClassificationExperiment(TranslationExperiment):
     """
-        Treat source as source sequence, target as class
-        translation is many:many, classification is many:1, a special case of many:many
+    Treat source as source sequence, target as class
+    translation is many:many, classification is many:1, a special case of many:many
     """
 
     def __init__(self, *args, **kwargs):
@@ -90,17 +105,30 @@ class ClassificationExperiment(TranslationExperiment):
         # EOS is added by batch maker during training
         return partial(self.src_field.encode_as_ids, add_bos=False, add_eos=True)
 
-    def get_val_data(self, batch_size: Union[int, Tuple[int, int]], sort_desc=False, batch_first=True,
-                     shuffle=False, y_is_cls=False):
-        return BatchIterable(self.valid_file, batch_size=batch_size, sort_desc=sort_desc,
-                             batch_first=batch_first, shuffle=shuffle, field=self.tgt_vocab,
-                             keep_in_mem=True, y_is_cls=y_is_cls, **self._get_batch_args())
+    def get_val_data(
+        self,
+        batch_size: Union[int, Tuple[int, int]],
+        sort_desc=False,
+        batch_first=True,
+        shuffle=False,
+        y_is_cls=False,
+    ):
+        return BatchIterable(
+            self.valid_file,
+            batch_size=batch_size,
+            sort_desc=sort_desc,
+            batch_first=batch_first,
+            shuffle=shuffle,
+            field=self.tgt_vocab,
+            keep_in_mem=True,
+            y_is_cls=y_is_cls,
+            **self._get_batch_args(),
+        )
 
     def pre_process(self, args=None, force=False):
         args = args or self.config.get('prep')
         is_shared = args.get('shared')
-        assert not is_shared, 'Shared vocab not supported for Classification.' \
-                              ' Please set prep.shared=False'
+        assert not is_shared, 'Shared vocab not supported for Classification.' ' Please set prep.shared=False'
         # skip TranslationExperiment, go to its parent BaseExperiment pre_process
         super(TranslationExperiment, self).pre_process(args=args, force=force)
 
@@ -113,9 +141,11 @@ class ClassificationExperiment(TranslationExperiment):
 
         # check if files are parallel
         self.check_line_count('validation', args['valid_src'], args['valid_tgt'])
-        xt_args = dict(no_split_toks=args.get('no_split_toks'),
-                       char_coverage=args.get('char_coverage', 0),
-                       min_co_ev=args.get('src_min_co_ev', args.get('min_co_ev', None)))
+        xt_args = dict(
+            no_split_toks=args.get('no_split_toks'),
+            char_coverage=args.get('char_coverage', 0),
+            min_co_ev=args.get('src_min_co_ev', args.get('min_co_ev', None)),
+        )
         if force or not self._src_field_file.exists():
             src_corpus = []
             if args.get('train_src') and not args.get('train_src').startswith('stdin:'):
@@ -126,8 +156,14 @@ class ClassificationExperiment(TranslationExperiment):
             assert src_corpus, 'prep.train_src (not stdin) or prep.mono_src must be defined'
             max_src_size = args.get('max_src_types', args.get('max_types', None))
             assert max_src_size, 'prep.max_src_types or prep.max_types must be defined'
-            self.src_field = self._make_vocab("src", self._src_field_file, args['pieces'],
-                                            vocab_size=max_src_size, corpus=src_corpus, **xt_args)
+            self.src_field = self._make_vocab(
+                "src",
+                self._src_field_file,
+                args['pieces'],
+                vocab_size=max_src_size,
+                corpus=src_corpus,
+                **xt_args,
+            )
 
         if force or not self._tgt_field_file.exists():
             # target vocabulary; class names. treat each line as a word
@@ -138,21 +174,25 @@ class ClassificationExperiment(TranslationExperiment):
                 tgt_corpus.append(args['mono_tgt'])
             assert tgt_corpus, 'prep.train_tgt (not stdin) or prep.mono_tgt must be defined'
 
-            self.tgt_field = self._make_vocab("tgt", self._tgt_field_file, 'class',
-                                            corpus=tgt_corpus, vocab_size=-1)
+            self.tgt_field = self._make_vocab(
+                "tgt", self._tgt_field_file, 'class', corpus=tgt_corpus, vocab_size=-1
+            )
         n_classes = self.config['model_args'].get('tgt_vocab')
         if len(self.tgt_field) != n_classes:
-            log.warning(f'model_args.tgt_vocab={n_classes},'
-                        f' but found {len(self.tgt_field)} cls in {tgt_corpus}')
+            log.warning(
+                f'model_args.tgt_vocab={n_classes},' f' but found {len(self.tgt_field)} cls in {tgt_corpus}'
+            )
 
         train_file = self.train_db
         if args.get('train_src', '').startswith('stdin:') or args.get('train_tgt', '').startswith('stdin:'):
             log.info('skipping binarization of training data since it is stdin')
         else:
-            self._pre_process_parallel('train_src', 'train_tgt', out_file=train_file, args=args,
-                                    line_check=False)
-        self._pre_process_parallel('valid_src', 'valid_tgt', out_file=self.valid_file, args=args,
-                                   line_check=False)
+            self._pre_process_parallel(
+                'train_src', 'train_tgt', out_file=train_file, args=args, line_check=False
+            )
+        self._pre_process_parallel(
+            'valid_src', 'valid_tgt', out_file=self.valid_file, args=args, line_check=False
+        )
 
         if args.get("finetune_src") or args.get("finetune_tgt"):
             self._pre_process_parallel('finetune_src', 'finetune_tgt', self.finetune_file)
@@ -166,8 +206,9 @@ class ClassificationExperiment(TranslationExperiment):
             raise ValueError('parent.shrink not supported for this model yet')
         super(ClassificationExperiment, self).inherit_parent()
 
-    def get_predictions(self, model, input: Union[str, Path, List[str]],
-                        batch_size: Union[int, Tuple[int, int]], max_len=256):
+    def get_predictions(
+        self, model, input: Union[str, Path, List[str]], batch_size: Union[int, Tuple[int, int]], max_len=256
+    ):
         """
         :param model:
         :param input: either a path string or Path object, or list of strings
@@ -184,8 +225,10 @@ class ClassificationExperiment(TranslationExperiment):
         texts = (txt_to_ids(x)[:max_len] for x in texts)
         # sort as descending order of lengths
         texts_lensorted = list(sorted(enumerate(texts), key=lambda x: len(x[1]), reverse=True))
-        log.info(f"Predicting labels for {len(texts_lensorted)} sentences;"
-                 f" batch_size={batch_size} max_len={max_len}")
+        log.info(
+            f"Predicting labels for {len(texts_lensorted)} sentences;"
+            f" batch_size={batch_size} max_len={max_len}"
+        )
         model = model.eval().to(device)
         preds = []
         top1_probs = []
@@ -194,11 +237,10 @@ class ClassificationExperiment(TranslationExperiment):
         def _consume_minibatch(buffer):
             nonlocal preds, top1_probs, model, pad_idx  # accessing outer variable
             max_len = max(len(x) for orig_i, x in buffer)
-            x_seqs = torch.full((len(buffer), max_len), fill_value=pad_idx,
-                                dtype=torch.long)
+            x_seqs = torch.full((len(buffer), max_len), fill_value=pad_idx, dtype=torch.long)
             batch_is = [batch_i for batch_i, x in buffer]
             for minibatch_i, (batch_i, x) in enumerate(buffer):
-                x_seqs[minibatch_i, :len(x)] = torch.tensor(x, dtype=torch.long)
+                x_seqs[minibatch_i, : len(x)] = torch.tensor(x, dtype=torch.long)
 
             x_seqs = x_seqs.to(device)
             x_mask = (x_seqs != pad_idx).unsqueeze(1)
@@ -228,14 +270,16 @@ class ClassificationExperiment(TranslationExperiment):
                 _consume_minibatch(buffer)
 
         # restore order, drop indices
-        preds_idx = [p for i, p in sorted(preds, key=lambda x:x[0])]
-        pred_labels = [self.tgt_vocab.class_names[idx]  for idx in preds_idx]
+        preds_idx = [p for i, p in sorted(preds, key=lambda x: x[0])]
+        pred_labels = [self.tgt_vocab.class_names[idx] for idx in preds_idx]
         top1_probs = [p for i, p in sorted(top1_probs, key=lambda x: x[0])]
         return preds_idx, pred_labels, top1_probs
 
     def evaluate_classifier(self, model, input: Path, labels: Path, batch_size, max_len: int):
         model = model.eval()
-        pred_idx, pred_labels, probs = self.get_predictions(model, input, batch_size=batch_size, max_len=max_len)
+        pred_idx, pred_labels, probs = self.get_predictions(
+            model, input, batch_size=batch_size, max_len=max_len
+        )
         label_to_id = partial(self.tgt_field.encode_as_ids, add_bos=False, add_eos=False)
         labels = [label_to_id(x)[0] for x in IO.get_lines(labels)]
         assert len(pred_idx) == len(labels), f'preds:{len(pred_idx)} == truth:{len(labels)}?'
@@ -247,7 +291,6 @@ class ClassificationExperiment(TranslationExperiment):
 
 @register(kind=MODEL)
 class TransformerClassifier(Model):
-
     model_type = 'tfmcls'
     experiment_type = ClassificationExperiment
 
@@ -256,8 +299,7 @@ class TransformerClassifier(Model):
     CompressorFactory = SentenceCompressor
     ClassifierFactory = Classifier
 
-    def __init__(self, encoder: Encoder, src_embed, compressor: SentenceCompressor,
-                 classifier: Classifier):
+    def __init__(self, encoder: Encoder, src_embed, compressor: SentenceCompressor, classifier: Classifier):
         super().__init__()
         self.encoder: Encoder = encoder
         self.src_embed = src_embed
@@ -278,7 +320,7 @@ class TransformerClassifier(Model):
             if hasattr(self, sub_name):
                 log.info(f"Trainable parameters <-- {sub_name}")
                 param_groups.extend(getattr(self, sub_name).parameters())
-            elif sub_name.startswith('encoder:'): # sub select layers
+            elif sub_name.startswith('encoder:'):  # sub select layers
                 sub_name, layers = sub_name.split(':')  # encoder:layer_idx
                 layers = [int(x) for x in layers.split(',')]
                 for layer_idx in layers:
@@ -312,9 +354,20 @@ class TransformerClassifier(Model):
         return self.classifier(sent_repr, score=score)
 
     @classmethod
-    def make_model(cls, src_vocab: int, tgt_vocab: int, enc_layers=6, hid_size=512, ff_size=2048,
-                   n_heads=8, attn_bias=True, attn_dropout=0.1, dropout=0.1, activation='relu',
-                   exp: ClassificationExperiment = None):
+    def make_model(
+        cls,
+        src_vocab: int,
+        tgt_vocab: int,
+        enc_layers=6,
+        hid_size=512,
+        ff_size=2048,
+        n_heads=8,
+        attn_bias=True,
+        attn_dropout=0.1,
+        dropout=0.1,
+        activation='relu',
+        exp: ClassificationExperiment = None,
+    ):
         "Helper: Construct a model from hyper parameters."
 
         # get all args for reconstruction at a later phase
@@ -326,10 +379,8 @@ class TransformerClassifier(Model):
         c = copy.deepcopy
         attn = MultiHeadedAttention(n_heads, hid_size, dropout=attn_dropout, bias=attn_bias)
         ff = PositionwiseFeedForward(hid_size, ff_size, dropout, activation=activation)
-        encoder = cls.EncoderFactory(cls.EncoderLayerFactory(hid_size, c(attn), c(ff), dropout),
-                                     enc_layers)
-        src_emb = nn.Sequential(Embeddings(hid_size, src_vocab),
-                                PositionalEncoding(hid_size, dropout))
+        encoder = cls.EncoderFactory(cls.EncoderLayerFactory(hid_size, c(attn), c(ff), dropout), enc_layers)
+        src_emb = nn.Sequential(Embeddings(hid_size, src_vocab), PositionalEncoding(hid_size, dropout))
         classifier = cls.ClassifierFactory(d_model=hid_size, n_classes=tgt_vocab)
         compressor = cls.CompressorFactory(d_model=hid_size, attn=c(attn))
 
@@ -344,21 +395,26 @@ class TransformerClassifier(Model):
 
 
 class ClassifierTrainer(SteppedTrainer):
-
-    def __init__(self, exp: ClassificationExperiment,
-                 model: Optional[TransformerClassifier] = None,
-                 model_factory=TransformerClassifier.make_model):
+    def __init__(
+        self,
+        exp: ClassificationExperiment,
+        model: Optional[TransformerClassifier] = None,
+        model_factory=TransformerClassifier.make_model,
+    ):
         super().__init__(exp, model, model_factory=model_factory)
         self.exp: ClassificationExperiment = exp
-        assert isinstance(self.core_model, TransformerClassifier), \
-            f'Expected an instance of TransformerClassifier; but found {type(self.core_model)}'
+        assert isinstance(
+            self.core_model, TransformerClassifier
+        ), f'Expected an instance of TransformerClassifier; but found {type(self.core_model)}'
         chunk_size = self.init_args.get('chunk_size', -1)
         if chunk_size > 0:
             log.warning("chunk_size not supported for this setup; it is ignored")
 
         if self.n_gpus > 1:  # Multi GPU mode
-            raise Exception(f"Please use: python -m rtg.distrib.launch -G {self.n_gpus} \n "
-                            f" or set single GPU by: export CUDA_VISIBLE_DEVICES=0 ")
+            raise Exception(
+                f"Please use: python -m rtg.distrib.launch -G {self.n_gpus} \n "
+                f" or set single GPU by: export CUDA_VISIBLE_DEVICES=0 "
+            )
 
         self.classifier = self.core_model.classifier
 
@@ -388,15 +444,15 @@ class ClassifierTrainer(SteppedTrainer):
                     if self.n_gpus <= 1:  # if not dataparallel, then move
                         batch = batch.to(device)
                     x_mask = (batch.x_seqs != batch.pad_val).unsqueeze(1)
-                    scores = self.model(src=batch.x_seqs, src_mask=x_mask,
-                                        score=self.criterion.input_type)
+                    scores = self.model(src=batch.x_seqs, src_mask=x_mask, score=self.criterion.input_type)
                     loss = self.loss_func(scores=scores, labels=batch.ys, train_mode=False, take_step=False)
 
                     total_loss += loss
                     num_batches += 1
                     elapsed = time.time() - start
                     data_bar.set_postfix_str(
-                        f'Loss:{loss:.4f}, {int(len(batch) / elapsed)}item/s', refresh=False)
+                        f'Loss:{loss:.4f}, {int(len(batch) / elapsed)}item/s', refresh=False
+                    )
 
                     label_ids += batch.ys.tolist()
                     if self.criterion.input_type == 'logits':
@@ -419,14 +475,13 @@ class ClassifierTrainer(SteppedTrainer):
             'microf1': metrics.micro_f1,
             'macro_precision': metrics.macro_precision,
             'macro_recall': metrics.macro_recall,
-            'maccuracy': metrics.maccuracy
+            'maccuracy': metrics.maccuracy,
         }
         step = self.opt.curr_step
         self.tbd.add_scalars('val_performance', metrics_dict, step)
         if len(class_names) < 40:
             self.tbd.add_scalars('val_f1', dict(zip(metrics.clsmap, metrics.f1)), step)
-            self.tbd.add_scalars('val_precision', dict(zip(metrics.clsmap, metrics.precision)),
-                                 step)
+            self.tbd.add_scalars('val_precision', dict(zip(metrics.clsmap, metrics.precision)), step)
             self.tbd.add_scalars('val_recall', dict(zip(metrics.clsmap, metrics.recall)), step)
 
         metrics_dict['loss'] = loss_avg
@@ -450,10 +505,20 @@ class ClassifierTrainer(SteppedTrainer):
                 out.write('\t'.join(f'{v:g}' for v in rec) + '\n')
         return loss_avg, metrics_dict
 
-    def train(self, steps: int, check_point: int, batch_size: int, log_interval=10,
-              check_pt_callback: Optional[Callable] = None, keep_models=10, sort_by='random',
-              keep_in_mem=False, early_stop=None, fine_tune=False, **args):
-
+    def train(
+        self,
+        steps: int,
+        check_point: int,
+        batch_size: int,
+        log_interval=10,
+        check_pt_callback: Optional[Callable] = None,
+        keep_models=10,
+        sort_by='random',
+        keep_in_mem=False,
+        early_stop=None,
+        fine_tune=False,
+        **args,
+    ):
         """
         :param steps: how many optimizer steps to train (also, means how many batches)
         :param check_point: after how many checkpoints to
@@ -478,21 +543,36 @@ class ClassifierTrainer(SteppedTrainer):
         if args:
             # no extra args. let user know if an extra arg is passed
             raise Exception(f"Found extra args: {args}")
-        log.info(f'Going to train for {opt_steps} optimizer steps over {batches} batches'
-                 f' (from {self.start_step} steps);'
-                 f' batch_size={batch_size} toks; sort_by={sort_by};')
+        log.info(
+            f'Going to train for {opt_steps} optimizer steps over {batches} batches'
+            f' (from {self.start_step} steps);'
+            f' batch_size={batch_size} toks; sort_by={sort_by};'
+        )
 
         if batches <= start_batch:
-            raise Exception(f'The model was already trained to {self.start_step} steps. '
-                            f'Please increase the steps or clear the existing models')
+            raise Exception(
+                f'The model was already trained to {self.start_step} steps. '
+                f'Please increase the steps or clear the existing models'
+            )
 
         train_data = self.exp.get_train_data(
-            batch_size=[max_toks, max_sents], steps=batches - start_batch, sort_by=sort_by, batch_first=True,
-            keep_in_mem=keep_in_mem, fine_tune=fine_tune, y_is_cls=True)
+            batch_size=[max_toks, max_sents],
+            steps=batches - start_batch,
+            sort_by=sort_by,
+            batch_first=True,
+            keep_in_mem=keep_in_mem,
+            fine_tune=fine_tune,
+            y_is_cls=True,
+        )
         val_data = None
         if dtorch.is_global_main:
-            val_data = self.exp.get_val_data(batch_size=[max_toks, max_sents], shuffle=False, batch_first=True,
-                                             sort_desc=False, y_is_cls=True)
+            val_data = self.exp.get_val_data(
+                batch_size=[max_toks, max_sents],
+                shuffle=False,
+                batch_first=True,
+                sort_desc=False,
+                y_is_cls=True,
+            )
 
         train_state = TrainerState(self.model, check_point=check_point, unit='item')
         train_state.train_mode(True)
@@ -506,8 +586,14 @@ class ClassifierTrainer(SteppedTrainer):
         if early_stop:
             stopper = EarlyStopper(cur_step=self.start_step, **early_stop)
 
-        with tqdm.tqdm(train_data, initial=start_batch, total=batches, unit='batch',
-                       dynamic_ncols=True, disable=not dtorch.is_global_main) as data_bar:
+        with tqdm.tqdm(
+            train_data,
+            initial=start_batch,
+            total=batches,
+            unit='batch',
+            dynamic_ncols=True,
+            disable=not dtorch.is_global_main,
+        ) as data_bar:
             for batch in data_bar:
                 batch_count += 1
                 take_step = (batch_count % self.grad_accum_interval) == 0
@@ -518,16 +604,18 @@ class ClassifierTrainer(SteppedTrainer):
 
                     x_mask = (batch.x_seqs != batch.pad_val).unsqueeze(1)
                     scores = self.model(src=batch.x_seqs, src_mask=x_mask, score=self.criterion.input_type)
-                    loss = self.loss_func(scores=scores, labels=batch.ys, train_mode=True, take_step=take_step)
+                    loss = self.loss_func(
+                        scores=scores, labels=batch.ys, train_mode=True, take_step=take_step
+                    )
 
                 if stopper and take_step:
                     stopper.step()
                 # Log
                 unsaved_state = True
                 if self.opt.curr_step % log_interval == 0:
-                    self.tbd.add_scalars('training', {'step_loss': loss,
-                                                      'learn_rate': self.opt.curr_lr},
-                                         self.opt.curr_step)
+                    self.tbd.add_scalars(
+                        'training', {'step_loss': loss, 'learn_rate': self.opt.curr_lr}, self.opt.curr_step
+                    )
 
                 progress_msg, is_check_pt = train_state.step(len(batch), loss)
                 progress_msg += f', LR={self.opt.curr_lr:0.8f}'
@@ -537,27 +625,29 @@ class ClassifierTrainer(SteppedTrainer):
                 # Save checkpoint
                 if is_check_pt:
                     train_loss = train_state.reset()
-                    log.info(
-                        f"Chkpt Train loss={train_loss:g}; Runs validation? {dtorch.is_global_main}")
+                    log.info(f"Chkpt Train loss={train_loss:g}; Runs validation? {dtorch.is_global_main}")
                     if dtorch.is_global_main:
                         train_state.train_mode(False)
                         with torch.no_grad():
                             val_loss, val_metrics = self.run_valid_epoch(val_data)
-                            self.make_check_point(train_loss, val_loss=val_loss,
-                                                  keep_models=keep_models)
+                            self.make_check_point(train_loss, val_loss=val_loss, keep_models=keep_models)
                             if check_pt_callback:
-                                check_pt_callback(model=self.model,
-                                                  step=self.opt.curr_step,
-                                                  train_loss=train_loss)
+                                check_pt_callback(
+                                    model=self.model, step=self.opt.curr_step, train_loss=train_loss
+                                )
                         train_state.train_mode(True)
 
                         if stopper:
                             score = val_metrics.get(stopper.by, None)
-                            assert score is not None, f'early stop by {stopper.by} is invalid; try {val_metrics.keys()}'
+                            assert (
+                                score is not None
+                            ), f'early stop by {stopper.by} is invalid; try {val_metrics.keys()}'
                             stopper.validation(score)
                             if stopper.is_stop():
-                                log.info(f"Stopping at {stopper.cur_step} because {stopper.by}"
-                                         f" didnt improve over {stopper.patience} checkpoints")
+                                log.info(
+                                    f"Stopping at {stopper.cur_step} because {stopper.by}"
+                                    f" didnt improve over {stopper.patience} checkpoints"
+                                )
                                 early_stopped_flag.touch()
 
                     dtorch.barrier()
@@ -575,4 +665,3 @@ class ClassifierTrainer(SteppedTrainer):
 
         dtorch.barrier()
         return early_stopped_flag.exists()
-

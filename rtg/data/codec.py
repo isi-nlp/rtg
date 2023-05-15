@@ -38,7 +38,7 @@ class Field(metaclass=ABCMeta):
         return list(zip(cls.reserved_toks, cls.reserved_idxs))
 
     @abstractmethod
-    def encode_as_ids(self, text, add_bos, add_eos, split_ratio: Optional[float] = 0.) -> Array:
+    def encode_as_ids(self, text, add_bos, add_eos, split_ratio: Optional[float] = 0.0) -> Array:
         raise NotImplementedError()
 
     @abstractmethod
@@ -65,9 +65,14 @@ class Field(metaclass=ABCMeta):
 
     @staticmethod
     @abstractmethod
-    def train(model_type: str, vocab_size: int, model_path: str, files: Iterator[str],
-              no_split_toks: Optional[List[str]] = None,
-              char_coverage: float = -1.0):
+    def train(
+        model_type: str,
+        vocab_size: int,
+        model_path: str,
+        files: Iterator[str],
+        no_split_toks: Optional[List[str]] = None,
+        char_coverage: float = -1.0,
+    ):
         """
         Train Sentence Piece Model
         :param model_type: sentence piece model type: {unigram, BPE, word, char}
@@ -79,7 +84,7 @@ class Field(metaclass=ABCMeta):
         """
         raise NotImplementedError()
 
-    def shrink_vocab(self, files: List, min_freq:int, save_at: Path) -> List[int]:
+    def shrink_vocab(self, files: List, min_freq: int, save_at: Path) -> List[int]:
         """
         Shrinks the current vocabulary and saves at given path
         :param files: corpus file to extract vocab
@@ -102,9 +107,10 @@ class SPField(SentencePieceProcessor, Field):
         assert self.load(path)
         self.class_names = [self.IdToPiece(i) for i in range(len(self))]
 
-    def encode_as_ids(self, text: str, add_bos=False, add_eos=False, split_ratio=0.) -> Array:
-        assert split_ratio == 0, 'SentencePiece doesnt support SWR, ' \
-                                 'please use NLCodec or disable SWR by setting split_ratio=0'
+    def encode_as_ids(self, text: str, add_bos=False, add_eos=False, split_ratio=0.0) -> Array:
+        assert split_ratio == 0, (
+            'SentencePiece doesnt support SWR, ' 'please use NLCodec or disable SWR by setting split_ratio=0'
+        )
 
         ids = super(SPField, self).encode_as_ids(text)
         if add_bos and ids[0] != self.bos_idx:
@@ -122,7 +128,7 @@ class SPField(SentencePieceProcessor, Field):
         """
         if trunc_eos:
             try:
-                ids = ids[:ids.index(self.eos_idx)]
+                ids = ids[: ids.index(self.eos_idx)]
             except ValueError:
                 pass
         return super(SPField, self).decode_ids(ids)
@@ -134,8 +140,15 @@ class SPField(SentencePieceProcessor, Field):
         return ''.join(tokens).replace('▁', ' ').strip()
 
     @classmethod
-    def train(cls, model_type: str, vocab_size: int, model_path: str, files: Iterator[str],
-              no_split_toks: Optional[List[str]] = None, char_coverage: float = 0):
+    def train(
+        cls,
+        model_type: str,
+        vocab_size: int,
+        model_path: str,
+        files: Iterator[str],
+        no_split_toks: Optional[List[str]] = None,
+        char_coverage: float = 0,
+    ):
         """
         Train Sentence Piece Model
         :param model_type: sentence piece model type: {unigram, BPE, word, char}
@@ -148,9 +161,11 @@ class SPField(SentencePieceProcessor, Field):
         """
         model_prefix = model_path.replace('.model', '')
         files = ','.join(files)  # remove duplicates
-        arg = f"--input={files} --vocab_size={vocab_size} --model_prefix={model_prefix}" \
-              f" --model_type={model_type} --pad_id={cls.pad_idx} --bos_id={cls.bos_idx}" \
-              f" --eos_id={cls.eos_idx} --unk_id={cls.unk_idx} --hard_vocab_limit=false"
+        arg = (
+            f"--input={files} --vocab_size={vocab_size} --model_prefix={model_prefix}"
+            f" --model_type={model_type} --pad_id={cls.pad_idx} --bos_id={cls.bos_idx}"
+            f" --eos_id={cls.eos_idx} --unk_id={cls.unk_idx} --hard_vocab_limit=false"
+        )
         if char_coverage > 0:
             assert 0 < char_coverage <= 1
             arg += f" --character_coverage={char_coverage}"
@@ -178,6 +193,7 @@ class NLField(Field):
     def __init__(self, path: Union[str, Path]):
         super().__init__()
         from nlcodec import load_scheme, EncoderScheme, Type
+
         self.codec: EncoderScheme = load_scheme(path)
         self.vocab: List[Type] = self.codec.table
         log.info(f'Loaded {len(self.codec)} types from {path}')
@@ -186,16 +202,16 @@ class NLField(Field):
         self.class_names = [t.name for t in self.vocab]
 
     def reserved(self):
-        if self.codec.name == 'class':      # no reserved
+        if self.codec.name == 'class':  # no reserved
             return []
         elif self.codec.name == 'byte':  # only two reserved types
             self.bos_idx = self.codec.str_to_idx[nlcodec.Reseved.BOS_TOK[0]]
             self.eos_idx = self.codec.str_to_idx[nlcodec.Reseved.EOS_TOK[0]]
             return [(self.bos_tok, self.bos_idx), (self.eos_tok, self.eos_idx)]
-        else:   # all reserved must match
+        else:  # all reserved must match
             return super(NLField, self).reserved()
 
-    def encode_as_ids(self, text: str, add_bos=False, add_eos=False, split_ratio=0.) -> Array:
+    def encode_as_ids(self, text: str, add_bos=False, add_eos=False, split_ratio=0.0) -> Array:
         if self.codec.name == "bpe" and split_ratio > 0:
             ids = self.codec.encode(text, split_ratio)
         else:
@@ -210,7 +226,7 @@ class NLField(Field):
     def decode_ids(self, ids: List[int], trunc_eos=False, remove_pads=True) -> str:
         if trunc_eos:
             try:
-                ids = ids[:ids.index(self.eos_idx)]
+                ids = ids[: ids.index(self.eos_idx)]
             except ValueError:
                 pass
         if remove_pads:
@@ -227,9 +243,18 @@ class NLField(Field):
         return len(self.vocab)
 
     @classmethod
-    def train(cls, model_type: str, vocab_size: int, model_path: str, files: List[str],
-              no_split_toks: Optional[List[str]] = None, char_coverage: float = 0,
-              dedup=True, spark=None, min_co_ev=None):
+    def train(
+        cls,
+        model_type: str,
+        vocab_size: int,
+        model_path: str,
+        files: List[str],
+        no_split_toks: Optional[List[str]] = None,
+        char_coverage: float = 0,
+        dedup=True,
+        spark=None,
+        min_co_ev=None,
+    ):
         """
         :param model_type: word, char, bpe
         :param vocab_size: vocabulary size
@@ -242,6 +267,7 @@ class NLField(Field):
         """
         assert not no_split_toks, 'not supported in nlcodec yet'
         from nlcodec import learn_vocab, term_freq
+
         kwargs = dict(char_coverage=char_coverage) if char_coverage > 0 else {}
         if min_co_ev:
             kwargs["min_co_ev"] = min_co_ev
@@ -249,7 +275,7 @@ class NLField(Field):
             inp = IO.get_liness(*files)
         else:
             # extract and store frequencies to this file
-            stats_file = model_path  + '.termfreqs'
+            stats_file = model_path + '.termfreqs'
             if not Path(stats_file).exists():
                 log.info("Extracting term frequencies... ")
                 paths = [f if isinstance(f, Path) else Path(f) for f in files]
@@ -265,7 +291,7 @@ class NLField(Field):
         learn_vocab(inp=inp, level=model_type, model=model_path, vocab_size=vocab_size, **kwargs)
         return cls(model_path)
 
-    def shrink_vocab(self, files: List, min_freq:int, save_at: Path) -> List[int]:
+    def shrink_vocab(self, files: List, min_freq: int, save_at: Path) -> List[int]:
         """
         Shrinks the current vocabulary and saves at given path
         :param files: corpus file to extract vocab
@@ -299,7 +325,7 @@ class PretrainMatchField(Field):
         # these are for XML-R wiz RoBERTa from fairseq  ; generalize it for other models later
         self.bpe = hub_api.bpe
 
-        self.tok2idx = {tok:new_idx for tok, (new_idx, old_idx) in data['mapping'].items()}
+        self.tok2idx = {tok: new_idx for tok, (new_idx, old_idx) in data['mapping'].items()}
         self.idx2tok = list(sorted(self.tok2idx.keys(), key=self.tok2idx.get, reverse=False))
         assert len(self.idx2tok) == len(self.tok2idx)
 
@@ -313,12 +339,20 @@ class PretrainMatchField(Field):
     def load_hub_model(cls, model_id):
         github, model_name = model_id.split(':')
         from torch.hub import load as load_model
+
         hub_api = load_model(github, model_name)
         return hub_api
 
     @classmethod
-    def train(cls, model_type: str, vocab_size: int, model_path: Union[Path, str], files: List[str],
-              tok_coverage=0.9999, **kwargs):
+    def train(
+        cls,
+        model_type: str,
+        vocab_size: int,
+        model_path: Union[Path, str],
+        files: List[str],
+        tok_coverage=0.9999,
+        **kwargs,
+    ):
         # Note: char_coverage is abused as subword_coverage
         hub_api = cls.load_hub_model(model_type)
         bpe = hub_api.bpe
@@ -343,8 +377,9 @@ class PretrainMatchField(Field):
 
         oovs_str = ' '.join(f'{t}:{f}' for t, f in oovs)
         log.info(f'Excluded {len(oovs)} types as OOVs.\n:{oovs_str}')
-        log.info(f'Included {len(vocabulary)} types as in vocabulary; '
-                    f'Coverage = {cumulative / total_toks:g}')
+        log.info(
+            f'Included {len(vocabulary)} types as in vocabulary; ' f'Coverage = {cumulative / total_toks:g}'
+        )
         # TODO: mapping should be list[int] with one on one map
         types, indices = [], {}
         for typ, new_idx in cls.reserved():
@@ -358,17 +393,15 @@ class PretrainMatchField(Field):
             indices[typ] = [len(types), dicto.indices.get(typ, -1)]
             types.append(typ)
 
-        data = {
-            'model_id': model_type,
-            'mapping': indices
-        }
+        data = {'model_id': model_type, 'mapping': indices}
         with IO.writer(model_path) as wrtr:
             yaml.dump(data, wrtr)
         return cls(model_path)
 
-    def encode_as_ids(self, text: str, add_bos=False, add_eos=False, split_ratio=0.) -> Array:
-        assert split_ratio == 0, 'SentencePiece doesnt support SWR, ' \
-                                 'please use NLCodec or disable SWR by setting split_ratio=0'
+    def encode_as_ids(self, text: str, add_bos=False, add_eos=False, split_ratio=0.0) -> Array:
+        assert split_ratio == 0, (
+            'SentencePiece doesnt support SWR, ' 'please use NLCodec or disable SWR by setting split_ratio=0'
+        )
 
         pieces = self.tokenize(text)
         ids = [self.tok2idx.get(p, self.unk_idx) for p in pieces]
@@ -381,7 +414,7 @@ class PretrainMatchField(Field):
     def decode_ids(self, ids: List[int], trunc_eos=False, remove_pads=True) -> str:
         if trunc_eos:
             try:
-                ids = ids[:ids.index(self.eos_idx)]
+                ids = ids[: ids.index(self.eos_idx)]
             except ValueError:
                 pass
         if remove_pads:

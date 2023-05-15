@@ -15,37 +15,59 @@ from rtg.classifier.tfmcls import ClassificationExperiment
 
 
 def parse_args():
-
     stdin = io.TextIOWrapper(sys.stdin.buffer, encoding='utf-8', errors='ignore', newline='\n')
-    #stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='ignore')
-    parser = argparse.ArgumentParser(prog="rtg.decode", description="Decode using NMT model",
-                                     formatter_class=ArgFormatter)
+    # stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='ignore')
+    parser = argparse.ArgumentParser(
+        prog="rtg.decode", description="Decode using NMT model", formatter_class=ArgFormatter
+    )
     parser.add_argument("exp_dir", help="Experiment directory", type=str)
-    parser.add_argument("-if", '--input', default=[stdin], nargs='*',
-                        type=argparse.FileType('r', encoding='utf-8', errors='ignore'),
-                        help='Input file path. default is STDIN')
-    parser.add_argument("-of", '--output', default=[sys.stdout], nargs='*',
-                        type=argparse.FileType('w', encoding='utf-8', errors='ignore'),
-                        help='Output File path. default is STDOUT')
-    parser.add_argument("-sc", '--skip-check', action='store_true',
-                        help='Skip Checking whether the experiment dir is prepared and trained')
-    parser.add_argument("-b", '--batch-size', type=int,
-                        help='batch size for 1 beam. effective_batch = batch_size/beam_size')
-    parser.add_argument("-msl", '--max-src-len', type=int,
-                        help='max source len; longer seqs will be truncated')
-    parser.add_argument("-nb", '--no-buffer', action='store_true',
-                        help='Processes one line per batch followed by flush output')
+    parser.add_argument(
+        "-if",
+        '--input',
+        default=[stdin],
+        nargs='*',
+        type=argparse.FileType('r', encoding='utf-8', errors='ignore'),
+        help='Input file path. default is STDIN',
+    )
+    parser.add_argument(
+        "-of",
+        '--output',
+        default=[sys.stdout],
+        nargs='*',
+        type=argparse.FileType('w', encoding='utf-8', errors='ignore'),
+        help='Output File path. default is STDOUT',
+    )
+    parser.add_argument(
+        "-sc",
+        '--skip-check',
+        action='store_true',
+        help='Skip Checking whether the experiment dir is prepared and trained',
+    )
+    parser.add_argument(
+        "-b", '--batch-size', type=int, help='batch size for 1 beam. effective_batch = batch_size/beam_size'
+    )
+    parser.add_argument(
+        "-msl", '--max-src-len', type=int, help='max source len; longer seqs will be truncated'
+    )
+    parser.add_argument(
+        "-nb",
+        '--no-buffer',
+        action='store_true',
+        help='Processes one line per batch followed by flush output',
+    )
     args = vars(parser.parse_args())
     return args
 
 
 def validate_args(cli_args, conf_args, exp):
     if not cli_args.pop('skip_check'):  # if --skip-check is not requested
-        assert exp.has_prepared(), \
-            f'Experiment dir {exp.work_dir} is not ready to train. Please run "prep" sub task'
-        assert exp.has_trained(), \
-            f'Experiment dir {exp.work_dir} is not ready to decode.' \
+        assert (
+            exp.has_prepared()
+        ), f'Experiment dir {exp.work_dir} is not ready to train. Please run "prep" sub task'
+        assert exp.has_trained(), (
+            f'Experiment dir {exp.work_dir} is not ready to decode.'
             f' Please run "train" sub task or --skip-check to ignore this'
+        )
     assert len(cli_args['input']) == len(cli_args['output'])
     if cli_args.get('batch_size'):
         batch_size = cli_args['batch_size'] / conf_args.get('beam_size', 1)
@@ -84,7 +106,8 @@ def predict_cls(exp: ClassificationExperiment, **cli_args):
         input = [line.strip() for line in in_stream]
         log.info(f"going to label {len(input)} sequences; batch_size={batch_size} max_len={max_len}")
         top1_idx, top1_label, top1_prob = exp.get_predictions(
-            model, input=input, batch_size=batch_size, max_len=max_len)
+            model, input=input, batch_size=batch_size, max_len=max_len
+        )
         for label, prob in zip(top1_label, top1_prob):
             out_stream.write(f'{label}\t{prob:g}\n')
         log.info(f"Wrote to {out_stream}")

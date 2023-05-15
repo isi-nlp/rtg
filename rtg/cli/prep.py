@@ -10,8 +10,9 @@ from rtg.exp import load_conf
 def parse_args():
     parser = argparse.ArgumentParser(prog="rtg.prep", description="prepare NMT experiment")
     parser.add_argument("exp_dir", help="experiment directory", type=Path)
-    parser.add_argument("conf_file", type=Path, nargs='?',
-                        help="Config File. By default <work_dir>/conf.yml is used")
+    parser.add_argument(
+        "conf_file", type=Path, nargs='?', help="Config File. By default <work_dir>/conf.yml is used"
+    )
     return parser.parse_args()
 
 
@@ -25,15 +26,18 @@ def main():
         log.info("Big experiment mode enabled; checking pyspark backend")
         try:
             import pyspark
+
             log.info("pyspark is available")
         except:
             log.warning("unable to import pyspark. Please do 'pip install pyspark' and run again")
             raise
         from rtg.big.exp import BigTranslationExperiment
+
         ExpFactory = BigTranslationExperiment
 
     exp = ExpFactory(args.exp_dir, config=conf_file, read_only=False)
     return exp.pre_process()
+
 
 if __name__ == '__main__':
     main()

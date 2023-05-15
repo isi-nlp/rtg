@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 #
-# Author: Thamme Gowda [tg (at) isi (dot) edu] 
+# Author: Thamme Gowda [tg (at) isi (dot) edu]
 # Created: 5/7/20
 import logging as log
 from pathlib import Path
@@ -28,13 +28,16 @@ def main(args=None):
         uniform = 1 / n_types
         probs = [freq / tot_toks for freq in term_freqs.values()]
         div = 0.5 * sum(abs(uniform - prob) for prob in probs)
-        print(f"{side} types: {n_types} toks: {tot_toks:,} len_mean: {np.mean(lens):.4f} "
-              f"len_median: {np.median(lens)} imbalance: {div:.4f}")
+        print(
+            f"{side} types: {n_types} toks: {tot_toks:,} len_mean: {np.mean(lens):.4f} "
+            f"len_median: {np.median(lens)} imbalance: {div:.4f}"
+        )
     print(f'n_segs: {len(lens):,}')
 
 
 def parse_args():
     import argparse
+
     p = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     p.add_argument('exp', type=Path, help='Path to experiment directory')
     return p.parse_args()

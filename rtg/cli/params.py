@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 #
-# Author: Thamme Gowda [tg (at) isi (dot) edu] 
+# Author: Thamme Gowda [tg (at) isi (dot) edu]
 # Created: 3/30/21
 
 import logging as log
@@ -43,7 +43,7 @@ def parse_args():
     import argparse
 
     p = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    p.add_argument('exp',  type=Path, help='Path to Experiment')
+    p.add_argument('exp', type=Path, help='Path to Experiment')
     return vars(p.parse_args())
 
 

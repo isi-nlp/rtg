@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 #
-# Author: Thamme Gowda [tg (at) isi (dot) edu] 
+# Author: Thamme Gowda [tg (at) isi (dot) edu]
 # Created: 4/18/20
 import tempfile
 import pytest
@@ -28,7 +28,6 @@ def test_prepared_pipeline_relative_pos():
 
 
 def test_pipeline_transformer():
-
     for codec_lib in ['sentpiece', 'nlcodec']:
         tmp_dir = tempfile.mkdtemp()
         config = load_conf('experiments/transformer.test.yml')
@@ -56,8 +55,8 @@ def test_robertamt_full_init():
     exp = Experiment(tmp_dir, config=config, read_only=False)
     exp.config['trainer'].update(dict(steps=4, check_point=1))
     Pipeline(exp)
-    #.run(run_tests=False) # training not supported for this model
-    #sanity_check_experiment(exp)
+    # .run(run_tests=False) # training not supported for this model
+    # sanity_check_experiment(exp)
     print(f"Cleaning up {tmp_dir}")
     shutil.rmtree(tmp_dir, ignore_errors=True)
 
@@ -71,8 +70,8 @@ def test_robertamt_2layer_init():
     assert 'pretrainmatch' == config['prep'].get('codec_lib')
     exp = Experiment(tmp_dir, config=config, read_only=False)
     exp.config['trainer'].update(dict(steps=4, check_point=1))
-    Pipeline(exp) #.run(run_tests=False)  # training not supported for this model
-    #sanity_check_experiment(exp)
+    Pipeline(exp)  # .run(run_tests=False)  # training not supported for this model
+    # sanity_check_experiment(exp)
     print(f"Cleaning up {tmp_dir}")
     shutil.rmtree(tmp_dir, ignore_errors=True)
 
@@ -88,17 +87,9 @@ def test_parent_child_pipeline():
     assert not exp.parent_model_state.exists()
 
     child_config = load_conf('experiments/transformer.test.yml')
-    child_config.update({
-        'parent': {
-            'experiment': str(parent_dir),
-            'vocab': {
-                'shared': 'shared'
-            },
-            'model': {
-                'ensemble': 2
-            }
-        }
-    })
+    child_config.update(
+        {'parent': {'experiment': str(parent_dir), 'vocab': {'shared': 'shared'}, 'model': {'ensemble': 2}}}
+    )
 
     child_dir = tempfile.mkdtemp()
     # child_dir = 'tmp-xyz-child'
@@ -129,10 +120,9 @@ def test_byte_vocab():
         tmp_dir = tempfile.mkdtemp()
         codec_lib = 'nlcodec'
         config = load_conf('experiments/transformer.test.yml')
-        config['prep'].update({'codec_lib': codec_lib,
-                               'pieces': pieces.split('->'),
-                               'shared_vocab': False,
-                               'num_samples': 3})
+        config['prep'].update(
+            {'codec_lib': codec_lib, 'pieces': pieces.split('->'), 'shared_vocab': False, 'num_samples': 3}
+        )
         config['model_args'].update({'tied_emb': 'one-way'})
         config['trainer'].update(dict(steps=50, check_point=25))
         exp = Experiment(tmp_dir, config=config, read_only=False)
@@ -150,5 +140,6 @@ def test_byte_vocab():
 
 if __name__ == '__main__':
     from multiprocessing import freeze_support
-    freeze_support()   # required for parallel nlcodec
-    #test_pipeline_transformer()
+
+    freeze_support()  # required for parallel nlcodec
+    # test_pipeline_transformer()

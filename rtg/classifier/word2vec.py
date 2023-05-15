@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 #
-# Author: Thamme Gowda [tg (at) isi (dot) edu] 
+# Author: Thamme Gowda [tg (at) isi (dot) edu]
 # Created: 3/16/19
 import pickle
 from dataclasses import dataclass
@@ -62,7 +62,10 @@ class CBOW(LangModel):
         model = cls(emb_dim, vocab_size, pad_idx=exp.tgt_vocab.pad_idx)
         model.init_params()
 
-        args = dict(emb_dim=emb_dim, vocab_size=vocab_size, )
+        args = dict(
+            emb_dim=emb_dim,
+            vocab_size=vocab_size,
+        )
         return model, args
 
     @classmethod
@@ -79,7 +82,6 @@ class CBOWBatchReader:
     field: Field
     add_bos: bool = True
     add_eos: bool = True
-
 
     def __post_init__(self):
         assert self.side in {'src', 'tgt', 'src+tgt'}
@@ -102,7 +104,7 @@ class CBOWBatchReader:
         full_window = self.ctx_size + self.ctx_size
         for i in range(len(seq) - full_window):
             word = seq[i + self.ctx_size]
-            ctx = seq[i:i + self.ctx_size] + seq[i + self.ctx_size + 1: i + 2 * self.ctx_size + 1]
+            ctx = seq[i : i + self.ctx_size] + seq[i + self.ctx_size + 1 : i + 2 * self.ctx_size + 1]
             yield (ctx, word)
 
     def _make_tensors(self, batch):
@@ -132,22 +134,23 @@ class DataReader:
 
     def get_training_data(self, batch_size, ctx_size, n_batches):
         train_db = SqliteFile(self.exp.train_db)
-        reader = CBOWBatchReader(train_db, batch_size=batch_size, ctx_size=ctx_size, side=self.side,
-                                 field=self.exp.src_vocab)
+        reader = CBOWBatchReader(
+            train_db, batch_size=batch_size, ctx_size=ctx_size, side=self.side, field=self.exp.src_vocab
+        )
         return LoopingIterable(reader, batches=n_batches)
 
     def get_val_data(self, batch_size, ctx_size):
         data = TSVData(self.exp.valid_file, longest_first=False)
-        return CBOWBatchReader(data, batch_size=batch_size, ctx_size=ctx_size, side=self.side,
-                               field=self.exp.src_vocab)
+        return CBOWBatchReader(
+            data, batch_size=batch_size, ctx_size=ctx_size, side=self.side, field=self.exp.src_vocab
+        )
 
 
 class CBOWTrainer(SteppedTrainer):
-
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         assert isinstance(self.model, CBOW)  # type check
-        self.model: CBOW = self.model   # type ann
+        self.model: CBOW = self.model  # type ann
         self.loss_func = nn.NLLLoss()
 
     def run_valid_epoch(self, data_iter: Iterable) -> float:
@@ -182,16 +185,23 @@ class CBOWTrainer(SteppedTrainer):
                 data = {'words': words, 'vectors': matrix.numpy}
                 pickle.dump(data, f)
 
-    def train(self, steps: int, check_point: int, batch_size: int,
-              check_pt_callback: Optional[Callable] = None, side='tgt', ctx_size=2, **args):
+    def train(
+        self,
+        steps: int,
+        check_point: int,
+        batch_size: int,
+        check_pt_callback: Optional[Callable] = None,
+        side='tgt',
+        ctx_size=2,
+        **args,
+    ):
         log.info(f"using side={side}, ctx_size={ctx_size}")
         reader = DataReader(self.exp, side=side)
         rem_steps = steps - self.start_step
         if rem_steps <= 0:
             log.warning(f"Already trained upto {self.start_step-1}. Skipped")
             return
-        train_data = reader.get_training_data(batch_size=batch_size, n_batches=rem_steps,
-                                              ctx_size=ctx_size)
+        train_data = reader.get_training_data(batch_size=batch_size, n_batches=rem_steps, ctx_size=ctx_size)
         val_data = reader.get_val_data(batch_size=batch_size, ctx_size=ctx_size)
         train_loss, n = 0.0, 0
 
@@ -200,19 +210,19 @@ class CBOWTrainer(SteppedTrainer):
                 val_loss = self.run_valid_epoch(val_data)
             log.info(f"Checkpoint at {step}")
             self.save_embeddings(step, train_loss, val_loss, txt=True)
-            self.tbd.add_scalars('losses', {'training': train_loss,
-                                            'valid_loss': val_loss}, global_step=step)
+            self.tbd.add_scalars('losses', {'training': train_loss, 'valid_loss': val_loss}, global_step=step)
 
-        with tqdm(train_data, initial=self.start_step, total=rem_steps+1, unit='batch',
-                  dynamic_ncols=True) as data_bar:
+        with tqdm(
+            train_data, initial=self.start_step, total=rem_steps + 1, unit='batch', dynamic_ncols=True
+        ) as data_bar:
             for i, (xs, ys) in enumerate(data_bar, start=self.start_step):
                 self.model.zero_grad()
                 xs, ys = xs.to(device), ys.to(device)
                 log_probs = self.model(xs)
                 loss = self.loss_func(log_probs, ys)
-                self.tbd.add_scalars('training', {'step_loss': loss.item(),
-                                                  'learn_rate': self.opt.curr_lr},
-                                     self.opt.curr_step)
+                self.tbd.add_scalars(
+                    'training', {'step_loss': loss.item(), 'learn_rate': self.opt.curr_lr}, self.opt.curr_step
+                )
                 progress_msg = f', loss={loss:g} LR={self.opt.curr_lr:g}'
                 data_bar.set_postfix_str(progress_msg, refresh=False)
                 train_loss += loss.item()
