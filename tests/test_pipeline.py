@@ -3,10 +3,12 @@
 # Author: Thamme Gowda [tg (at) isi (dot) edu]
 # Created: 4/18/20
 import tempfile
-import pytest
-from rtg import load_conf, log, Pipeline, TranslationExperiment as Experiment
 import torch
+import pytest
 import shutil
+
+from rtg import load_conf, log, Pipeline
+from rtg.nmt import TranslationExperiment as Experiment
 from . import sanity_check_experiment, run_decode
 
 

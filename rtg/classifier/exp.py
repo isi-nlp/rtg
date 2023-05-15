@@ -13,7 +13,6 @@ from torch.cuda.amp import autocast
 
 from rtg import (
     ProblemType,
-    TranslationExperiment,
     device,
     log,
     BatchIterable
@@ -21,6 +20,7 @@ from rtg import (
 from rtg.registry import MODEL, ProblemType
 from rtg.eval.clsmetric import ClsMetric
 from rtg.utils import IO
+from rtg.nmt import TranslationExperiment
 
 
 class ClassificationExperiment(TranslationExperiment):

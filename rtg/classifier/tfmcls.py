@@ -1,31 +1,16 @@
 import copy
-import time
-from functools import partial
-from pathlib import Path
-from typing import Callable, List, Optional, Tuple, Union
+from typing import  List
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import tqdm
-from torch.cuda.amp import autocast
 
-from rtg import (
-    log,
-    get_my_args,
-    register_model
-)
-from rtg.eval.clsmetric import ClsMetric
-from rtg.nmt.tfmnmt import (
-    Embeddings,
-    Encoder,
-    EncoderLayer,
-    MultiHeadedAttention,
-    PositionalEncoding,
-    PositionwiseFeedForward,
-)
+from rtg import get_my_args, log, register_model
+from rtg.nmt.tfmnmt import (Embeddings, Encoder, EncoderLayer,
+                            MultiHeadedAttention, PositionalEncoding,
+                            PositionwiseFeedForward)
 
-from . import ClassifierModel, ClassificationExperiment, ClassifierTrainer
+from . import ClassificationExperiment, ClassifierModel, ClassifierTrainer
 
 
 class SentenceCompressor(nn.Module):
@@ -33,11 +18,19 @@ class SentenceCompressor(nn.Module):
     Compresses token representation into a single vector
     """
 
-    def __init__(self, d_model: int, attn: MultiHeadedAttention):
+    def __init__(self, d_model: int, attn_heads: int = 0, dropout: float = 0.1):
+        """ Reduces a sequence of vectors into a single vector
+        :param d_model: Dimension of the input vector
+        :param attn_heads: Number of heads in the multi-headed attention. if 0, it is set to d_model//64
+        :param dropout: Dropout probability for compressor multi-headed attention
+        """
         super(SentenceCompressor, self).__init__()
         self.cls_repr = nn.Parameter(torch.zeros(d_model))
         self.d_model = d_model
-        self.attn = attn
+        if attn_heads == 0:
+            assert d_model % 64 == 0, f"Multi-head attention requires d_model to be a multiple of 64. Given={d_model}"
+            attn_heads = int(d_model // 64)
+        self.attn = MultiHeadedAttention(h=attn_heads, d_model=d_model, dropout=dropout)
 
     def forward(self, src, src_mask):
         B, T, D = src.size()  # [Batch, Time, Dim]
@@ -167,7 +160,7 @@ class TransformerClassifier(ClassifierModel):
         encoder = cls.EncoderFactory(cls.EncoderLayerFactory(hid_size, c(attn), c(ff), dropout), enc_layers)
         src_emb = nn.Sequential(Embeddings(hid_size, src_vocab), PositionalEncoding(hid_size, dropout))
         classifier_head = cls.ClassifierHeadFactory(d_model=hid_size, n_classes=tgt_vocab)
-        compressor = cls.CompressorFactory(d_model=hid_size, attn=c(attn))
+        compressor = cls.CompressorFactory(d_model=hid_size, attn_heads=n_heads, dropout=dropout)
 
         model = cls(encoder, src_emb, compressor=compressor, classifier_head=classifier_head)
 
@@ -177,4 +170,5 @@ class TransformerClassifier(ClassifierModel):
     @classmethod
     def make_trainer(cls, *args, **kwargs):
         return ClassifierTrainer(*args, model_factory=cls.make_model, **kwargs)
+
 

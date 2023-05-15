@@ -52,10 +52,10 @@ from rtg.utils import *
 from rtg.registry import *
 from rtg.common import *
 from rtg.data import *
-from rtg.nmt import *
-from rtg.lm import *
-from rtg.classifier import *
-
-
-# from rtg.registry import __register_all
-# __register_all()
+# avoid name space collision
+from . import (
+    nmt,
+    lm,
+    classifier,
+    comet,
+)

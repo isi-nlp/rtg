@@ -9,8 +9,9 @@ from typing import List, TextIO
 
 import torch
 
-from rtg import TranslationExperiment, load_conf, log
-from rtg.classifier.tfmcls import ClassificationExperiment
+from rtg import  load_conf, log
+from rtg.classifier import ClassificationExperiment
+from rtg.nmt import TranslationExperiment
 from rtg.nmt.decoder import Decoder
 from rtg.registry import MODEL, registry
 

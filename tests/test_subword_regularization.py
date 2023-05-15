@@ -4,7 +4,8 @@
 # Created: 7/13/2020
 import tempfile
 import shutil
-from rtg import load_conf, log, Pipeline, TranslationExperiment as Experiment
+from rtg import load_conf, log, Pipeline
+from rtg.nmt import TranslationExperiment as Experiment
 
 
 def test_finetune_pipeline_transformer():

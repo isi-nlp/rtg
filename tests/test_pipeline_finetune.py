@@ -4,7 +4,8 @@
 # Created: 4/20/20
 import shutil
 import tempfile
-from rtg import load_conf, log, Pipeline, TranslationExperiment as Experiment
+from rtg import load_conf, log, Pipeline
+from rtg.nmt import TranslationExperiment as Experiment
 from . import sanity_check_experiment
 
 

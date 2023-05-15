@@ -1,11 +1,9 @@
-import copy
+
 import time
-from functools import partial
-from pathlib import Path
 from typing import Callable, List, Optional, Tuple, Union
 
 import torch
-import torch.nn as nn
+
 import torch.nn.functional as F
 import tqdm
 from torch.cuda.amp import autocast
@@ -46,7 +44,7 @@ class ClassifierTrainer(SteppedTrainer):
                 f" or set single GPU by: export CUDA_VISIBLE_DEVICES=0 "
             )
 
-        self.classifier = self.core_model.classifier_head
+        self.classifier_head = self.core_model.classifier_head
 
     def loss_func(self, scores, labels, train_mode=False, take_step=False):
         loss = self.criterion(scores, labels, normalizer=len(labels), mask_out=None)
@@ -73,9 +71,7 @@ class ClassifierTrainer(SteppedTrainer):
                 with autocast(enabled=dtorch.fp16):
                     if self.n_gpus <= 1:  # if not dataparallel, then move
                         batch = batch.to(device)
-                    x_mask = (batch.x_seqs != batch.pad_val).unsqueeze(1)
-                    scores = self.model(src=batch.x_seqs, src_mask=x_mask, score=self.criterion.input_type)
-                    loss = self.loss_func(scores=scores, labels=batch.ys, train_mode=False, take_step=False)
+                    loss, scores = self._batch_step(batch, take_step=False, train_mode=False)
 
                     total_loss += loss
                     num_batches += 1
@@ -86,9 +82,8 @@ class ClassifierTrainer(SteppedTrainer):
 
                     label_ids += batch.ys.tolist()
                     if self.criterion.input_type == 'logits':
+                        # softmax was not applied in batch_step. Apply here
                         probs = F.softmax(scores, dim=1)
-                    else:
-                        probs = scores
 
                     top1_probs, top1_idx = probs.max(dim=1)
                     pred_ids += top1_idx.tolist()
@@ -134,6 +129,17 @@ class ClassifierTrainer(SteppedTrainer):
                 rec = [self.opt.curr_step] + list(metrics_dict.values())
                 out.write('\t'.join(f'{v:g}' for v in rec) + '\n')
         return loss_avg, metrics_dict
+
+    def _batch_step(self, batch, take_step=False, train_mode=False):
+        """ Take a single step of training or validation on a batch
+        :param batch: batch object
+        :param take_step: whether to take optimizer step  (requires train_mode=True). Useful for gradient accumulation.
+        :param train_mode: whether to run in train mode i.e., with grads no grads
+        """
+        x_mask = (batch.x_seqs != batch.pad_val).unsqueeze(1)
+        scores = self.model(src=batch.x_seqs, src_mask=x_mask, score=self.criterion.input_type)
+        loss = self.loss_func(scores=scores, labels=batch.ys, train_mode=train_mode, take_step=take_step)
+        return loss, scores
 
     def train(
         self,
@@ -231,12 +237,7 @@ class ClassifierTrainer(SteppedTrainer):
                 with autocast(enabled=dtorch.fp16):
                     if self.n_gpus <= 1:  # if not dataparallel, then move
                         batch = batch.to(device)
-
-                    x_mask = (batch.x_seqs != batch.pad_val).unsqueeze(1)
-                    scores = self.model(src=batch.x_seqs, src_mask=x_mask, score=self.criterion.input_type)
-                    loss = self.loss_func(
-                        scores=scores, labels=batch.ys, train_mode=True, take_step=take_step
-                    )
+                    loss, _scores = self._batch_step(batch, take_step=take_step, train_mode=True)
 
                 if stopper and take_step:
                     stopper.step()

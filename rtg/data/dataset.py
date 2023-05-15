@@ -86,7 +86,7 @@ class IdExample:
 
 class NLDbExample(IdExample):
     """
-    # NLDd has (id, x, y) where as here (x, y, id) ; I think NLDb is doing correctly
+    # NLDb has (id, x, y) where as here (x, y, id) ; I think NLDb is doing correctly
     """
 
     __slots__ = 'x', 'y', 'id'
@@ -233,8 +233,12 @@ class TSVData(Iterable[IdExample]):
 
     @staticmethod
     def write_parallel_recs(records: Iterator[ParallelSeqRecord], path: Union[str, Path]):
-        seqs = ((' '.join(map(str, x)), ' '.join(map(str, y))) for x, y in records)
-        lines = (f'{x}\t{y}' for x, y in seqs)
+
+        def _to_line(rec, field_delim='\t', tok_delim=' '):
+            cols = [tok_delim.join(map(str, col)) for col in rec]
+            return field_delim.join(cols)
+
+        lines = (_to_line(rec) for rec in records)
         TSVData.write_lines(lines, path)
 
     @staticmethod
@@ -564,12 +568,6 @@ class Batch:
         :param y_is_cls: y is a class. ignore eos, bos things on y seqs
         :param field:
         :param device:
-        """
-        """
-        :param batch: 
-        :param sort_dec: True if the examples be sorted as descending order of their source sequence lengths
-        :Param Batch_First: first dimension is batch
-        
         """
         assert field
         self.bos_val: int = field.bos_idx
