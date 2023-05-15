@@ -1,36 +1,29 @@
 import copy
+import hashlib
 import os
 import random
 import sys
-from datetime import datetime, timedelta
-from pathlib import Path
-from functools import partial
-from typing import Optional, Dict, List, Tuple, Union, Any
 import time
 from collections import Counter
+from datetime import datetime, timedelta
+from functools import partial
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
-import torch
-import hashlib
 import portalocker
+import torch
 import tqdm
 
 import rtg
-from rtg import log, yaml, device
-from rtg.data.dataset import (
-    TSVData,
-    StreamData,
-    BatchIterable,
-    LoopingIterable,
-    SqliteFile,
-    GenerativeBatchIterable,
-)
-from rtg.data.codec import Field, SPField, NLField, PretrainMatchField
-from ..utils import IO, line_count
-from ..registry import CRITERION, OPTIMIZER, SCHEDULE, MODEL
-from .schema import config_checks
-from .distrib import dtorch
+from rtg import IO, device, line_count, log, yaml
+from rtg.data.codec import Field, NLField, PretrainMatchField, SPField
+from rtg.data.dataset import (BatchIterable, GenerativeBatchIterable,
+                              LoopingIterable, SqliteFile, StreamData, TSVData)
+from rtg.registry import CRITERION, MODEL, OPTIMIZER, SCHEDULE
 
+from .distrib import dtorch
+from .schema import config_checks
 
 seeded = False
 

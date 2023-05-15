@@ -3,14 +3,18 @@
 # Author: Thamme Gowda [tg (at) isi (dot) edu]
 # Created: 2/15/19
 
+from typing import List, Mapping
+
 import torch
 import torch.nn as nn
-from typing import List, Mapping
-from .tfmnmt import TransformerNMT, EncoderLayer, DecoderLayer, Generator
-from rtg import TranslationExperiment as Experiment, log
+
+from rtg import TranslationExperiment as Experiment
+from rtg import log
 from rtg.data.codec import PretrainMatchField
+from rtg.registry import MODEL, register
 from rtg.utils import get_my_args
-from rtg.registry import register, MODEL
+
+from .tfmnmt import DecoderLayer, EncoderLayer, Generator, TransformerNMT
 
 
 class RobertaGenerator(Generator):
@@ -160,8 +164,10 @@ class RoBERTaMT(TransformerNMT):
         assert len(self.encoder.layers) == len(enc_layer_map)
         assert len(self.decoder.layers) == len(dec_layer_map)
 
-        from fairseq.modules.transformer_sentence_encoder_layer import TransformerSentenceEncoderLayer
-        from fairseq.modules.multihead_attention import MultiheadAttention as YourAttn
+        from fairseq.modules.multihead_attention import \
+            MultiheadAttention as YourAttn
+        from fairseq.modules.transformer_sentence_encoder_layer import \
+            TransformerSentenceEncoderLayer
 
         pieces = {
             'all',

@@ -4,11 +4,12 @@
 # Created: 2020-03-03
 
 import argparse
-import sys
 import logging as log
-from typing import List
-from nltk.translate import nist_score
+import sys
 from functools import partial
+from typing import List
+
+from nltk.translate import nist_score
 
 log.basicConfig(level=log.INFO)
 Sentence = List[str]

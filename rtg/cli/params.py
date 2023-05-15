@@ -5,8 +5,10 @@
 
 import logging as log
 from pathlib import Path
-from rtg.exp import TranslationExperiment
+
 import torch
+
+from rtg import TranslationExperiment
 
 log.basicConfig(level=log.INFO)
 

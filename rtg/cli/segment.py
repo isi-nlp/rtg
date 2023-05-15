@@ -6,7 +6,9 @@
 
 import argparse
 import sys
-from rtg import TranslationExperiment as Experiment, log
+
+from rtg import TranslationExperiment as Experiment
+from rtg import log
 
 
 def run_all(exp: Experiment, inp, side: str = 'shared', is_ids: bool = False, is_merge: bool = False):

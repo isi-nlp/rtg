@@ -5,8 +5,11 @@
 
 import argparse
 from pathlib import Path
+
 import torch
-from rtg import __version__, log, dtorch, load_conf, TranslationExperiment, Pipeline
+
+from rtg import (Pipeline, TranslationExperiment, __version__, dtorch,
+                 load_conf, log)
 
 
 def parse_args():

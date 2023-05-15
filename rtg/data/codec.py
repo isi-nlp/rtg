@@ -3,18 +3,17 @@
 # Author: Thamme Gowda [tg (at) isi (dot) edu]
 # Created: 4/18/20
 
+import collections as coll
 from abc import ABCMeta, abstractmethod
 from pathlib import Path
-from typing import List, Iterator, Union, Optional
-import collections as coll
+from typing import Iterator, List, Optional, Union
 
 import nlcodec
-from tqdm import tqdm
 import numpy as np
-from rtg import log, yaml
 from sentencepiece import SentencePieceProcessor, SentencePieceTrainer
+from tqdm import tqdm
 
-from rtg import IO
+from rtg import IO, log, yaml
 
 Array = np.ndarray
 
@@ -192,7 +191,7 @@ class NLField(Field):
     # from nlcodec lib
     def __init__(self, path: Union[str, Path]):
         super().__init__()
-        from nlcodec import load_scheme, EncoderScheme, Type
+        from nlcodec import EncoderScheme, Type, load_scheme
 
         self.codec: EncoderScheme = load_scheme(path)
         self.vocab: List[Type] = self.codec.table

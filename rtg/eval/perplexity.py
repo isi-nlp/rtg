@@ -3,13 +3,16 @@
 # Author: Thamme Gowda [tg (at) isi (dot) edu]
 # Created: 2/8/19
 import argparse
-import sys
-import torch
-from rtg.module.decoder import Decoder
-from rtg import TranslationExperiment as Experiment, device
-from typing import TextIO
-from tqdm import tqdm
 import math
+import sys
+from typing import TextIO
+
+import torch
+from tqdm import tqdm
+
+from rtg import TranslationExperiment as Experiment
+from rtg import device
+from rtg.module.decoder import Decoder
 
 
 def log_perplexity(decoder: Decoder, test_data: TextIO):

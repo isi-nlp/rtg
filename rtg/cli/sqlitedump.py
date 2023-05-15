@@ -4,10 +4,11 @@
 # Created: 2019-07-26
 
 import argparse
-import sys
 import logging as log
+import sys
 from pathlib import Path
 from typing import TextIO
+
 from rtg.data.dataset import SqliteFile
 
 log.basicConfig(level=log.INFO)

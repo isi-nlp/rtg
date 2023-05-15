@@ -1,17 +1,18 @@
 import random
-from typing import Optional, Callable
+from typing import Callable, Optional
 
 import torch
 import torch.nn.functional as F
 from torch import nn
 from tqdm import tqdm
 
-from rtg import log, TranslationExperiment as Experiment
-from rtg import my_tensor as tensor, device
-from rtg.data.dataset import Batch, BatchIterable, padded_sequence_mask
+from rtg import TranslationExperiment as Experiment
+from rtg import device, log
+from rtg import my_tensor as tensor
+from rtg.common import NMTModel, SteppedTrainer, TrainerState
 from rtg.data.codec import Field
-from rtg.common import NMTModel, TrainerState, SteppedTrainer
-from rtg.registry import register, MODEL
+from rtg.data.dataset import Batch, BatchIterable, padded_sequence_mask
+from rtg.registry import MODEL, register
 
 PAD_IDX = Field.pad_idx  #
 

@@ -2,8 +2,11 @@
 transformation of text
 """
 import html
-from sacremoses import MosesTokenizer, MosesDetokenizer, MosesPunctNormalizer, MosesTruecaser
 from functools import partial
+
+from sacremoses import (MosesDetokenizer, MosesPunctNormalizer, MosesTokenizer,
+                        MosesTruecaser)
+
 from ..registry import TRANSFORM, TRANSFORMS
 from ..utils import shell_pipe
 

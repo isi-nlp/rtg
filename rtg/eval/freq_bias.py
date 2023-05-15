@@ -3,13 +3,15 @@
 # Author: Thamme Gowda [tg (at) isi (dot) edu]
 # Created: 5/29/20
 
-import logging as log
 import collections as coll
+import logging as log
+from functools import partial
 from pathlib import Path
-from rtg import TranslationExperiment as Experiment
+
 import numpy as np
 from scipy import stats
-from functools import partial
+
+from rtg import TranslationExperiment as Experiment
 
 log.basicConfig(level=log.INFO)
 

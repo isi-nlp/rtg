@@ -12,10 +12,12 @@ import torch.nn.functional as F
 from torch import nn
 from tqdm import tqdm
 
-from rtg import device, log, IO, LangModel, SteppedTrainer, TranslationExperiment as Experiment
-from rtg.registry import MODEL, register
+from rtg import IO, LangModel, SteppedTrainer
+from rtg import TranslationExperiment as Experiment
+from rtg import device, log
 from rtg.data.codec import Field
 from rtg.data.dataset import IdExample, LoopingIterable, SqliteFile, TSVData
+from rtg.registry import MODEL, register
 
 
 @register(MODEL, name='CBOW')

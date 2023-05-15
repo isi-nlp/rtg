@@ -5,8 +5,8 @@
 
 
 import argparse
-import sys
 import logging as log
+import sys
 from typing import List
 
 log.basicConfig(level=log.INFO)

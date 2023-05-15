@@ -1,13 +1,15 @@
 #!/usr/bin/env python
 # Generates dummy data for testing
-from rtg.data.dataset import Batch, Example
 import argparse
-from rtg import log, TranslationExperiment as Experiment, IO
-from rtg.data.dataset import LoopingIterable
+from pathlib import Path
+from typing import Any, Dict, Optional, Union
 
 import numpy as np
-from pathlib import Path
-from typing import Optional, Dict, Union, Any
+
+from rtg import IO
+from rtg import TranslationExperiment as Experiment
+from rtg import log
+from rtg.data.dataset import Batch, Example, LoopingIterable
 
 
 class BatchIterable:

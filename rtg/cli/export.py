@@ -2,18 +2,18 @@
 #
 # Author: Thamme Gowda [tg (at) isi (dot) edu]
 # Created: 1/24/19
-from rtg.exp import TranslationExperiment as Experiment
+import argparse
+import datetime
+import os
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from rtg import log, device, yaml
-from rtg.utils import IO
-import datetime
-
-import os
 import torch
-import time
-import argparse
+
+from rtg import device, log, yaml
+from rtg import TranslationExperiment as Experiment
+from rtg.utils import IO
 
 
 @dataclass

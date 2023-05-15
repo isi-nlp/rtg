@@ -2,16 +2,17 @@
 #
 # Author: Thamme Gowda [tg (at) isi (dot) edu]
 # Created: 2020-01-23
-import torch
-from torch import nn
-from torch import Tensor
-import torch.nn.functional as F
 import abc
-from ..registry import CRITERION, register, ProblemType
-from rtg import log
-from .exp import TranslationExperiment as Experiment
-from pathlib import Path
 import math
+from pathlib import Path
+
+import torch
+import torch.nn.functional as F
+from torch import Tensor, nn
+
+from rtg import log
+from rtg.common.exp import TranslationExperiment as Experiment
+from rtg.registry import CRITERION, ProblemType, register
 
 # List of  items to export for * import
 __all__ = [

@@ -7,7 +7,8 @@ from dataclasses import dataclass
 from torch import optim
 
 from rtg import log
-from ..registry import register, SCHEDULE
+
+from ..registry import SCHEDULE, register
 from .distrib import DistribTorch
 
 dtorch = DistribTorch.instance()

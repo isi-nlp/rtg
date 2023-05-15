@@ -9,10 +9,11 @@
 # Created: 4/26/21
 
 import logging as log
-from typing import List, Union
-from torch import Tensor
-import numpy as np
 from collections import Counter
+from typing import List, Union
+
+import numpy as np
+from torch import Tensor
 
 log.basicConfig(level=log.INFO)
 Array = Union[List[int], Tensor, np.ndarray]

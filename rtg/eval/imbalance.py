@@ -2,12 +2,14 @@
 #
 # Author: Thamme Gowda [tg (at) isi (dot) edu]
 # Created: 5/7/20
+import collections as coll
 import logging as log
 from pathlib import Path
+
+import numpy as np
+
 from rtg import TranslationExperiment as Experiment
 from rtg.data.dataset import SqliteFile
-import collections as coll
-import numpy as np
 
 log.basicConfig(level=log.INFO)
 

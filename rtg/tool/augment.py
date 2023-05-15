@@ -6,17 +6,17 @@
 
 import argparse
 import collections
+import itertools
+import logging as log
 import random
+import resource
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Any, Set, List, Sequence, Tuple
-import itertools
-import resource
+from typing import Any, Dict, List, Sequence, Set, Tuple
+
 import numpy as np
 from tqdm import tqdm
-import logging as log
-
 
 log.basicConfig(level=log.INFO)
 

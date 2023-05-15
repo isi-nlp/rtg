@@ -1,8 +1,9 @@
 from abc import ABCMeta, abstractmethod
+
 import torch
 import torch.nn as nn
-from .exp import log, BaseExperiment, TranslationExperiment
 
+from .exp import BaseExperiment, TranslationExperiment, log
 
 __all__ = ['Model', 'LangModel', 'NMTModel']
 

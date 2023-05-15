@@ -48,8 +48,8 @@ def profile(func, *args):
     return profiler(func, *args)
 
 
-from rtg.registry import *
 from rtg.utils import *
+from rtg.registry import *
 from rtg.common import *
 from rtg.data import *
 from rtg.nmt import *

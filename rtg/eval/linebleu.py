@@ -3,15 +3,15 @@
 # Author: Thamme Gowda [tg (at) isi (dot) edu]
 # Created: 1/7/19
 
-from typing import List, Union
-from collections import Counter
-import functools
-import operator
 import argparse
-import sys
-import logging as log
-from itertools import zip_longest
+import functools
 import io
+import logging as log
+import operator
+import sys
+from collections import Counter
+from itertools import zip_longest
+from typing import List, Union
 
 log.basicConfig(level=log.INFO)
 

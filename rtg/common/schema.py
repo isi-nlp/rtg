@@ -4,6 +4,7 @@
 # Created: 8/4/21
 
 from rtg import log
+
 from ..registry import CRITERION, OPTIMIZER
 
 

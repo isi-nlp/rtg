@@ -7,10 +7,11 @@
 
 import argparse
 import os
-from typing import Union, List
-from rtg import log, TranslationExperiment as Experiment
 from pathlib import Path
-from rtg.utils import IO
+from typing import List, Union
+
+from rtg import TranslationExperiment as Experiment
+from rtg import log, IO
 
 
 def fork_experiment(

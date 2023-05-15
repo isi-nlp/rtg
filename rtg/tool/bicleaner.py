@@ -5,10 +5,10 @@
 
 
 import argparse
-import sys
-import logging as log
 import collections as coll
-from typing import Tuple, Iterator
+import logging as log
+import sys
+from typing import Iterator, Tuple
 
 log.basicConfig(level=log.INFO)
 ParallelRec = Tuple[str, str]

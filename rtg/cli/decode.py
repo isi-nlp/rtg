@@ -1,17 +1,18 @@
 # CLI interface to decode task
 import argparse
-import sys
-import io
-from argparse import ArgumentDefaultsHelpFormatter as ArgFormatter
-import torch
-from typing import List, TextIO
 import copy
+import io
+import sys
+from argparse import ArgumentDefaultsHelpFormatter as ArgFormatter
 from pathlib import Path
-from rtg import log
-from rtg import load_conf, TranslationExperiment
-from rtg.registry import registry, MODEL
-from rtg.nmt.decoder import Decoder
+from typing import List, TextIO
+
+import torch
+
+from rtg import TranslationExperiment, load_conf, log
 from rtg.classifier.tfmcls import ClassificationExperiment
+from rtg.nmt.decoder import Decoder
+from rtg.registry import MODEL, registry
 
 
 def parse_args():

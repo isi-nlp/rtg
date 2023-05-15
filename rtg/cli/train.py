@@ -2,9 +2,10 @@
 
 import argparse
 from argparse import ArgumentDefaultsHelpFormatter as ArgFormatter
-from rtg import TranslationExperiment as Experiment, log
-from rtg.exp import load_conf
 from pathlib import Path
+
+from rtg import TranslationExperiment as Experiment
+from rtg import log, load_conf
 
 
 def parse_args():
@@ -53,6 +54,7 @@ def main():
     if seed:
         log.info(f"Seed for random number generator: {seed}")
         import random
+
         import torch
 
         random.seed(seed)

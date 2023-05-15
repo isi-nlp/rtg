@@ -2,23 +2,22 @@
 #
 # Author: Thamme Gowda [tg at isi dot edu]
 # Created: 10/17/18
+import time
+from abc import abstractmethod
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Callable, List, Optional
+
 import torch
+from torch.utils.tensorboard import SummaryWriter
+
 import rtg
-from rtg import log, yaml, device, IO, ProblemType
-
-
-from rtg.common import TranslationExperiment as Experiment, NMTModel, ScheduledOptimizer
+from rtg import IO, ProblemType, device, log, yaml
+from rtg.common import NMTModel, ScheduledOptimizer
+from rtg.common import TranslationExperiment as Experiment
 from rtg.data import BatchIterable
 
-from abc import abstractmethod
-from typing import Optional, Callable, List
-from dataclasses import dataclass, field
-import time
-
-from torch.utils.tensorboard import SummaryWriter
-from pathlib import Path
 from .distrib import dtorch
-
 
 __all__ = ['TrainerState', 'EarlyStopper', 'SteppedTrainer', 'NoOpSummaryWriter']
 
@@ -260,7 +259,7 @@ class SteppedTrainer:
         return step
 
     def create_criterion(self):
-        from ..registry import CRITERION, CRITERIA
+        from ..registry import CRITERIA, CRITERION
 
         cri_conf = self.exp.config[CRITERION]
         cri_name, cri_args = cri_conf['name'], cri_conf.get('args') or {}

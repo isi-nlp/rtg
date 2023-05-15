@@ -1,24 +1,26 @@
+import math
+import os
+import sys
 import time
 import traceback
-from io import StringIO
-from typing import List, Tuple, Type, Dict, Any, Optional, Iterator
-from pathlib import Path
-import math
-from dataclasses import dataclass, field
 import warnings
-import sys
-import os
+from dataclasses import dataclass, field
+from io import StringIO
+from pathlib import Path
+from typing import Any, Dict, Iterator, List, Optional, Tuple, Type
 
-import torch
-from torch import nn as nn
 import numpy as np
+import torch
 import tqdm
+from torch import nn as nn
 
-from rtg import log, device, my_tensor as tensor, debug_mode
-from rtg.registry import MODELS
-from rtg.data import Field, Batch as TrainerBatch
+from rtg import debug_mode, device, log
+from rtg import my_tensor as tensor
 from rtg.common import TranslationExperiment as Experiment
+from rtg.data import Batch as TrainerBatch
+from rtg.data import Field
 from rtg.nmt.generator import GeneratorFactory
+from rtg.registry import MODELS
 
 Hypothesis = Tuple[float, List[int]]
 StrHypothesis = Tuple[float, str]
@@ -519,8 +521,8 @@ class Decoder:
 
     # noinspection PyUnresolvedReferences
     def decode_interactive(self, **args):
-        import sys
         import readline
+        import sys
 
         helps = [
             (':quit', 'Exit'),

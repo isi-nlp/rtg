@@ -5,6 +5,7 @@
 
 import argparse
 from pathlib import Path
+
 from rtg.syscomb import SysCombTrainer
 
 

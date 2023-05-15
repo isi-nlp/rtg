@@ -3,11 +3,10 @@
 import os
 import subprocess
 import sys
-from argparse import ArgumentParser, REMAINDER, ArgumentDefaultsHelpFormatter
+from argparse import REMAINDER, ArgumentDefaultsHelpFormatter, ArgumentParser
 from typing import List, Tuple
 
 import torch
-
 
 # adapted from torch.distributed.launch
 

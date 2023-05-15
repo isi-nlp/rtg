@@ -3,9 +3,11 @@
 # Author: Thamme Gowda [tg (at) isi (dot) edu]
 # Created: 5/27/20
 from pathlib import Path
-from rtg import TranslationExperiment, log
+
 import numpy as np
 from tqdm import tqdm
+
+from rtg import TranslationExperiment, log
 
 
 def get_stats(data, n, limit=-1):

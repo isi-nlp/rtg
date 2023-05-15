@@ -12,12 +12,12 @@ from typing import TextIO, Tuple
 
 import torch
 
-from rtg import my_tensor as tensor, device
+from rtg import device
+from rtg import my_tensor as tensor
 from rtg.data.dataset import Batch as TrainerBatch
-from rtg.exp import TranslationExperiment
-from rtg.exp import load_conf
+from rtg.exp import TranslationExperiment, load_conf
 from rtg.module.decoder import Decoder
-from rtg.registry import registry, MODEL
+from rtg.registry import MODEL, registry
 
 MAX_LEN = 640
 BATCH_SIZE = 500

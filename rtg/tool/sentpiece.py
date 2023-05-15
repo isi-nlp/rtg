@@ -5,6 +5,7 @@
 
 import argparse
 import sys
+
 from rtg.data.codec import SPField
 
 ADD_BOS = False

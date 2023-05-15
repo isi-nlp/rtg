@@ -7,15 +7,13 @@ import socket
 from dataclasses import dataclass
 from typing import ClassVar
 
-
 import torch
-from torch import nn
-from torch.optim.optimizer import Optimizer
-from torch.cuda.amp import GradScaler
 import torch.distributed as dist
+from torch import nn
+from torch.cuda.amp import GradScaler
+from torch.optim.optimizer import Optimizer
 
 from rtg import log
-
 
 __all__ = ['dtorch', 'DistribTorch']
 

@@ -1,20 +1,22 @@
+import io
 import math
 import os
-import io
 import pickle
 import random
 import sqlite3
+import time
 from itertools import zip_longest
 from pathlib import Path
-from typing import List, Iterator, Tuple, Union, Iterable, Dict, Any, Optional, Callable
+from typing import (Any, Callable, Dict, Iterable, Iterator, List, Optional,
+                    Tuple, Union)
+
+import numpy as np
 import torch
 from tqdm import tqdm
-import numpy as np
-import time
 
-from rtg import log, device, cpu_device
+from rtg import (IO, cpu_device, device, get_my_args, line_count, log, max_RSS,
+                 maybe_compress)
 from rtg.data.codec import Field
-from rtg import IO, line_count, get_my_args, max_RSS, maybe_compress
 
 Array = np.ndarray
 RawRecord = Tuple[str, str]
