@@ -10,20 +10,19 @@ from typing import Optional, Callable
 import torch
 from torch import nn
 from rtg import log, device, BatchIterable, Batch
-from rtg.module import LangModel
 from rtg import TranslationExperiment as Experiment
-from rtg.module.tfmnmt import (Generator, Embeddings, PositionalEncoding,
+from rtg.nmt.tfmnmt import (Generator, Embeddings, PositionalEncoding,
                                MultiHeadedAttention, PositionwiseFeedForward, TransformerTrainer)
 
-from rtg.module.trainer import TrainerState
+from rtg.common import TrainerState, SteppedTrainer, LangModel
 from tqdm import tqdm
 import time
 
 
 """"In NMT, DecoderLayer also has source attention.
 But here, decoder layer is just like Encoder layer: self_attn and feed forward"""
-from rtg.module.tfmnmt import EncoderLayer as LMDecoderLayer
-from rtg.module.tfmnmt import Encoder as LMDecoder
+from rtg.nmt.tfmnmt import EncoderLayer as LMDecoderLayer
+from rtg.nmt.tfmnmt import Encoder as LMDecoder
 from rtg.registry import register, MODEL
 
 @register(MODEL, name='tfmlm')
@@ -85,7 +84,7 @@ class TfmLm(LangModel):
 
     @classmethod
     def make_generator(cls, *args, **kwargs):
-        from rtg.module.generator import TfmLmGenerator
+        from rtg.nmt.generator import TfmLmGenerator
         return TfmLmGenerator(*args, **kwargs)
 
 

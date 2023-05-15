@@ -4,7 +4,6 @@
 # - Thamme Gowda [tg (at) isi (dot) edu]
 # - Lukas J. Ferrer [lferrer (at) isi (dot) edu]
 # Created: 3/9/19
-import json
 import re
 from enum import Enum
 from dataclasses import dataclass
@@ -12,6 +11,8 @@ from typing import Any, Dict, Type, Callable
 
 from rtg import log
 from torch import optim
+
+__all__ = ['ProblemType', 'ModelSpec', 'MODELS', 'OPTIMIZERS', 'SCHEDULES', 'CRITERIA', 'TRANSFORMS', 'register', 'registry', 'snake_case' ]
 
 
 class ProblemType(str, Enum):
@@ -116,22 +117,16 @@ def __register_all():
     # import, so register() calls can happen
     from importlib import import_module
     modules = [
-        'rtg.module.tfmnmt',
-        'rtg.module.skptfmnmt',
-        'rtg.module.wvtfmnmt',
-        'rtg.module.wvskptfmnmt',
-        'rtg.module.rnnmt',
+        'rtg.nmt.tfmnmt',
+        'rtg.nmt.rnnmt',
         'rtg.module.ext.tfmextemb',
-        'rtg.module.ext.robertamt',
-        'rtg.module.mtfmnmt',
-        'rtg.module.hybridmt',
+        'rtg.nmt.robertamt',
         'rtg.lm.rnnlm',
         'rtg.lm.tfmlm',
-        'rtg.emb.word2vec',
+        'rtg.classifier.word2vec',
         'rtg.emb.tfmcls',
-        'rtg.module.criterion',
-        'rtg.module.schedule',
-        'rtg.module.subcls_tfmnmt',
+        #'rtg.common.criterion',
+        #'rtg.common.schedule',
     ]
     for name in modules:
         import_module(name)
@@ -143,7 +138,7 @@ def __register_all():
 
 
 if __name__ == '__main__':
-    from rtg.exp import BaseExperiment
+    from .common.exp import BaseExperiment
     # a simple test case
 
     @register(MODEL)

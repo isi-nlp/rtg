@@ -2,7 +2,7 @@
 #
 # Author: Thamme Gowda [tg (at) isi (dot) edu] 
 # Created: 5/22/20
-from rtg.module.trainer import EarlyStopper
+from rtg.common import EarlyStopper
 
 
 def test_is_stop():

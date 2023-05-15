@@ -2,8 +2,7 @@
 # Generates dummy data for testing
 from rtg.data.dataset import Batch, Example
 import argparse
-from rtg import log, TranslationExperiment as Experiment
-from rtg.utils import IO
+from rtg import log, TranslationExperiment as Experiment, IO
 from rtg.data.dataset import LoopingIterable
 
 import numpy as np

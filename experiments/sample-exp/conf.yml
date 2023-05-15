@@ -41,8 +41,10 @@ prep:
   shared_vocab: true
   src_len: 128
   tgt_len: 128
-  train_src: stdin:text:0
-  train_tgt: stdin:text:1
+  train_src: experiments/sample-data/sampl.train.fr.tok
+  train_tgt: experiments/sample-data/sampl.train.en.tok
+  #train_src: stdin:text:0
+  #train_tgt: stdin:text:1
   truncate: false
   valid_src: experiments/sample-data/sampl.valid.fr.tok
   valid_tgt: experiments/sample-data/sampl.valid.en.tok

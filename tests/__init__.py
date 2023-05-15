@@ -27,7 +27,7 @@ def sanity_check_experiment(exp, samples=True, shared_vocab=True):
 
 def run_decode(exp_dir, sentences):
     assert isinstance(sentences, list)
-    from rtg.decode import main as decode_cli
+    from rtg.cli.decode import main as decode_cli
     buffer = StringIO()
     decode_cli(exp_dir=exp_dir, input=[sentences], output=[buffer], skip_check=True, max_src_len=200)
     lines = buffer.getvalue().splitlines()

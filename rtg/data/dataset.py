@@ -14,7 +14,7 @@ import time
 
 from rtg import log, device, cpu_device
 from rtg.data.codec import Field
-from rtg.utils import IO, line_count, get_my_args, max_RSS, maybe_compress
+from rtg import IO, line_count, get_my_args, max_RSS, maybe_compress
 
 Array = np.ndarray
 RawRecord = Tuple[str, str]
@@ -24,6 +24,10 @@ ParallelSeqRecord = Tuple[MonoSeqRecord, MonoSeqRecord]
 TokStream = Union[Iterator[Iterator[str]], Iterator[str]]
 MAX_SEQ_LEN = 512
 
+
+__all__ = ['IdExample', 'NLDbExample', 'BatchIterable', 'Batch', 'LoopingIterable', 'GenerativeBatchIterable',
+            'TSVData', 'StreamData', 'InMemoryData', 'SqliteFile', 'TokenizerTask', 'MonoSeqRecord',
+           'ParallelSeqRecord', 'RawRecord', 'TokRawRecord', 'TokStream', 'MAX_SEQ_LEN', 'Array']
 
 class IdExample:
     __slots__ = 'x', 'y', 'id', 'x_raw', 'y_raw', 'x_len', 'y_len'

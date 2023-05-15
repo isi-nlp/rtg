@@ -9,13 +9,13 @@ from rtg import log, device, my_tensor as tensor
 from rtg.data.dataset import padded_sequence_mask
 
 import inspect
-from rtg.module.rnnmt import Embedder, Generator, SeqDecoder
+from rtg.nmt.rnnmt import Embedder, Generator, SeqDecoder
 from rtg import TranslationExperiment as Experiment
 import random
-from rtg.module.trainer import TrainerState, SteppedTrainer
+from rtg.common import TrainerState, SteppedTrainer, LangModel
 from tqdm import tqdm
 from rtg.registry import register, MODEL
-from rtg.module import LangModel
+
 
 
 @register(MODEL, name='rnnlm')
@@ -90,7 +90,7 @@ class RnnLm(SeqDecoder, LangModel):
 
     @classmethod
     def make_generator(cls, *args, **kwargs):
-        from rtg.module.generator import RnnLmGenerator
+        from rtg.nmt.generator import RnnLmGenerator
         return RnnLmGenerator(*args, **kwargs)
 
 

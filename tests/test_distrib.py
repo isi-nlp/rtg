@@ -4,9 +4,11 @@
 # Author: Thamme Gowda
 # Created: 12/23/21
 
-from rtg.distrib import launch, log
 import tempfile
 import shutil
+
+from rtg import log
+from rtg.cli import launch
 
 
 def test_distrib_train():

@@ -8,10 +8,8 @@ import tempfile
 import shutil
 
 import rtg
-from rtg.exp import load_conf
-from rtg.pipeline import Pipeline
-from rtg.registry import log
-from rtg.registry import registry, MODEL
+from rtg import load_conf, log, registry
+from rtg.cli.pipeline import Pipeline
 from . import sanity_check_experiment
 
 

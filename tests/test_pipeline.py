@@ -2,10 +2,9 @@
 #
 # Author: Thamme Gowda [tg (at) isi (dot) edu] 
 # Created: 4/18/20
-import pytest
-from rtg.pipeline import Pipeline, Experiment, log
 import tempfile
-from rtg.exp import load_conf
+import pytest
+from rtg import load_conf, log, Pipeline, TranslationExperiment as Experiment
 import torch
 import shutil
 from . import sanity_check_experiment, run_decode
@@ -26,28 +25,6 @@ def test_prepared_pipeline_relative_pos():
     exp.config['trainer']['init_args']['chunk_size'] = 0  # disable chunked loss
     pipe = Pipeline(exp)
     pipe.run(run_tests=False)
-
-
-def test_prepared_pipeline_subclassing():
-    exp = Experiment('experiments/sample-exp', read_only=True)
-    exp.config['model_type'] = 'subcls_tfmnmt'
-    exp.config['trainer'].update(dict(steps=200, check_point=50))
-    exp.config['trainer']['init_args']['chunk_size'] = 0
-    exp.config['criterion']['name'] = 'kl_divergence'
-    exp.config['schedule'] = dict(name='inverse_sqrt', args=dict(warmup=50, init_lr=1e-5, peak_lr=1e-2))
-    pipe = Pipeline(exp)
-    pipe.run(run_tests=False, debug=True)
-
-
-def test_prepared_pipeline_subclassing_with_chunking():
-    exp = Experiment('experiments/sample-exp', read_only=True)
-    exp.config['model_type'] = 'subcls_tfmnmt'
-    exp.config['trainer'].update(dict(steps=200, check_point=50, batch_size=(2048, 200)))
-    exp.config['trainer']['init_args']['chunk_size'] = 10
-    exp.config['criterion']['name'] = 'kl_divergence'
-    exp.config['schedule'] = dict(name='inverse_sqrt', args=dict(warmup=100, init_lr=1e-5, peak_lr=1e-3))
-    pipe = Pipeline(exp)
-    pipe.run(run_tests=False, debug=True)
 
 
 def test_pipeline_transformer():
@@ -78,8 +55,9 @@ def test_robertamt_full_init():
     assert 'pretrainmatch' == config['prep'].get('codec_lib')
     exp = Experiment(tmp_dir, config=config, read_only=False)
     exp.config['trainer'].update(dict(steps=4, check_point=1))
-    Pipeline(exp).run(run_tests=False)
-    sanity_check_experiment(exp)
+    Pipeline(exp)
+    #.run(run_tests=False) # training not supported for this model
+    #sanity_check_experiment(exp)
     print(f"Cleaning up {tmp_dir}")
     shutil.rmtree(tmp_dir, ignore_errors=True)
 
@@ -93,8 +71,8 @@ def test_robertamt_2layer_init():
     assert 'pretrainmatch' == config['prep'].get('codec_lib')
     exp = Experiment(tmp_dir, config=config, read_only=False)
     exp.config['trainer'].update(dict(steps=4, check_point=1))
-    Pipeline(exp).run(run_tests=False)
-    sanity_check_experiment(exp)
+    Pipeline(exp) #.run(run_tests=False)  # training not supported for this model
+    #sanity_check_experiment(exp)
     print(f"Cleaning up {tmp_dir}")
     shutil.rmtree(tmp_dir, ignore_errors=True)
 

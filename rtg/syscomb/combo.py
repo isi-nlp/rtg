@@ -2,18 +2,15 @@
 #
 # Author: Thamme Gowda [tg (at) isi (dot) edu] 
 # Created: 1/3/19
-from typing import List, Union, Optional
-from rtg.exp import TranslationExperiment
-from rtg.module import NMTModel
-from rtg import device
 from pathlib import Path
+from typing import List, Optional, Union
+
 import torch
-from torch import nn
 import torch.nn.functional as F
+from torch import nn
 from tqdm import tqdm
-from rtg.module.criterion import SmoothKLD
-from rtg import log, yaml
-from rtg.utils import IO
+
+from rtg import device, log, yaml, TranslationExperiment, NMTModel, SmoothKLD, IO
 from rtg.lm.rnnlm import RnnLm
 from rtg.lm.tfmlm import TfmLm
 
@@ -209,7 +206,7 @@ class SysCombTrainer:
             wt = [weights[str(m)] for m in model_path_strs]
             log.info(f"restoring previously stored weights {wt}")
 
-        from rtg.module.decoder import load_models
+        from rtg.nmt.decoder import load_models
         combo = Combo(load_models(models, exp), model_paths=models, w=wt)
         self.combo = combo.to(device)
         self.exp = exp

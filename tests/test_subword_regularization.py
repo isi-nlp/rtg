@@ -2,11 +2,9 @@
 #
 # Author: Lukas Ferrer [lferrer (at) isi (dot) edu]
 # Created: 7/13/2020
-import pytest
-from rtg.pipeline import Pipeline, Experiment
 import tempfile
-from rtg.exp import load_conf
 import shutil
+from rtg import load_conf, log, Pipeline, TranslationExperiment as Experiment
 
 
 def test_finetune_pipeline_transformer():

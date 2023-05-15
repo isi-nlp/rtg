@@ -2,11 +2,9 @@
 #
 # Author: Thamme Gowda [tg (at) isi (dot) edu] 
 # Created: 4/20/20
-import pytest
-from rtg.pipeline import Pipeline, Experiment
-import tempfile
-from rtg.exp import load_conf
 import shutil
+import tempfile
+from rtg import load_conf, log, Pipeline, TranslationExperiment as Experiment
 from . import sanity_check_experiment
 
 def test_finetune_pipeline_transformer():

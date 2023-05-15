@@ -3,28 +3,30 @@ __version__ = '0.7.3-dev'
 
 import os
 import logging
-from rtg.tool.log import Logger
-
-debug_mode = os.environ.get('NMT_DEBUG', False)
-log = Logger(console_level=logging.DEBUG if debug_mode else logging.INFO)
-
-import torch
+from pathlib import Path
 import multiprocessing as mp
 
+
+debug_mode = os.environ.get('NMT_DEBUG', False)
+
+import torch
 device_name = 'cuda:0' if torch.cuda.is_available() else 'cpu'
 device = torch.device(device_name)
 cpu_device = torch.device('cpu')
 cpu_count = int(os.environ.get('RTG_CPUS', str(max(1, mp.cpu_count() - 2))))
+RTG_PATH = Path(__file__).resolve().parent.parent
 
+from rtg.log import Logger
 from ruamel.yaml import YAML
 
+log = Logger(console_level=logging.DEBUG if debug_mode else logging.INFO)
 yaml = YAML()
 
-log.debug(f'device: {device}')
+log.info(f"rtg v{__version__} from {RTG_PATH}; default device: {device}")
 profiler = None
+
 if os.environ.get('NMT_PROFILER') == 'memory':
     import memory_profiler
-
     profiler = memory_profiler.profile
     log.info('Setting memory profiler')
 
@@ -44,13 +46,14 @@ def profile(func, *args):
     return profiler(func, *args)
 
 
-from rtg.data.dataset import BatchIterable, Batch
-from rtg.exp import TranslationExperiment
-from rtg.module import tfmnmt, decoder
-from pathlib import Path
+from rtg.registry import *
+from rtg.utils import *
+from rtg.common import *
+from rtg.data import *
+from rtg.nmt import *
+from rtg.lm import *
+from rtg.classifier import *
 
-RTG_PATH = Path(__file__).resolve().parent.parent
 
-log.info(f"rtg v{__version__} from {RTG_PATH}")
-from rtg.registry import __register_all
-__register_all()
+#from rtg.registry import __register_all
+#__register_all()

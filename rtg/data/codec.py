@@ -14,9 +14,11 @@ import numpy as np
 from rtg import log, yaml
 from sentencepiece import SentencePieceProcessor, SentencePieceTrainer
 
-from rtg.utils import IO
+from rtg import IO
 
 Array = np.ndarray
+
+__all__ = ['Field', 'SPField', 'NLField', 'PretrainMatchField']
 
 
 class Field(metaclass=ABCMeta):
@@ -37,7 +39,7 @@ class Field(metaclass=ABCMeta):
 
     @abstractmethod
     def encode_as_ids(self, text, add_bos, add_eos, split_ratio: Optional[float] = 0.) -> Array:
-        raise NotImplementedError
+        raise NotImplementedError()
 
     @abstractmethod
     def decode_ids(self, ids, trunc_eos):
@@ -47,19 +49,19 @@ class Field(metaclass=ABCMeta):
         :param trunc_eos: skip everything after first EOS token in sequence
         :return:
         """
-        raise NotImplementedError
+        raise NotImplementedError()
 
     @abstractmethod
     def tokenize(self, text):
-        raise NotImplementedError
+        raise NotImplementedError()
 
     @abstractmethod
     def detokenize(self, tokens):
-        raise NotImplementedError
+        raise NotImplementedError()
 
     @abstractmethod
     def __len__(self):
-        raise NotImplementedError
+        raise NotImplementedError()
 
     @staticmethod
     @abstractmethod
@@ -75,7 +77,7 @@ class Field(metaclass=ABCMeta):
         :param no_split_toks: Don't split these tokens
         :return:
         """
-        raise NotImplementedError
+        raise NotImplementedError()
 
     def shrink_vocab(self, files: List, min_freq:int, save_at: Path) -> List[int]:
         """
