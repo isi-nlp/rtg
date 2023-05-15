@@ -12,7 +12,7 @@ model_args:
   dropout: 0.2
   activation: relu
   tied_emb: three-way
-model_type: tfmnmt
+model_type: transformer-nmt
 optimizer:
   name: adam
   args:

@@ -14,13 +14,12 @@ from tqdm import tqdm
 
 from rtg import IO, LanguageModel, SteppedTrainer
 from rtg import TranslationExperiment as Experiment
-from rtg import device, log
+from rtg import device, log, register_model
 from rtg.data.codec import Field
 from rtg.data.dataset import IdExample, LoopingIterable, SqliteFile, TSVData
-from rtg.registry import MODEL, register
 
 
-@register(MODEL, name='CBOW')
+@register_model(name='CBOW')
 class CBOW(LanguageModel):
     """
     continuous bag of words by Mikolov et al

@@ -7,11 +7,10 @@ from torch import nn
 from tqdm import tqdm
 
 from rtg import device, log
-from rtg import my_tensor as tensor
+from rtg import my_tensor as tensor, register_model
 from rtg.common import SteppedTrainer, TrainerState
 from rtg.data.codec import Field
 from rtg.data.dataset import Batch, BatchIterable, padded_sequence_mask
-from rtg.registry import MODEL, register
 
 from . import TranslationExperiment as Experiment, NMTModel
 
@@ -319,7 +318,7 @@ class Seq2SeqBridge(nn.Module):
         return enc_outs, enc_hids
 
 
-@register(MODEL, 'rnnmt')
+@register_model('rnnmt')
 class RNNMT(NMTModel):
     def __init__(self, enc: SeqEncoder, dec: SeqDecoder, bridge: Seq2SeqBridge = None):
         super(RNNMT, self).__init__()

@@ -26,6 +26,7 @@ __all__ = [
     'TRANSFORM',
     'TRANSFORMS',
     'register',
+    'register_model',
     'registry',
     'snake_case',
 ]
@@ -134,6 +135,11 @@ def register(kind, name=None):
         return _wrap_cls
 
 
+def register_model(name=None):
+    """ A decorator for registering models """
+    return register(MODEL, name)
+
+
 def __register_all():
     # import, so register() calls can happen
     from importlib import import_module
@@ -164,7 +170,7 @@ if __name__ == '__main__':
 
     # a simple test case
 
-    @register(MODEL)
+    @register_model()
     class MyModel:
         model_type = 'mymodel'
         experiment_type = BaseExperiment

@@ -29,7 +29,7 @@ class ClassifierTrainer(SteppedTrainer):
         self,
         exp: ClassificationExperiment,
         model: Optional[ClassifierModel] = None,
-        model_factory=Callable,
+        model_factory:Optional[Callable] = None,
     ):
         super().__init__(exp, model, model_factory=model_factory)
         self.exp: ClassificationExperiment = exp
@@ -46,7 +46,7 @@ class ClassifierTrainer(SteppedTrainer):
                 f" or set single GPU by: export CUDA_VISIBLE_DEVICES=0 "
             )
 
-        self.classifier = self.core_model.classifier
+        self.classifier = self.core_model.classifier_head
 
     def loss_func(self, scores, labels, train_mode=False, take_step=False):
         loss = self.criterion(scores, labels, normalizer=len(labels), mask_out=None)

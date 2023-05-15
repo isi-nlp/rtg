@@ -11,9 +11,9 @@ import tqdm
 from torch.cuda.amp import autocast
 
 from rtg import (
-    ClassifierModel,
     log,
     get_my_args,
+    register_model
 )
 from rtg.eval.clsmetric import ClsMetric
 from rtg.nmt.tfmnmt import (
@@ -24,8 +24,8 @@ from rtg.nmt.tfmnmt import (
     PositionalEncoding,
     PositionwiseFeedForward,
 )
-from rtg.registry import MODEL,register
-from . import ClassificationExperiment, ClassifierTrainer
+
+from . import ClassifierModel, ClassificationExperiment, ClassifierTrainer
 
 
 class SentenceCompressor(nn.Module):
@@ -49,7 +49,7 @@ class SentenceCompressor(nn.Module):
         return cls_repr
 
 
-class ClassifierLayer(nn.Module):
+class ClassifierHead(nn.Module):
     scores = {
         'logits': lambda x, dim=None: x,
         'softmax': F.softmax,
@@ -74,8 +74,7 @@ class ClassifierLayer(nn.Module):
         return self.scores[score](cls_repr, dim=-1)
 
 
-
-@register(kind=MODEL)
+@register_model()
 class TransformerClassifier(ClassifierModel):
     model_type = 'transformer-classifier'
     experiment_type = ClassificationExperiment
@@ -83,14 +82,14 @@ class TransformerClassifier(ClassifierModel):
     EncoderFactory = Encoder
     EncoderLayerFactory = EncoderLayer
     CompressorFactory = SentenceCompressor
-    ClassifierFactory = ClassifierLayer
+    ClassifierHeadFactory = ClassifierHead
 
-    def __init__(self, encoder: Encoder, src_embed, compressor: SentenceCompressor, classifier: ClassifierLayer):
+    def __init__(self, encoder: Encoder, src_embed, compressor: SentenceCompressor, classifier_head: ClassifierHead):
         super().__init__()
         self.encoder: Encoder = encoder
         self.src_embed = src_embed
         self.compressor = compressor
-        self.classifier = classifier
+        self.classifier_head = classifier_head
 
     def get_trainable_params(self, include=None, exclude=None):
         if not include and not exclude or include == 'all':
@@ -122,11 +121,11 @@ class TransformerClassifier(ClassifierModel):
 
     @property
     def model_dim(self):
-        return self.classifier.d_model
+        return self.classifier_head.d_model
 
     @property
     def vocab_size(self) -> int:
-        return self.classifier.n_classes
+        return self.classifier_head.n_classes
 
     def encode(self, src, src_mask):
         tok_repr = self.encoder(self.src_embed(src), src_mask)
@@ -137,7 +136,7 @@ class TransformerClassifier(ClassifierModel):
         sent_repr = self.encode(src, src_mask)
         if score == 'embedding':  # sentence embedding
             return sent_repr
-        return self.classifier(sent_repr, score=score)
+        return self.classifier_head(sent_repr, score=score)
 
     @classmethod
     def make_model(
@@ -167,15 +166,15 @@ class TransformerClassifier(ClassifierModel):
         ff = PositionwiseFeedForward(hid_size, ff_size, dropout, activation=activation)
         encoder = cls.EncoderFactory(cls.EncoderLayerFactory(hid_size, c(attn), c(ff), dropout), enc_layers)
         src_emb = nn.Sequential(Embeddings(hid_size, src_vocab), PositionalEncoding(hid_size, dropout))
-        classifier = cls.ClassifierFactory(d_model=hid_size, n_classes=tgt_vocab)
+        classifier_head = cls.ClassifierHeadFactory(d_model=hid_size, n_classes=tgt_vocab)
         compressor = cls.CompressorFactory(d_model=hid_size, attn=c(attn))
 
-        model = cls(encoder, src_emb, compressor=compressor, classifier=classifier)
+        model = cls(encoder, src_emb, compressor=compressor, classifier_head=classifier_head)
 
         model.init_params()
         return model, args
 
     @classmethod
     def make_trainer(cls, *args, **kwargs):
-        return ClassifierTrainer(*args, **kwargs)
+        return ClassifierTrainer(*args, model_factory=cls.make_model, **kwargs)
 

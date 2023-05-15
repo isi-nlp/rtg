@@ -1,4 +1,4 @@
-model_type: tfmnmt
+model_type: transformer-nmt
 model_args:
   ff_size: 512
   hid_size: 256

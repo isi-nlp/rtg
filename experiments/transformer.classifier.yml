@@ -9,7 +9,7 @@ model_args:
   attn_dropout: 0.1
   dropout: 0.2
   activation: relu
-model_type: tfmcls
+model_type: transformer-classifier
 __parent:
   experiment: <path/to/experiment/dir>
   vocab:

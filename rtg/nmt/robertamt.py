@@ -8,9 +8,8 @@ from typing import List, Mapping
 import torch
 import torch.nn as nn
 
-from rtg import log
+from rtg import log, register_model
 from rtg.data.codec import PretrainMatchField
-from rtg.registry import MODEL, register
 from rtg.utils import get_my_args
 
 from rtg.nmt import TranslationExperiment as Experiment
@@ -38,7 +37,7 @@ class RobertaGenerator(Generator):
         return super().forward(x, score=score, **kwargs)
 
 
-@register(MODEL, 'robertamt')
+@register_model('robertamt')
 class RoBERTaMT(TransformerNMT):
     GeneratorFactory = RobertaGenerator
     model_type = 'robertamt'

@@ -8,7 +8,7 @@ from pathlib import Path
 
 import torch
 
-from rtg import Pipeline, TranslationExperiment, __version__, dtorch, load_conf, log
+from rtg import Pipeline, TranslationExperiment, __version__, dtorch, load_conf, log, registry, MODELS
 
 
 def parse_args():
@@ -45,26 +45,24 @@ def parse_args():
     conf_file: Path = args.conf if args.conf else args.exp / 'conf.yml'
     assert conf_file.exists(), f'NOT FOUND: {conf_file}'
     conf = load_conf(conf_file)
-    ExpFactory = TranslationExperiment  # default
-    if conf.get('model_type') == 'tfmcls':
-        log.info("Classification experiment")
-        from rtg.classifier.tfmcls import ClassificationExperiment
+    model_type = conf['model_type']
+    assert model_type in MODELS, f"Unknown model type: {model_type}. Available: {MODELS.keys()}"
+    model_spec = MODELS.get(model_type)
+    ExpFactory = model_spec.Experiment
 
-        ExpFactory = ClassificationExperiment
-    elif conf.get('spark', {}):
+    if conf.get('spark', {}):
         log.info("Big experiment mode enabled; checking pyspark backend")
         try:
             import pyspark
-
             log.info("pyspark is available")
         except:
             log.warning("unable to import pyspark. Please do 'pip install pyspark' and run again")
             raise
-        from rtg.big.exp import BigTranslationExperiment
-
+        from rtg.nmt.big.exp import BigTranslationExperiment
         ExpFactory = BigTranslationExperiment
 
     read_only = not dtorch.is_global_main  # only main can modify experiment
+    log.info(f"Experiment: {ExpFactory.__name__} (read_only={read_only})")
     exp = ExpFactory(args.exp, config=conf_file, read_only=read_only)
     dtorch.barrier()
     return exp

@@ -17,3 +17,4 @@ class ClassifierModel(BaseModel, metaclass=ABCMeta):
 
 
 from .trainer import ClassifierTrainer
+from . import tfmcls

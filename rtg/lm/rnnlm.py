@@ -10,7 +10,7 @@ from typing import Callable, Optional
 import torch
 from tqdm import tqdm
 
-from rtg import device, log, my_tensor as tensor, SteppedTrainer, TrainerState
+from rtg import device, log, my_tensor as tensor, SteppedTrainer, TrainerState, register_model
 from rtg.nmt import TranslationExperiment as Experiment
 from rtg.data.dataset import padded_sequence_mask
 from rtg.nmt.rnnmt import Embedder, Generator, SeqDecoder
@@ -19,7 +19,7 @@ from rtg.registry import MODEL, register
 from . import LanguageModel
 
 
-@register(MODEL, name='rnnlm')
+@register_model(name='rnnlm')
 class RnnLm(SeqDecoder, LanguageModel):
     def __init__(self, embedder: Embedder, generator: Generator, n_layers: int = 1, dropout: float = 0.1):
         super().__init__(prev_emb_node=embedder, generator=generator, n_layers=n_layers, dropout=dropout)

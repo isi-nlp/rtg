@@ -650,7 +650,7 @@ class TranslationExperiment(BaseExperiment):
                 f"Already trained upto {last_step}; Requested: train={train_steps}, finetune={finetune_steps} Skipped"
             )
             return
-        from ..registry import MODELS
+        from rtg import MODELS
 
         trainer = MODELS[self.model_type].Trainer(self)
         run_args['batch_size'] = self.maybe_adjust_batch_size(run_args['batch_size'])

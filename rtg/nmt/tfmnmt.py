@@ -19,7 +19,7 @@ from torch.optim.optimizer import Optimizer
 from tqdm import tqdm
 
 from rtg import Criterion, EarlyStopper, SteppedTrainer, TrainerState
-from rtg import device, dtorch, get_my_args, log
+from rtg import device, dtorch, get_my_args, log, register_model
 from rtg.data.dataset import BatchIterable, Field
 
 from . import NMTModel, TranslationExperiment as Experiment
@@ -981,10 +981,7 @@ class TransformerTrainer(SteppedTrainer):
         )
 
 
-from rtg.registry import MODEL, register
-
-
-@register(MODEL, name='tfmnmt')
+@register_model(name='transformer-nmt')
 class TransformerNMT(AbstractTransformerNMT):
     """
     A standard Encoder-Decoder Transformer architecture.

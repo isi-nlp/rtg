@@ -9,7 +9,7 @@ model_args:
   src_vocab: 8000
   tgt_vocab: 8000
   tied_emb: three-way
-model_type: tfmnmt
+model_type: transformer-nmt
 
 optimizer:
   name: adam

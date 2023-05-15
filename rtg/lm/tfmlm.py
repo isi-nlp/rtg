@@ -12,8 +12,7 @@ import torch
 from torch import nn
 from tqdm import tqdm
 
-from rtg import BatchIterable
-from rtg import device, log
+from rtg import BatchIterable, device, log, register_model
 from rtg.common import TrainerState
 from rtg.nmt.tfmnmt import (
     Embeddings,
@@ -31,10 +30,10 @@ from  . import LanguageModel
 But here, decoder layer is just like Encoder layer: self_attn and feed forward"""
 from rtg.nmt.tfmnmt import Encoder as LMDecoder
 from rtg.nmt.tfmnmt import EncoderLayer as LMDecoderLayer
-from rtg.registry import MODEL, register
 
 
-@register(MODEL, name='tfmlm')
+
+@register_model(name='transformer-lm')
 class TfmLm(LanguageModel):
     def __init__(self, decoder: LMDecoder, embedder, generator: Generator):
         super().__init__()

@@ -13,7 +13,7 @@ model_args:
   activation: relu
   tied_emb: three-way
   self_attn_rel_pos: 0
-model_type: tfmnmt
+model_type: transformer-nmt
 optimizer:
   name: adam
   args:

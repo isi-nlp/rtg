@@ -3,16 +3,15 @@
 model_args:
   src_vocab: 312
   tgt_vocab: 6
-  enc_layers: 1
-  hid_size: 128
-  ff_size: 256
-  n_heads: 2
+  enc_layers: 3
+  hid_size: 256
+  ff_size: 512
+  n_heads: 4
   attn_bias: true
   attn_dropout: 0.1
   dropout: 0.2
   activation: relu
-  cls_repr: prepend
-model_type: tfmcls
+model_type: transformer-classifier
 optimizer:
   name: adam
   args:
@@ -65,7 +64,7 @@ trainer:
   check_point: 500
   keep_models: 5
   steps: 20000
-updated_at: '2023-03-03T05:26:15.365295'
+updated_at: '2023-05-14T20:35:52.043185'
 seed: 12345
 rtg_version:
   previous:
