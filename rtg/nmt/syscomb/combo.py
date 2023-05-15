@@ -10,9 +10,10 @@ import torch.nn.functional as F
 from torch import nn
 from tqdm import tqdm
 
-from rtg import IO, NMTModel, SmoothKLD, TranslationExperiment, device, log, yaml
+from rtg import IO, SmoothKLD, device, log, yaml
 from rtg.lm.rnnlm import RnnLm
 from rtg.lm.tfmlm import TfmLm
+from rtg.nmt import NMTModel, TranslationExperiment
 
 
 class RnnLmWrapper(nn.Module):

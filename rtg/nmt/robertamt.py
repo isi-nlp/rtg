@@ -8,12 +8,12 @@ from typing import List, Mapping
 import torch
 import torch.nn as nn
 
-from rtg import TranslationExperiment as Experiment
 from rtg import log
 from rtg.data.codec import PretrainMatchField
 from rtg.registry import MODEL, register
 from rtg.utils import get_my_args
 
+from rtg.nmt import TranslationExperiment as Experiment
 from .tfmnmt import DecoderLayer, EncoderLayer, Generator, TransformerNMT
 
 

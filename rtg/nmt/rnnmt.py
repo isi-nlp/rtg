@@ -6,13 +6,14 @@ import torch.nn.functional as F
 from torch import nn
 from tqdm import tqdm
 
-from rtg import TranslationExperiment as Experiment
 from rtg import device, log
 from rtg import my_tensor as tensor
-from rtg.common import NMTModel, SteppedTrainer, TrainerState
+from rtg.common import SteppedTrainer, TrainerState
 from rtg.data.codec import Field
 from rtg.data.dataset import Batch, BatchIterable, padded_sequence_mask
 from rtg.registry import MODEL, register
+
+from . import TranslationExperiment as Experiment, NMTModel
 
 PAD_IDX = Field.pad_idx  #
 
@@ -617,7 +618,7 @@ def __test_seq2seq_model__():
     trainer.train(steps=steps, check_point=check_pt, batch_size=batch_size)
     """
     from rtg.data.dummy import DummyExperiment
-    from rtg.module.decoder import Decoder
+    from rtg.nmt.decoder import Decoder
 
     vocab_size = 50
     batch_size = 30

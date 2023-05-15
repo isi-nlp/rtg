@@ -1,14 +1,15 @@
-from abc import ABCMeta, abstractmethod
+from abc import abstractmethod, ABCMeta
 
 import torch
 import torch.nn as nn
 
-from .exp import BaseExperiment, TranslationExperiment, log
+from .exp import BaseExperiment, log
 
-__all__ = ['Model', 'LangModel', 'NMTModel']
+__all__ = ['BaseModel']
 
 
-class Model(nn.Module):
+class BaseModel(nn.Module, metaclass=ABCMeta):
+
     def init_params(self, scheme='xavier'):
         assert scheme == 'xavier'  # only supported scheme as of now
         # Initialize parameters with xavier uniform
@@ -41,7 +42,7 @@ class Model(nn.Module):
     def make_trainer(cls, *args, **kwargs):
         raise NotImplementedError()
 
-    def maybe_init_from_parent(self, exp: 'Experiment'):
+    def maybe_init_from_parent(self, exp: 'BaseExperiment'):
         parent_state = getattr(exp, 'parent_model_state', None)
         if parent_state and parent_state.exists():
             log.info("YES, initialising from a parent model")
@@ -75,21 +76,3 @@ class Model(nn.Module):
             log.info("Treating all parameters as trainable parameters")
             return list(self.parameters())  # default include all
 
-
-class LangModel(Model, metaclass=ABCMeta):
-    """base class for all models that generate sequence"""
-
-    experiment_type = BaseExperiment
-
-    @classmethod
-    @abstractmethod
-    def make_generator(cls, *args, **kwargs):
-        raise NotImplementedError
-
-
-class NMTModel(LangModel, metaclass=ABCMeta):
-    """ "
-    base class for all Sequence to sequence (NMT) models
-    """
-
-    experiment_type = TranslationExperiment

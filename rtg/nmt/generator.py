@@ -90,7 +90,7 @@ class TfmExtEembGenerator(T2TGenerator):
 
 
 class ComboGenerator(GeneratorFactory):
-    from rtg.syscomb import Combo
+    from rtg.nmt.syscomb import Combo
 
     def __init__(self, model: Combo, field, x_seqs, *args, **kwargs):
         super().__init__(model, field)

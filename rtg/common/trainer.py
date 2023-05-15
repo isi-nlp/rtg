@@ -13,8 +13,8 @@ from torch.utils.tensorboard import SummaryWriter
 
 import rtg
 from rtg import IO, ProblemType, device, log, yaml
-from rtg.common import NMTModel, ScheduledOptimizer
-from rtg.common import TranslationExperiment as Experiment
+from rtg.common import BaseModel, ScheduledOptimizer
+from rtg.common import BaseExperiment as Experiment
 from rtg.data import BatchIterable
 
 from .distrib import dtorch
@@ -28,7 +28,7 @@ class TrainerState:
     A dataclass for storing any running stats the trainer needs to keep track during training
     """
 
-    model: NMTModel
+    model: BaseModel
     check_point: int
     total_toks: int = 0
     total_loss: float = 0.0
@@ -156,7 +156,7 @@ class SteppedTrainer:
     """
 
     def __init__(
-        self, exp: Experiment, model: Optional[NMTModel] = None, model_factory: Optional[Callable] = None
+        self, exp: Experiment, model: Optional[BaseModel] = None, model_factory: Optional[Callable] = None
     ):
         self.last_step = -1
         last_state_file = None

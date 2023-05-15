@@ -12,10 +12,9 @@ import torch
 from torch import nn
 from tqdm import tqdm
 
-from rtg import Batch, BatchIterable
-from rtg import TranslationExperiment as Experiment
+from rtg import BatchIterable
 from rtg import device, log
-from rtg.common import LangModel, SteppedTrainer, TrainerState
+from rtg.common import TrainerState
 from rtg.nmt.tfmnmt import (
     Embeddings,
     Generator,
@@ -25,6 +24,9 @@ from rtg.nmt.tfmnmt import (
     TransformerTrainer,
 )
 
+from rtg.nmt import TranslationExperiment as Experiment
+from  . import LanguageModel
+
 """"In NMT, DecoderLayer also has source attention.
 But here, decoder layer is just like Encoder layer: self_attn and feed forward"""
 from rtg.nmt.tfmnmt import Encoder as LMDecoder
@@ -33,7 +35,7 @@ from rtg.registry import MODEL, register
 
 
 @register(MODEL, name='tfmlm')
-class TfmLm(LangModel):
+class TfmLm(LanguageModel):
     def __init__(self, decoder: LMDecoder, embedder, generator: Generator):
         super().__init__()
         self.decoder: LMDecoder = decoder

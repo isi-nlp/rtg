@@ -18,11 +18,11 @@ from torch.cuda.amp import autocast
 from torch.optim.optimizer import Optimizer
 from tqdm import tqdm
 
-from rtg import Criterion, EarlyStopper, NMTModel, SteppedTrainer, TrainerState
-from rtg import TranslationExperiment as Experiment
+from rtg import Criterion, EarlyStopper, SteppedTrainer, TrainerState
 from rtg import device, dtorch, get_my_args, log
 from rtg.data.dataset import BatchIterable, Field
 
+from . import NMTModel, TranslationExperiment as Experiment
 
 def clones(module, N):
     "Produce N identical layers."
@@ -181,7 +181,7 @@ class Decoder(nn.Module):
         return self.norm(x)
 
 
-class AbstractTransformerNMT(NMTModel, ABC):
+class AbstractTransformerNMT(ABC, NMTModel):
     """
     Abstract instance of a standard Encoder-Decoder architecture.
     Base for this and many other models.
@@ -1067,8 +1067,7 @@ class TransformerNMT(AbstractTransformerNMT):
         src_emb = nn.Sequential(Embeddings(hid_size, src_vocab), PositionalEncoding(hid_size, dropout))
         tgt_emb = nn.Sequential(Embeddings(hid_size, tgt_vocab), PositionalEncoding(hid_size, dropout))
         generator = cls.GeneratorFactory(hid_size, tgt_vocab)
-
-        model = cls(encoder, decoder, src_emb, tgt_emb, generator)
+        model = cls(encoder=encoder, decoder=decoder, src_embed=src_emb, tgt_embed=tgt_emb, generator=generator)
 
         if tied_emb:
             if tied_emb == 'three-way':

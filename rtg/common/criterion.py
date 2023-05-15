@@ -11,7 +11,7 @@ import torch.nn.functional as F
 from torch import Tensor, nn
 
 from rtg import log
-from rtg.common.exp import TranslationExperiment as Experiment
+from rtg.common.exp import BaseExperiment as Experiment
 from rtg.registry import CRITERION, ProblemType, register
 
 # List of  items to export for * import

@@ -16,7 +16,7 @@ from torch import nn as nn
 
 from rtg import debug_mode, device, log
 from rtg import my_tensor as tensor
-from rtg.common import TranslationExperiment as Experiment
+from rtg.nmt import TranslationExperiment as Experiment
 from rtg.data import Batch as TrainerBatch
 from rtg.data import Field
 from rtg.nmt.generator import GeneratorFactory

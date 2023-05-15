@@ -18,8 +18,8 @@ import torch
 from sacrebleu import corpus_bleu, corpus_macrof
 
 from rtg import __version__, debug_mode, log
-from rtg.common import dtorch, load_conf
-from rtg.common.exp import TranslationExperiment as Experiment
+from rtg.common import dtorch
+from rtg.common.exp import BaseExperiment as Experiment
 from rtg.registry import ProblemType
 from rtg.utils import IO, line_count
 

@@ -12,7 +12,7 @@ import torch.nn.functional as F
 from torch import nn
 from tqdm import tqdm
 
-from rtg import IO, LangModel, SteppedTrainer
+from rtg import IO, LanguageModel, SteppedTrainer
 from rtg import TranslationExperiment as Experiment
 from rtg import device, log
 from rtg.data.codec import Field
@@ -21,7 +21,7 @@ from rtg.registry import MODEL, register
 
 
 @register(MODEL, name='CBOW')
-class CBOW(LangModel):
+class CBOW(LanguageModel):
     """
     continuous bag of words by Mikolov et al
     https://papers.nips.cc/paper/5021-distributed-representations-of-words-and-phrases-and-their-compositionality.pdf
