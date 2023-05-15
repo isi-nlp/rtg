@@ -4,14 +4,16 @@
 # Created: 3/9/19
 
 import abc
+
 import torch
+
 from rtg import log
-from rtg.nmt.rnnmt import RNNMT
+from rtg.data.codec import Field
+from rtg.data.dataset import subsequent_mask
 from rtg.lm.rnnlm import RnnLm
 from rtg.lm.tfmlm import TfmLm
+from rtg.nmt.rnnmt import RNNMT
 from rtg.nmt.tfmnmt import TransformerNMT
-from rtg.data.dataset import subsequent_mask
-from rtg.data.codec import Field
 
 INTERACTIVE = False
 

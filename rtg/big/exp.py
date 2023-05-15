@@ -4,20 +4,22 @@
 # Created: 7/7/20
 import math
 from pathlib import Path
-from typing import List, Dict, Optional, Any, Union, Tuple, Iterator
+from typing import Any, Dict, Iterator, List, Optional, Tuple, Union
 
 import torch
-from nlcodec.db.batch import Batch as NBatch, BatchIterable as NBatchIterable, \
-    BatchMeta as NBatchMeta
-from nlcodec.spark import rdd_as_db, session as spark_session
+from nlcodec.db.batch import Batch as NBatch
+from nlcodec.db.batch import BatchIterable as NBatchIterable
+from nlcodec.db.batch import BatchMeta as NBatchMeta
+from nlcodec.spark import rdd_as_db
+from nlcodec.spark import session as spark_session
 from nlcodec.utils import log_resources
 from pyspark import RDD
-from pyspark.sql import SparkSession, DataFrame
-from pyspark.sql.types import StructType, StructField, LongType
+from pyspark.sql import DataFrame, SparkSession
+from pyspark.sql.types import LongType, StructField, StructType
 
 from rtg import cpu_count, log
 from rtg.data.dataset import Batch, LoopingIterable
-from rtg.exp import TranslationExperiment, Field
+from rtg.exp import Field, TranslationExperiment
 
 
 def get_spark_session(config: Dict[str, str]) -> SparkSession:

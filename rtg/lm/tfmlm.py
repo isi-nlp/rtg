@@ -3,27 +3,29 @@
 # Author: Thamme Gowda [tg (at) isi (dot) edu] 
 # Created: 2/7/19
 
-import inspect
 import copy
-from typing import Optional, Callable
+import inspect
+import time
+from typing import Callable, Optional
 
 import torch
 from torch import nn
-from rtg import log, device, BatchIterable, Batch
-from rtg import TranslationExperiment as Experiment
-from rtg.nmt.tfmnmt import (Generator, Embeddings, PositionalEncoding,
-                               MultiHeadedAttention, PositionwiseFeedForward, TransformerTrainer)
-
-from rtg.common import TrainerState, SteppedTrainer, LangModel
 from tqdm import tqdm
-import time
 
+from rtg import Batch, BatchIterable
+from rtg import TranslationExperiment as Experiment
+from rtg import device, log
+from rtg.common import LangModel, SteppedTrainer, TrainerState
+from rtg.nmt.tfmnmt import (Embeddings, Generator, MultiHeadedAttention,
+                            PositionalEncoding, PositionwiseFeedForward,
+                            TransformerTrainer)
 
 """"In NMT, DecoderLayer also has source attention.
 But here, decoder layer is just like Encoder layer: self_attn and feed forward"""
-from rtg.nmt.tfmnmt import EncoderLayer as LMDecoderLayer
 from rtg.nmt.tfmnmt import Encoder as LMDecoder
-from rtg.registry import register, MODEL
+from rtg.nmt.tfmnmt import EncoderLayer as LMDecoderLayer
+from rtg.registry import MODEL, register
+
 
 @register(MODEL, name='tfmlm')
 class TfmLm(LangModel):

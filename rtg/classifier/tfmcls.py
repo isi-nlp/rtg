@@ -7,7 +7,7 @@ import copy
 import time
 from functools import partial
 from pathlib import Path
-from typing import Optional, Callable, Union, Tuple, List
+from typing import Callable, List, Optional, Tuple, Union
 
 import torch
 import torch.nn as nn
@@ -15,14 +15,14 @@ import torch.nn.functional as F
 import tqdm
 from torch.cuda.amp import autocast
 
-from rtg import log, device
-from rtg import dtorch, TranslationExperiment, Model, ProblemType, SteppedTrainer, TrainerState, EarlyStopper
-from rtg.registry import register, MODEL, ProblemType
+from rtg import (EarlyStopper, Model, ProblemType, SteppedTrainer,
+                 TrainerState, TranslationExperiment, device, dtorch, log)
 from rtg.eval.clsmetric import ClsMetric
-from rtg.nmt.tfmnmt import (Encoder, EncoderLayer, MultiHeadedAttention, PositionwiseFeedForward,
-                               PositionalEncoding, Embeddings, BatchIterable)
-
-from rtg.utils import get_my_args, IO
+from rtg.nmt.tfmnmt import (BatchIterable, Embeddings, Encoder, EncoderLayer,
+                            MultiHeadedAttention, PositionalEncoding,
+                            PositionwiseFeedForward)
+from rtg.registry import MODEL, ProblemType, register
+from rtg.utils import IO, get_my_args
 
 
 class SentenceCompressor(nn.Module):

@@ -3,19 +3,20 @@
 # Author: Thamme Gowda [tg (at) isi (dot) edu] 
 # Created: 1/31/19
 
-import torch
-from typing import Callable, Optional
-from rtg import log, device, my_tensor as tensor
-from rtg.data.dataset import padded_sequence_mask
-
 import inspect
-from rtg.nmt.rnnmt import Embedder, Generator, SeqDecoder
-from rtg import TranslationExperiment as Experiment
 import random
-from rtg.common import TrainerState, SteppedTrainer, LangModel
-from tqdm import tqdm
-from rtg.registry import register, MODEL
+from typing import Callable, Optional
 
+import torch
+from tqdm import tqdm
+
+from rtg import TranslationExperiment as Experiment
+from rtg import device, log
+from rtg import my_tensor as tensor
+from rtg.common import LangModel, SteppedTrainer, TrainerState
+from rtg.data.dataset import padded_sequence_mask
+from rtg.nmt.rnnmt import Embedder, Generator, SeqDecoder
+from rtg.registry import MODEL, register
 
 
 @register(MODEL, name='rnnlm')
