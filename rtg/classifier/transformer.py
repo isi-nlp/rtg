@@ -1,14 +1,19 @@
 import copy
-from typing import  List
+from typing import List
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 from rtg import get_my_args, log, register_model
-from rtg.nmt.transformer import (Embeddings, Encoder, EncoderLayer,
-                            MultiHeadedAttention, PositionalEncoding,
-                            PositionwiseFeedForward)
+from rtg.nmt.transformer import (
+    Embeddings,
+    Encoder,
+    EncoderLayer,
+    MultiHeadedAttention,
+    PositionalEncoding,
+    PositionwiseFeedForward,
+)
 
 from . import ClassificationExperiment, ClassifierModel, ClassifierTrainer
 
@@ -19,7 +24,7 @@ class SentenceCompressor(nn.Module):
     """
 
     def __init__(self, d_model: int, attn):
-        """ Reduces a sequence of vectors into a single vector
+        """Reduces a sequence of vectors into a single vector
         :param d_model: Dimension of the input vector
         :param attn: Attention module to use for sequence compression
         """
@@ -35,8 +40,8 @@ class SentenceCompressor(nn.Module):
         query = self.cls_repr.view(1, 1, D).repeat(B, 1, 1)
         # Args: Query, Key, Value, Mask
         cls_repr = self.attn(query, src, src, src_mask)
-        if isinstance(cls_repr, tuple):     # attn, weights
-            cls_repr = cls_repr[0]          # drop attention weights
+        if isinstance(cls_repr, tuple):  # attn, weights
+            cls_repr = cls_repr[0]  # drop attention weights
         cls_repr = cls_repr.view(B, D)  # [B, D]
         return cls_repr
 
@@ -76,7 +81,9 @@ class TransformerClassifier(ClassifierModel):
     CompressorFactory = SentenceCompressor
     ClassifierHeadFactory = ClassifierHead
 
-    def __init__(self, encoder: Encoder, src_embed, compressor: SentenceCompressor, classifier_head: ClassifierHead):
+    def __init__(
+        self, encoder: Encoder, src_embed, compressor: SentenceCompressor, classifier_head: ClassifierHead
+    ):
         super().__init__()
         self.encoder: Encoder = encoder
         self.src_embed = src_embed
@@ -161,7 +168,7 @@ class TransformerClassifier(ClassifierModel):
         classifier_head = cls.ClassifierHeadFactory(d_model=hid_size, n_classes=tgt_vocab)
 
         compressor_attn = MultiHeadedAttention(h=n_heads, d_model=hid_size, dropout=dropout)
-        compressor = cls.CompressorFactory(d_model=hid_size,attn=compressor_attn)
+        compressor = cls.CompressorFactory(d_model=hid_size, attn=compressor_attn)
 
         model = cls(encoder, src_emb, compressor=compressor, classifier_head=classifier_head)
 
@@ -171,5 +178,3 @@ class TransformerClassifier(ClassifierModel):
     @classmethod
     def make_trainer(cls, *args, **kwargs):
         return ClassifierTrainer(*args, model_factory=cls.make_model, **kwargs)
-
-

@@ -11,12 +11,7 @@ import torch.nn.functional as F
 import tqdm
 from torch.cuda.amp import autocast
 
-from rtg import (
-    ProblemType,
-    device,
-    log,
-    BatchIterable
-)
+from rtg import ProblemType, device, log, BatchIterable
 from rtg.registry import MODEL, ProblemType
 from rtg.eval.clsmetric import ClsMetric
 from rtg.utils import IO

@@ -1,10 +1,10 @@
 from typing import List, Callable
 
 import torch
-from  torch import nn
+from torch import nn
 
 
-from rtg import log, device, get_my_args, register_model,  Batch
+from rtg import log, device, get_my_args, register_model, Batch
 from rtg.classifier import ClassifierModel, ClassificationExperiment, ClassifierTrainer
 from rtg.comet.experiment import HfTransformerExperiment
 from rtg.classifier.transformer import ClassifierHead, SentenceCompressor
@@ -12,18 +12,19 @@ from rtg.classifier.transformer import ClassifierHead, SentenceCompressor
 
 @register_model()
 class BitextCometClassifier(ClassifierModel):
-
     model_type = 'bitext-classifier-comet'
     experiment_type = HfTransformerExperiment
 
-    def __init__(self, encoder: nn.Module, model_dim:int, n_classes: int, compressor: SentenceCompressor) -> None:
+    def __init__(
+        self, encoder: nn.Module, model_dim: int, n_classes: int, compressor: SentenceCompressor
+    ) -> None:
         super().__init__()
         self.encoder = encoder
         self._model_dim = model_dim
         self._vocab_size = n_classes
         self.compressor = compressor
         # [seq1, seq2, |seq1-seq2|, seq1.seq2]   # 4 * model_dim
-        self.classifier_head = ClassifierHead(4*self.model_dim, n_classes)
+        self.classifier_head = ClassifierHead(4 * self.model_dim, n_classes)
 
     def get_trainable_params(self, include=None, exclude=None):
         if not include and not exclude or include == 'all':
@@ -61,9 +62,8 @@ class BitextCometClassifier(ClassifierModel):
     def vocab_size(self):
         return self._vocab_size
 
-
     def forward(self, seq1, seq2, seq1_mask, seq2_mask, score='logits'):
-        #def forward(self, src, src_mask, score='logits', freeze_encoder=True):
+        # def forward(self, src, src_mask, score='logits', freeze_encoder=True):
         out1 = self.encoder(seq1, seq1_mask)
         out2 = self.encoder(seq2, seq2_mask)
         seq1_repr = self.compressor(out1.last_hidden_state, seq1_mask)
@@ -73,18 +73,23 @@ class BitextCometClassifier(ClassifierModel):
 
     def comet_repr(self, seq1_repr, seq2_repr):
         # [seq1, seq2, |seq1-seq2|, seq1.seq2]
-        return torch.cat([seq1_repr, seq2_repr, torch.abs(seq1_repr - seq2_repr), seq1_repr * seq2_repr], dim=1)
-
+        return torch.cat(
+            [seq1_repr, seq2_repr, torch.abs(seq1_repr - seq2_repr), seq1_repr * seq2_repr], dim=1
+        )
 
     @classmethod
-    def make_model(cls, exp:ClassificationExperiment, model_id: str, src_vocab:int, tgt_vocab:int,  pretrained=True) -> ClassifierModel:
-        args =  get_my_args(exclusions=['exp', 'cls'])
+    def make_model(
+        cls, exp: ClassificationExperiment, model_id: str, src_vocab: int, tgt_vocab: int, pretrained=True
+    ) -> ClassifierModel:
+        args = get_my_args(exclusions=['exp', 'cls'])
         log.info(f"Creating model {cls.__name__} with args: {args}")
         assert model_id.startswith('hf:'), 'only huggingface hub models are supported'
         model_id = model_id[3:]
         import transformers
+
         encoder = transformers.AutoModel.from_pretrained(model_id)
         from transformers import M2M100Model
+
         if isinstance(encoder, M2M100Model):
             # this is an encoder-decoder model, we need to extract the encoder
             encoder = encoder.encoder
@@ -104,16 +109,20 @@ class BitextCometClassifier(ClassifierModel):
 
 
 class CometTrainer(ClassifierTrainer):
-
     def _batch_step(self, batch: Batch, take_step=False, train_mode=False):
-        """ Take a single step of training or validation on a batch
+        """Take a single step of training or validation on a batch
         :param batch: batch object
         :param take_step: whether to take optimizer step  (requires train_mode=True). Useful for gradient accumulation.
         :param train_mode: whether to run in train mode i.e., with grads no grads
         """
-        x1_mask = (batch.x1s == batch.pad_val)
-        x2_mask = (batch.x2s == batch.pad_val)
-        scores = self.model(seq1=batch.x1s, seq2=batch.x2s, seq1_mask=x1_mask, seq2_mask=x2_mask, score=self.criterion.input_type)
+        x1_mask = batch.x1s == batch.pad_val
+        x2_mask = batch.x2s == batch.pad_val
+        scores = self.model(
+            seq1=batch.x1s,
+            seq2=batch.x2s,
+            seq1_mask=x1_mask,
+            seq2_mask=x2_mask,
+            score=self.criterion.input_type,
+        )
         loss = self.loss_func(scores=scores, labels=batch.ys, train_mode=train_mode, take_step=take_step)
         return loss, scores
-

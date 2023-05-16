@@ -1,4 +1,3 @@
-
 import time
 from typing import Callable, List, Optional, Tuple, Union
 
@@ -21,13 +20,12 @@ from rtg.eval.clsmetric import ClsMetric
 from . import ClassifierModel, ClassificationExperiment
 
 
-
 class ClassifierTrainer(SteppedTrainer):
     def __init__(
         self,
         exp: ClassificationExperiment,
         model: Optional[ClassifierModel] = None,
-        model_factory:Optional[Callable] = None,
+        model_factory: Optional[Callable] = None,
     ):
         super().__init__(exp, model, model_factory=model_factory)
         self.exp: ClassificationExperiment = exp
@@ -131,7 +129,7 @@ class ClassifierTrainer(SteppedTrainer):
         return loss_avg, metrics_dict
 
     def _batch_step(self, batch, take_step=False, train_mode=False):
-        """ Take a single step of training or validation on a batch
+        """Take a single step of training or validation on a batch
         :param batch: batch object
         :param take_step: whether to take optimizer step  (requires train_mode=True). Useful for gradient accumulation.
         :param train_mode: whether to run in train mode i.e., with grads no grads

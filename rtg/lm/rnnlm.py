@@ -21,7 +21,6 @@ from . import LanguageModel
 
 @register_model()
 class RnnLm(SeqDecoder, LanguageModel):
-    
     model_type = 'rnnlm'
 
     def __init__(self, embedder: Embedder, generator: Generator, n_layers: int = 1, dropout: float = 0.1):

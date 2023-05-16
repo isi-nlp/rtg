@@ -54,11 +54,13 @@ def parse_args():
         log.info("Big experiment mode enabled; checking pyspark backend")
         try:
             import pyspark
+
             log.info("pyspark is available")
         except:
             log.warning("unable to import pyspark. Please do 'pip install pyspark' and run again")
             raise
         from rtg.nmt.big.experiment import BigTranslationExperiment
+
         ExpFactory = BigTranslationExperiment
 
     read_only = not dtorch.is_global_main  # only main can modify experiment

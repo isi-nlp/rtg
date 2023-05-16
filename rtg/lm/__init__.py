@@ -2,7 +2,7 @@
 #
 # Author: Thamme Gowda [tg (at) isi (dot) edu]
 # Created: 1/31/19
-from abc import  ABCMeta, abstractmethod
+from abc import ABCMeta, abstractmethod
 
 from rtg import log, BaseExperiment
 from rtg.common.model import BaseModel

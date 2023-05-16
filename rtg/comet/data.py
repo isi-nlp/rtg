@@ -9,9 +9,9 @@ from rtg.data.codec import Field as BaseField
 
 Example = namedtuple('IdExample', ['id', 'x1', 'x2', 'y'])
 
-class Batch:
 
-    def __init__(self, buffer:List[Example], fields, device=device) -> None:
+class Batch:
+    def __init__(self, buffer: List[Example], fields, device=device) -> None:
         batch_size = len(buffer)
         assert len(fields) == 3
 
@@ -23,16 +23,20 @@ class Batch:
 
         assert fields[0].pad_idx == fields[1].pad_idx
         self.pad_val = fields[0].pad_idx
-        self.x1s = torch.full((batch_size, max_lens['x1']), fill_value=self.pad_val, dtype=torch.long, device=device)
-        self.x2s = torch.full((batch_size, max_lens['x2']), fill_value=self.pad_val, dtype=torch.long, device=device)
+        self.x1s = torch.full(
+            (batch_size, max_lens['x1']), fill_value=self.pad_val, dtype=torch.long, device=device
+        )
+        self.x2s = torch.full(
+            (batch_size, max_lens['x2']), fill_value=self.pad_val, dtype=torch.long, device=device
+        )
         # y is class. it doesnt require padding
         self.ys = torch.zeros((batch_size, max_lens['y']), dtype=torch.long, device=device)
         for idx, ex in enumerate(buffer):
-            self.x1s[idx, :len(ex.x1)] = torch.tensor(ex.x1, dtype=torch.long, device=device)
-            self.x2s[idx, :len(ex.x2)] = torch.tensor(ex.x2, dtype=torch.long, device=device)
-            self.ys[idx, :len(ex.y)] = torch.tensor(ex.y, dtype=torch.long, device=device)
+            self.x1s[idx, : len(ex.x1)] = torch.tensor(ex.x1, dtype=torch.long, device=device)
+            self.x2s[idx, : len(ex.x2)] = torch.tensor(ex.x2, dtype=torch.long, device=device)
+            self.ys[idx, : len(ex.y)] = torch.tensor(ex.y, dtype=torch.long, device=device)
         # [B, 1] -> [B] for classification
-        self.ys = self.ys.squeeze(1) 
+        self.ys = self.ys.squeeze(1)
 
     def to(self, device):
         self.x1s = self.x1s.to(device)
@@ -43,12 +47,13 @@ class Batch:
     def __len__(self):
         return len(self.x1s)
 
-class HFField(BaseField):
 
+class HFField(BaseField):
     def __init__(self, model_id):
         super().__init__()
 
         import transformers
+
         self.tokenizer = transformers.AutoTokenizer.from_pretrained(model_id)
         self.class_names = self.tokenizer.convert_ids_to_tokens(range(self.tokenizer.vocab_size))
         # link the special token ids/idxs

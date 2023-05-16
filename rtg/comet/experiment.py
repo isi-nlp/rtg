@@ -12,7 +12,6 @@ from rtg.comet import HFField, Example, Batch
 
 
 class HfTransformerExperiment(ClassificationExperiment):
-
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.model_id = self.model_args['model_id']
@@ -46,8 +45,7 @@ class HfTransformerExperiment(ClassificationExperiment):
         )
 
         self.persist_state()
-        #self._prepared_flag.touch()
-
+        # self._prepared_flag.touch()
 
     def get_train_data(
         self,
@@ -65,17 +63,20 @@ class HfTransformerExperiment(ClassificationExperiment):
         else:
             assert self.train_db.exists()
             from nlcodec.db import MultipartDb
+
             ex_stream = MultipartDb.load(self.train_db, shuffle=True, rec_type=Example)
 
         fields = [self.src_field, self.src_field, self.tgt_vocab]
-        batch_stream = self.stream_example_to_batch(ex_stream, batch_size, fields=fields, **self._get_batch_args())
+        batch_stream = self.stream_example_to_batch(
+            ex_stream, batch_size, fields=fields, **self._get_batch_args()
+        )
         return batch_stream
 
     def _input_line_encoder(self, line: str):
         cols = line.split('\t')
         assert len(cols) >= 2
         res = [self.src_field.encode_as_ids(col) for col in cols[:2]]
-        if len(cols) > 2:   # if there is a label in third col
+        if len(cols) > 2:  # if there is a label in third col
             res.append(self.tgt_vocab.encode_as_ids(cols[2]))
         return tuple(res)
 
@@ -85,7 +86,8 @@ class HfTransformerExperiment(ClassificationExperiment):
         tgt_key: str,
         out_file: Path,
         args: Optional[Dict[str, Any]] = None,
-        line_check=True):
+        line_check=True,
+    ):
         """
         Pre process records of a parallel corpus
         :param args: all arguments for 'prep' task
@@ -124,20 +126,22 @@ class HfTransformerExperiment(ClassificationExperiment):
 
         if any([out_file.name.endswith(suf) for suf in ('.nldb', '.nldb.tmp')]):
             from nlcodec.db import MultipartDb
+
             MultipartDb.create(path=out_file, recs=parallel_recs, field_names=('x1', 'x2', 'y'))
         else:
             TSVData.write_parallel_recs(parallel_recs, out_file)
         e_time = time.time()
         log.info(f"Time taken to process: {timedelta(seconds=(e_time - s_time))}")
 
-
-    def stream_line_to_example(self, stream: Iterator[str], max_src_len: int=512, max_tgt_len:int=512, truncate=True) -> Iterator[Example]:
+    def stream_line_to_example(
+        self, stream: Iterator[str], max_src_len: int = 512, max_tgt_len: int = 512, truncate=True
+    ) -> Iterator[Example]:
         for idx, line in enumerate(stream):
             row = self._input_line_encoder(line)
             assert len(row) == 3, f'Expected 3 columns, but found {len(row)}'
             x1, x2, y = row[:3]
             if truncate:
-                x1, x2, y = x1[: max_src_len], x2[: max_src_len], y[: max_tgt_len]
+                x1, x2, y = x1[:max_src_len], x2[:max_src_len], y[:max_tgt_len]
             elif len(x1) > max_src_len or len(x2) > max_src_len or len(y) > max_tgt_len:
                 # Skipping line with length > max_len. Current idx: {idx}
                 self.n_skips += 1
@@ -145,7 +149,9 @@ class HfTransformerExperiment(ClassificationExperiment):
             yield Example(id=idx, x1=x1, x2=x2, y=y)
         log.warning('StreamData is exhausted')
 
-    def stream_example_to_batch(self, stream: Iterator[Example],
+    def stream_example_to_batch(
+        self,
+        stream: Iterator[Example],
         batch_size: Union[int, Tuple[int, int]],
         fields: List[BaseField],
         device=device,
@@ -185,7 +191,7 @@ class HfTransformerExperiment(ClassificationExperiment):
                     )
                     continue
                 # yield the current batch
-                yield Batch( batch, fields=fields, device=device)
+                yield Batch(batch, fields=fields, device=device)
                 batch = [ex]  # new batch
                 max_len = this_len
         if batch:

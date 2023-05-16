@@ -24,7 +24,7 @@ from rtg.nmt.transformer import (
 )
 
 from rtg.nmt import TranslationExperiment as Experiment
-from  . import LanguageModel
+from . import LanguageModel
 
 """"In NMT, DecoderLayer also has source attention.
 But here, decoder layer is just like Encoder layer: self_attn and feed forward"""
@@ -32,12 +32,10 @@ from rtg.nmt.transformer import Encoder as LMDecoder
 from rtg.nmt.transformer import EncoderLayer as LMDecoderLayer
 
 
-
 @register_model()
 class TransformerLM(LanguageModel):
-    
     model_type = 'transformer-lm'
-    
+
     def __init__(self, decoder: LMDecoder, embedder, generator: Generator):
         super().__init__()
         self.decoder: LMDecoder = decoder

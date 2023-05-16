@@ -136,7 +136,7 @@ def register(kind, name=None):
 
 
 def register_model(name=None):
-    """ A decorator for registering models """
+    """A decorator for registering models"""
     return register(MODEL, name)
 
 

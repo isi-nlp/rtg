@@ -9,7 +9,7 @@ from typing import List, TextIO
 
 import torch
 
-from rtg import  load_conf, log
+from rtg import load_conf, log
 from rtg.classifier import ClassificationExperiment
 from rtg.nmt import TranslationExperiment
 from rtg.nmt.decoder import Decoder

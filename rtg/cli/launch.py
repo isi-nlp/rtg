@@ -134,6 +134,7 @@ def main(args=None):
     assum_gpus = args.procs_per_node * args.gpus_per_proc
     if avail_gpus < assum_gpus:
         import socket
+
         msg = (
             f'Host={socket.gethostname()}; GPUs available={avail_gpus}; requested={assum_gpus}'
             f'\n\tprocs-per-node * gpus-per-proc = {args.procs_per_node} * {args.gpus_per_proc}'
@@ -171,7 +172,7 @@ def main(args=None):
 
 
 def distribute_stdin(processes: List[subprocess.Popen], method="round-robin"):
-    assert method == "round-robin"    # only this is su
+    assert method == "round-robin"  # only this is supported for now
     alive_procs = processes
     dead_procs = []
     try:

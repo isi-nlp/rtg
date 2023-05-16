@@ -52,6 +52,7 @@ from rtg.utils import *
 from rtg.registry import *
 from rtg.common import *
 from rtg.data import *
+
 # avoid name space collision
 from . import (
     nmt,

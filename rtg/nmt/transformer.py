@@ -24,6 +24,7 @@ from rtg.data.dataset import BatchIterable, Field
 
 from . import NMTModel, TranslationExperiment as Experiment
 
+
 def clones(module, N):
     "Produce N identical layers."
     return nn.ModuleList([copy.deepcopy(module) for _ in range(N)])
@@ -346,6 +347,7 @@ class AbstractTransformerNMT(ABC, NMTModel):
     @classmethod
     def make_trainer(cls, *args, **kwargs):
         return TransformerTrainer(*args, model_factory=cls.make_model, **kwargs)
+
 
 class SublayerConnection(nn.Module):
     """
@@ -945,11 +947,13 @@ class TransformerTrainer(SteppedTrainer):
             self.opt.curr_step,
         )
 
+
 @register_model()
 class TransformerNMT(AbstractTransformerNMT):
     """
     A standard Encoder-Decoder Transformer architecture.
     """
+
     model_type = 'transformer-nmt'
 
     # Factories; looks a bit complicated, but very useful if child classes want to customize these.
@@ -959,7 +963,6 @@ class TransformerNMT(AbstractTransformerNMT):
     EncoderFactory = Encoder
     DecoderFactory = Decoder
 
-    
     def __init__(
         self,
         encoder: Encoder,
@@ -1026,7 +1029,9 @@ class TransformerNMT(AbstractTransformerNMT):
         src_emb = nn.Sequential(Embeddings(hid_size, src_vocab), PositionalEncoding(hid_size, dropout))
         tgt_emb = nn.Sequential(Embeddings(hid_size, tgt_vocab), PositionalEncoding(hid_size, dropout))
         generator = cls.GeneratorFactory(hid_size, tgt_vocab)
-        model = cls(encoder=encoder, decoder=decoder, src_embed=src_emb, tgt_embed=tgt_emb, generator=generator)
+        model = cls(
+            encoder=encoder, decoder=decoder, src_embed=src_emb, tgt_embed=tgt_emb, generator=generator
+        )
 
         if tied_emb:
             if tied_emb == 'three-way':

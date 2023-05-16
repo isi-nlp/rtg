@@ -233,7 +233,6 @@ class TSVData(Iterable[IdExample]):
 
     @staticmethod
     def write_parallel_recs(records: Iterator[ParallelSeqRecord], path: Union[str, Path]):
-
         def _to_line(rec, field_delim='\t', tok_delim=' '):
             cols = [tok_delim.join(map(str, col)) for col in rec]
             return field_delim.join(cols)
