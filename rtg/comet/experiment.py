@@ -134,7 +134,8 @@ class HfTransformerExperiment(ClassificationExperiment):
     def stream_line_to_example(self, stream: Iterator[str], max_src_len: int=512, max_tgt_len:int=512, truncate=True) -> Iterator[Example]:
         for idx, line in enumerate(stream):
             row = self._input_line_encoder(line)
-            x1, x2, y = row[0], row[1]
+            assert len(row) == 3, f'Expected 3 columns, but found {len(row)}'
+            x1, x2, y = row[:3]
             if truncate:
                 x1, x2, y = x1[: max_src_len], x2[: max_src_len], y[: max_tgt_len]
             elif len(x1) > max_src_len or len(x2) > max_src_len or len(y) > max_tgt_len:
