@@ -10,7 +10,10 @@
             "request": "launch",
             "module": "rtg.cli.pipeline",
             "justMyCode": true,
-            "args": ["experiments/sample-exp-bitext-cls/"]
+            "args": ["experiments/sample-exp-bitext-cls/"],
+            "env": {
+                "CUDA_VISIBLE_DEVICES": ""  // no GPU
+            }
         },
         {
             "name": "Python: Current File",

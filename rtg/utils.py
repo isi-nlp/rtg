@@ -6,6 +6,7 @@ import resource
 import shutil
 import subprocess
 import sys
+import copy
 from datetime import datetime
 from itertools import zip_longest
 from pathlib import Path
@@ -42,6 +43,7 @@ def get_my_args(exclusions=None):
     for excl in ['self', 'cls', '__class__'] + (exclusions or []):
         if excl in args:
             del args[excl]
+    args = copy.deepcopy(args)
     return args
 
 

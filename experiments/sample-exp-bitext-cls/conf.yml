@@ -1,6 +1,7 @@
 model_args:
-  model_id: hf:xlm-roberta-base
-  src_vocab: 250002
+  #model_id: hf:xlm-roberta-base
+  model_id: hf:facebook/nllb-200-distilled-600M
+  src_vocab: 256204
   tgt_vocab: 6
   pretrained: true
 model_type: bitext-classifier-comet
@@ -51,7 +52,7 @@ trainer:
   keep_models: 10
   steps: 3000
   sort_by: random
-updated_at: '2023-05-15T16:04:12.015480'
+updated_at: '2023-05-15T17:24:23.898617'
 rtg_version:
   previous:
   last_worked: 0.7.3-dev

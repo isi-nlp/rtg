@@ -18,26 +18,25 @@ class SentenceCompressor(nn.Module):
     Compresses token representation into a single vector
     """
 
-    def __init__(self, d_model: int, attn_heads: int = 0, dropout: float = 0.1):
+    def __init__(self, d_model: int, attn):
         """ Reduces a sequence of vectors into a single vector
         :param d_model: Dimension of the input vector
-        :param attn_heads: Number of heads in the multi-headed attention. if 0, it is set to d_model//64
-        :param dropout: Dropout probability for compressor multi-headed attention
+        :param attn: Attention module to use for sequence compression
         """
         super(SentenceCompressor, self).__init__()
         self.cls_repr = nn.Parameter(torch.zeros(d_model))
         self.d_model = d_model
-        if attn_heads == 0:
-            assert d_model % 64 == 0, f"Multi-head attention requires d_model to be a multiple of 64. Given={d_model}"
-            attn_heads = int(d_model // 64)
-        self.attn = MultiHeadedAttention(h=attn_heads, d_model=d_model, dropout=dropout)
+        self.attn = attn
 
     def forward(self, src, src_mask):
         B, T, D = src.size()  # [Batch, Time, Dim]
         assert D == self.d_model
+
         query = self.cls_repr.view(1, 1, D).repeat(B, 1, 1)
         # Args: Query, Key, Value, Mask
         cls_repr = self.attn(query, src, src, src_mask)
+        if isinstance(cls_repr, tuple):     # attn, weights
+            cls_repr = cls_repr[0]          # drop attention weights
         cls_repr = cls_repr.view(B, D)  # [B, D]
         return cls_repr
 
@@ -160,7 +159,9 @@ class TransformerClassifier(ClassifierModel):
         encoder = cls.EncoderFactory(cls.EncoderLayerFactory(hid_size, c(attn), c(ff), dropout), enc_layers)
         src_emb = nn.Sequential(Embeddings(hid_size, src_vocab), PositionalEncoding(hid_size, dropout))
         classifier_head = cls.ClassifierHeadFactory(d_model=hid_size, n_classes=tgt_vocab)
-        compressor = cls.CompressorFactory(d_model=hid_size, attn_heads=n_heads, dropout=dropout)
+
+        compressor_attn = MultiHeadedAttention(h=n_heads, d_model=hid_size, dropout=dropout)
+        compressor = cls.CompressorFactory(d_model=hid_size,attn=compressor_attn)
 
         model = cls(encoder, src_emb, compressor=compressor, classifier_head=classifier_head)
 

@@ -405,7 +405,8 @@ def attention(query, key, value, mask=None, dropout=None, query_key_emb: 'Relati
     :param query:
     :param key:
     :param value:
-    :param mask:
+    :param mask: a position is masked (i.e., ignored) if mask value is either False or 0.
+                Caution: other implementations (torch, huggingface) seem to use True or 1 for masking.
     :param dropout:
     :param query_key_emb:
     :return:

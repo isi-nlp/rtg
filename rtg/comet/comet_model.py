@@ -83,11 +83,19 @@ class BitextCometClassifier(ClassifierModel):
         log.info(f"Creating model {cls.__name__} with args: {args}")
         assert model_id.startswith('hf:'), 'only huggingface hub models are supported'
         model_id = model_id[3:]
-
         import transformers
         encoder = transformers.AutoModel.from_pretrained(model_id)
+        from transformers import M2M100Model
+        if isinstance(encoder, M2M100Model):
+            # this is an encoder-decoder model, we need to extract the encoder
+            encoder = encoder.encoder
         model_dim = encoder.config.hidden_size
-        compressor = SentenceCompressor(model_dim, dropout=0.1)
+        assert model_dim % 64 == 0, 'model_dim must be a multiple of 64'
+        n_heads = int(model_dim // 64)
+        compressor_attn = nn.MultiheadAttention(model_dim, num_heads=n_heads, dropout=0.1, batch_first=True)
+        # rtg impl masks positions with false/0, but torch impl masks positions with true/1
+        # this multihead attn has masking compatible with torch/transformer
+        compressor = SentenceCompressor(model_dim, attn=compressor_attn)
         model = cls(encoder, model_dim=model_dim, n_classes=tgt_vocab, compressor=compressor)
         return model, args
 
@@ -104,8 +112,8 @@ class CometTrainer(ClassifierTrainer):
         :param take_step: whether to take optimizer step  (requires train_mode=True). Useful for gradient accumulation.
         :param train_mode: whether to run in train mode i.e., with grads no grads
         """
-        x1_mask = (batch.x1s != batch.pad_val).unsqueeze(1)
-        x2_mask = (batch.x2s != batch.pad_val).unsqueeze(1)
+        x1_mask = (batch.x1s == batch.pad_val)
+        x2_mask = (batch.x2s == batch.pad_val)
         scores = self.model(seq1=batch.x1s, seq2=batch.x2s, seq1_mask=x1_mask, seq2_mask=x2_mask, score=self.criterion.input_type)
         loss = self.loss_func(scores=scores, labels=batch.ys, train_mode=train_mode, take_step=take_step)
         return loss, scores
