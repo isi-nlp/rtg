@@ -151,6 +151,13 @@ def main(args=None):
     log.info(f'{cmd}')
     processes = []
     STDIN = subprocess.PIPE if args.stdin else subprocess.DEVNULL
+    if os.environ.get('CUDA_VISIBLE_DEVICES'):
+        device_ids = os.environ['CUDA_VISIBLE_DEVICES'].split(',')
+    else:
+        device_ids = [str(i) for i in range(torch.cuda.device_count())]
+    n_required_gpus = args.procs_per_node * args.gpus_per_proc
+    assert len(device_ids) >= n_required_gpus, f'Visible GPUs={len(device_ids)}; Required={n_required_gpus} (i.e {args.procs_per_node} * {args.gpus_per_proc}))'
+
     for local_rank in range(0, args.procs_per_node):
         my_env = cur_env.copy()
         # each process's rank
@@ -158,9 +165,8 @@ def main(args=None):
         my_env["RANK"] = str(dist_rank)
         my_env["LOCAL_RANK"] = str(local_rank)
         if args.gpus_per_proc > 0:
-            dev_ids = range(local_rank * args.gpus_per_proc, (local_rank + 1) * args.gpus_per_proc)
-            device_ids = ','.join(str(i) for i in dev_ids)
-            my_env["CUDA_VISIBLE_DEVICES"] = device_ids
+            device_idx = list(range(local_rank * args.gpus_per_proc, (local_rank + 1) * args.gpus_per_proc))
+            my_env["CUDA_VISIBLE_DEVICES"] = ','.join(device_ids[idx] for idx in device_idx)
         # spawn processes
         process = subprocess.Popen(cmd, env=my_env, shell=False, stdin=STDIN, text=True, cwd=os.getcwd())
         processes.append(process)
