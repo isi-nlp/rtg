@@ -55,7 +55,7 @@ setuptools.setup(
     python_requires='>=3.7',
     entry_points={
         'console_scripts': [
-            'rtg-pipe=rtg.cli.pipeline:main',
+            'rtg-pipeline=rtg.cli.pipeline:main',
             'rtg-decode=rtg.cli.decode:main',
             'rtg-decode-pro=rtg.cli.decode_pro:main',
             'rtg-export=rtg.cli.export:main',

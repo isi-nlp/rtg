@@ -96,7 +96,7 @@ def parse_args(args=None):
     parser.add_argument(
         "script",
         type=str,
-        default='rtg-pipe',
+        default='rtg-pipeline',
         help="The full path to the training script (or qualified module name if -m/--module) "
         "to be launched in parallel, followed by all the arguments for the "
         "training script",
