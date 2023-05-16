@@ -178,7 +178,7 @@ def kl_div(
 
 @register(kind=CRITERION, name="sparse_cross_entropy")
 class SparseCrossEntropy(TemperedCriterion):
-    def __init__(self, *args, input_type='log_probs', weight=None, **kwargs):
+    def __init__(self, *args, input_type='logits', weight=None, **kwargs):
         super().__init__(*args, input_type=input_type, **kwargs)
         self.weight_by = weight
         self._weight = None
