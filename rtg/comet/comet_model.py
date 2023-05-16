@@ -35,7 +35,6 @@ class BitextCometClassifier(ClassifierModel):
         # a valid example for include
         # 'src_embed', 'compressor', 'classifier', 'encoder:0,1,2,3,...,n-1',  # encoder:layers
         param_groups = []
-        #breakpoint()
         for sub_name in include:
             if hasattr(self, sub_name):
                 log.info(f"Trainable parameters <-- {sub_name}")

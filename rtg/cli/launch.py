@@ -7,6 +7,7 @@ from argparse import REMAINDER, ArgumentDefaultsHelpFormatter, ArgumentParser
 from typing import List, Tuple
 
 import torch
+from rtg import log
 
 # adapted from torch.distributed.launch
 
@@ -113,36 +114,33 @@ def main(args=None):
 
     if 'OMP_NUM_THREADS' not in os.environ and args.procs_per_node > 1:
         cur_env["OMP_NUM_THREADS"] = str(2)
-        print(
+        log.info(
             "*****************************************\n"
             "Setting OMP_NUM_THREADS environment variable for each process to be"
             f" {cur_env['OMP_NUM_THREADS']} in default, to avoid your system being overloaded, "
             "please further tune the variable for optimal performance in "
             "your application as needed. \n"
-            "*****************************************",
-            file=sys.stderr,
+            "*****************************************"
         )
 
     avail_gpus = torch.cuda.device_count()
     assum_gpus = args.procs_per_node * args.gpus_per_proc
     if avail_gpus < assum_gpus:
         import socket
-
         msg = (
             f'Host={socket.gethostname()}; GPUs available={avail_gpus}; requested={assum_gpus}'
             f'\n\tprocs-per-node * gpus-per-proc = {args.procs_per_node} * {args.gpus_per_proc}'
         )
-
         raise Exception(msg)
     if avail_gpus > 0 >= assum_gpus:
-        print("WARNING: GPUs are available but the --gpus-per-proc is not set.", file=sys.stderr)
+        log.warning("WARNING: GPUs are available but the --gpus-per-proc is not set.")
 
     cmd = []
     if args.is_module:
         cmd += [sys.executable, "-u", "-m"]
     cmd.append(args.script)
     cmd.extend(args.script_args)
-
+    log.info(f'{cmd}')
     processes = []
     for local_rank in range(0, args.procs_per_node):
         my_env = cur_env.copy()
@@ -156,9 +154,9 @@ def main(args=None):
             my_env["CUDA_VISIBLE_DEVICES"] = device_ids
 
         # spawn the processes
-        process = subprocess.Popen(cmd, env=my_env, shell=True, cwd=os.getcwd())
+        process = subprocess.Popen(cmd, env=my_env, shell=False, stdin=subprocess.DEVNULL, cwd=os.getcwd())
         processes.append((cmd, process))
-
+    log.info(f"Launched {len(processes)} processes")
     timeout = 10
     alive = [True] * len(processes)
     try:
@@ -172,6 +170,7 @@ def main(args=None):
                         raise subprocess.CalledProcessError(returncode=process.returncode, cmd=cmd)
                 except subprocess.TimeoutExpired:
                     pass  # that's okay! skip this and check on next process
+        log.info('All processes completed successfully')
     finally:
         # kill all living processes
         teardown([proc for is_alive, (cmd, proc) in zip(alive, processes) if is_alive])
@@ -182,13 +181,13 @@ def teardown(procs: List[subprocess.Popen]):
     for proc in procs:  # force abort any running processes
         try:
             if proc.poll() is None:  # process is still running
-                print(f"Force terminating process: {proc.pid}", file=sys.stderr)
+                log.warning(f"Force terminating process: {proc.pid}")
                 proc.terminate()
         except:
             errs.append(proc.pid)
     if errs:
         errs = ' '.join(str(x) for x in errs)
-        print(f"Error terminating some process(es). Please run 'kill -9 {errs}'", file=sys.stderr)
+        log.warning(f"Error terminating some process(es). Please run 'kill -9 {errs}'")
 
 
 if __name__ == "__main__":
