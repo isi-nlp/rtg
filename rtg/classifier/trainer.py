@@ -82,6 +82,9 @@ class ClassifierTrainer(SteppedTrainer):
                     if self.criterion.input_type == 'logits':
                         # softmax was not applied in batch_step. Apply here
                         probs = F.softmax(scores, dim=1)
+                    else:  # scores are already probs
+                        assert self.criterion.input_type in ('probs', 'softmax'), f'Expected probs, but got {self.criterion.input_type}'
+                        probs = scores
 
                     top1_probs, top1_idx = probs.max(dim=1)
                     pred_ids += top1_idx.tolist()
@@ -198,15 +201,6 @@ class ClassifierTrainer(SteppedTrainer):
             fine_tune=fine_tune,
             y_is_cls=True,
         )
-        val_data = None
-        if dtorch.is_global_main:
-            val_data = self.exp.get_val_data(
-                batch_size=[max_toks, max_sents],
-                shuffle=False,
-                batch_first=True,
-                sort_desc=False,
-                y_is_cls=True,
-            )
 
         train_state = TrainerState(self.model, check_point=check_point, unit='item')
         train_state.train_mode(True)
@@ -258,6 +252,13 @@ class ClassifierTrainer(SteppedTrainer):
                     if dtorch.is_global_main:
                         train_state.train_mode(False)
                         with torch.no_grad():
+                            val_data = self.exp.get_val_data(
+                                        batch_size=[max_toks, max_sents],
+                                        shuffle=False,
+                                        batch_first=True,
+                                        sort_desc=False,
+                                        y_is_cls=True,
+                                    )
                             val_loss, val_metrics = self.run_valid_epoch(val_data)
                             self.make_check_point(train_loss, val_loss=val_loss, keep_models=keep_models)
                             if check_pt_callback:

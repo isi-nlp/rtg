@@ -5,7 +5,7 @@ from functools import partial
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional, Tuple, Union
 
-from rtg import Batch, TSVData, device, line_count, log
+from rtg import Batch, TSVData, device, line_count, log, IO
 from rtg.classifier import ClassificationExperiment
 from rtg.data.codec import Field as BaseField
 from rtg.comet import HFField, Example, Batch
@@ -20,9 +20,13 @@ class HfTransformerExperiment(ClassificationExperiment):
         self.src_field = HFField(self.model_id)
 
     def pre_process(self, args=None, force=False):
+        if self._prepared_flag.exists() and not force:
+            log.info(f"Pre-processing already done for {self.work_dir}")
+            return
         args = args or self.config.get('prep')
         log.info(f"Pre-processing data for {self.model_id}")
         # TODO: make the src vocab load from experiment dir (i.e., offline use)
+        # making tgt vocab from train data
         if force or not self._tgt_field_file.exists():
             # target vocabulary; class names. treat each line as a word
             tgt_corpus = []
@@ -40,6 +44,9 @@ class HfTransformerExperiment(ClassificationExperiment):
             log.warning(
                 f'model_args.tgt_vocab={n_classes},' f' but found {len(self.tgt_field)} cls in {tgt_corpus}'
             )
+        self._pre_process_parallel(
+            'train_src', 'train_tgt', out_file=self.train_db, args=args, line_check=False
+        )
         self._pre_process_parallel(
             'valid_src', 'valid_tgt', out_file=self.valid_file, args=args, line_check=False
         )
@@ -63,9 +70,32 @@ class HfTransformerExperiment(ClassificationExperiment):
         else:
             assert self.train_db.exists()
             from nlcodec.db import MultipartDb
-
             ex_stream = MultipartDb.load(self.train_db, shuffle=True, rec_type=Example)
 
+        fields = [self.src_field, self.src_field, self.tgt_vocab]
+        batch_stream = self.stream_example_to_batch(
+            ex_stream, batch_size, fields=fields, **self._get_batch_args()
+        )
+        return batch_stream
+
+    def get_val_data(
+        self,
+        batch_size: Union[int, Tuple[int, int]],
+        **kwargs,
+    ):
+        def read_ex_stream(src_file, tgt_file):
+            bargs = dict(src_len=self.config['prep']['src_len'],
+                tgt_len=self.config['prep']['tgt_len'],
+                truncate=self.config['prep']['truncate'],
+                src_tokenizer=self._input_line_encoder,
+                tgt_tokenizer=partial(self.tgt_vocab.encode_as_ids))
+            parallel_recs = TSVData.read_raw_parallel_recs(src_file, tgt_file, **bargs)
+            yield from (Example(idx, x1=s[0], x2=s[1], y=t) 
+                        for idx, (s, t) in enumerate(parallel_recs))
+        
+        src_file = IO.resolve(self.config['prep']['valid_src'])
+        tgt_file = IO.resolve(self.config['prep']['valid_tgt'])
+        ex_stream = read_ex_stream(src_file, tgt_file)
         fields = [self.src_field, self.src_field, self.tgt_vocab]
         batch_stream = self.stream_example_to_batch(
             ex_stream, batch_size, fields=fields, **self._get_batch_args()
