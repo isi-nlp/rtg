@@ -85,6 +85,13 @@ def parse_args(args=None):
         action="store_true",
         help="Treats the <script> argument as python module and executes CLI with 'python -m <script>'.",
     )
+    parser.add_argument(
+        "--stdin",
+        dest='stdin',
+        default=False,
+        action="store_true",
+        help="Input is from stdin. Each line is distributed to a process in round-robin fashion.",
+    )
     # positional
     parser.add_argument(
         "script",
@@ -137,11 +144,12 @@ def main(args=None):
 
     cmd = []
     if args.is_module:
-        cmd += [sys.executable, "-u", "-m"]
+        cmd += [sys.executable, "-m"]
     cmd.append(args.script)
     cmd.extend(args.script_args)
     log.info(f'{cmd}')
     processes = []
+    STDIN = subprocess.PIPE if args.stdin else subprocess.DEVNULL
     for local_rank in range(0, args.procs_per_node):
         my_env = cur_env.copy()
         # each process's rank
@@ -152,28 +160,54 @@ def main(args=None):
             dev_ids = range(local_rank * args.gpus_per_proc, (local_rank + 1) * args.gpus_per_proc)
             device_ids = ','.join(str(i) for i in dev_ids)
             my_env["CUDA_VISIBLE_DEVICES"] = device_ids
+        # spawn processes
+        process = subprocess.Popen(cmd, env=my_env, shell=False, stdin=STDIN, text=True, cwd=os.getcwd())
+        processes.append(process)
 
-        # spawn the processes
-        process = subprocess.Popen(cmd, env=my_env, shell=False, stdin=subprocess.DEVNULL, cwd=os.getcwd())
-        processes.append((cmd, process))
+    if args.stdin:
+        distribute_stdin(processes)
+    else:
+        wait_till_end(processes)
+
+
+def distribute_stdin(processes: List[subprocess.Popen], method="round-robin"):
+    assert method == "round-robin"    # only this is su
+    alive_procs = processes
+    dead_procs = []
+    try:
+        for i, line in enumerate(sys.stdin):
+            if not alive_procs:
+                break
+            proc = processes[i % len(alive_procs)]
+            try:
+                # any encoding errors are replaced with '?'
+                line = line.encode(encoding='utf-8', errors='replace').decode('utf-8')
+                proc.stdin.write(line)
+            except BrokenPipeError:
+                log.warning(f"Process {proc.pid} is dead. STDIN Line dropped")
+                dead_procs.append(proc)
+                alive_procs.remove(proc)
+    finally:
+        teardown(processes)
+
+
+def wait_till_end(processes: List[subprocess.Popen], timeout: int = 10):
     log.info(f"Launched {len(processes)} processes")
-    timeout = 10
     alive = [True] * len(processes)
     try:
         while sum(alive) > 0:
-            for i, (cmd, process) in enumerate(processes):
+            for i, process in enumerate(processes):
                 try:
                     process.wait(timeout=timeout)
                     alive[i] = False
                     if process.returncode != 0:
                         # TODO: communicate to all nodes
-                        raise subprocess.CalledProcessError(returncode=process.returncode, cmd=cmd)
+                        raise subprocess.CalledProcessError(returncode=process.returncode)
                 except subprocess.TimeoutExpired:
                     pass  # that's okay! skip this and check on next process
         log.info('All processes completed successfully')
     finally:
-        # kill all living processes
-        teardown([proc for is_alive, (cmd, proc) in zip(alive, processes) if is_alive])
+        teardown(processes)
 
 
 def teardown(procs: List[subprocess.Popen]):
