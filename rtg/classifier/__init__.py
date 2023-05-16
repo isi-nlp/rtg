@@ -7,7 +7,7 @@
 from abc import ABCMeta
 from rtg import BaseModel
 
-from .exp import ClassificationExperiment
+from .experiment import ClassificationExperiment
 
 
 class ClassifierModel(BaseModel, metaclass=ABCMeta):
@@ -17,4 +17,4 @@ class ClassifierModel(BaseModel, metaclass=ABCMeta):
 
 
 from .trainer import ClassifierTrainer
-from . import tfmcls
+from . import transformer

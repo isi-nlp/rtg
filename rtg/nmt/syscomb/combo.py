@@ -12,7 +12,7 @@ from tqdm import tqdm
 
 from rtg import IO, SmoothKLD, device, log, yaml
 from rtg.lm.rnnlm import RnnLm
-from rtg.lm.tfmlm import TfmLm
+from rtg.lm.transformer import TransformerLM
 from rtg.nmt import NMTModel, TranslationExperiment
 
 
@@ -74,7 +74,7 @@ class TfmLmWrapper(nn.Module):
     Wraps a Transformer language model to provide a translation model like API for  Sys Comb
     """
 
-    def __init__(self, model: TfmLm):
+    def __init__(self, model: TransformerLM):
         super().__init__()
         self.model = model
         self.generator = model.generator

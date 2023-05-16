@@ -7,7 +7,7 @@ from  torch import nn
 from rtg import log, device, get_my_args, register_model,  Batch
 from rtg.classifier import ClassifierModel, ClassificationExperiment, ClassifierTrainer
 from rtg.comet.experiment import HfTransformerExperiment
-from rtg.classifier.tfmcls import ClassifierHead, SentenceCompressor
+from rtg.classifier.transformer import ClassifierHead, SentenceCompressor
 
 
 @register_model()

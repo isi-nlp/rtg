@@ -11,9 +11,9 @@ from rtg import log
 from rtg.data.codec import Field
 from rtg.data.dataset import subsequent_mask
 from rtg.lm.rnnlm import RnnLm
-from rtg.lm.tfmlm import TfmLm
+from rtg.lm.transformer import TransformerLM
 from rtg.nmt.rnnmt import RNNMT
-from rtg.nmt.tfmnmt import TransformerNMT
+from rtg.nmt.transformer import TransformerNMT
 
 INTERACTIVE = False
 
@@ -126,7 +126,7 @@ class RnnLmGenerator(GeneratorFactory):
 
 
 class TfmLmGenerator(GeneratorFactory):
-    def __init__(self, model: TfmLm, field, x_seqs, x_lens):
+    def __init__(self, model: TransformerLM, field, x_seqs, x_lens):
         super().__init__(model, field)
         if INTERACTIVE:
             self.x_seqs = x_seqs

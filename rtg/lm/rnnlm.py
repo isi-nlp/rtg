@@ -19,8 +19,11 @@ from rtg.registry import MODEL, register
 from . import LanguageModel
 
 
-@register_model(name='rnnlm')
+@register_model()
 class RnnLm(SeqDecoder, LanguageModel):
+    
+    model_type = 'rnnlm'
+
     def __init__(self, embedder: Embedder, generator: Generator, n_layers: int = 1, dropout: float = 0.1):
         super().__init__(prev_emb_node=embedder, generator=generator, n_layers=n_layers, dropout=dropout)
         assert embedder.emb_size == generator.vec_size
@@ -30,10 +33,6 @@ class RnnLm(SeqDecoder, LanguageModel):
     @property
     def model_dim(self):
         return self._model_dim
-
-    @property
-    def model_type(self):
-        return 'rnnlm'
 
     @property
     def vocab_size(self):

@@ -14,7 +14,7 @@ from tqdm import tqdm
 
 from rtg import BatchIterable, device, log, register_model
 from rtg.common import TrainerState
-from rtg.nmt.tfmnmt import (
+from rtg.nmt.transformer import (
     Embeddings,
     Generator,
     MultiHeadedAttention,
@@ -28,13 +28,16 @@ from  . import LanguageModel
 
 """"In NMT, DecoderLayer also has source attention.
 But here, decoder layer is just like Encoder layer: self_attn and feed forward"""
-from rtg.nmt.tfmnmt import Encoder as LMDecoder
-from rtg.nmt.tfmnmt import EncoderLayer as LMDecoderLayer
+from rtg.nmt.transformer import Encoder as LMDecoder
+from rtg.nmt.transformer import EncoderLayer as LMDecoderLayer
 
 
 
-@register_model(name='transformer-lm')
-class TfmLm(LanguageModel):
+@register_model()
+class TransformerLM(LanguageModel):
+    
+    model_type = 'transformer-lm'
+    
     def __init__(self, decoder: LMDecoder, embedder, generator: Generator):
         super().__init__()
         self.decoder: LMDecoder = decoder
@@ -44,10 +47,6 @@ class TfmLm(LanguageModel):
     @property
     def model_dim(self):
         return self.generator.d_model
-
-    @property
-    def model_type(self):
-        return 'tfmlm'
 
     @property
     def vocab_size(self):
@@ -85,7 +84,7 @@ class TfmLm(LanguageModel):
         embedr = nn.Sequential(Embeddings(hid_size, vocab_size), PositionalEncoding(hid_size, dropout))
         generator = Generator(hid_size, vocab_size)
 
-        model = TfmLm(decoder, embedr, generator)
+        model = TransformerLM(decoder, embedr, generator)
         if tied_emb:
             log.info("Tying the embedding weights, two ways: (TgtIn == TgtOut)")
             model.generator.proj.weight = model.embed[0].lut.weight

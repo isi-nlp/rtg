@@ -347,42 +347,6 @@ class AbstractTransformerNMT(ABC, NMTModel):
     def make_trainer(cls, *args, **kwargs):
         return TransformerTrainer(*args, model_factory=cls.make_model, **kwargs)
 
-
-class TransformerNMT(AbstractTransformerNMT):
-    """
-    A standard Encoder-Decoder Transformer architecture.
-    """
-
-    # Factories; looks a bit complicated, but very useful if child classes want to customize these.
-    GeneratorFactory = Generator
-    EncoderLayerFactory = EncoderLayer
-    DecoderLayerFactory = DecoderLayer
-    EncoderFactory = Encoder
-    DecoderFactory = Decoder
-
-    def __init__(
-        self,
-        encoder: Encoder,
-        decoder: Decoder,
-        src_embed,
-        tgt_embed,
-        generator: Optional[Generator],
-        tgt_vocab=None,
-    ):
-        super().__init__(
-            encoder=encoder,
-            decoder=decoder,
-            src_embed=src_embed,
-            tgt_embed=tgt_embed,
-            generator=generator,
-            tgt_vocab=tgt_vocab,
-        )
-
-    @property
-    def model_type(self):
-        return 'tfmnmt'
-
-
 class SublayerConnection(nn.Module):
     """
     A residual connection followed by a layer norm.
@@ -981,12 +945,12 @@ class TransformerTrainer(SteppedTrainer):
             self.opt.curr_step,
         )
 
-
-@register_model(name='transformer-nmt')
+@register_model()
 class TransformerNMT(AbstractTransformerNMT):
     """
     A standard Encoder-Decoder Transformer architecture.
     """
+    model_type = 'transformer-nmt'
 
     # Factories; looks a bit complicated, but very useful if child classes want to customize these.
     GeneratorFactory = Generator
@@ -995,6 +959,7 @@ class TransformerNMT(AbstractTransformerNMT):
     EncoderFactory = Encoder
     DecoderFactory = Decoder
 
+    
     def __init__(
         self,
         encoder: Encoder,
@@ -1012,10 +977,6 @@ class TransformerNMT(AbstractTransformerNMT):
             generator=generator,
             tgt_vocab=tgt_vocab,
         )
-
-    @property
-    def model_type(self):
-        return 'tfmnmt'
 
     @classmethod
     def make_model(

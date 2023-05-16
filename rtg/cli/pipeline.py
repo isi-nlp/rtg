@@ -58,7 +58,7 @@ def parse_args():
         except:
             log.warning("unable to import pyspark. Please do 'pip install pyspark' and run again")
             raise
-        from rtg.nmt.big.exp import BigTranslationExperiment
+        from rtg.nmt.big.experiment import BigTranslationExperiment
         ExpFactory = BigTranslationExperiment
 
     read_only = not dtorch.is_global_main  # only main can modify experiment

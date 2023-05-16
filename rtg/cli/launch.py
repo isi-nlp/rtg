@@ -167,7 +167,7 @@ def main(args=None):
     if args.stdin:
         distribute_stdin(processes)
     else:
-        wait_till_end(processes)
+        wait_till_end(processes, cmd=cmd)
 
 
 def distribute_stdin(processes: List[subprocess.Popen], method="round-robin"):
@@ -191,7 +191,7 @@ def distribute_stdin(processes: List[subprocess.Popen], method="round-robin"):
         teardown(processes)
 
 
-def wait_till_end(processes: List[subprocess.Popen], timeout: int = 10):
+def wait_till_end(processes: List[subprocess.Popen], cmd, timeout: int = 10):
     log.info(f"Launched {len(processes)} processes")
     alive = [True] * len(processes)
     try:
@@ -202,7 +202,7 @@ def wait_till_end(processes: List[subprocess.Popen], timeout: int = 10):
                     alive[i] = False
                     if process.returncode != 0:
                         # TODO: communicate to all nodes
-                        raise subprocess.CalledProcessError(returncode=process.returncode)
+                        raise subprocess.CalledProcessError(returncode=process.returncode, cmd=cmd)
                 except subprocess.TimeoutExpired:
                     pass  # that's okay! skip this and check on next process
         log.info('All processes completed successfully')

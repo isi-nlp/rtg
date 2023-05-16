@@ -18,6 +18,6 @@ def test_distrib_train():
         shutil.copytree(src=sample_exp, dst=tmp_dir, dirs_exist_ok=True)
 
         # 1 node, 3 processes, no GPU, mggodule rtg.pipeline
-        args = f'-N 1 -P 3 -G 0 -m rtg.pipeline {tmp_dir}'.split()
+        args = f'-N 1 -P 3 -G 0 -m rtg.cli.pipeline {tmp_dir}'.split()
         p_args = launch.parse_args(args)
         launch.main(p_args)

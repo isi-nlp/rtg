@@ -1,7 +1,7 @@
 from abc import ABCMeta
 from rtg.common.model import BaseModel
 from rtg.lm import LanguageModel
-from .exp import TranslationExperiment
+from .experiment import TranslationExperiment
 
 class NMTModel(LanguageModel, metaclass=ABCMeta):
     """
@@ -13,6 +13,6 @@ class NMTModel(LanguageModel, metaclass=ABCMeta):
 
 
 
-from . import decoder, generator, rnnmt, robertamt, tfmnmt
+from . import decoder, generator, rnnmt, robertamt, transformer
 
 # dont do * import; the module/model names might clash

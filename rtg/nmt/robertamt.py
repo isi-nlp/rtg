@@ -13,7 +13,7 @@ from rtg.data.codec import PretrainMatchField
 from rtg.utils import get_my_args
 
 from rtg.nmt import TranslationExperiment as Experiment
-from .tfmnmt import DecoderLayer, EncoderLayer, Generator, TransformerNMT
+from .transformer import DecoderLayer, EncoderLayer, Generator, TransformerNMT
 
 
 class RobertaGenerator(Generator):
@@ -147,7 +147,6 @@ class RoBERTaMT(TransformerNMT):
         dec_layer_map: List[int],
     ):
         """
-
         :param roberta:
         :param init: List of component names to be initialized
         :param src_emb_map: map[my_emb_idx <-- your_emb_idx] for source language
@@ -204,7 +203,7 @@ class RoBERTaMT(TransformerNMT):
         else:
             log.info("init tgt_out_emb: NO")
 
-        from rtg.nmt.tfmnmt import MultiHeadedAttention as MyAttn
+        from rtg.nmt.transformer import MultiHeadedAttention as MyAttn
 
         def copy_weights(source: nn.Module, target: nn.Module):
             assert type(target) is type(source)

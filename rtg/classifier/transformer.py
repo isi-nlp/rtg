@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from rtg import get_my_args, log, register_model
-from rtg.nmt.tfmnmt import (Embeddings, Encoder, EncoderLayer,
+from rtg.nmt.transformer import (Embeddings, Encoder, EncoderLayer,
                             MultiHeadedAttention, PositionalEncoding,
                             PositionwiseFeedForward)
 

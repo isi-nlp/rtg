@@ -35,7 +35,7 @@ model_args: # model construction args
   tgt_vocab: 8000
   tied_emb: three-way  # choices: null, one-way, two-way, three-way
   # self_attn_rel_pos: 8  # enable relative pos self attention with window=8
-model_type: tfmnmt  # model type. tfmnmt is the transformer NMT model
+model_type: transformer-nmt  # model type. tfmnmt is the transformer NMT model
 optimizer:
   name: adam
   args:
@@ -102,7 +102,7 @@ seed: 12345  # fix the manual seed of pytorch + cuda + numpy + python_stdlib RNG
 |Component | Choices
 
 |model
-|tfmnmt, rnnmt, rnnlm, tfmlm, skptfmnmt, wvtfmnmt, wvskptfmnmt, tfmextembmt, robertamt, mtfmnmt, hybridmt, CBOW, tfmcls
+|transformer-nmt, transformer-classifier, transformer-lm
 
 |optimizer
 | adam, sgd, adagrad, adam_w, adadelta, sparse_adam

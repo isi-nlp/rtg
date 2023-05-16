@@ -9,7 +9,7 @@ model_args: # model construction args
   src_vocab: 8000
   tgt_vocab: 8000
   tied_emb: three-way  # choices: null, one-way, two-way, three-way
-model_type: transformer-nmt  # model type. tfmnmt is the transformer NMT model
+model_type: transformer-nmt
 
 optimizer:
   name: adam

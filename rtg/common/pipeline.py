@@ -213,7 +213,7 @@ class Pipeline:
             IO.write_lines(tune_log, json.dumps(data))
 
     def run_classification_tests(self, exp=None, args=None):
-        from rtg.classifier.tfmcls import ClassificationExperiment
+        from rtg.classifier.transformer import ClassificationExperiment
 
         exp: ClassificationExperiment = exp or self.exp
         assert exp.problem_type is ProblemType.CLASSIFICATION
