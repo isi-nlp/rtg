@@ -51,6 +51,11 @@ class IO:
     """File opener and automatic closer"""
 
     def __init__(self, path, mode='r', encoding=None, errors=None):
+        # check if $var or ${var}  %var% (windows only) is in path
+        orig_path, path = path, type(self).resolve(path)
+        if str(orig_path) != str(path):
+            log.info(f"Resolve {orig_path} → {path}")
+    
         self.path = path if type(path) is Path else Path(path)
         self.mode = mode
         self.fd = None
@@ -90,6 +95,12 @@ class IO:
             yield from inp
 
     @classmethod
+    def resolve(cls, path):
+        path = os.path.expanduser(path)
+        path = os.path.expandvars(path)
+        return Path(path).resolve()
+
+    @classmethod
     def get_liness(cls, *paths, **kwargs):
         for path in paths:
             yield from cls.get_lines(path, **kwargs)
@@ -105,6 +116,7 @@ class IO:
 
     @classmethod
     def copy_file(cls, src: Path, dest: Path, follow_symlinks=True):
+        src, dest = cls.resolve(src), cls.resolve(dest)
         log.info(f"Copy {src} → {dest}")
         assert src.resolve() != dest.resolve()
         shutil.copy2(str(src), str(dest), follow_symlinks=follow_symlinks)

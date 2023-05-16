@@ -45,7 +45,7 @@ class HfTransformerExperiment(ClassificationExperiment):
         )
 
         self.persist_state()
-        # self._prepared_flag.touch()
+        self._prepared_flag.touch()
 
     def get_train_data(
         self,

@@ -1,10 +1,10 @@
+import os
 import copy
 import hashlib
 import os
 import random
 import sys
 import time
-from collections import Counter
 from datetime import datetime, timedelta
 from functools import partial
 from pathlib import Path
@@ -28,9 +28,16 @@ seeded = False
 __all__ = ['BaseExperiment', 'load_conf']
 
 
-def load_conf(inp: Union[str, Path]):
+def load_conf(inp: Union[str, Path], update_env=True):
     with IO.reader(inp) as fh:
-        return yaml.load(fh)
+        config = yaml.load(fh)
+    if update_env and isinstance(config.get('environment'), dict):
+        for name, val in config['environment'].items():
+            if name in os.environ and os.environ[name] != str(val):
+                log.warning(f"Overriding env var {name}={os.environ[name]} → {val}")
+            os.environ[name] = str(val)
+    return config
+
 
 
 class BaseExperiment:

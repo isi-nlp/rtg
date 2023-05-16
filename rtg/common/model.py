@@ -3,7 +3,7 @@ from abc import abstractmethod, ABCMeta
 import torch
 import torch.nn as nn
 
-from .exp import BaseExperiment, log
+from .experiment import BaseExperiment, log
 
 __all__ = ['BaseModel']
 

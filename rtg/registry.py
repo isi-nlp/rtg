@@ -166,7 +166,7 @@ def __register_all():
 
 
 if __name__ == '__main__':
-    from .common.exp import BaseExperiment
+    from .common.experiment import BaseExperiment
 
     # a simple test case
 

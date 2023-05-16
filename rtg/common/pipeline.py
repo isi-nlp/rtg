@@ -19,7 +19,7 @@ from sacrebleu import corpus_bleu, corpus_macrof
 
 from rtg import __version__, debug_mode, log
 from rtg.common import dtorch
-from rtg.common.exp import BaseExperiment as Experiment
+from rtg.common.experiment import BaseExperiment as Experiment
 from rtg.registry import ProblemType
 from rtg.utils import IO, line_count
 
@@ -53,10 +53,10 @@ class Pipeline:
             else:
                 src, ref = data['src'], data.get('ref')
 
-            src = Path(src).resolve()
+            src = IO.resolve(src)
             assert src.exists(), f'{src} doesnt exist'
             if ref:
-                ref = Path(ref).resolve()
+                ref = IO.resolve(ref)
                 assert ref.exists(), f'{ref} doesnt exist'
                 assert line_count(src) == line_count(ref), f'{src} and{ref} are not parallel'
         assert conf['trainer']['steps'] > 0
