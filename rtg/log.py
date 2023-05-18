@@ -2,6 +2,7 @@
 #
 # Author: Thamme Gowda [tg (at) isi (dot) edu]
 # Created: 3/9/19
+import functools
 import logging
 import os
 
@@ -9,6 +10,7 @@ __all__ = ['Logger']
 
 
 class Logger(logging.Logger):
+
     def __init__(self, name='rtg', file=None, file_level=logging.DEBUG, console_level=logging.INFO):
         super().__init__(name, level=logging.DEBUG)
         # create formatter and add it to the handlers
@@ -66,3 +68,15 @@ class Logger(logging.Logger):
     def __setstate__(self, state):
         self.__dict__.update(state)
         self.setup_handlers()  # re-setup handlers
+
+    @functools.lru_cache(maxsize=512)
+    def warning_once(self, *args, **kwargs) -> None:
+        return super().warning(*args, **kwargs)
+    
+    @functools.lru_cache(maxsize=512)
+    def info_once(self, *args, **kwargs) -> None:
+        return super().info(*args, **kwargs)
+    
+    @functools.lru_cache(maxsize=512)
+    def debug_once(self, *args, **kwargs) -> None:
+        return super().debug(*args, **kwargs)
