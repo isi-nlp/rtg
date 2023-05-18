@@ -1,5 +1,6 @@
 from collections import namedtuple
-from typing import Callable, List
+from typing import Callable, List, Any
+from dataclasses import dataclass
 
 import numpy as np
 import torch
@@ -8,6 +9,18 @@ from rtg import Array, device, dtorch, get_my_args, log, register_model
 from rtg.data.codec import Field as BaseField
 
 Example = namedtuple('IdExample', ['id', 'x1', 'x2', 'y'])
+
+@dataclass(frozen=True)
+class Example:
+    
+    id: Any
+    x1: Array
+    x2: Array
+    y: Array
+        
+    @classmethod
+    def new_with_length_check(cls, id, x1, x2, y, max_src_len:int, max_tgt_len:int):
+        return cls(id, x1[:max_src_len], x2[:max_src_len], y[:max_tgt_len])
 
 
 class Batch:

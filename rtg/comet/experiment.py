@@ -18,6 +18,10 @@ class HfTransformerExperiment(ClassificationExperiment):
         assert self.model_id.startswith('hf:'), 'only huggingface models are supported'
         self.model_id = self.model_id[3:]
         self.src_field = HFField(self.model_id)
+        self.max_src_len = self.config['prep']['src_len']
+        self.max_tgt_len = self.config['prep']['tgt_len']
+        self.ExampleFactory = partial(Example.new_with_length_check, 
+                                  max_src_len=self.max_src_len, max_tgt_len=self.max_tgt_len)
 
     def pre_process(self, args=None, force=False):
         if self._prepared_flag.exists() and not force:
@@ -70,7 +74,7 @@ class HfTransformerExperiment(ClassificationExperiment):
         else:
             assert self.train_db.exists()
             from nlcodec.db import MultipartDb
-            ex_stream = MultipartDb.load(self.train_db, shuffle=True, rec_type=Example)
+            ex_stream = MultipartDb.load(self.train_db, shuffle=True, rec_type=self.ExampleFactory)
 
         fields = [self.src_field, self.src_field, self.tgt_vocab]
         batch_stream = self.stream_example_to_batch(
@@ -90,7 +94,7 @@ class HfTransformerExperiment(ClassificationExperiment):
                 src_tokenizer=self._input_line_encoder,
                 tgt_tokenizer=partial(self.tgt_vocab.encode_as_ids))
             parallel_recs = TSVData.read_raw_parallel_recs(src_file, tgt_file, **bargs)
-            yield from (Example(idx, x1=s[0], x2=s[1], y=t) 
+            yield from (self.ExampleFactory(idx, x1=s[0], x2=s[1], y=t) 
                         for idx, (s, t) in enumerate(parallel_recs))
         
         src_file = IO.resolve(self.config['prep']['valid_src'])
@@ -176,7 +180,7 @@ class HfTransformerExperiment(ClassificationExperiment):
                 # Skipping line with length > max_len. Current idx: {idx}
                 self.n_skips += 1
                 continue
-            yield Example(id=idx, x1=x1, x2=x2, y=y)
+            yield self.ExampleFactory(id=idx, x1=x1, x2=x2, y=y)
         log.warning('StreamData is exhausted')
 
     def stream_example_to_batch(
