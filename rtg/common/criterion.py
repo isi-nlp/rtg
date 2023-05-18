@@ -144,7 +144,7 @@ def kl_div(
     input_type='log_probs',
     infinitesimal=1e-8,
 ) -> Tensor:
-    assert input_type == 'log_probs'
+    assert input_type == 'log_probs', f'Expected input_type=log_probs, but got {input_type}'
     assert inputs.shape == targets.shape
     tot_classes = inputs.shape[1]
     losses = torch.kl_div(input=inputs, target=targets)
@@ -250,7 +250,7 @@ class SparseCrossEntropy(TemperedCriterion):
 @register(kind=CRITERION, name="kl_divergence")
 class KLDivergence(SparseCrossEntropy):
     def __init__(self, *args, label_smoothing=0.0, **kwargs):
-        super().__init__(*args, **kwargs)
+        super().__init__(*args, input_type='log_probs', **kwargs)
         assert 0 <= label_smoothing <= 1
         self.label_smoothing = label_smoothing
         assert self.reduction in ('micro', 'macro', 'macro+micro')
