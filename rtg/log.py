@@ -15,8 +15,13 @@ class Logger(logging.Logger):
         super().__init__(name, level=logging.DEBUG)
         # create formatter and add it to the handlers
         # formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        
+        self.proc_name = ''
+        if os.environ.get('RTG_PROC_NAME', ''):
+            self.proc_name = f'[{os.environ["RTG_PROC_NAME"]}]'
+        
         self.formatter = logging.Formatter(
-            '[%(asctime)s] p%(process)s {%(module)s:%(lineno)d} %(levelname)s - %(message)s',
+            f'[%(asctime)s] p%(process)s{self.proc_name} {{%(module)s:%(lineno)d}} %(levelname)s - %(message)s',
             datefmt='%m-%d %H:%M:%S',
         )
         self.console_level = console_level

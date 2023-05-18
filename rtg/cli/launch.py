@@ -164,9 +164,12 @@ def main(args=None):
         dist_rank = args.procs_per_node * args.node_rank + local_rank
         my_env["RANK"] = str(dist_rank)
         my_env["LOCAL_RANK"] = str(local_rank)
+        my_env['RTG_PROC_NAME'] = f'r{dist_rank}'
         if args.gpus_per_proc > 0:
             device_idx = list(range(local_rank * args.gpus_per_proc, (local_rank + 1) * args.gpus_per_proc))
-            my_env["CUDA_VISIBLE_DEVICES"] = ','.join(device_ids[idx] for idx in device_idx)
+            my_device_ids = ','.join(device_ids[idx] for idx in device_idx)
+            my_env["CUDA_VISIBLE_DEVICES"] = my_device_ids
+            my_env['RTG_PROC_NAME'] += f'.dev{my_device_ids}'
         # spawn processes
         process = subprocess.Popen(cmd, env=my_env, shell=False, stdin=STDIN, text=True, cwd=os.getcwd())
         processes.append(process)
