@@ -16,7 +16,8 @@ class BitextCometClassifier(ClassifierModel):
     experiment_type = HfTransformerExperiment
 
     def __init__(
-        self, encoder: nn.Module, model_dim: int, n_classes: int, compressor: SentenceCompressor
+        self, encoder: nn.Module, model_dim: int, n_classes: int, compressor: SentenceCompressor,
+        freeze_encoder: bool = False,
     ) -> None:
         super().__init__()
         self.encoder = encoder
@@ -25,6 +26,7 @@ class BitextCometClassifier(ClassifierModel):
         self.compressor = compressor
         # [seq1, seq2, |seq1-seq2|, seq1.seq2]   # 4 * model_dim
         self.classifier_head = ClassifierHead(4 * self.model_dim, n_classes)
+        self.freeze_encoder = freeze_encoder
 
     def get_trainable_params(self, include=None, exclude=None):
         if not include and not exclude or include == 'all':
@@ -64,8 +66,9 @@ class BitextCometClassifier(ClassifierModel):
 
     def forward(self, seq1, seq2, seq1_mask, seq2_mask, score='logits'):
         # def forward(self, src, src_mask, score='logits', freeze_encoder=True):
-        out1 = self.encoder(seq1, seq1_mask)
-        out2 = self.encoder(seq2, seq2_mask)
+        with torch.set_grad_enabled(not self.freeze_encoder):
+            out1 = self.encoder(seq1, seq1_mask)
+            out2 = self.encoder(seq2, seq2_mask)
         seq1_repr = self.compressor(out1.last_hidden_state, seq1_mask)
         seq2_repr = self.compressor(out2.last_hidden_state, seq2_mask)
         combo_repr = self.comet_repr(seq1_repr, seq2_repr)
@@ -79,7 +82,7 @@ class BitextCometClassifier(ClassifierModel):
 
     @classmethod
     def make_model(
-        cls, exp: ClassificationExperiment, model_id: str, src_vocab: int, tgt_vocab: int, pretrained=True
+        cls, exp: ClassificationExperiment, model_id: str, src_vocab:int, tgt_vocab: int, freeze_encoder=True,
     ) -> ClassifierModel:
         args = get_my_args(exclusions=['exp', 'cls'])
         log.info(f"Creating model {cls.__name__} with args: {args}")
@@ -88,6 +91,7 @@ class BitextCometClassifier(ClassifierModel):
         import transformers
 
         encoder = transformers.AutoModel.from_pretrained(model_id)
+
         from transformers import M2M100Model
 
         if isinstance(encoder, M2M100Model):
@@ -100,7 +104,7 @@ class BitextCometClassifier(ClassifierModel):
         # rtg impl masks positions with false/0, but torch impl masks positions with true/1
         # this multihead attn has masking compatible with torch/transformer
         compressor = SentenceCompressor(model_dim, attn=compressor_attn)
-        model = cls(encoder, model_dim=model_dim, n_classes=tgt_vocab, compressor=compressor)
+        model = cls(encoder, model_dim=model_dim, n_classes=tgt_vocab, compressor=compressor, freeze_encoder=freeze_encoder)
         return model, args
 
     @classmethod

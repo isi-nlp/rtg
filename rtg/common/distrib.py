@@ -159,14 +159,19 @@ class DistribTorch:
         # dist.all_reduce_coalesced(list(model.parameters()), op=dist.ReduceOp.SUM)  # unavailable
         futures = []
 
+        skipped_params = []
         for name, param in model.named_parameters():
             if param.grad is None:
-                log.warning_once(f"Skipping: {name} of size {param.shape} has no gradient")
+                skipped_params.append(name)
                 continue
             work = dist.all_reduce(param.grad.data, op=dist.ReduceOp.SUM, async_op=True)
             futures.append((work, param))
             # TODO: ring reduce https://pytorch.org/tutorials/intermediate/dist_tuto.html#our-own-ring-allreduce
             # param.grad.data /= size
+        if skipped_params:
+            log.warning_once(
+                "Skipped averaging of %d parameters gradients because they dont have gradients: %s", 
+                             len(skipped_params), ', '.join(skipped_params))
 
         for work, param in futures:
             work.wait()  # if not complete
