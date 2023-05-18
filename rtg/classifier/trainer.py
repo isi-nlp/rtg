@@ -43,6 +43,8 @@ class ClassifierTrainer(SteppedTrainer):
             )
 
         self.classifier_head = self.core_model.classifier_head
+        # required for validation metrics
+        assert self.criterion.input_type in ('logits', 'probs', 'softmax', 'log_probs', 'log_softmax'), f'Expected probs or log_probs, but got {self.criterion.input_type}'
 
     def loss_func(self, scores, labels, train_mode=False, take_step=False):
         loss = self.criterion(scores, labels, normalizer=len(labels), mask_out=None)
@@ -82,8 +84,8 @@ class ClassifierTrainer(SteppedTrainer):
                     if self.criterion.input_type == 'logits':
                         # softmax was not applied in batch_step. Apply here
                         probs = F.softmax(scores, dim=1)
-                    else:  # scores are already probs
-                        assert self.criterion.input_type in ('probs', 'softmax'), f'Expected probs, but got {self.criterion.input_type}'
+                    else:  # scores are already normalized
+                        assert self.criterion.input_type in ('probs', 'softmax', 'log_probs', 'log_softmax')
                         probs = scores
 
                     top1_probs, top1_idx = probs.max(dim=1)
