@@ -61,6 +61,7 @@ class HfTransformerExperiment(ClassificationExperiment):
     def get_train_data(
         self,
         batch_size: Union[int, Tuple[int, int]],
+        shuffle=True,
         **kwargs,
     ):
         if kwargs:
@@ -74,7 +75,7 @@ class HfTransformerExperiment(ClassificationExperiment):
         else:
             assert self.train_db.exists()
             from nlcodec.db import MultipartDb
-            ex_stream = MultipartDb.load(self.train_db, shuffle=True, rec_type=self.ExampleFactory)
+            ex_stream = MultipartDb.load(self.train_db, shuffle=shuffle, rec_type=self.ExampleFactory)
 
         fields = [self.src_field, self.src_field, self.tgt_vocab]
         batch_stream = self.stream_example_to_batch(

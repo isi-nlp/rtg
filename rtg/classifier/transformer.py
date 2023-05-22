@@ -1,5 +1,5 @@
 import copy
-from typing import List
+from typing import List, Optional
 
 import torch
 import torch.nn as nn
@@ -29,7 +29,7 @@ class SentenceCompressor(nn.Module):
         :param attn: Attention module to use for sequence compression
         """
         super(SentenceCompressor, self).__init__()
-        self.cls_repr = nn.Parameter(torch.zeros(d_model))
+        self.cls_repr = nn.Parameter(torch.randn(d_model))
         self.d_model = d_model
         self.attn = attn
 
@@ -56,16 +56,33 @@ class ClassifierHead(nn.Module):
         'sigmoid': lambda x, dim=None: x.sigmoid(),
     }
 
-    def __init__(self, d_model: int, n_classes: int):
+    def __init__(self, input_dim: int, n_classes: int, hid_dim: Optional[int] = None, activation=nn.GELU, dropout=0.1):
+        """Builds a classifier head with optional hidden layer. 
+        Args:
+            input_dim: input dim
+            n_classes: number of classes (i,e, output dim)
+            hid_dim: use a hidden layer of this dim before output layer. Defaults to None.
+            activation: activation function. Defaults to nn.GELU. only valid if hid_dim is not None.
+            dropout: dropout rate. Defaults to 0.1. Only valid if hid_dim is not None.
+        """
+        
         super().__init__()
-        self.d_model = d_model
+        self.input_dim = input_dim
         self.n_classes = n_classes
-        self.proj = nn.Linear(d_model, n_classes)
+        if hid_dim:
+            self.proj = nn.Sequential(
+                nn.Linear(input_dim, hid_dim),
+                activation(),
+                nn.Dropout(dropout),
+                nn.Linear(hid_dim, n_classes)
+            )
+        else:
+            self.proj = nn.Linear(input_dim, n_classes)
 
     def forward(self, repr, score='logits'):
         score = score or 'logits'
         B, D = repr.shape  # [Batch, Dim]
-        assert D == self.d_model
+        assert D == self.input_dim
         assert score in self.scores, f'"score", Given={score}, known={list(self.scores.keys())}'
         cls_repr = self.proj(repr)
         return self.scores[score](cls_repr, dim=-1)
@@ -84,7 +101,7 @@ class TransformerClassifier(ClassifierModel):
     def __init__(
         self, encoder: Encoder, src_embed, compressor: SentenceCompressor, classifier_head: ClassifierHead
     ):
-        super().__init__()
+        super().__init__(n_classes=classifier_head.n_classes)
         self.encoder: Encoder = encoder
         self.src_embed = src_embed
         self.compressor = compressor
@@ -141,7 +158,7 @@ class TransformerClassifier(ClassifierModel):
     def make_model(
         cls,
         src_vocab: int,
-        tgt_vocab: int,
+        n_classes: int,
         enc_layers=6,
         hid_size=512,
         ff_size=2048,
@@ -165,7 +182,7 @@ class TransformerClassifier(ClassifierModel):
         ff = PositionwiseFeedForward(hid_size, ff_size, dropout, activation=activation)
         encoder = cls.EncoderFactory(cls.EncoderLayerFactory(hid_size, c(attn), c(ff), dropout), enc_layers)
         src_emb = nn.Sequential(Embeddings(hid_size, src_vocab), PositionalEncoding(hid_size, dropout))
-        classifier_head = cls.ClassifierHeadFactory(d_model=hid_size, n_classes=tgt_vocab)
+        classifier_head = cls.ClassifierHeadFactory(d_model=hid_size, n_classes=n_classes)
 
         compressor_attn = MultiHeadedAttention(h=n_heads, d_model=hid_size, dropout=dropout)
         compressor = cls.CompressorFactory(d_model=hid_size, attn=compressor_attn)

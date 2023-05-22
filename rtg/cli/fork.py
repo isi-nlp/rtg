@@ -10,8 +10,8 @@ import os
 from pathlib import Path
 from typing import List, Union
 
-from rtg import TranslationExperiment as Experiment
 from rtg import log, IO
+from rtg.nmt import TranslationExperiment as Experiment
 
 
 def fork_experiment(

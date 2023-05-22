@@ -18,6 +18,13 @@ from rtg import log
 __all__ = ['dtorch', 'DistribTorch']
 
 
+class SkipBatchException(Exception):
+    """ 
+    This exception is raised when a batch is skipped. e.g. due to nan loss
+    """
+    pass
+
+
 @dataclass()
 class DistribTorch:
     host_name: str = socket.gethostname()
@@ -35,6 +42,7 @@ class DistribTorch:
     fp16 = False  # Manually enable by calling enable_fp16()
     fp16_dtype = torch.float16
     grad_accum = 1  # grad accumulation over these many batches
+    max_skips = 5  # max number of skips due to nan loss
 
     _scaler = None
     _is_backend_ready = False
@@ -133,11 +141,12 @@ class DistribTorch:
         # else we dont need it
 
     def backward(self, loss, retain_graph=False):
-        if torch.isnan(loss):
-            if self._n_skips < self.grad_accum - 1:
-                log.warning(f"Loss is nan; skipping. n_skips={self._n_skips} grad_accum={self.grad_accum}")
-                self._n_skips += 1
-                return
+        if self.fp16:
+            loss = self._scaler.scale(loss)
+        if torch.isnan(loss) or torch.isinf(loss) or loss < 0:  # nan, inf or negative
+            err_msg = f"Loss value:{loss} (device: {loss.device}); is_NaN: {torch.isnan(loss)}; is_inf:{torch.isinf(loss)}; is_neg:{loss < 0}; skipping..."
+            log.error(err_msg)
+            raise SkipBatchException(err_msg)
             # else crash
             raise Exception(
                 '''Loss is nan; enable debug mode to know more (export NMT_DEBUG=true);
@@ -147,12 +156,7 @@ class DistribTorch:
     3. set trainer.init_args.clip_grad_norm to a small number e.g. 5.0'''
             )
 
-        if self.fp16:
-            loss = self._scaler.scale(loss)
-        if loss < 0:
-            raise Exception('Loss is negative; looks like a numerical error (underflow or overflow?)')
         loss.backward(retain_graph=retain_graph)
-        self._n_skips = 0  # reset
 
     def average_gradients(self, model):
         size = float(self.world_size)

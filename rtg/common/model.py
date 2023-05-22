@@ -9,6 +9,7 @@ __all__ = ['BaseModel']
 
 
 class BaseModel(nn.Module, metaclass=ABCMeta):
+
     def init_params(self, scheme='xavier'):
         assert scheme == 'xavier'  # only supported scheme as of now
         # Initialize parameters with xavier uniform

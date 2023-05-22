@@ -66,32 +66,41 @@ class ClassifierTrainer(SteppedTrainer):
         model = self.core_model
         assert not model.training
         label_ids, pred_ids, pred_probs = [], [], []
-        with tqdm.tqdm(val_data, unit='batch', dynamic_ncols=True) as data_bar:
-            for i, batch in enumerate(data_bar):
-                with autocast(enabled=dtorch.fp16):
-                    if self.n_gpus <= 1:  # if not dataparallel, then move
-                        batch = batch.to(device)
-                    loss, scores = self._batch_step(batch, take_step=False, train_mode=False)
+        data_bar = tqdm.tqdm(val_data, unit='batch', dynamic_ncols=True)
+        for i, batch in enumerate(data_bar):
+            with autocast(enabled=dtorch.fp16):
+                if self.n_gpus <= 1:  # if not dataparallel, then move
+                    batch = batch.to(device)
+                loss, scores = self._batch_step(batch, take_step=False, train_mode=False)
 
-                    total_loss += loss
-                    num_batches += 1
-                    elapsed = time.time() - start
-                    data_bar.set_postfix_str(
-                        f'Loss:{loss:.4f}, {int(len(batch) / elapsed)}item/s', refresh=False
-                    )
+                total_loss += loss
+                num_batches += 1
+                elapsed = time.time() - start
+                data_bar.set_postfix_str(
+                    f'Loss:{loss:.4f}, {int(len(batch) / elapsed)}item/s', refresh=False
+                )
 
-                    label_ids += batch.ys.tolist()
-                    if self.criterion.input_type == 'logits':
-                        # softmax was not applied in batch_step. Apply here
-                        probs = F.softmax(scores, dim=1)
-                    else:  # scores are already normalized
-                        assert self.criterion.input_type in ('probs', 'softmax', 'log_probs', 'log_softmax')
-                        probs = scores
-
+                label_ids += batch.ys.tolist()
+                if self.criterion.input_type == 'logits':
+                    # softmax was not applied in batch_step. Apply here
+                    probs = F.softmax(scores, dim=1)
+                elif self.criterion.input_type in ('log_probs', 'log_softmax'):
+                    probs = scores.exp()
+                else:  # scores are already normalized
+                    assert self.criterion.input_type in ('probs', 'softmax')
+                    probs = scores
+                if self.model.n_classes == 1:   # binary classification
+                    threshold = 0.5
+                    probs = probs.squeeze(1)
+                    pred_probs += probs.tolist()
+                    pred_ids += (probs >= threshold).long().tolist()
+                else:
                     top1_probs, top1_idx = probs.max(dim=1)
                     pred_ids += top1_idx.tolist()
                     pred_probs += top1_probs.tolist()
-                start = time.time()
+            start = time.time()
+        data_bar.close()
+        assert num_batches > 0, "No batches found. Please check the val data loader"
         loss_avg = total_loss / num_batches
         class_names = self.exp.tgt_vocab.class_names
         metrics = ClsMetric(prediction=pred_ids, truth=label_ids, clsmap=class_names)
@@ -150,7 +159,6 @@ class ClassifierTrainer(SteppedTrainer):
         check_point: int,
         batch_size: int,
         log_interval=10,
-        check_pt_callback: Optional[Callable] = None,
         keep_models=10,
         sort_by='random',
         keep_in_mem=False,
@@ -162,7 +170,6 @@ class ClassifierTrainer(SteppedTrainer):
         :param steps: how many optimizer steps to train (also, means how many batches)
         :param check_point: after how many checkpoints to
         :param batch_size: how many target tokens in batch max ( = max_len * num_sentences)
-        :param check_pt_callback: function to call back after checkpt
         :param keep_models: how many checkpts to keep
         :param keep_in_mem: keep training data in memory
         :param early_stop: {patience: N validations, by: loss, enabled: True}
@@ -216,6 +223,22 @@ class ClassifierTrainer(SteppedTrainer):
         if early_stop:
             stopper = EarlyStopper(cur_step=self.start_step, **early_stop)
 
+        
+        def _make_checkpoint(train_loss):
+            with torch.no_grad():
+                train_state.train_mode(False)
+                val_data = self.exp.get_val_data(
+                            batch_size=[max_toks, max_sents],
+                            shuffle=False,
+                            batch_first=True,
+                            sort_desc=False,
+                            y_is_cls=True,
+                        )
+                val_loss, val_metrics = self.run_valid_epoch(val_data)
+                self.make_check_point(train_loss, val_loss=val_loss, keep_models=keep_models)
+                return val_loss, val_metrics
+        
+        
         with tqdm.tqdm(
             train_data,
             initial=start_batch,
@@ -250,23 +273,9 @@ class ClassifierTrainer(SteppedTrainer):
                 # Save checkpoint
                 if is_check_pt:
                     train_loss = train_state.reset()
-                    log.info(f"Chkpt Train loss={train_loss:g}; Runs validation? {dtorch.is_global_main}")
+                    log.info(f"Chkpt Train loss={train_loss:.4g}; Runs validation? {dtorch.is_global_main}")
                     if dtorch.is_global_main:
-                        train_state.train_mode(False)
-                        with torch.no_grad():
-                            val_data = self.exp.get_val_data(
-                                        batch_size=[max_toks, max_sents],
-                                        shuffle=False,
-                                        batch_first=True,
-                                        sort_desc=False,
-                                        y_is_cls=True,
-                                    )
-                            val_loss, val_metrics = self.run_valid_epoch(val_data)
-                            self.make_check_point(train_loss, val_loss=val_loss, keep_models=keep_models)
-                            if check_pt_callback:
-                                check_pt_callback(
-                                    model=self.model, step=self.opt.curr_step, train_loss=train_loss
-                                )
+                        _, val_metrics = _make_checkpoint(train_loss)
                         train_state.train_mode(True)
 
                         if stopper:
@@ -290,10 +299,7 @@ class ClassifierTrainer(SteppedTrainer):
 
         # End of training
         if unsaved_state and dtorch.is_global_main:
-            train_loss = train_state.reset()
-            train_state.train_mode(False)
-            val_loss = self.run_valid_epoch(val_data)
-            self.make_check_point(train_loss, val_loss=val_loss, keep_models=keep_models)
+            _make_checkpoint(train_state.reset())
 
         dtorch.barrier()
         return early_stopped_flag.exists()

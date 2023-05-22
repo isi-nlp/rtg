@@ -584,18 +584,12 @@ class TranslationExperiment(BaseExperiment):
 
     def persist_state(self):
         """Writes state of current experiment to the disk"""
+        from rtg.registry import ProblemType
         assert not self.read_only
         if 'model_args' not in self.config:
             self.config['model_args'] = {}
         args = self.config['model_args']
-        if self.model_type in {'rnnlm', 'tfmlm', 'wv_cbow'}:
-            # Language models
-            # TODO: improve the design of this thing
-            args['vocab_size'] = max(
-                len(self.src_vocab) if self.src_vocab else 0, len(self.tgt_vocab) if self.tgt_vocab else 0
-            )
-        else:
-            # Translation models
+        if self.problem_type == ProblemType.TRANSLATION:
             args['src_vocab'] = len(self.src_vocab) if self.src_vocab else 0
             args['tgt_vocab'] = len(self.tgt_vocab) if self.tgt_vocab else 0
 

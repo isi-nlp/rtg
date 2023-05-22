@@ -14,7 +14,14 @@ class ClassifierModel(BaseModel, metaclass=ABCMeta):
     """Base class for all classification models"""
 
     experiment_type = ClassificationExperiment
+    
+    def __init__(self, n_classes:int, **kwargs) -> None:
+        self._n_classes = n_classes
+        super().__init__()
 
+    @property
+    def n_classes(self):
+        return self._n_classes
 
 from .trainer import ClassifierTrainer
 from . import transformer
