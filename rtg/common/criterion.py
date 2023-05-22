@@ -146,7 +146,7 @@ def kl_div(
 ) -> Tensor:
     assert input_type == 'log_probs', f'Expected input_type=log_probs, but got {input_type}'
     assert inputs.shape == targets.shape
-    tot_classes = inputs.shape[1]
+    #tot_classes = inputs.shape[1]
     losses = torch.kl_div(input=inputs, target=targets)
     if mask_out is not None:
         losses.masked_fill_(mask_out, value=0.0)
@@ -329,40 +329,46 @@ class FocalLoss(TemperedCriterion):
 
 @register(kind=CRITERION, name="binary_cross_entropy")
 class BinaryCrossEntropy(Criterion):
-    def __init__(self, exp: Experiment, label_smoothing=0.1, step=0):
-        assert 0 <= label_smoothing < 1
+    def __init__(self, exp: Experiment, step=0):
+        """Binary Cross Entropy Loss. Wrapper for torch.nn.BCEWithLogitsLoss. Input is logits.
+
+        Args:
+            exp: instance of Experiment
+            label_smoothing: Smoothing rate Defaults to 0.1.
+            step: Start step number. Defaults to 0.
+        """
         super().__init__(input_type='logits', exp=exp, step=step)
         self.bce_loss = nn.BCEWithLogitsLoss(reduction='none')
-        self.smoothing = label_smoothing
 
     def forward(self, logits, targets, normalizer: float, mask_out=None):
         # logits: [B x V] targets: [B]
         assert targets.shape[0] == logits.shape[0]
-        targets = targets.unsqueeze(1)
+        targets = targets.unsqueeze(1).to(logits.dtype)
         assert normalizer > 0
-        truth_full = torch.full_like(logits, fill_value=self.smoothing, requires_grad=False)
-        # truth_full = torch.zeros_like(logits, requires_grad=False)
-        truth_full.scatter_(1, targets, 1)
-
-        per_time_per_class_loss = self.bce_loss(logits, truth_full)
+        
+        per_time_per_class_loss = self.bce_loss(logits, targets)
         if mask_out is not None:
             # pad_mask = targets == self.pad_idx
             per_time_per_class_loss.masked_fill_(mask=mask_out, value=0.0)
 
         # num_toks = batch_size - pad_mask.sum()
         # mean_loss = per_tok_loss.sum() / num_toks
-        per_tok_loss = per_time_per_class_loss.sum(dim=-1)
-        avg_loss = per_tok_loss.sum() / normalizer
+        avg_loss = per_time_per_class_loss.sum() / normalizer
         return avg_loss
 
 
 @register(kind=CRITERION, name="smooth_kld")
 class SmoothKLD(Criterion):
-    """
-    Label smoothing
-    """
 
     def __init__(self, exp: Experiment, n_classes: int, label_smoothing: float = 0.1, step=0):
+        """_summary_
+
+        Args:
+            exp: _description_
+            n_classes: _description_
+            label_smoothing: _description_. Defaults to 0.1.
+            step: _description_. Defaults to 0.
+        """
         super().__init__(input_type='log_softmax', exp=exp, reduction='micro')
         self.size = n_classes
         assert 0.0 <= label_smoothing <= 1.0
