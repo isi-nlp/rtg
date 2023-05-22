@@ -55,7 +55,7 @@ class IO:
         orig_path, path = path, type(self).resolve(path)
         if str(orig_path) != str(path):
             log.info(f"Resolve {orig_path} → {path}")
-    
+
         self.path = path if type(path) is Path else Path(path)
         self.mode = mode
         self.fd = None

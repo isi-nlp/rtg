@@ -146,7 +146,7 @@ def kl_div(
 ) -> Tensor:
     assert input_type == 'log_probs', f'Expected input_type=log_probs, but got {input_type}'
     assert inputs.shape == targets.shape
-    #tot_classes = inputs.shape[1]
+    # tot_classes = inputs.shape[1]
     losses = torch.kl_div(input=inputs, target=targets)
     if mask_out is not None:
         losses.masked_fill_(mask_out, value=0.0)
@@ -345,7 +345,7 @@ class BinaryCrossEntropy(Criterion):
         assert targets.shape[0] == logits.shape[0]
         targets = targets.unsqueeze(1).to(logits.dtype)
         assert normalizer > 0
-        
+
         per_time_per_class_loss = self.bce_loss(logits, targets)
         if mask_out is not None:
             # pad_mask = targets == self.pad_idx
@@ -359,7 +359,6 @@ class BinaryCrossEntropy(Criterion):
 
 @register(kind=CRITERION, name="smooth_kld")
 class SmoothKLD(Criterion):
-
     def __init__(self, exp: Experiment, n_classes: int, label_smoothing: float = 0.1, step=0):
         """_summary_
 

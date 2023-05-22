@@ -156,7 +156,9 @@ def main(args=None):
     else:
         device_ids = [str(i) for i in range(torch.cuda.device_count())]
     n_required_gpus = args.procs_per_node * args.gpus_per_proc
-    assert len(device_ids) >= n_required_gpus, f'Visible GPUs={len(device_ids)}; Required={n_required_gpus} (i.e {args.procs_per_node} * {args.gpus_per_proc}))'
+    assert (
+        len(device_ids) >= n_required_gpus
+    ), f'Visible GPUs={len(device_ids)}; Required={n_required_gpus} (i.e {args.procs_per_node} * {args.gpus_per_proc}))'
 
     for local_rank in range(0, args.procs_per_node):
         my_env = cur_env.copy()

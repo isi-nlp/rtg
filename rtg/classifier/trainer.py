@@ -44,7 +44,13 @@ class ClassifierTrainer(SteppedTrainer):
 
         self.classifier_head = self.core_model.classifier_head
         # required for validation metrics
-        assert self.criterion.input_type in ('logits', 'probs', 'softmax', 'log_probs', 'log_softmax'), f'Expected probs or log_probs, but got {self.criterion.input_type}'
+        assert self.criterion.input_type in (
+            'logits',
+            'probs',
+            'softmax',
+            'log_probs',
+            'log_softmax',
+        ), f'Expected probs or log_probs, but got {self.criterion.input_type}'
 
     def loss_func(self, scores, labels, train_mode=False, take_step=False):
         loss = self.criterion(scores, labels, normalizer=len(labels), mask_out=None)
@@ -76,9 +82,7 @@ class ClassifierTrainer(SteppedTrainer):
                 total_loss += loss
                 num_batches += 1
                 elapsed = time.time() - start
-                data_bar.set_postfix_str(
-                    f'Loss:{loss:.4f}, {int(len(batch) / elapsed)}item/s', refresh=False
-                )
+                data_bar.set_postfix_str(f'Loss:{loss:.4f}, {int(len(batch) / elapsed)}item/s', refresh=False)
 
                 label_ids += batch.ys.tolist()
                 if self.criterion.input_type == 'logits':
@@ -89,7 +93,7 @@ class ClassifierTrainer(SteppedTrainer):
                 else:  # scores are already normalized
                     assert self.criterion.input_type in ('probs', 'softmax')
                     probs = scores
-                if self.model.n_classes == 1:   # binary classification
+                if self.model.n_classes == 1:  # binary classification
                     threshold = 0.5
                     probs = probs.squeeze(1)
                     pred_probs += probs.tolist()
@@ -223,22 +227,20 @@ class ClassifierTrainer(SteppedTrainer):
         if early_stop:
             stopper = EarlyStopper(cur_step=self.start_step, **early_stop)
 
-        
         def _make_checkpoint(train_loss):
             with torch.no_grad():
                 train_state.train_mode(False)
                 val_data = self.exp.get_val_data(
-                            batch_size=[max_toks, max_sents],
-                            shuffle=False,
-                            batch_first=True,
-                            sort_desc=False,
-                            y_is_cls=True,
-                        )
+                    batch_size=[max_toks, max_sents],
+                    shuffle=False,
+                    batch_first=True,
+                    sort_desc=False,
+                    y_is_cls=True,
+                )
                 val_loss, val_metrics = self.run_valid_epoch(val_data)
                 self.make_check_point(train_loss, val_loss=val_loss, keep_models=keep_models)
                 return val_loss, val_metrics
-        
-        
+
         with tqdm.tqdm(
             train_data,
             initial=start_batch,

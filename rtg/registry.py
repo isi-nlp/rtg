@@ -35,6 +35,7 @@ __all__ = [
 class ProblemType(str, Enum):
     TRANSLATION = "translation"
     CLASSIFICATION = "classification"
+    LANGUAGE_MODEL = "language_model"
 
 
 @dataclass

@@ -56,8 +56,10 @@ class ClassifierHead(nn.Module):
         'sigmoid': lambda x, dim=None: x.sigmoid(),
     }
 
-    def __init__(self, input_dim: int, n_classes: int, hid_dim: Optional[int] = None, activation=nn.GELU, dropout=0.1):
-        """Builds a classifier head with optional hidden layer. 
+    def __init__(
+        self, input_dim: int, n_classes: int, hid_dim: Optional[int] = None, activation=nn.GELU, dropout=0.1
+    ):
+        """Builds a classifier head with optional hidden layer.
         Args:
             input_dim: input dim
             n_classes: number of classes (i,e, output dim)
@@ -65,7 +67,7 @@ class ClassifierHead(nn.Module):
             activation: activation function. Defaults to nn.GELU. only valid if hid_dim is not None.
             dropout: dropout rate. Defaults to 0.1. Only valid if hid_dim is not None.
         """
-        
+
         super().__init__()
         self.input_dim = input_dim
         self.n_classes = n_classes
@@ -74,7 +76,7 @@ class ClassifierHead(nn.Module):
                 nn.Linear(input_dim, hid_dim),
                 activation(),
                 nn.Dropout(dropout),
-                nn.Linear(hid_dim, n_classes)
+                nn.Linear(hid_dim, n_classes),
             )
         else:
             self.proj = nn.Linear(input_dim, n_classes)

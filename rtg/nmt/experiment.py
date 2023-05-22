@@ -585,6 +585,7 @@ class TranslationExperiment(BaseExperiment):
     def persist_state(self):
         """Writes state of current experiment to the disk"""
         from rtg.registry import ProblemType
+
         assert not self.read_only
         if 'model_args' not in self.config:
             self.config['model_args'] = {}

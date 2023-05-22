@@ -39,7 +39,6 @@ def load_conf(inp: Union[str, Path], update_env=True):
     return config
 
 
-
 class BaseExperiment:
     def __init__(
         self,

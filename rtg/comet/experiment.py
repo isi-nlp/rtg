@@ -20,8 +20,9 @@ class HfTransformerExperiment(ClassificationExperiment):
         self.src_field = HFField(self.model_id)
         self.max_src_len = self.config['prep']['src_len']
         self.max_tgt_len = self.config['prep']['tgt_len']
-        self.ExampleFactory = partial(Example.new_with_length_check, 
-                                  max_src_len=self.max_src_len, max_tgt_len=self.max_tgt_len)
+        self.ExampleFactory = partial(
+            Example.new_with_length_check, max_src_len=self.max_src_len, max_tgt_len=self.max_tgt_len
+        )
 
     def pre_process(self, args=None, force=False):
         if self._prepared_flag.exists() and not force:
@@ -75,6 +76,7 @@ class HfTransformerExperiment(ClassificationExperiment):
         else:
             assert self.train_db.exists()
             from nlcodec.db import MultipartDb
+
             ex_stream = MultipartDb.load(self.train_db, shuffle=shuffle, rec_type=self.ExampleFactory)
 
         fields = [self.src_field, self.src_field, self.tgt_vocab]
@@ -89,15 +91,18 @@ class HfTransformerExperiment(ClassificationExperiment):
         **kwargs,
     ):
         def read_ex_stream(src_file, tgt_file):
-            bargs = dict(src_len=self.config['prep']['src_len'],
+            bargs = dict(
+                src_len=self.config['prep']['src_len'],
                 tgt_len=self.config['prep']['tgt_len'],
                 truncate=self.config['prep']['truncate'],
                 src_tokenizer=self._input_line_encoder,
-                tgt_tokenizer=partial(self.tgt_vocab.encode_as_ids))
+                tgt_tokenizer=partial(self.tgt_vocab.encode_as_ids),
+            )
             parallel_recs = TSVData.read_raw_parallel_recs(src_file, tgt_file, **bargs)
-            yield from (self.ExampleFactory(idx, x1=s[0], x2=s[1], y=t) 
-                        for idx, (s, t) in enumerate(parallel_recs))
-        
+            yield from (
+                self.ExampleFactory(idx, x1=s[0], x2=s[1], y=t) for idx, (s, t) in enumerate(parallel_recs)
+            )
+
         src_file = IO.resolve(self.config['prep']['valid_src'])
         tgt_file = IO.resolve(self.config['prep']['valid_tgt'])
         ex_stream = read_ex_stream(src_file, tgt_file)

@@ -19,9 +19,10 @@ __all__ = ['dtorch', 'DistribTorch']
 
 
 class SkipBatchException(Exception):
-    """ 
+    """
     This exception is raised when a batch is skipped. e.g. due to nan loss
     """
+
     pass
 
 
@@ -174,8 +175,10 @@ class DistribTorch:
             # param.grad.data /= size
         if skipped_params:
             log.warning_once(
-                "Skipped averaging of %d parameters gradients because they dont have gradients: %s", 
-                             len(skipped_params), ', '.join(skipped_params))
+                "Skipped averaging of %d parameters gradients because they dont have gradients: %s",
+                len(skipped_params),
+                ', '.join(skipped_params),
+            )
 
         for work, param in futures:
             work.wait()  # if not complete

@@ -12,12 +12,15 @@ from rtg.classifier.transformer import ClassifierHead, SentenceCompressor
 
 @register_model()
 class BitextCometClassifier(ClassifierModel):
-
     model_type = 'bitext-classifier-comet'
     experiment_type = HfTransformerExperiment
 
     def __init__(
-        self, encoder: nn.Module, model_dim: int, n_classes: int, compressor: SentenceCompressor,
+        self,
+        encoder: nn.Module,
+        model_dim: int,
+        n_classes: int,
+        compressor: SentenceCompressor,
         freeze_encoder: bool = False,
     ) -> None:
         super().__init__(n_classes=n_classes)
@@ -25,7 +28,9 @@ class BitextCometClassifier(ClassifierModel):
         self._model_dim = model_dim
         self.compressor = compressor
         # [seq1, seq2, |seq1-seq2|, seq1.seq2]   # 4 * model_dim
-        self.classifier_head = ClassifierHead(input_dim=4 * self.model_dim, n_classes=n_classes, hid_dim=self.model_dim)
+        self.classifier_head = ClassifierHead(
+            input_dim=4 * self.model_dim, n_classes=n_classes, hid_dim=self.model_dim
+        )
         self.freeze_encoder = freeze_encoder
 
     def init_params(self, scheme='xavier'):
@@ -36,7 +41,7 @@ class BitextCometClassifier(ClassifierModel):
             for p in module.parameters():
                 if p.dim() > 1:
                     nn.init.xavier_uniform_(p)
-                    
+
     def get_trainable_params(self, include=None, exclude=None):
         if not include and not exclude or include == 'all':
             return super().get_trainable_params()
@@ -91,7 +96,12 @@ class BitextCometClassifier(ClassifierModel):
 
     @classmethod
     def make_model(
-        cls, exp: ClassificationExperiment, model_id: str, src_vocab:int, n_classes: int, freeze_encoder=True,
+        cls,
+        exp: ClassificationExperiment,
+        model_id: str,
+        src_vocab: int,
+        n_classes: int,
+        freeze_encoder=True,
     ) -> ClassifierModel:
         args = get_my_args(exclusions=['exp', 'cls'])
         log.info(f"Creating model {cls.__name__} with args: {args}")
@@ -113,7 +123,13 @@ class BitextCometClassifier(ClassifierModel):
         # rtg impl masks positions with false/0, but torch impl masks positions with true/1
         # this multihead attn has masking compatible with torch/transformer
         compressor = SentenceCompressor(model_dim, attn=compressor_attn)
-        model = cls(encoder, model_dim=model_dim, n_classes=n_classes, compressor=compressor, freeze_encoder=freeze_encoder)
+        model = cls(
+            encoder,
+            model_dim=model_dim,
+            n_classes=n_classes,
+            compressor=compressor,
+            freeze_encoder=freeze_encoder,
+        )
         model.init_params()
         return model, args
 

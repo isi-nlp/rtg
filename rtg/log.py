@@ -10,16 +10,15 @@ __all__ = ['Logger']
 
 
 class Logger(logging.Logger):
-
     def __init__(self, name='rtg', file=None, file_level=logging.DEBUG, console_level=logging.INFO):
         super().__init__(name, level=logging.DEBUG)
         # create formatter and add it to the handlers
         # formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-        
+
         self.proc_name = ''
         if os.environ.get('RTG_PROC_NAME', ''):
             self.proc_name = f'[{os.environ["RTG_PROC_NAME"]}]'
-        
+
         self.formatter = logging.Formatter(
             f'[%(asctime)s] p%(process)s{self.proc_name} {{%(module)s:%(lineno)d}} %(levelname)s - %(message)s',
             datefmt='%m-%d %H:%M:%S',
@@ -77,11 +76,11 @@ class Logger(logging.Logger):
     @functools.lru_cache(maxsize=512)
     def warning_once(self, *args, **kwargs) -> None:
         return super().warning(*args, **kwargs)
-    
+
     @functools.lru_cache(maxsize=512)
     def info_once(self, *args, **kwargs) -> None:
         return super().info(*args, **kwargs)
-    
+
     @functools.lru_cache(maxsize=512)
     def debug_once(self, *args, **kwargs) -> None:
         return super().debug(*args, **kwargs)
