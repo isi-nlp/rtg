@@ -1,11 +1,11 @@
 environment:
-  data: data/trec
+  data: tests/data/comet.wmt
 
 model_args:
-  model_id: hf:facebook/nllb-200-distilled-600M
-  src_vocab: 256204
-  tgt_vocab: 6
-  pretrained: true
+  model_id: hf:microsoft/infoxlm-base
+  src_vocab: 250002
+  n_classes: 2
+  freeze_encoder: true
 model_type: bitext-classifier-comet
 
 optimizer:
@@ -21,8 +21,8 @@ schedule:
   name: noam
   args:
     constant: 2
-    warmup: 8000
-    model_dim: 128
+    warmup: 2000
+    model_dim: 768
 
 criterion:
   name: sparse_cross_entropy
@@ -37,31 +37,33 @@ prep:
   # STDIN: seq1 \t seq2 \t label
   #train_src: stdin:text:1,stdin:text:2
   #train_tgt: stdin:text:3
-  train_src: ${data}/train.text.tsv
-  train_tgt: ${data}/train.coarse
+  train_src: ${data}.train.texts
+  train_tgt: ${data}.train.label
   truncate: true
-  valid_src: ${data}valid.text.tsv
-  valid_tgt: ${data}/valid.coarse
-  mono_tgt:
-    - ${data}/train.coarse
-  mono_src:
-    - ${data}/train.text.tsv
+  valid_src: ${data}.test.texts
+  valid_tgt: ${data}.test.label
+  mono_src: ${data}.train.texts
+  mono_tgt: ${data}.train.label
+
 tester:
   suite:
-    valid:
-    - ${data}/valid.text
-    - ${data}/valid.coarse
+    test:
+    - ${data}.test.texts
+    - ${data}.test.label
   ensemble: 2
   batch_size: 6000
   max_len: 256
 
 trainer:
-  batch_size: [1024, 8]
-  check_point: 250
+  batch_size:
+  - 4000
+  - 4
+  check_point: 25
   keep_models: 10
-  steps: 3000
+  steps: 50
   sort_by: random
-updated_at: '2023-05-15T19:30:30.859040'
+
+updated_at: '2023-05-23T23:24:07.524214'
 rtg_version:
-  previous:
-  last_worked: 0.7.3-dev
+  previous: 0.7.3-dev
+  last_worked: 1.0.0-dev0

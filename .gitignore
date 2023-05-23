@@ -31,7 +31,5 @@ wheels/
 .pytest_cache
 *.bak
 MANIFEST
-/runs/
-/tests/test-data/
+/runs
 /.data/
-/experiments/sample-exp/data/valid.tsv.memdb.pkl
