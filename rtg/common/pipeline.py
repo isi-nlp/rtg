@@ -17,7 +17,7 @@ from typing import Dict, List, Optional, Tuple, Union
 import torch
 from sacrebleu import corpus_bleu, corpus_macrof
 
-from rtg import __version__, debug_mode, log
+from rtg import __version__, debug_mode, log, IO
 from rtg.common import dtorch
 from rtg.common.experiment import BaseExperiment as Experiment
 from rtg.registry import ProblemType
@@ -243,9 +243,9 @@ class Pipeline:
                 if out_file.exists() and out_file.stat().st_size > 0:
                     log.warning(f"{out_file} exists and not empty, so skipping it")
                     continue
-                buffer = [(src_link, Path(src).absolute())]
+                buffer = [(src_link, IO.resolve(src))]
                 if label:
-                    buffer.append((label_link, Path(label).absolute()))
+                    buffer.append((label_link, IO.resolve(src)))
                 for link, orig in buffer:
                     if not link.exists():
                         orig_rel = os.path.relpath(orig, link.parent)

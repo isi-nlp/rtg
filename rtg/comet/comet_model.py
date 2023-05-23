@@ -107,12 +107,10 @@ class BitextCometClassifier(ClassifierModel):
         log.info(f"Creating model {cls.__name__} with args: {args}")
         assert model_id.startswith('hf:'), 'only huggingface hub models are supported'
         model_id = model_id[3:]
-        import transformers
 
-        encoder = transformers.AutoModel.from_pretrained(model_id)
+        from transformers import AutoModel, M2M100Model
 
-        from transformers import M2M100Model
-
+        encoder = AutoModel.from_pretrained(model_id)
         if isinstance(encoder, M2M100Model):
             # this is an encoder-decoder model, we need to extract the encoder
             encoder = encoder.encoder

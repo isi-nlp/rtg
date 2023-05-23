@@ -590,9 +590,19 @@ class TranslationExperiment(BaseExperiment):
         if 'model_args' not in self.config:
             self.config['model_args'] = {}
         args = self.config['model_args']
+        orig_args = copy.deepcopy(args)
         if self.problem_type == ProblemType.TRANSLATION:
             args['src_vocab'] = len(self.src_vocab) if self.src_vocab else 0
             args['tgt_vocab'] = len(self.tgt_vocab) if self.tgt_vocab else 0
+
+        elif self.problem_type == ProblemType.CLASSIFICATION:
+            args['src_vocab'] = len(self.src_vocab) if self.src_vocab else 0
+            args['n_classes'] = len(self.tgt_vocab) if self.tgt_vocab else 0
+
+        for name, new_val in args.items():
+            old_val = orig_args.get(name, None)
+            if new_val != old_val:
+                log.warning(f'Updated model arg {name}: {old_val} -> {new_val}')
 
         self.config['updated_at'] = datetime.now().isoformat()
         if 'rtg_version' not in self.config:

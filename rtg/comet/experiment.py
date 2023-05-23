@@ -44,16 +44,17 @@ class HfTransformerExperiment(ClassificationExperiment):
             self.tgt_field = self._make_vocab(
                 "tgt", self._tgt_field_file, 'class', corpus=tgt_corpus, vocab_size=-1
             )
-        n_classes = self.config['model_args'].get('tgt_vocab')
-        if len(self.tgt_field) != n_classes:
-            log.warning(
-                f'model_args.tgt_vocab={n_classes},' f' but found {len(self.tgt_field)} cls in {tgt_corpus}'
-            )
+            n_classes = self.config['model_args'].get('tgt_vocab')
+            if len(self.tgt_field) != n_classes:
+                log.warning(
+                    f'model_args.tgt_vocab={n_classes},'
+                    f' but found {len(self.tgt_field)} cls in {tgt_corpus}'
+                )
         self._pre_process_parallel(
-            'train_src', 'train_tgt', out_file=self.train_db, args=args, line_check=False
+            'train_src', 'train_tgt', out_file=self.train_db, args=args, line_check=True
         )
         self._pre_process_parallel(
-            'valid_src', 'valid_tgt', out_file=self.valid_file, args=args, line_check=False
+            'valid_src', 'valid_tgt', out_file=self.valid_file, args=args, line_check=True
         )
 
         self.persist_state()
@@ -61,6 +62,7 @@ class HfTransformerExperiment(ClassificationExperiment):
 
     def get_train_data(
         self,
+        steps: int,
         batch_size: Union[int, Tuple[int, int]],
         shuffle=True,
         **kwargs,
@@ -69,21 +71,38 @@ class HfTransformerExperiment(ClassificationExperiment):
             log.warning(f'Ignoring kwargs: {kwargs}')
         train_src = self.config.get('prep', {}).get('train_src', '').lower()
         train_tgt = self.config.get('prep', {}).get('train_tgt', '').lower()
+
+        # read from stdin
         if train_src.startswith('stdin:') and train_tgt.startswith('stdin:'):
             # TODO: implement :{raw/bin}:idx for stdin
             log.info(f'==Reading train data from stdin==')
-            ex_stream = self.stream_line_to_example(sys.stdin, **self._get_batch_args())
-        else:
-            assert self.train_db.exists()
-            from nlcodec.db import MultipartDb
+            return self.stream_line_to_example(sys.stdin, **self._get_batch_args())
 
-            ex_stream = MultipartDb.load(self.train_db, shuffle=shuffle, rec_type=self.ExampleFactory)
+        # read from file
+        assert self.train_db.exists()
+        from nlcodec.db import MultipartDb
 
-        fields = [self.src_field, self.src_field, self.tgt_vocab]
-        batch_stream = self.stream_example_to_batch(
-            ex_stream, batch_size, fields=fields, **self._get_batch_args()
-        )
-        return batch_stream
+        assert steps > 0
+
+        def _infinite_stream():
+            n_epochs = 0
+            count = 0
+            while count <= steps:
+                n_epochs += 1
+                log.info(f'Epoch={n_epochs}; Reading training data from {self.train_db}')
+                ex_stream = MultipartDb.load(self.train_db, shuffle=shuffle, rec_type=self.ExampleFactory)
+
+                fields = [self.src_field, self.src_field, self.tgt_vocab]
+                batch_stream = self.stream_example_to_batch(
+                    ex_stream, batch_size, fields=fields, **self._get_batch_args()
+                )
+                for batch in batch_stream:
+                    count += 1
+                    yield batch
+                    if count > steps:
+                        break
+
+        return _infinite_stream()
 
     def get_val_data(
         self,
@@ -114,7 +133,7 @@ class HfTransformerExperiment(ClassificationExperiment):
 
     def _input_line_encoder(self, line: str):
         cols = line.split('\t')
-        assert len(cols) >= 2
+        assert len(cols) >= 2, f'atleast two column expected, but found {len(cols)}\n{cols}'
         res = [self.src_field.encode_as_ids(col) for col in cols[:2]]
         if len(cols) > 2:  # if there is a label in third col
             res.append(self.tgt_vocab.encode_as_ids(cols[2]))
