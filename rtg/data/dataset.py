@@ -251,7 +251,7 @@ class TSVData(Iterable[IdExample]):
     ) -> Iterator[RawRecord]:
         with IO.reader(src_path) as src_lines, IO.reader(tgt_path) as tgt_lines:
             # if you get an exception here --> files have un equal number of lines
-            recs = ((src.strip(), tgt.strip()) for src, tgt in zip_longest(src_lines, tgt_lines))
+            recs = ((src.strip(' '), tgt.strip(' ')) for src, tgt in zip_longest(src_lines, tgt_lines))
             recs = ((src, tgt) for src, tgt in recs if src and tgt)
             yield from recs
 
