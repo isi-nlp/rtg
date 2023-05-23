@@ -95,7 +95,6 @@ def smooth_labels(labels, n_labels, smooth_rate, ignore_idx=-1, weight=None):
     assert len(labels.shape) == 1
     assert labels.max() < n_labels
     assert 0 <= labels.min()
-    assert 0 <= labels.min()
     assert 0 <= smooth_rate < 1
 
     N = len(labels)

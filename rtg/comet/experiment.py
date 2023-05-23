@@ -5,6 +5,8 @@ from functools import partial
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional, Tuple, Union
 
+from tqdm.auto import tqdm
+
 from rtg import Batch, TSVData, device, line_count, log, IO
 from rtg.classifier import ClassificationExperiment
 from rtg.data.codec import Field as BaseField
@@ -73,17 +75,19 @@ class HfTransformerExperiment(ClassificationExperiment):
         train_tgt = self.config.get('prep', {}).get('train_tgt', '').lower()
 
         # read from stdin
+        fields = [self.src_field, self.src_field, self.tgt_vocab]
         if train_src.startswith('stdin:') and train_tgt.startswith('stdin:'):
             # TODO: implement :{raw/bin}:idx for stdin
             log.info(f'==Reading train data from stdin==')
-            return self.stream_line_to_example(sys.stdin, **self._get_batch_args())
-
+            ex_stream = self.stream_line_to_example(sys.stdin, **self._get_batch_args())
+            return self.stream_example_to_batch(
+                    ex_stream, batch_size, fields=fields, **self._get_batch_args()
+                )
+        
         # read from file
         assert self.train_db.exists()
         from nlcodec.db import MultipartDb
-
         assert steps > 0
-
         def _infinite_stream():
             n_epochs = 0
             count = 0
@@ -91,8 +95,6 @@ class HfTransformerExperiment(ClassificationExperiment):
                 n_epochs += 1
                 log.info(f'Epoch={n_epochs}; Reading training data from {self.train_db}')
                 ex_stream = MultipartDb.load(self.train_db, shuffle=shuffle, rec_type=self.ExampleFactory)
-
-                fields = [self.src_field, self.src_field, self.tgt_vocab]
                 batch_stream = self.stream_example_to_batch(
                     ex_stream, batch_size, fields=fields, **self._get_batch_args()
                 )
@@ -181,11 +183,10 @@ class HfTransformerExperiment(ClassificationExperiment):
             src_tokenizer=self._input_line_encoder,
             tgt_tokenizer=partial(self.tgt_vocab.encode_as_ids),
         )
-        parallel_recs = ((s[0], s[1], t) for s, t in parallel_recs)  # flatten the tuple
+        parallel_recs = ((s[0], s[1], t) for s, t in tqdm(parallel_recs))  # flatten the tuple
 
         if any([out_file.name.endswith(suf) for suf in ('.nldb', '.nldb.tmp')]):
             from nlcodec.db import MultipartDb
-
             MultipartDb.create(path=out_file, recs=parallel_recs, field_names=('x1', 'x2', 'y'))
         else:
             TSVData.write_parallel_recs(parallel_recs, out_file)
