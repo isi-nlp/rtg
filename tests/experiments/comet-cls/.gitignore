@@ -1,5 +1,0 @@
-*
-!.gitignore
-!/data
-!data/nlcodec.tgt.model
-!conf.yml
