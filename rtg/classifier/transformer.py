@@ -184,7 +184,7 @@ class TransformerClassifier(ClassifierModel):
         ff = PositionwiseFeedForward(hid_size, ff_size, dropout, activation=activation)
         encoder = cls.EncoderFactory(cls.EncoderLayerFactory(hid_size, c(attn), c(ff), dropout), enc_layers)
         src_emb = nn.Sequential(Embeddings(hid_size, src_vocab), PositionalEncoding(hid_size, dropout))
-        classifier_head = cls.ClassifierHeadFactory(d_model=hid_size, n_classes=n_classes)
+        classifier_head = cls.ClassifierHeadFactory(input_dim=hid_size, n_classes=n_classes)
 
         compressor_attn = MultiHeadedAttention(h=n_heads, d_model=hid_size, dropout=dropout)
         compressor = cls.CompressorFactory(d_model=hid_size, attn=compressor_attn)
