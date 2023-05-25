@@ -33,7 +33,7 @@ class CometExperiment(ClassificationExperiment):
         if force or not self._src_field_file.exists():
             src_corpus = []
             train_src = args.get('train_src')
-            if train_src.startswith('stdin:'):
+            if not train_src.startswith('stdin:'):
                 src_corpus.append(train_src)
             if args.get('mono_src'):
                 src_corpus.append(args['mono_src'])
@@ -48,11 +48,13 @@ class CometExperiment(ClassificationExperiment):
         if force or not self._tgt_field_file.exists():
             # target vocabulary; class names. treat each line as a word
             tgt_corpus = []
-            if args.get('train_tgt') and not args.get('train_tgt').startswith('stdin:'):
-                tgt_corpus.append(args['train_tgt'])
+            train_tgt = args['train_tgt']
+            if not train_tgt.startswith('stdin:'):
+                tgt_corpus.append(train_tgt)
             if args.get('mono_tgt'):
                 tgt_corpus.append(args['mono_tgt'])
             assert tgt_corpus, 'prep.train_tgt (not stdin) or prep.mono_tgt must be defined'
+            # NLCodec Class Field
             # NLCodec Class Field
             self.tgt_field = self._make_vocab(
                 "tgt", self._tgt_field_file, 'class', corpus=tgt_corpus, vocab_size=-1
