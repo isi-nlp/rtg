@@ -6,14 +6,14 @@ from torch import nn
 
 from rtg import log, device, get_my_args, register_model, Batch
 from rtg.classifier import ClassifierModel, ClassificationExperiment, ClassifierTrainer
-from rtg.comet.experiment import HfTransformerExperiment
+from rtg.comet.experiment import HFCometExperiment
 from rtg.classifier.transformer import ClassifierHead, SentenceCompressor
 
 
 @register_model()
-class BitextCometClassifier(ClassifierModel):
-    model_type = 'bitext-classifier-comet'
-    experiment_type = HfTransformerExperiment
+class HFCometClassifier(ClassifierModel):
+    model_type = 'hf-comet-cls'
+    experiment_type = HFCometExperiment
 
     def __init__(
         self,
@@ -133,10 +133,10 @@ class BitextCometClassifier(ClassifierModel):
 
     @classmethod
     def make_trainer(cls, *args, **kwargs):
-        return CometTrainer(*args, model_factory=cls.make_model, **kwargs)
+        return HFCometTrainer(*args, model_factory=cls.make_model, **kwargs)
 
 
-class CometTrainer(ClassifierTrainer):
+class HFCometTrainer(ClassifierTrainer):
     def _batch_step(self, batch: Batch, take_step=False, train_mode=False):
         """Take a single step of training or validation on a batch
         :param batch: batch object

@@ -13,13 +13,10 @@ from rtg.data.codec import Field as BaseField
 from rtg.comet import HFField, Example, Batch
 
 
-class HfTransformerExperiment(ClassificationExperiment):
+class CometExperiment(ClassificationExperiment):
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.model_id = self.model_args['model_id']
-        assert self.model_id.startswith('hf:'), 'only huggingface models are supported'
-        self.model_id = self.model_id[3:]
-        self.src_field = HFField(self.model_id)
         self.max_src_len = self.config['prep']['src_len']
         self.max_tgt_len = self.config['prep']['tgt_len']
         self.ExampleFactory = partial(
@@ -31,8 +28,22 @@ class HfTransformerExperiment(ClassificationExperiment):
             log.info(f"Pre-processing already done for {self.work_dir}")
             return
         args = args or self.config.get('prep')
-        log.info(f"Pre-processing data for {self.model_id}")
-        # TODO: make the src vocab load from experiment dir (i.e., offline use)
+        log.info(f"Pre-processing data for {self.model_type}")
+        
+        if force or not self._src_field_file.exists():
+            src_corpus = []
+            train_src = args.get('train_src')
+            if train_src.startswith('stdin:'):
+                src_corpus.append(train_src)
+            if args.get('mono_src'):
+                src_corpus.append(args['mono_src'])
+            assert src_corpus, 'prep.train_src (not stdin) or prep.mono_src must be defined'
+            pieces = self.config['prep'].get('pieces', 'bpe')
+            src_vocab_size = self.config['prep'].get('max_src_types', self.config['prep'].get('max_types'))
+            self.src_field = self._make_vocab(
+                "src", self._src_field_file, pieces, corpus=src_corpus, vocab_size=src_vocab_size
+            )
+
         # making tgt vocab from train data
         if force or not self._tgt_field_file.exists():
             # target vocabulary; class names. treat each line as a word
@@ -257,3 +268,53 @@ class HfTransformerExperiment(ClassificationExperiment):
         if batch:
             log.debug(f"\nLast batch, size={len(batch)}")
             yield Batch(batch, fields=fields, device=device)
+
+
+
+class HFCometExperiment(CometExperiment):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.model_id = self.model_args['model_id']
+        assert self.model_id.startswith('hf:'), 'only huggingface models are supported'
+        self.model_id = self.model_id[3:]
+        self.src_field = HFField(self.model_id)
+    
+    
+    def pre_process(self, args=None, force=False):
+        if self._prepared_flag.exists() and not force:
+            log.info(f"Pre-processing already done for {self.work_dir}")
+            return
+        args = args or self.config.get('prep')
+        log.info(f"Pre-processing data for {self.model_id}")
+
+        #NOTE:  src vocab should match with pretrained model
+            
+        # making tgt vocab from train data
+        if force or not self._tgt_field_file.exists():
+            # target vocabulary; class names. treat each line as a word
+            tgt_corpus = []
+            if args.get('train_tgt') and not args.get('train_tgt').startswith('stdin:'):
+                tgt_corpus.append(args['train_tgt'])
+            if args.get('mono_tgt'):
+                tgt_corpus.append(args['mono_tgt'])
+            assert tgt_corpus, 'prep.train_tgt (not stdin) or prep.mono_tgt must be defined'
+            # NLCodec Class Field
+            self.tgt_field = self._make_vocab(
+                "tgt", self._tgt_field_file, 'class', corpus=tgt_corpus, vocab_size=-1
+            )
+            n_classes = self.config['model_args'].get('tgt_vocab')
+            if len(self.tgt_field) != n_classes:
+                log.warning(
+                    f'model_args.tgt_vocab={n_classes},'
+                    f' but found {len(self.tgt_field)} cls in {tgt_corpus}'
+                )
+        self._pre_process_parallel(
+            'train_src', 'train_tgt', out_file=self.train_db, args=args, line_check=True
+        )
+        self._pre_process_parallel(
+            'valid_src', 'valid_tgt', out_file=self.valid_file, args=args, line_check=True
+        )
+
+        self.persist_state()
+        self._prepared_flag.touch()

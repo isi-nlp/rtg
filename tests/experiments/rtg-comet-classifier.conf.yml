@@ -2,11 +2,16 @@ environment:
   data: tests/data/comet
 
 model_args:
-  model_id: hf:microsoft/infoxlm-base
-  src_vocab: 250002
+  src_vocab: 2751
   n_classes: 2
-  freeze_encoder: true
-model_type: bitext-classifier-comet
+  enc_layers: 3
+  hid_size: 128
+  ff_size: 256
+  n_heads: 2
+  attn_dropout: 0.1
+  dropout: 0.2
+  activation: relu
+model_type: rtg-comet-cls
 
 optimizer:
   name: adam
@@ -22,7 +27,7 @@ schedule:
   args:
     constant: 2
     warmup: 2000
-    model_dim: 768
+    model_dim: 128
 
 criterion:
   name: sparse_cross_entropy
