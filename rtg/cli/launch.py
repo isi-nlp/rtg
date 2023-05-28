@@ -2,14 +2,19 @@
 
 import os
 import subprocess
+import multiprocessing as mp
+import threading as mt
 import sys
 from argparse import REMAINDER, ArgumentDefaultsHelpFormatter, ArgumentParser
 from typing import List, Tuple
+import io
+
 
 import torch
 from rtg import log
 
 # adapted from torch.distributed.launch
+END_OF_TRANSMISSION = 0x04  # byte 4 == EOT
 
 
 def parse_args(args=None):
@@ -148,7 +153,8 @@ def main(args=None):
         cmd += [sys.executable, "-m"]
     cmd.append(args.script)
     cmd.extend(args.script_args)
-    log.info(f'{cmd}')
+    cmd = ' '.join(cmd)
+    log.info(f'RUN:: {cmd}')
     processes = []
     STDIN = subprocess.PIPE if args.stdin else subprocess.DEVNULL
     if os.environ.get('CUDA_VISIBLE_DEVICES'):
@@ -159,6 +165,8 @@ def main(args=None):
     assert (
         len(device_ids) >= n_required_gpus
     ), f'Visible GPUs={len(device_ids)}; Required={n_required_gpus} (i.e {args.procs_per_node} * {args.gpus_per_proc}))'
+
+    STDIN = subprocess.PIPE if args.stdin else subprocess.DEVNULL
 
     for local_rank in range(0, args.procs_per_node):
         my_env = cur_env.copy()
@@ -172,54 +180,89 @@ def main(args=None):
             my_device_ids = ','.join(device_ids[idx] for idx in device_idx)
             my_env["CUDA_VISIBLE_DEVICES"] = my_device_ids
             my_env['RTG_PROC_NAME'] += f'.dev{my_device_ids}'
-        # spawn processes
-        process = subprocess.Popen(cmd, env=my_env, shell=False, stdin=STDIN, text=True, cwd=os.getcwd())
+
+        process = subprocess.Popen(cmd, env=my_env, shell=True, stdin=STDIN, text=True, cwd=os.getcwd())
         processes.append(process)
-
-    if args.stdin:
-        distribute_stdin(processes)
-    else:
-        wait_till_end(processes, cmd=cmd)
-
-
-def distribute_stdin(processes: List[subprocess.Popen], method="round-robin"):
-    assert method == "round-robin"  # only this is supported for now
-    alive_procs = processes
-    dead_procs = []
     try:
-        for i, line in enumerate(sys.stdin):
-            if not alive_procs:
-                break
-            proc = processes[i % len(alive_procs)]
-            try:
-                # any encoding errors are replaced with '?'
-                line = line.encode(encoding='utf-8', errors='replace').decode('utf-8')
-                proc.stdin.write(line)
-            except BrokenPipeError:
-                log.warning(f"Process {proc.pid} is dead. STDIN Line dropped")
-                dead_procs.append(proc)
-                alive_procs.remove(proc)
+        if args.stdin:
+            distribute_stdin(processes)
+        else:
+            wait_till_end(processes, cmd=cmd)
+
     finally:
         teardown(processes)
+
+
+def copy_to_stdin(data_queue, process: subprocess.Popen, EOF=END_OF_TRANSMISSION):
+    """
+    Streams data from data_queue to subprocess.
+
+    Ending clause: Either of two occurs
+        1. A special items 0x004 (EOT) appears in data queue indicating the end of transmission
+        2. Process terminates (process.poll() returns not None)
+    """
+    log.info(f"Streaming data to {process.pid}")
+    local_line_num = 0
+    try:
+        while process.poll() is None:
+            line = data_queue.get()
+            if EOF == line:
+                log.info('{process.pid}: reached EOT. closing the STDIN')
+                process.stdin.close()
+                break
+            local_line_num += 1
+            process.stdin.write(line.rstrip('\n') + '\n')
+        process.wait()
+    finally:
+        log.info(f'Subprocess {process.pid} ended with exit code {process.returncode}')
+
+
+def distribute_stdin(processes: List[subprocess.Popen]):
+    """
+    distributes sys.stdin lines into the given list of processes' stdin.
+    This launches threads, one per each given process, to copy data from main process stdin to subprocess'.
+    """
+    # each copy task needs to be one own thread (or process), otherwise if stdin fills of then it copy task gets frozen
+    # We could put this task on mp.Process, but
+    #  1) subprocess.Popen needs to be run within mp.Process (complicates code, I tried and reverted)
+    #  2) copy task is very minimal load with a lot of IO waits, so I am thiking a thread would suffice
+    data_threads: List[mt.Thread] = []
+    data_queue = mp.Queue()
+    for proc in processes:
+        dt = mt.Thread(target=copy_to_stdin, args=(data_queue, proc))
+        data_threads.append(dt)
+        dt.start()
+
+    # STDIN to queue on main thread
+    line_no = 0
+    for line_no, line in enumerate(sys.stdin, start=1):
+        data_queue.put(line)
+    log.info(f"Producer reached end of stdin; line_no={line_no}. Sending {len(processes)} copies of <EOT>")
+    for _ in processes:  # send n copies of EOT, 1 per process
+        data_queue.put(END_OF_TRANSMISSION)
+
+    for thread, proc in zip(data_threads, processes):  # wait for all processes to finish
+        thread.join()
+        proc.wait()
+
+    data_queue.close()
+    log.info("Reached the end of STDIN disburse method distribute_stdin")
 
 
 def wait_till_end(processes: List[subprocess.Popen], cmd, timeout: int = 10):
     log.info(f"Launched {len(processes)} processes")
     alive = [True] * len(processes)
-    try:
-        while sum(alive) > 0:
-            for i, process in enumerate(processes):
-                try:
-                    process.wait(timeout=timeout)
-                    alive[i] = False
-                    if process.returncode != 0:
-                        # TODO: communicate to all nodes
-                        raise subprocess.CalledProcessError(returncode=process.returncode, cmd=cmd)
-                except subprocess.TimeoutExpired:
-                    pass  # that's okay! skip this and check on next process
-        log.info('All processes completed successfully')
-    finally:
-        teardown(processes)
+    while sum(alive) > 0:
+        for i, process in enumerate(processes):
+            try:
+                process.wait(timeout=timeout)
+                alive[i] = False
+                if process.returncode != 0:
+                    # TODO: communicate to all nodes
+                    raise subprocess.CalledProcessError(returncode=process.returncode, cmd=cmd)
+            except subprocess.TimeoutExpired:
+                pass  # that's okay! skip this and check on next process
+    log.info('All processes completed successfully')
 
 
 def teardown(procs: List[subprocess.Popen]):
@@ -237,4 +280,6 @@ def teardown(procs: List[subprocess.Popen]):
 
 
 if __name__ == "__main__":
+    # sample test script
+    # seq 1 100 | rtg-launch --stdin  -P2  awk "'BEGIN{ print \"BEGIN\"} {print  NR, \$0} END{ print \"END\"}'"
     main()

@@ -8,7 +8,8 @@ import tempfile
 import shutil
 
 
-from rtg import load_conf, log, registry, RTG_PATH, MODEL
+from rtg import load_conf, log, registry, RTG_PATH, MODELS
+
 from rtg.cli.pipeline import Pipeline
 from . import sanity_check_experiment
 
@@ -25,7 +26,7 @@ def copy_head(inp: Path, out: Path, head: int):
 
 def setup_dataset():
     root = RTG_PATH / '.data'
-    data_dir = Path(__file__).parent / 'test-data'
+    data_dir = Path(__file__).parent / 'data'
     dbpedia_dir = data_dir / 'dbpedia'
     flag = dbpedia_dir / '_VALID'
 
@@ -33,15 +34,20 @@ def setup_dataset():
         from torchtext.datasets import DBpedia
 
         dbpedia_dir.mkdir(exist_ok=True, parents=True)
-        test = list(DBpedia(root=root, split='test'))
+
         train = list(DBpedia(root=root, split='train'))
+        test = list(DBpedia(root=root, split='test'))
         random.shuffle(train)
-        train = train[:10_000]  # for quick testing
+        random.shuffle(test)
+
+        test = test[:1000]
+        train = train[:10000]
+
         ten_per = int(0.1 * len(train))
         valid, train = train[:ten_per], train[ten_per:]
 
         fargs = dict(mode='w', encoding='utf8', errors='ignore')
-        for name, data, head in [('train', train, 10_000), ('valid', valid, 1_000), ('test', test, None)]:
+        for name, data in [('train', train), ('valid', valid), ('test', test)]:
             log.info(f"Writing {name}")
             text_f = dbpedia_dir / f'{name}.text'
             label_f = dbpedia_dir / f'{name}.label'
@@ -60,12 +66,16 @@ def test_tfmcls_model():
         return
 
     tmp_dir = tempfile.mkdtemp()
-    # tmp_dir = Path('tmp.dbpedia-exp')
-    config = load_conf('experiments/transformer.classifier.yml')
-    exp = registry[MODEL]['tfmcls'].Experiment(tmp_dir, config=config, read_only=False)
-    exp.config['trainer'].update(dict(steps=50, check_point=25))
-    # exp.config['prep']['num_samples'] = 0
-    Pipeline(exp).run(run_tests=False)
-    sanity_check_experiment(exp, samples=False, shared_vocab=False)
-    print(f"Cleaning up {tmp_dir}")
-    shutil.rmtree(tmp_dir, ignore_errors=True)
+    try:
+        config = load_conf('tests/experiments/transformer-classifier.conf.yml')
+        model_type = config['model_type']
+        # tmp_dir = Path('tmp.dbpedia-exp')
+        exp = MODELS[model_type].Experiment(tmp_dir, config=config, read_only=False)
+
+        exp.config['trainer'].update(dict(steps=1000, check_point=250))
+        # exp.config['prep']['num_samples'] = 0
+        Pipeline(exp).run(run_tests=False)
+        sanity_check_experiment(exp, samples=False, shared_vocab=False)
+        print(f"Cleaning up {tmp_dir}")
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)

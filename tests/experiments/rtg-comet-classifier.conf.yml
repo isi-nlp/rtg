@@ -1,12 +1,17 @@
 environment:
-  data: tests/data/comet.wmt
+  data: tests/data/comet
 
 model_args:
-  model_id: hf:microsoft/infoxlm-base
-  src_vocab: 250002
+  src_vocab: 2751
   n_classes: 2
-  freeze_encoder: true
-model_type: bitext-classifier-comet
+  enc_layers: 3
+  hid_size: 128
+  ff_size: 256
+  n_heads: 2
+  attn_dropout: 0.1
+  dropout: 0.2
+  activation: relu
+model_type: rtg-comet-cls
 
 optimizer:
   name: adam
@@ -22,7 +27,7 @@ schedule:
   args:
     constant: 2
     warmup: 2000
-    model_dim: 768
+    model_dim: 128
 
 criterion:
   name: sparse_cross_entropy
@@ -37,19 +42,19 @@ prep:
   # STDIN: seq1 \t seq2 \t label
   #train_src: stdin:text:1,stdin:text:2
   #train_tgt: stdin:text:3
-  train_src: ${data}.train.texts
-  train_tgt: ${data}.train.label
+  train_src: $data/train.texts
+  train_tgt: $data/train.label
   truncate: true
-  valid_src: ${data}.test.texts
-  valid_tgt: ${data}.test.label
-  mono_src: ${data}.train.texts
-  mono_tgt: ${data}.train.label
+  valid_src: $data/test.texts
+  valid_tgt: $data/test.label
+  mono_src: $data/train.texts
+  mono_tgt: $data/train.label
 
 tester:
   suite:
     test:
-    - ${data}.test.texts
-    - ${data}.test.label
+    - $data/test.texts
+    - $data/test.label
   ensemble: 2
   batch_size: 6000
   max_len: 256
