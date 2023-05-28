@@ -2,13 +2,11 @@
 
 import os
 import subprocess
-import multiprocessing as mp
 import threading as mt
 import sys
 from argparse import REMAINDER, ArgumentDefaultsHelpFormatter, ArgumentParser
 from typing import List, Tuple
-import io
-
+import queue
 
 import torch
 from rtg import log
@@ -183,15 +181,15 @@ def main(args=None):
 
         process = subprocess.Popen(cmd, env=my_env, shell=True, stdin=STDIN, text=True, cwd=os.getcwd())
         processes.append(process)
+
     try:
         if args.stdin:
             distribute_stdin(processes)
         else:
             wait_till_end(processes, cmd=cmd)
-
     finally:
         teardown(processes)
-
+        log.info("Pipeline Ended")
 
 def copy_to_stdin(data_queue, process: subprocess.Popen, EOF=END_OF_TRANSMISSION):
     """
@@ -202,16 +200,20 @@ def copy_to_stdin(data_queue, process: subprocess.Popen, EOF=END_OF_TRANSMISSION
         2. Process terminates (process.poll() returns not None)
     """
     log.info(f"Streaming data to {process.pid}")
-    local_line_num = 0
     try:
+        line_num = 0
         while process.poll() is None:
             line = data_queue.get()
             if EOF == line:
-                log.info('{process.pid}: reached EOT. closing the STDIN')
+                log.info(f'Data thread for process {process.pid} reached EOT after {line_num} lines. Closing STDIN')
                 process.stdin.close()
                 break
-            local_line_num += 1
-            process.stdin.write(line.rstrip('\n') + '\n')
+            try:        
+                line_num += 1
+                process.stdin.write(line.rstrip('\n') + '\n')
+            except BrokenPipeError as e:
+                log.warning(f'Broken pipe for {process.pid}. Exiting...')
+                break
         process.wait()
     finally:
         log.info(f'Subprocess {process.pid} ended with exit code {process.returncode}')
@@ -226,26 +228,34 @@ def distribute_stdin(processes: List[subprocess.Popen]):
     # We could put this task on mp.Process, but
     #  1) subprocess.Popen needs to be run within mp.Process (complicates code, I tried and reverted)
     #  2) copy task is very minimal load with a lot of IO waits, so I am thiking a thread would suffice
-    data_threads: List[mt.Thread] = []
-    data_queue = mp.Queue()
-    for proc in processes:
-        dt = mt.Thread(target=copy_to_stdin, args=(data_queue, proc))
-        data_threads.append(dt)
+    max_queue_size = 2048
+    data_queue = queue.Queue(max_queue_size)
+    data_threads = [mt.Thread(target=copy_to_stdin, args=(data_queue, proc)) for proc in processes]
+    for dt in data_threads:
         dt.start()
 
-    # STDIN to queue on main thread
+    timeout_seconds = 30
     line_no = 0
     for line_no, line in enumerate(sys.stdin, start=1):
-        data_queue.put(line)
-    log.info(f"Producer reached end of stdin; line_no={line_no}. Sending {len(processes)} copies of <EOT>")
-    for _ in processes:  # send n copies of EOT, 1 per process
-        data_queue.put(END_OF_TRANSMISSION)
+        try:
+            data_queue.put(line, timeout=timeout_seconds)
+        except queue.Full:
+            status = [(dt.is_alive(), sp.poll()) for dt, sp in zip(data_threads, processes)]
+            log.info(f"Queue is full. Line dropped. Status: {status}")
+            if not all(dt.is_alive() for dt in data_threads):
+                log.warning(f"Looks like some workers are dead while queue is full."
+                            " If workers have early stopped, ignore this message."
+                            " Otherwise, look into log to see why workers are dead")
+                break
+    else:
+        log.info(f"Producer reached end of stdin; line_no={line_no}. Sending {len(processes)} copies of <EOT>")
+        for _ in processes:  # send n copies of EOT, 1 per process
+            data_queue.put(END_OF_TRANSMISSION)
 
     for thread, proc in zip(data_threads, processes):  # wait for all processes to finish
         thread.join()
         proc.wait()
 
-    data_queue.close()
     log.info("Reached the end of STDIN disburse method distribute_stdin")
 
 
@@ -266,6 +276,7 @@ def wait_till_end(processes: List[subprocess.Popen], cmd, timeout: int = 10):
 
 
 def teardown(procs: List[subprocess.Popen]):
+    log.info(f'Going to teardown worker processes: {[p.pid for p in procs]}')
     errs = []
     for proc in procs:  # force abort any running processes
         try:
@@ -277,9 +288,12 @@ def teardown(procs: List[subprocess.Popen]):
     if errs:
         errs = ' '.join(str(x) for x in errs)
         log.warning(f"Error terminating some process(es). Please run 'kill -9 {errs}'")
-
+    log.info('Teardown finish')
 
 if __name__ == "__main__":
     # sample test script
-    # seq 1 100 | rtg-launch --stdin  -P2  awk "'BEGIN{ print \"BEGIN\"} {print  NR, \$0} END{ print \"END\"}'"
+    # case 1: stream reaches end
+    # seq 1 100 | rtg-launch --stdin  -P2  awk "'BEGIN{print \"BEGIN\"} {print NR,\$0} END{print \"END\"}'"
+    # case 2: workers stops early e,g, early stop
+    # seq 1 100000 | rtg-launch --stdin  -P2  awk "'BEGIN{print \"BEGIN\"} {print NR, \$0; if(NR==10){exit}} END{print \"END\"}'"
     main()

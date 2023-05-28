@@ -12,7 +12,8 @@ from rtg import Pipeline, __version__, dtorch, load_conf, log, MODELS
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(prog="rtg-pipe", description="RTG Pipeline CLI")
+    parser = argparse.ArgumentParser(prog="rtg-pipeline", description="RTG Pipeline CLI",
+                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('-v', '--version', action='version', version=f'%(prog)s {__version__}')
     parser.add_argument("exp", metavar='EXP_DIR', help="Working directory of experiment", type=Path)
     parser.add_argument(
@@ -26,6 +27,12 @@ def parse_args():
         "-G", "--gpu-only", action="store_true", default=False, help="Crash if no GPU is available"
     )
     parser.add_argument("-fp16", "--fp16", action="store_true", default=False, help="Float 16")
+    excl_parser = parser.add_mutually_exclusive_group()
+    excl_parser.add_argument("-t", "--test", dest='run_tests', action="store_true", default=False,
+                             help="Run test suite after training")
+    excl_parser.add_argument("-nt", "--no-test", dest='run_tests', action="store_false", default=False,
+                             help="Do not run test suite after training")
+    
 
     # multi-gpu / multi-node
     parser.add_argument("--local_rank", "--local-rank", type=int, default=-1, help="Multi-GPU - Local rank")
@@ -67,12 +74,13 @@ def parse_args():
     log.info(f"Experiment: {ExpFactory.__name__} (read_only={read_only})")
     exp = ExpFactory(args.exp, config=conf_file, read_only=read_only)
     dtorch.barrier()
-    return exp
+    return exp, args
 
 
 def main():
-    pipe = Pipeline(exp=parse_args())
-    pipe.run()
+    exp, args = parse_args()
+    pipe = Pipeline(exp=exp)
+    pipe.run(run_tests=args.run_tests)
 
 
 if __name__ == '__main__':
