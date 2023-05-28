@@ -223,6 +223,9 @@ class TranslationExperiment(BaseExperiment):
                 flat_uniq_corpus.update(i)
             else:
                 flat_uniq_corpus.add(i)
+        
+        # resolve variables
+        flat_uniq_corpus = set(str(IO.resolve(x)) for x in flat_uniq_corpus)
 
         flat_uniq_corpus = list(flat_uniq_corpus)
         log.info(f"Going to build {name} vocab from files")
@@ -803,9 +806,11 @@ class TranslationExperiment(BaseExperiment):
                 ' having raw (unmodified) target file, to be used for computing BLEU.'
             )
         raw_src = prep.get('valid_src_raw', prep.get('valid_src'))
+        raw_src = IO.resolve(raw_src)
+        raw_tgt = IO.resolve(raw_tgt)
         for path in (raw_src, raw_tgt):
             assert Path(path).exists(), f'File at {path} does not exist; it is required'
-        raw_path = Path(raw_src), Path(raw_tgt)
+        raw_path = raw_src, raw_tgt
         if not self.valid_file.exists():
             # maybe it got deleted. It means we need to recreate it
             self._pre_process_parallel('valid_src', 'valid_tgt', self.valid_file)

@@ -95,7 +95,7 @@ class IO:
             yield from inp
 
     @classmethod
-    def resolve(cls, path):
+    def resolve(cls, path) -> Path:
         path = os.path.expanduser(path)
         path = os.path.expandvars(path)
         return Path(path).resolve()
