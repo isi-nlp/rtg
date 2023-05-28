@@ -16,10 +16,10 @@ from rtg.classifier.transformer import (
     EncoderLayer,
     MultiHeadedAttention,
     PositionalEncoding,
-    PositionwiseFeedForward,   
-    ClassifierHead, 
+    PositionwiseFeedForward,
+    ClassifierHead,
     SentenceCompressor,
-    TransformerClassifier
+    TransformerClassifier,
 )
 from rtg.nmt.transformer import Encoder
 
@@ -28,7 +28,7 @@ from rtg.nmt.transformer import Encoder
 class RTGCometClassifier(TransformerClassifier):
     model_type = 'rtg-comet-cls'
     experiment_type = CometExperiment
-   
+
     def __init__(self, *args, freeze_encoder=False, **kwargs):
         super().__init__(*args, **kwargs)
         self.freeze_encoder = freeze_encoder
@@ -43,7 +43,6 @@ class RTGCometClassifier(TransformerClassifier):
         if score == 'embedding':  # sentence embedding
             return sent_repr
         return self.classifier_head(sent_repr, score=score)
-
 
     def forward(self, seq1, seq2, seq1_mask, seq2_mask, score='logits'):
         # def forward(self, src, src_mask, score='logits', freeze_encoder=True):
@@ -77,15 +76,14 @@ class RTGCometClassifier(TransformerClassifier):
     ) -> ClassifierModel:
         args = get_my_args(exclusions=['exp', 'cls'])
         log.info(f"Creating model {cls.__name__} with args: {args}")
-        
-        
+
         c = copy.deepcopy
         attn = MultiHeadedAttention(n_heads, hid_size, dropout=attn_dropout, bias=attn_bias)
         ff = PositionwiseFeedForward(hid_size, ff_size, dropout, activation=activation)
         encoder = cls.EncoderFactory(cls.EncoderLayerFactory(hid_size, c(attn), c(ff), dropout), enc_layers)
-        
+
         src_emb = nn.Sequential(Embeddings(hid_size, src_vocab), PositionalEncoding(hid_size, dropout))
-        
+
         compressor_attn = MultiHeadedAttention(h=n_heads, d_model=hid_size, dropout=dropout)
         compressor = cls.CompressorFactory(d_model=hid_size, attn=compressor_attn)
 

@@ -34,15 +34,15 @@ def setup_dataset():
         from torchtext.datasets import DBpedia
 
         dbpedia_dir.mkdir(exist_ok=True, parents=True)
-        
+
         train = list(DBpedia(root=root, split='train'))
         test = list(DBpedia(root=root, split='test'))
         random.shuffle(train)
         random.shuffle(test)
-        
+
         test = test[:1000]
         train = train[:10000]
-        
+
         ten_per = int(0.1 * len(train))
         valid, train = train[:ten_per], train[ten_per:]
 
@@ -71,7 +71,7 @@ def test_tfmcls_model():
         model_type = config['model_type']
         # tmp_dir = Path('tmp.dbpedia-exp')
         exp = MODELS[model_type].Experiment(tmp_dir, config=config, read_only=False)
-        
+
         exp.config['trainer'].update(dict(steps=1000, check_point=250))
         # exp.config['prep']['num_samples'] = 0
         Pipeline(exp).run(run_tests=False)

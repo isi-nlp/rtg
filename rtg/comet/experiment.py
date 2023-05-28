@@ -14,7 +14,6 @@ from rtg.comet import HFField, Example, Batch
 
 
 class CometExperiment(ClassificationExperiment):
-
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.max_src_len = self.config['prep']['src_len']
@@ -29,7 +28,7 @@ class CometExperiment(ClassificationExperiment):
             return
         args = args or self.config.get('prep')
         log.info(f"Pre-processing data for {self.model_type}")
-        
+
         if force or not self._src_field_file.exists():
             src_corpus = []
             train_src = args.get('train_src')
@@ -94,13 +93,15 @@ class CometExperiment(ClassificationExperiment):
             log.info(f'==Reading train data from stdin==')
             ex_stream = self.stream_line_to_example(sys.stdin, **self._get_batch_args())
             return self.stream_example_to_batch(
-                    ex_stream, batch_size, fields=fields, **self._get_batch_args()
-                )
-        
+                ex_stream, batch_size, fields=fields, **self._get_batch_args()
+            )
+
         # read from file
         assert self.train_db.exists()
         from nlcodec.db import MultipartDb
+
         assert steps > 0
+
         def _infinite_stream():
             n_epochs = 0
             count = 0
@@ -200,6 +201,7 @@ class CometExperiment(ClassificationExperiment):
 
         if any([out_file.name.endswith(suf) for suf in ('.nldb', '.nldb.tmp')]):
             from nlcodec.db import MultipartDb
+
             MultipartDb.create(path=out_file, recs=parallel_recs, field_names=('x1', 'x2', 'y'))
         else:
             TSVData.write_parallel_recs(parallel_recs, out_file)
@@ -272,17 +274,14 @@ class CometExperiment(ClassificationExperiment):
             yield Batch(batch, fields=fields, device=device)
 
 
-
 class HFCometExperiment(CometExperiment):
-
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.model_id = self.model_args['model_id']
         assert self.model_id.startswith('hf:'), 'only huggingface models are supported'
         self.model_id = self.model_id[3:]
         self.src_field = HFField(self.model_id)
-    
-    
+
     def pre_process(self, args=None, force=False):
         if self._prepared_flag.exists() and not force:
             log.info(f"Pre-processing already done for {self.work_dir}")
@@ -290,8 +289,8 @@ class HFCometExperiment(CometExperiment):
         args = args or self.config.get('prep')
         log.info(f"Pre-processing data for {self.model_id}")
 
-        #NOTE:  src vocab should match with pretrained model
-            
+        # NOTE:  src vocab should match with pretrained model
+
         # making tgt vocab from train data
         if force or not self._tgt_field_file.exists():
             # target vocabulary; class names. treat each line as a word
