@@ -17,7 +17,7 @@ from pyspark import RDD
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql.types import LongType, StructField, StructType
 
-from rtg import cpu_count, log
+from rtg import cpu_count, log, IO
 from rtg.data.dataset import Batch, LoopingIterable
 from rtg.data import Field
 from rtg.nmt import TranslationExperiment
@@ -133,12 +133,13 @@ class BigTranslationExperiment(TranslationExperiment):
                     flat_uniq_corpus.update(i)
                 else:
                     flat_uniq_corpus.add(i)
+            
 
             xt_args = {}
             if min_co_ev:
                 xt_args["min_co_ev"] = min_co_ev
             with spark_session(config=self.spark_conf) as spark:
-                flat_uniq_corpus = list(flat_uniq_corpus)
+                flat_uniq_corpus = [str(IO.resolve(x)) for x in flat_uniq_corpus]
                 log.info(f"Going to build {name} vocab from {len(flat_uniq_corpus)} files ")
                 return self.Field.train(
                     model_type,
@@ -278,11 +279,8 @@ def read_raw_parallel_recs(
 def read_bitext(
     spark, src_file: Union[str, Path], tgt_file: Union[str, Path], src_name='src_raw', tgt_name='tgt_raw'
 ) -> Tuple[DataFrame, int]:
-    if not isinstance(src_file, str):
-        src_file = str(src_file)
-    if not isinstance(tgt_file, str):
-        tgt_file = str(tgt_file)
-
+    src_file = str(IO.resolve(src_file))
+    tgt_file = str(IO.resolve(tgt_file))
     src_df = spark.read.text(src_file).withColumnRenamed('value', src_name)
     tgt_df = spark.read.text(tgt_file).withColumnRenamed('value', tgt_name)
 

@@ -141,8 +141,8 @@ class TranslationExperiment(BaseExperiment):
             assert max_src_types and max_tgt_types, (
                 'prep.{max_src_types,max_tgt_types} are required' ' when prep.shared_vocab=false'
             )
-            assert len(src_corpus) > 1, f'no corpus found for creating src vocab'
-            assert len(tgt_corpus) > 1, f'no corpus found for creating tgt vocab'
+            assert len(src_corpus) > 0, f'no corpus found for creating src vocab'
+            assert len(tgt_corpus) > 0, f'no corpus found for creating tgt vocab'
             self.src_field = self._make_vocab(
                 "src",
                 self._src_field_file,
