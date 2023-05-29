@@ -93,7 +93,7 @@ class CometExperiment(ClassificationExperiment):
             log.info(f'==Reading train data from stdin==')
             ex_stream = self.stream_line_to_example(sys.stdin, **self._get_batch_args())
             return self.stream_example_to_batch(
-                ex_stream, batch_size, fields=fields, **self._get_batch_args()
+                ex_stream, batch_size, max_batches=steps, fields=fields, **self._get_batch_args()
             )
 
         # read from file
@@ -230,18 +230,14 @@ class CometExperiment(ClassificationExperiment):
         batch_size: Union[int, Tuple[int, int]],
         fields: List[BaseField],
         device=device,
+        max_batches=-1,
         **kwargs,
     ) -> Iterator[Batch]:
         """
         Iterator for reading training data in batches
-        :param data_path: path to TSV file
-        :param batch_size: number of tokens on the target size per batch
-        :param raw_path: (src, tgt) paths for loading the sentences (optional); use it for validation
-               required: keep_mem=true, shuffle=False, sort_by=None
-        :param keep_in_mem: keep the dataset in-memory
-        :param sort_desc: should the batch be sorted by src sequence len (useful for RNN api)
         """
-
+        if max_batches <= 0:
+            max_batches = float('inf')
         if isinstance(batch_size, int):
             max_toks, max_sents = batch_size, batch_size
         else:
@@ -249,6 +245,7 @@ class CometExperiment(ClassificationExperiment):
 
         batch = []
         max_len = 0
+        count = 0
         for ex in stream:
             if min(len(ex.x1), len(ex.x2), len(ex.y)) == 0:
                 log.warn("Skipping a record,  either source or target is empty")
@@ -267,14 +264,19 @@ class CometExperiment(ClassificationExperiment):
                     continue
                 # yield the current batch
                 yield Batch(batch, fields=fields, device=device)
+                count += 1
+                if count >= max_batches:
+                    log.info(f'Aborting stream read. Produced {max_batches} batches')
+                    break
                 batch = [ex]  # new batch
                 max_len = this_len
-        if batch:
+        if count < max_batches and batch:
             log.debug(f"\nLast batch, size={len(batch)}")
             yield Batch(batch, fields=fields, device=device)
-
+            
 
 class HFCometExperiment(CometExperiment):
+    
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.model_id = self.model_args['model_id']

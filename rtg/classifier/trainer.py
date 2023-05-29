@@ -241,64 +241,58 @@ class ClassifierTrainer(SteppedTrainer):
                 self.make_check_point(train_loss, val_loss=val_loss, keep_models=keep_models)
                 return val_loss, val_metrics
 
-        with tqdm.tqdm(
-            train_data,
-            initial=start_batch,
-            total=batches,
-            unit='batch',
-            dynamic_ncols=True,
-            disable=not dtorch.is_global_main,
-        ) as data_bar:
-            for batch in data_bar:
-                batch_count += 1
-                take_step = (batch_count % self.grad_accum_interval) == 0
+        data_bar = tqdm.tqdm(train_data, initial=start_batch, total=batches, unit='batch', 
+                             dynamic_ncols=True, disable=not dtorch.is_global_main)
+        for batch in data_bar:
+            batch_count += 1
+            take_step = (batch_count % self.grad_accum_interval) == 0
 
-                with autocast(enabled=dtorch.fp16):
-                    if self.n_gpus <= 1:  # if not dataparallel, then move
-                        batch = batch.to(device)
-                    loss, _scores = self._batch_step(batch, take_step=take_step, train_mode=True)
+            with autocast(enabled=dtorch.fp16):
+                if self.n_gpus <= 1:  # if not dataparallel, then move
+                    batch = batch.to(device)
+                loss, _scores = self._batch_step(batch, take_step=take_step, train_mode=True)
 
-                if stopper and take_step:
-                    stopper.step()
-                # Log
-                unsaved_state = True
-                if self.opt.curr_step % log_interval == 0:
-                    self.tbd.add_scalars(
-                        'training', {'step_loss': loss, 'learn_rate': self.opt.curr_lr}, self.opt.curr_step
-                    )
+            if stopper and take_step:
+                stopper.step()
+            # Log
+            unsaved_state = True
+            if self.opt.curr_step % log_interval == 0:
+                self.tbd.add_scalars(
+                    'training', {'step_loss': loss, 'learn_rate': self.opt.curr_lr}, self.opt.curr_step
+                )
 
-                progress_msg, is_check_pt = train_state.step(len(batch), loss)
-                progress_msg += f', LR={self.opt.curr_lr:0.8f}'
-                data_bar.set_postfix_str(progress_msg, refresh=False)
-                del batch
+            progress_msg, is_check_pt = train_state.step(len(batch), loss)
+            progress_msg += f', LR={self.opt.curr_lr:0.8f}'
+            data_bar.set_postfix_str(progress_msg, refresh=False)
+            del batch
 
-                # Save checkpoint
-                if is_check_pt:
-                    train_loss = train_state.reset()
-                    log.info(f"Chkpt Train loss={train_loss:.4g}; Runs validation? {dtorch.is_global_main}")
-                    if dtorch.is_global_main:
-                        _, val_metrics = _make_checkpoint(train_loss)
-                        train_state.train_mode(True)
+            # Save checkpoint
+            if is_check_pt:
+                train_loss = train_state.reset()
+                log.info(f"Chkpt Train loss={train_loss:.4g}; Runs validation? {dtorch.is_global_main}")
+                if dtorch.is_global_main:
+                    _, val_metrics = _make_checkpoint(train_loss)
+                    train_state.train_mode(True)
 
-                        if stopper:
-                            score = val_metrics.get(stopper.by, None)
-                            assert (
-                                score is not None
-                            ), f'early stop by {stopper.by} is invalid; try {val_metrics.keys()}'
-                            stopper.validation(score)
-                            if stopper.is_stop():
-                                log.info(
-                                    f"Stopping at {stopper.cur_step} because {stopper.by}"
-                                    f" didnt improve over {stopper.patience} checkpoints"
-                                )
-                                early_stopped_flag.touch()
+                    if stopper:
+                        score = val_metrics.get(stopper.by, None)
+                        assert (
+                            score is not None
+                        ), f'early stop by {stopper.by} is invalid; try {val_metrics.keys()}'
+                        stopper.validation(score)
+                        if stopper.is_stop():
+                            log.info(
+                                f"Stopping at {stopper.cur_step} because {stopper.by}"
+                                f" didnt improve over {stopper.patience} checkpoints"
+                            )
+                            early_stopped_flag.touch()
 
-                    dtorch.barrier()
-                    unsaved_state = False
-                    if early_stopped_flag.exists():
-                        log.info("Main process was early stopped; so stopping this worker process also")
-                        break
-
+                dtorch.barrier()
+                unsaved_state = False
+                if early_stopped_flag.exists():
+                    log.info("Main process was early stopped; so stopping this worker process also")
+                    break
+        data_bar.close()
         # End of training
         if unsaved_state and dtorch.is_global_main:
             _make_checkpoint(train_state.reset())

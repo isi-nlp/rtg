@@ -55,7 +55,7 @@ class TrainerState:
         self.steps += 1
         self.total_toks += toks
         self.total_loss += loss
-        return self.progress_bar_msg(itLoss=f'{loss:g}'), self.is_check_point()
+        return self.progress_bar_msg(itLoss=f'{loss:.5f}'), self.is_check_point()
 
     def progress_bar_msg(self, **kwargs):
         extra = ' '.join(f'{k}={v}' for k, v in kwargs.items())
