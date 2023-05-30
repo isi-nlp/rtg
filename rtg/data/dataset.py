@@ -73,7 +73,8 @@ class IdExample:
                 else:
                     self.y = seq
         else:  # should not have val at pos
-            assert seq[pos] != val
+            if seq[pos] == val:
+                log.warning(f"{side}[{pos}] == {val} was not expected in {self.id}")
 
     def __getitem__(self, key):
         if key == 'x_len':

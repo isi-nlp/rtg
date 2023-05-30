@@ -300,6 +300,7 @@ class NLField(Field):
          Items at index 0 remains at 0; index 2 goes to index 1, and 5 goes to index 2.
          Indices are sorted as increasing order, so its safe to do inplace updates from index 0.
         """
+        files = [IO.resolve(f) for f in files]   # resolve path by replacing env vars
         mappings = self.codec.shrink_vocab(files, min_freq=min_freq, save_at=save_at)
         return mappings
 
