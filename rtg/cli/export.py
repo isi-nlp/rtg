@@ -12,7 +12,7 @@ from pathlib import Path
 import torch
 
 from rtg import device, log, yaml
-from rtg import TranslationExperiment as Experiment
+from rtg.nmt import TranslationExperiment as Experiment
 from rtg.utils import IO
 
 
