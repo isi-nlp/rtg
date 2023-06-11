@@ -67,7 +67,7 @@ class ClassifierHead(nn.Module):
             activation: activation function. Defaults to nn.GELU. only valid if hid_dim is not None.
             dropout: dropout rate. Defaults to 0.1. Only valid if hid_dim is not None.
         """
-
+        assert n_classes > 0
         super().__init__()
         self.input_dim = input_dim
         self.n_classes = n_classes

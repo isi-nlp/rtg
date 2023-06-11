@@ -7,6 +7,7 @@ import collections as coll
 from abc import ABCMeta, abstractmethod
 from pathlib import Path
 from typing import Iterator, List, Optional, Union
+import json
 
 import nlcodec
 import numpy as np
@@ -191,19 +192,29 @@ class NLField(Field):
     # from nlcodec lib
     def __init__(self, path: Union[str, Path]):
         super().__init__()
+
         from nlcodec import EncoderScheme, Type, load_scheme
 
-        self.codec: EncoderScheme = load_scheme(path)
-        self.vocab: List[Type] = self.codec.table
-        log.info(f'Loaded {len(self.codec)} types from {path}')
-        for tok, idx in self.reserved():  # reserved are reserved
-            assert self.vocab[idx].name == tok
-        self.class_names = [t.name for t in self.vocab]
+        for firstline in open(path):
+            assert firstline.startswith('#{')
+            metadata = json.loads(firstline[1:])
+            break
+        self.scheme = metadata.get('scheme')
+        self.numertic_type = None
+        if self.scheme == 'real':
+            self.vocab = []
+        else:
+            self.codec: EncoderScheme = load_scheme(path)
+            self.vocab: List[Type] = self.codec.table
+            log.info(f'Loaded {len(self.codec)} types from {path}')
+            for tok, idx in self.reserved():  # reserved are reserved
+                assert self.vocab[idx].name == tok
+            self.class_names = [t.name for t in self.vocab]
 
     def reserved(self):
-        if self.codec.name == 'class':  # no reserved
+        if self.scheme in ('class', 'real'):  # no reserved
             return []
-        elif self.codec.name == 'byte':  # only two reserved types
+        elif self.scheme == 'byte':  # only two reserved types
             self.bos_idx = self.codec.str_to_idx[nlcodec.Reseved.BOS_TOK[0]]
             self.eos_idx = self.codec.str_to_idx[nlcodec.Reseved.EOS_TOK[0]]
             return [(self.bos_tok, self.bos_idx), (self.eos_tok, self.eos_idx)]
@@ -211,7 +222,11 @@ class NLField(Field):
             return super(NLField, self).reserved()
 
     def encode_as_ids(self, text: str, add_bos=False, add_eos=False, split_ratio=0.0) -> Array:
-        if self.codec.name == "bpe" and split_ratio > 0:
+        if self.scheme == 'real':
+            assert not add_bos and not add_eos   # no bos/eos for numeric
+            return np.array([np.float32(x) for x in text.split()])
+
+        if self.scheme == "bpe" and split_ratio > 0:
             ids = self.codec.encode(text, split_ratio)
         else:
             ids = self.codec.encode(text)
@@ -223,6 +238,10 @@ class NLField(Field):
         return np.array(ids, dtype=np.int32)
 
     def decode_ids(self, ids: List[int], trunc_eos=False, remove_pads=True) -> str:
+        if self.scheme == 'real':
+            # TODO: float precision
+            return ' '.join(str(x) for x in ids)
+
         if trunc_eos:
             try:
                 ids = ids[: ids.index(self.eos_idx)]
@@ -264,6 +283,11 @@ class NLField(Field):
         :param min_co_ev: (for BPE only) minimum co-evidence for subword merges
         :return:
         """
+        if model_type == 'real':
+            metadata = '#' + json.dumps(dict(scheme=model_type))
+            Path(model_path).write_text(metadata)
+            return cls(model_path)
+
         assert not no_split_toks, 'not supported in nlcodec yet'
         from nlcodec import learn_vocab, term_freq
 

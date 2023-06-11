@@ -223,7 +223,7 @@ class TranslationExperiment(BaseExperiment):
                 flat_uniq_corpus.update(i)
             else:
                 flat_uniq_corpus.add(i)
-        
+
         # resolve variables
         flat_uniq_corpus = set(str(IO.resolve(x)) for x in flat_uniq_corpus)
 
@@ -597,10 +597,6 @@ class TranslationExperiment(BaseExperiment):
         if self.problem_type == ProblemType.TRANSLATION:
             args['src_vocab'] = len(self.src_vocab) if self.src_vocab else 0
             args['tgt_vocab'] = len(self.tgt_vocab) if self.tgt_vocab else 0
-
-        elif self.problem_type == ProblemType.CLASSIFICATION:
-            args['src_vocab'] = len(self.src_vocab) if self.src_vocab else 0
-            args['n_classes'] = len(self.tgt_vocab) if self.tgt_vocab else 0
 
         for name, new_val in args.items():
             old_val = orig_args.get(name, None)

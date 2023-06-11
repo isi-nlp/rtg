@@ -24,15 +24,16 @@ class Example:
 
 
 class Batch:
+
     def __init__(self, buffer: List[Example], fields, device=device) -> None:
         batch_size = len(buffer)
         assert len(fields) == 3
 
-        max_lens = dict(x1=0, x2=0, y=0)
+        max_lens = dict(x1=0, x2=0)
         for ex in buffer:
             max_lens['x1'] = max(max_lens['x1'], len(ex.x1))
             max_lens['x2'] = max(max_lens['x2'], len(ex.x2))
-            max_lens['y'] = max(max_lens['y'], len(ex.y))
+            assert len(ex.y) == 1, f'Classification/Regression y should be a single value, got {ex.y}'
 
         assert fields[0].pad_idx == fields[1].pad_idx
         self.pad_val = fields[0].pad_idx
@@ -42,14 +43,17 @@ class Batch:
         self.x2s = torch.full(
             (batch_size, max_lens['x2']), fill_value=self.pad_val, dtype=torch.long, device=device
         )
-        # y is class. it doesnt require padding
-        self.ys = torch.zeros((batch_size, max_lens['y']), dtype=torch.long, device=device)
+
         for idx, ex in enumerate(buffer):
             self.x1s[idx, : len(ex.x1)] = torch.tensor(ex.x1, dtype=torch.long, device=device)
             self.x2s[idx, : len(ex.x2)] = torch.tensor(ex.x2, dtype=torch.long, device=device)
-            self.ys[idx, : len(ex.y)] = torch.tensor(ex.y, dtype=torch.long, device=device)
-        # [B, 1] -> [B] for classification
-        self.ys = self.ys.squeeze(1)
+
+        # y is either class (int) or regression (float). it doesnt require padding
+        y_dtype = torch.long if isinstance(buffer[0].y, int) else torch.float
+        self.ys = torch.tensor([eg.y[0] for eg in buffer], dtype=y_dtype, device=device)  # [B]
+
+        ## [B, 1] -> [B] for classification
+        #self.ys = self.ys.squeeze(1)
 
     def to(self, device):
         self.x1s = self.x1s.to(device)

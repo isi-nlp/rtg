@@ -72,7 +72,7 @@ class ClassifierTrainer(SteppedTrainer):
         model = self.core_model
         assert not model.training
         label_ids, pred_ids, pred_probs = [], [], []
-        data_bar = tqdm.tqdm(val_data, unit='batch', dynamic_ncols=True)
+        data_bar = tqdm.tqdm(val_data, unit='batch', dynamic_ncols=True, mininterval=2, smoothing=0.1)
         for i, batch in enumerate(data_bar):
             with autocast(enabled=dtorch.fp16):
                 if self.n_gpus <= 1:  # if not dataparallel, then move
@@ -93,49 +93,28 @@ class ClassifierTrainer(SteppedTrainer):
                 else:  # scores are already normalized
                     assert self.criterion.input_type in ('probs', 'softmax')
                     probs = scores
-                if self.model.n_classes == 1:  # binary classification
-                    threshold = 0.5
-                    probs = probs.squeeze(1)
-                    pred_probs += probs.tolist()
-                    pred_ids += (probs >= threshold).long().tolist()
-                else:
-                    top1_probs, top1_idx = probs.max(dim=1)
-                    pred_ids += top1_idx.tolist()
-                    pred_probs += top1_probs.tolist()
+                if self.exp.tgt_field.scheme == 'class':
+                    if self.model.n_classes == 1:  # binary classification
+                        threshold = 0.5
+                        probs = probs.squeeze(1)
+                        pred_probs += probs.tolist()
+                        pred_ids += (probs >= threshold).long().tolist()
+                    else:
+                        top1_probs, top1_idx = probs.max(dim=1)
+                        pred_ids += top1_idx.tolist()
+                        pred_probs += top1_probs.tolist()
             start = time.time()
         data_bar.close()
         assert num_batches > 0, "No batches found. Please check the val data loader"
         loss_avg = total_loss / num_batches
-        class_names = self.exp.tgt_vocab.class_names
-        metrics = ClsMetric(prediction=pred_ids, truth=label_ids, clsmap=class_names)
-        pred_names = [class_names[pi] for pi in pred_ids]
+        metrics_dict = dict(loss=loss_avg)
 
-        metrics_dict = {
-            'accuracy': metrics.accuracy,
-            'macrof1': metrics.macro_f1,
-            'microf1': metrics.micro_f1,
-            'macro_precision': metrics.macro_precision,
-            'macro_recall': metrics.macro_recall,
-            'maccuracy': metrics.maccuracy,
-        }
-        step = self.opt.curr_step
-        self.tbd.add_scalars('val_performance', metrics_dict, step)
-        if len(class_names) < 40:
-            self.tbd.add_scalars('val_f1', dict(zip(metrics.clsmap, metrics.f1)), step)
-            self.tbd.add_scalars('val_precision', dict(zip(metrics.clsmap, metrics.precision)), step)
-            self.tbd.add_scalars('val_recall', dict(zip(metrics.clsmap, metrics.recall)), step)
+        if self.exp.tgt_field.scheme == 'class':
+            cls_metrics = self.validate_cls_metrics(label_ids, pred_ids, pred_probs)
+            metrics_dict.update(cls_metrics)
 
-        metrics_dict['loss'] = loss_avg
-        log_conf_mat = len(class_names) < 40
-        log.info(f"validation at step={step}\n{metrics.format(confusion=log_conf_mat)}")
+        self.tbd.add_scalars('val_performance', metrics_dict, self.opt.curr_step)
         if not self.exp.read_only:
-            val_metric_dir = self.exp.work_dir / 'validations'
-            val_metric_dir.mkdir(exist_ok=True)
-            (val_metric_dir / f'validation-{step:06d}.score.csv').write_text(metrics.format(delim=','))
-            with (val_metric_dir / f'validation-{step:06d}.out.tsv').open('w') as out:
-                for p_name, p_prob in zip(pred_names, pred_probs):
-                    out.write(f'{p_name}\t{p_prob:g}\n')
-
             path = self.exp.model_dir / 'validation.metrics.tsv'
             write_header = not path.exists()
             with path.open('a') as out:
@@ -145,6 +124,33 @@ class ClassifierTrainer(SteppedTrainer):
                 rec = [self.opt.curr_step] + list(metrics_dict.values())
                 out.write('\t'.join(f'{v:g}' for v in rec) + '\n')
         return loss_avg, metrics_dict
+
+    def validate_cls_metrics(self, label_ids, pred_ids, pred_probs):
+        class_names = self.exp.tgt_vocab.class_names
+        metrics = ClsMetric(prediction=pred_ids, truth=label_ids, clsmap=class_names)
+        pred_names = [class_names[pi] for pi in pred_ids]
+        res = {
+            'accuracy': metrics.accuracy,
+            'macrof1': metrics.macro_f1,
+            'microf1': metrics.micro_f1,
+            'macro_precision': metrics.macro_precision,
+            'macro_recall': metrics.macro_recall,
+            'maccuracy': metrics.maccuracy,
+        }
+        step = self.opt.curr_step
+        log_conf_mat = len(class_names) < 40
+        log.info(f"validation at step={step}\n{metrics.format(confusion=log_conf_mat)}")
+
+        if not self.exp.read_only:
+            val_metric_dir = self.exp.work_dir / 'validations'
+            val_metric_dir.mkdir(exist_ok=True)
+            (val_metric_dir / f'validation-{step:06d}.score.csv').write_text(metrics.format(delim=','))
+            with (val_metric_dir / f'validation-{step:06d}.out.tsv').open('w') as out:
+                for p_name, p_prob in zip(pred_names, pred_probs):
+                    out.write(f'{p_name}\t{p_prob:g}\n')
+
+        return res
+
 
     def _batch_step(self, batch, take_step=False, train_mode=False):
         """Take a single step of training or validation on a batch
@@ -241,8 +247,8 @@ class ClassifierTrainer(SteppedTrainer):
                 self.make_check_point(train_loss, val_loss=val_loss, keep_models=keep_models)
                 return val_loss, val_metrics
 
-        data_bar = tqdm.tqdm(train_data, initial=start_batch, total=batches, unit='batch', 
-                             dynamic_ncols=True, disable=not dtorch.is_global_main)
+        data_bar = tqdm.tqdm(train_data, initial=start_batch, total=batches, unit='batch',
+                             dynamic_ncols=True, disable=not dtorch.is_global_main, mininterval=2, smoothing=0.1)
         for batch in data_bar:
             batch_count += 1
             take_step = (batch_count % self.grad_accum_interval) == 0

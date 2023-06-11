@@ -208,7 +208,7 @@ def copy_to_stdin(data_queue, process: subprocess.Popen, EOF=END_OF_TRANSMISSION
                 log.info(f'Data thread for process {process.pid} reached EOT after {line_num} lines. Closing STDIN')
                 process.stdin.close()
                 break
-            try:        
+            try:
                 line_num += 1
                 process.stdin.write(line.rstrip('\n') + '\n')
             except BrokenPipeError as e:
@@ -236,17 +236,24 @@ def distribute_stdin(processes: List[subprocess.Popen]):
 
     timeout_seconds = 30
     line_no = 0
+    do_exit = False
     for line_no, line in enumerate(sys.stdin, start=1):
-        try:
-            data_queue.put(line, timeout=timeout_seconds)
-        except queue.Full:
-            status = [(dt.is_alive(), sp.poll()) for dt, sp in zip(data_threads, processes)]
-            log.info(f"Queue is full. Line dropped. Status: {status}")
-            if not all(dt.is_alive() for dt in data_threads):
-                log.warning(f"Looks like some workers are dead while queue is full."
-                            " If workers have early stopped, ignore this message."
-                            " Otherwise, look into log to see why workers are dead")
+        while line is not None:     # keep trying to put line into queue until it succeeds
+            try:
+                data_queue.put(line, timeout=timeout_seconds)
+                line = None    # consumed. get next line
+            except queue.Full:
+                if not all(dt.is_alive() for dt in data_threads):
+                    log.warning(f"Looks like some workers are dead while queue is full."
+                                " If workers have early stopped, ignore this message."
+                                " Otherwise, look into log to see why workers are dead")
+                    do_exit = True
+                    break
+                else:
+                    log.debug(f"Queue is full. retrying...")
+            if do_exit:
                 break
+
     else:
         log.info(f"Producer reached end of stdin; line_no={line_no}. Sending {len(processes)} copies of <EOT>")
         for _ in processes:  # send n copies of EOT, 1 per process

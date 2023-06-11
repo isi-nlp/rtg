@@ -19,11 +19,9 @@ __all__ = [
     'Criterion',
     'SparseCrossEntropy',
     'KLDivergence',
-    'FocalLoss',
     'BinaryCrossEntropy',
     'SmoothKLD',
     'TripletLoss',
-    'SmoothKLDAndTripletLoss',
     'kl_div',
     'get_dense_targets',
 ]
@@ -262,9 +260,18 @@ class KLDivergence(SparseCrossEntropy):
         assert targets.shape[0] == inputs.shape[0]
         # if mask_out is None and mask_pad:
         #    mask_out = (targets == self.pad_idx).unsqueeze(1)  # [N] -> [N, 1]
-        dense_targets = get_dense_targets(
-            labels=targets, n_labels=C, label_smoothing=self.label_smoothing, ignore_idx=self.pad_idx
-        )
+        if self.label_smoothing > 0.0:
+            dense_targets = get_dense_targets(
+                labels=targets, n_labels=C, label_smoothing=self.label_smoothing, ignore_idx=self.pad_idx
+            )
+        else:
+            if C == 2 and len(targets.shape) == 1 and targets.dtype.is_floating_point:
+                # binary classification, but targets are not dense and targets are real valued
+                dense_targets = torch.zeros_like(inputs, requires_grad=False, device=inputs.device)
+                dense_targets[:, 1] = targets
+                dense_targets[:, 0] = 1 - targets
+            else:
+                dense_targets = targets.view_as(inputs)
         weight = self.get_weights(inputs, targets)
         loss = kl_div(
             inputs=inputs,
@@ -468,135 +475,38 @@ class TripletLoss(Criterion):
         return triplet_loss
 
 
-@register(kind=CRITERION, name="smooth_kld_and_triplet_loss")
-class SmoothKLDAndTripletLoss(Criterion):
-    def __init__(
-        self,
-        exp: Experiment,
-        embedding: nn.Embedding,
-        margin: float = 0.0,
-        neg_region: float = 0.05,
-        mode: str = 'dot',
-        neg_sampling: str = 'random',
-        label_smoothing: float = 0.1,
-        alpha: float = 1.0,
-        step=0,
-    ):
-        super().__init__(input_type='identity', exp=exp)
-        self.embeddings = embedding.weight
-        self.smoothKLD = SmoothKLD(
-            n_classes=embedding.weight.shape[0], label_smoothing=label_smoothing, exp=exp
-        )
-        self.tripletLoss = TripletLoss(
-            embedding=embedding,
-            margin=margin,
-            neg_region=neg_region,
-            mode=mode,
-            neg_sampling=neg_sampling,
-            exp=exp,
-        )
-        self.alpha = alpha
-
-    def forward(self, x, targets, normalizer, mask_out=None):
-        smx = F.log_softmax(torch.einsum('bd,vd->bv', x, self.embeddings), dim=-1)
-        sKLD = self.smoothKLD(smx, targets, normalizer, mask_out=mask_out)
-        tLoss = self.tripletLoss(x, targets, normalizer, mask_out=mask_out)
-
-        # Must sum here to match sizes
-        return sKLD.sum() + self.alpha * tLoss.sum()
-
-
-@register(kind=CRITERION, name="dice_loss")
-class DiceLoss(Criterion):
-    def __init__(
-        self,
-        exp: Experiment = None,
-        reduction='micro',
-        gamma=0.0,
-        additive_smoothing=1,
-        label_smoothing=0.0,
-        squared_denominator=False,
-    ):
-        super().__init__(exp=exp, input_type='logits', reduction=reduction)
-        if gamma > 0.0:
-            log.warning(">>>>> gamma, ɣ > 0,  is not well tested;")
-        self.gamma = gamma
-        self.squared_denominator = squared_denominator
-        self.additive_smoothing = additive_smoothing
-        self.label_smoothing = label_smoothing
-
-    def forward(self, inputs, targets, normalizer, mask_out=None):
-        probs = inputs.softmax(dim=1)
-        # probs = inputs.sigmoid()
-        N, C = probs.shape
-        assert targets.shape[0] == probs.shape[0]
-        mask_in = None
-        if mask_out is not None:
-            # mask_in = (targets != self.pad_idx).unsqueeze(1).float()  # [N] -> [N, 1]
-            mask_in = ~mask_out
-        dense_targets = get_dense_targets(
-            labels=targets, n_labels=C, label_smoothing=self.label_smoothing, ignore_idx=self.pad_idx
-        )
-        weight = None
-        if self.gamma > 0.0:
-            weight = (1 - probs).pow(self.gamma)
-        loss = self.dice_loss(
-            inputs=inputs, targets=dense_targets, normalizer=normalizer, mask_in=mask_in, weight=weight
-        )
-        return loss
-
-    def dice_loss(self, inputs: Tensor, targets: Tensor, normalizer, mask_in=None, weight=None):
-        assert inputs.shape == targets.shape, f'{inputs.shape} == {targets.shape}?'
-        assert len(inputs.shape) == 2  # two dims: [Batch, Classes]
-        assert weight is None, f'weight is not supported as of now'
-        assert (
-            self.reduction == 'micro'
-        ), f'reduction={self.reduction} is not supported; only micro is supported now'
-        # y: target p: input  both are distributions
-        # intersection = y . p     ; batch dot product
-        intersection = torch.mul(targets, inputs).sum(dim=-1)  # [N, C] [N, C] --> [N]
-        if mask_in is not None:
-            inputs = inputs * mask_in
-            targets = targets * mask_in
-        numerator = 2 * intersection + self.additive_smoothing
-        if self.squared_denominator:
-            denominator = inputs.pow(2).sum(dim=-1) + targets.pow(2).sum(dim=-1)  # [N]
-        else:
-            denominator = inputs.sum(dim=-1) + targets.sum(dim=-1)  # [N]
-        similarity = numerator / (numerator + denominator)
-        loss = 1 - similarity  # [N]
-        loss = loss.sum() / normalizer  # [N] --> [1]
-        return loss
-
-
 @register(kind=CRITERION, name="squared_error")
 class SquaredError(Criterion):
-    def __init__(self, *args, label_smoothing: float = 0.1, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, *args, label_smoothing: float = 0.0, **kwargs):
+        super().__init__(*args, input_type='logits', **kwargs)
         self.label_smoothing = label_smoothing
         assert 0.0 <= label_smoothing <= 1.0
         assert self.reduction in ('micro', 'macro')
 
     def forward(self, x, target, normalizer, mask_out=None):
-        # 'x' is log probabilities, originally [B, T, V], but here [B.T, V]
-        # 'target' is expected word Ids, originally [B, T] but here [B.T]
+        # 'x'  originally [B, T, V], but here [B.T, V]
+        # 'target'  originally [B, T] but here [B.T]
         assert x.shape[0] == target.shape[0]
         n_labels = x.shape[1]
-        smooth_truth = smooth_labels(
-            labels=target, n_labels=n_labels, smooth_rate=self.label_smoothing, ignore_idx=self.pad_idx
-        )
+        if self.label_smoothing > 0.0:
+            truth = smooth_labels(
+                labels=target, n_labels=n_labels, smooth_rate=self.label_smoothing, ignore_idx=self.pad_idx
+            )
+        else:
+            truth = target.view_as(x)
+        assert truth.shape == x.shape
         if mask_out is not None:
             # mask = target.eq(self.pad_idx).unsqueeze(1)
-            smooth_truth.masked_fill_(mask_out, 0)
+            truth.masked_fill_(mask_out, 0)
             x = x.masked_fill(mask_out, 0)
         assert normalizer > 0
-        dist_sq = (x - smooth_truth).pow(2)
+        dist_sq = (x - truth).pow(2)
         loss_per_item_per_cls = dist_sq
         if self.reduction == 'micro':
             loss_per_item = loss_per_item_per_cls.sum(dim=1)  # sum along rows
             loss = loss_per_item.sum() / normalizer
         elif self.reduction == 'macro':
-            mass_per_cls = smooth_truth.sum(dim=0) + self.infinitesimal
+            mass_per_cls = truth.sum(dim=0) + self.infinitesimal
             loss_per_cls = loss_per_item_per_cls.sum(dim=0)  # sum along rows
             loss_per_cls /= mass_per_cls + self.infinitesimal
             return loss_per_cls.sum() / n_labels

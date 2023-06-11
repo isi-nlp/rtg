@@ -379,7 +379,8 @@ class Pipeline:
         if not self.exp.src_vocab or not self.exp.tgt_vocab:
             # if not self.exp.read_only:
             self.exp.reload()  # with updated config and vocabs from global_main
-        assert self.exp.src_vocab and self.exp.tgt_vocab, "Vocabs are not loaded"
+        assert self.exp.src_vocab, "Vocabs are not loaded"
+        #assert self.exp.tgt_vocab, "Vocabs are not loaded"
         # train on all
         if debug:
             log.warning(

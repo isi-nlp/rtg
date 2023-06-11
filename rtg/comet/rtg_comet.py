@@ -37,13 +37,6 @@ class RTGCometClassifier(TransformerClassifier):
         tok_repr = self.encoder(self.src_embed(src), src_mask)
         return self.compressor(tok_repr, src_mask)
 
-    def forward(self, src, src_mask, score='logits'):
-        "Take in and process masked src and target sequences."
-        sent_repr = self.encode(src, src_mask)
-        if score == 'embedding':  # sentence embedding
-            return sent_repr
-        return self.classifier_head(sent_repr, score=score)
-
     def forward(self, seq1, seq2, seq1_mask, seq2_mask, score='logits'):
         # def forward(self, src, src_mask, score='logits', freeze_encoder=True):
         with torch.set_grad_enabled(not self.freeze_encoder):
@@ -98,6 +91,7 @@ class RTGCometClassifier(TransformerClassifier):
 
 
 class CometTrainer(ClassifierTrainer):
+
     def _batch_step(self, batch: Batch, take_step=False, train_mode=False):
         """Take a single step of training or validation on a batch
         :param batch: batch object

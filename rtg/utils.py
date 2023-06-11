@@ -16,7 +16,7 @@ import numpy as np
 
 from rtg import log
 
-__all__ = ['line_count', 'get_my_args', 'IO', 'max_RSS', 'maybe_compress', 'shell_pipe']
+__all__ = ['line_count', 'get_my_args', 'IO', 'max_RSS', 'maybe_compress', 'shell_pipe', 'tty_pdb']
 
 
 def line_count(path, ignore_blanks=False):
@@ -227,3 +227,24 @@ def shell_pipe(cmd_line, input, cwd=None):
             return output
         finally:
             proc.terminate()
+
+
+def tty_pdb():
+    """Debugger that uses TTY for IO, instead of stdin/stdout/stderr
+    Useful for debugging when stdin/stdout/stderr are used by the program.
+
+    Discussion: https://stackoverflow.com/q/76417006/1506477
+    Credits:  https://stackoverflow.com/a/48430325/1506477
+    """
+    from contextlib import (_RedirectStream,
+                            redirect_stdout, redirect_stderr)
+    class redirect_stdin(_RedirectStream):
+        _stream = 'stdin'
+    with open('/dev/tty', 'r') as new_stdin, \
+         open('/dev/tty', 'w') as new_stdout, \
+         open('/dev/tty', 'w') as new_stderr, \
+         redirect_stdin(new_stdin), \
+         redirect_stdout(new_stdout), redirect_stderr(new_stderr):
+        __import__('pdb').set_trace()
+
+

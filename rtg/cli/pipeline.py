@@ -32,7 +32,6 @@ def parse_args():
                              help="Run test suite after training")
     excl_parser.add_argument("-nt", "--no-test", dest='run_tests', action="store_false", default=False,
                              help="Do not run test suite after training")
-    
 
     # multi-gpu / multi-node
     parser.add_argument("--local_rank", "--local-rank", type=int, default=-1, help="Multi-GPU - Local rank")
