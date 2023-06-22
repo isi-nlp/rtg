@@ -131,8 +131,13 @@ class HFCometClassifier(ClassifierModel):
     def vocab_size(self):
         return self._vocab_size
 
-    def forward(self, seq1, seq2, seq1_mask, seq2_mask, score='logits'):
+    def forward(self, seq1, seq2, seq1_mask=None, seq2_mask=None, pad_val=-1, score='logits'):
         # def forward(self, src, src_mask, score='logits', freeze_encoder=True):
+        if seq1_mask is None and pad_val >= 0:
+            seq1 = self.get_padding_mask(seq1, pad_val)
+        if seq2_mask is None and pad_val >= 0:
+            seq1_mask = self.get_padding_mask(seq2, pad_val)
+
         with torch.set_grad_enabled(not self.freeze_encoder):
             out1 = self.encoder(seq1, seq1_mask)
             out2 = self.encoder(seq2, seq2_mask)
@@ -140,6 +145,13 @@ class HFCometClassifier(ClassifierModel):
         seq2_repr = self.compressor(out2.last_hidden_state, seq2_mask)
         combo_repr = self.comet_repr(seq1_repr, seq2_repr)
         return self.classifier_head(combo_repr, score=score)
+
+    def get_padding_mask(self, batch, pad_val:int):
+        # some are additive mask (0=keep, -inf=ignore)
+        # some are multiplicative mask (0=ignore, 1=keep)
+        # some are explicit mask (1=ignore, 0=keep)
+        # TODO: figure out what kind of mask the pretrained encoder uses
+        return (batch == pad_val).int()
 
     def comet_repr(self, seq1_repr, seq2_repr):
         # [seq1, seq2, |seq1-seq2|, seq1.seq2]
@@ -196,13 +208,10 @@ class HFCometTrainer(ClassifierTrainer):
         :param take_step: whether to take optimizer step  (requires train_mode=True). Useful for gradient accumulation.
         :param train_mode: whether to run in train mode i.e., with grads no grads
         """
-        x1_mask = batch.x1s == batch.pad_val
-        x2_mask = batch.x2s == batch.pad_val
         scores = self.model(
             seq1=batch.x1s,
             seq2=batch.x2s,
-            seq1_mask=x1_mask,
-            seq2_mask=x2_mask,
+            pad_val=batch.pad_val,
             score=self.criterion.input_type,
         )
         loss = self.loss_func(scores=scores, labels=batch.ys, train_mode=train_mode, take_step=take_step)

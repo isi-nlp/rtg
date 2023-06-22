@@ -20,20 +20,22 @@ class Example:
 
     @classmethod
     def new_with_length_check(cls, id, x1, x2, y, max_src_len: int, max_tgt_len: int):
-        return cls(id, x1[:max_src_len], x2[:max_src_len], y[:max_tgt_len])
+        return cls(id, x1[:max_src_len], x2[:max_src_len],
+                    y[:max_tgt_len] if y is not None else None)
 
 
 class Batch:
 
-    def __init__(self, buffer: List[Example], fields, device=device) -> None:
+    def __init__(self, buffer: List[Example], fields, device=device, has_y=True) -> None:
         batch_size = len(buffer)
-        assert len(fields) == 3
-
+        assert len(fields) == (3 if has_y else 2)
+        self.has_y = has_y
         max_lens = dict(x1=0, x2=0)
         for ex in buffer:
             max_lens['x1'] = max(max_lens['x1'], len(ex.x1))
             max_lens['x2'] = max(max_lens['x2'], len(ex.x2))
-            assert len(ex.y) == 1, f'Classification/Regression y should be a single value, got {ex.y}'
+            if has_y:
+                assert len(ex.y) == 1, f'Classification/Regression y should be a single value, got {ex.y}'
 
         assert fields[0].pad_idx == fields[1].pad_idx
         self.pad_val = fields[0].pad_idx
@@ -49,8 +51,11 @@ class Batch:
             self.x2s[idx, : len(ex.x2)] = torch.tensor(ex.x2, dtype=torch.long, device=device)
 
         # y is either class (int) or regression (float). it doesnt require padding
-        y_dtype = torch.long if isinstance(buffer[0].y, int) else torch.float
-        self.ys = torch.tensor([eg.y[0] for eg in buffer], dtype=y_dtype, device=device)  # [B]
+        if has_y:
+            y_dtype = torch.long if isinstance(buffer[0].y, int) else torch.float
+            self.ys = torch.tensor([eg.y[0] for eg in buffer], dtype=y_dtype, device=device)  # [B]
+        else:
+            self.ys = None
 
         ## [B, 1] -> [B] for classification
         #self.ys = self.ys.squeeze(1)
@@ -58,7 +63,8 @@ class Batch:
     def to(self, device):
         self.x1s = self.x1s.to(device)
         self.x2s = self.x2s.to(device)
-        self.ys = self.ys.to(device)
+        if self.has_y:
+            self.ys = self.ys.to(device)
         return self
 
     def __len__(self):

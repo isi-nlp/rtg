@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional, Tuple, Union
 
 from tqdm.auto import tqdm
+import torch
 
 from rtg import TSVData, device, line_count, log, IO
 from rtg.classifier import ClassificationExperiment
@@ -45,8 +46,9 @@ class CometExperiment(ClassificationExperiment):
                 src_corpus.append(args['mono_src'])
             assert src_corpus, 'prep.train_src (not stdin) or prep.mono_src must be defined'
             src_vocab_size = self.config['prep'].get('max_src_types', self.config['prep'].get('max_types'))
+            xt_args = dict(no_split_toks=args.get('no_split_toks'), char_coverage=args.get('char_coverage', 0))
             self.src_field = self._make_vocab(
-                "src", self._src_field_file, src_field_type, corpus=src_corpus, vocab_size=src_vocab_size
+                "src", self._src_field_file, src_field_type, corpus=src_corpus, vocab_size=src_vocab_size, **xt_args
             )
         assert tgt_field_type in ('class', 'real'), 'prep.fields[1] must be class  (i.e., categorical)  or real (continuous)'
 
@@ -219,19 +221,26 @@ class CometExperiment(ClassificationExperiment):
         log.info(f"Time taken to process: {timedelta(seconds=(e_time - s_time))}")
 
     def stream_line_to_example(
-        self, stream: Iterator[str], max_src_len: int = 512, max_tgt_len: int = 512, truncate=True
+        self, stream: Iterator[str], max_src_len: int = 512, max_tgt_len: int = 512,
+        truncate=True, has_y=True,
     ) -> Iterator[Example]:
         for idx, line in enumerate(stream):
             row = self._input_line_encoder(line)
-            assert len(row) == 3, f'Expected 3 columns, but found {len(row)}'
-            x1, x2, y = row[:3]
+            assert len(row) >= 2, f'Expected 2+ columns, but found {len(row)}'
+            (x1, x2), y = row[:2], None
+            if has_y:
+                assert len(row) >= 3, f'Expected 3+ columns, but found {len(row)}'
+                y = row[2]
             if truncate:
-                x1, x2, y = x1[:max_src_len], x2[:max_src_len], y[:max_tgt_len]
-            elif len(x1) > max_src_len or len(x2) > max_src_len or len(y) > max_tgt_len:
+                x1, x2 = x1[:max_src_len], x2[:max_src_len]
+                if has_y:
+                    y = y[:max_tgt_len]
+            elif len(x1) > max_src_len or len(x2) > max_src_len or (has_y and len(y) > max_tgt_len):
                 # Skipping line with length > max_len. Current idx: {idx}
                 self.n_skips += 1
                 continue
-            yield self.ExampleFactory(id=idx, x1=x1, x2=x2, y=y)
+            ex = self.ExampleFactory(id=idx, x1=x1, x2=x2, y=y)
+            yield ex
         log.warning('StreamData is exhausted')
 
     def stream_example_to_batch(
@@ -241,6 +250,7 @@ class CometExperiment(ClassificationExperiment):
         fields: List[BaseField],
         device=device,
         max_batches=-1,
+        has_y=True,
         **kwargs,
     ) -> Iterator[Batch]:
         """
@@ -257,11 +267,11 @@ class CometExperiment(ClassificationExperiment):
         max_len = 0
         count = 0
         for ex in stream:
-            if min(len(ex.x1), len(ex.x2), len(ex.y)) == 0:
+            if min(len(ex.x1), len(ex.x2), (has_y and len(ex.y) or 1)) == 0:
                 log.warn("Skipping a record,  either source or target is empty")
                 continue
 
-            this_len = max(len(ex.x1), len(ex.x2), len(ex.y))
+            this_len = max(len(ex.x1), len(ex.x2), has_y and len(ex.y) or -1)
             if len(batch) < max_sents and (len(batch) + 1) * max(max_len, this_len) <= max_toks:
                 batch.append(ex)  # this one can go in
                 max_len = max(max_len, this_len)
@@ -269,11 +279,11 @@ class CometExperiment(ClassificationExperiment):
                 if this_len > max_toks:
                     log.warn(
                         f'Unable to make a batch of {max_toks} toks'
-                        f' with a seq of x1:{len(ex.x1)} x2:{len(ex.x2)} y:{len(ex.y)}'
+                        f' with a seq of x1:{len(ex.x1)} x2:{len(ex.x2)} y:{has_y and len(ex.y)}'
                     )
                     continue
                 # yield the current batch
-                yield Batch(batch, fields=fields, device=device)
+                yield Batch(batch, fields=fields, device=device, has_y=has_y)
                 count += 1
                 if count >= max_batches:
                     log.info(f'Aborting stream read. Produced {max_batches} batches')
@@ -282,4 +292,57 @@ class CometExperiment(ClassificationExperiment):
                 max_len = this_len
         if count < max_batches and batch:
             log.debug(f"\nLast batch, size={len(batch)}")
-            yield Batch(batch, fields=fields, device=device)
+            yield Batch(batch, fields=fields, device=device, has_y=has_y)
+
+    def get_predictions(
+        self, model, input: Union[str, Path, List[str]], batch_size: Union[int, Tuple[int, int]], max_len=256
+    ):
+        """
+        :param model:
+        :param input: either a path string or Path object, or list of strings
+        :param batch_size:
+        :param max_len:
+        :return:
+        """
+        if isinstance(input, (str, Path)):
+            texts = IO.get_lines(input)
+        else:
+            assert isinstance(input, list) and isinstance(input[0], str)
+            texts = input
+        examples = self.stream_line_to_example(texts, max_src_len=max_len, truncate=True, has_y=False)
+        batches = self.stream_example_to_batch(examples, batch_size=batch_size, fields=[self.src_field, self.src_field], has_y=False)
+
+        model = model.eval().to(device)
+        preds = []
+        top1_probs = []
+        assert model.n_classes > 0
+        if model.n_classes == 1:
+            score_type = 'logits'  # TODO: decide if we need sigmoid
+        else:  # 2+
+            score_type = 'softmax'
+
+        for batch in batches:
+            batch = batch.to(device)
+            scores = model(
+                seq1=batch.x1s,
+                seq2=batch.x2s,
+                pad_val=batch.pad_val,
+                score=score_type,
+            )
+            if model.n_classes == 1:
+                preds.extend(scores.detach().cpu().squeeze().tolist())
+                top1_probs.extend(scores.detach().cpu().squeeze().tolist())
+            elif model.n_classes == 2:
+                # Assume binary classification;  pick P(Y=1 | x)
+                preds.extend(scores[:, 1].cpu().tolist())
+                top1_probs.extend(scores[:, 1].cpu().tolist())
+            else:
+                _top1_probs, top1s = scores.detach().max(dim=1)
+                preds.extend(top1s.cpu().tolist())
+                top1_probs.extend(_top1_probs.cpu().tolist())
+        if model.n_classes <= 2:
+            pred_labels = [f'{p:.3f}' for p in preds]
+        else:
+            pred_labels = [self.tgt_vocab.class_names[idx] for idx in preds]
+        top1_probs = [round(p, 3) for p in top1_probs]
+        return preds, pred_labels, top1_probs   # index, label, prob

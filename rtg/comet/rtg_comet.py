@@ -37,8 +37,12 @@ class RTGCometClassifier(TransformerClassifier):
         tok_repr = self.encoder(self.src_embed(src), src_mask)
         return self.compressor(tok_repr, src_mask)
 
-    def forward(self, seq1, seq2, seq1_mask, seq2_mask, score='logits'):
+    def forward(self, seq1, seq2, seq1_mask=None, seq2_mask=None, pad_val=-1, score='logits'):
         # def forward(self, src, src_mask, score='logits', freeze_encoder=True):
+        if seq1_mask is None and pad_val >= 0:
+            seq1_mask = self.get_padding_mask(seq1, pad_val)
+        if seq2_mask is None and pad_val >= 0:
+            seq2_mask = self.get_padding_mask(seq2, pad_val)
         with torch.set_grad_enabled(not self.freeze_encoder):
             seq1_repr = self.encode(seq1, seq1_mask)
             seq2_repr = self.encode(seq2, seq2_mask)
@@ -50,6 +54,10 @@ class RTGCometClassifier(TransformerClassifier):
         return torch.cat(
             [seq1_repr, seq2_repr, torch.abs(seq1_repr - seq2_repr), seq1_repr * seq2_repr], dim=1
         )
+
+    @classmethod
+    def get_padding_mask(cls, batch, pad_val):
+        return (batch != pad_val).unsqueeze(1)
 
     @classmethod
     def make_model(
@@ -98,13 +106,10 @@ class CometTrainer(ClassifierTrainer):
         :param take_step: whether to take optimizer step  (requires train_mode=True). Useful for gradient accumulation.
         :param train_mode: whether to run in train mode i.e., with grads no grads
         """
-        x1_mask = (batch.x1s != batch.pad_val).unsqueeze(1)
-        x2_mask = (batch.x2s != batch.pad_val).unsqueeze(1)
         scores = self.model(
             seq1=batch.x1s,
             seq2=batch.x2s,
-            seq1_mask=x1_mask,
-            seq2_mask=x2_mask,
+            pad_val=batch.pad_val,
             score=self.criterion.input_type,
         )
         loss = self.loss_func(scores=scores, labels=batch.ys, train_mode=train_mode, take_step=take_step)
