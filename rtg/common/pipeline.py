@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
 
 import torch
-from sacrebleu import corpus_bleu, corpus_macrof
+from sacrebleu import corpus_bleu
 
 from rtg import __version__, debug_mode, log, IO
 from rtg.common import dtorch
@@ -90,11 +90,6 @@ class Pipeline:
         bleu_file = detok_hyp.with_name(detok_hyp.name + ('.lc' if lowercase else '.oc') + '.sacrebleu')
         log.info(f'{detok_hyp}: {bleu_str}')
         IO.write_lines(bleu_file, bleu_str)
-        macrof1 = corpus_macrof(hypotheses=detok_lines, references=refs, lowercase=lowercase)
-        macrof1_str = macrof1.format()
-        macrof1_file = detok_hyp.with_name(detok_hyp.name + ('.lc' if lowercase else '.oc') + '.macrof1')
-        log.info(f'{detok_hyp}: {macrof1_str}')
-        IO.write_lines(macrof1_file, macrof1_str)
         return bleu.score
 
     def decode_eval_file(

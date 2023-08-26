@@ -12,7 +12,7 @@ from typing import Callable, Dict, Optional, Union
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from sacrebleu import corpus_bleu, corpus_chrf, corpus_macrof, corpus_microf
+from sacrebleu import corpus_bleu, corpus_chrf
 from torch.autograd import Variable
 from torch.cuda.amp import autocast
 from torch.optim.optimizer import Optimizer
@@ -554,9 +554,12 @@ class PositionalEncoding(nn.Module):
         self.register_buffer('pe', pe)
 
     def forward(self, x):
-        x = x + Variable(self.pe[:, : x.size(1)], requires_grad=False)
-        return self.dropout(x)
-
+        try:
+            x = x + Variable(self.pe[:, : x.size(1)], requires_grad=False)
+            return self.dropout(x)
+        except:
+            breakpoint()
+            raise
 
 class TransformerTrainer(SteppedTrainer):
     def __init__(self, exp: Experiment, model: Optional['TransformerNMT'] = None, model_factory=None):
@@ -667,14 +670,10 @@ class TransformerTrainer(SteppedTrainer):
         # this is non standard BLEU: greedy(beam=1), tokenized with whatever was used for training
         bleu = corpus_bleu(hyps, [refs], lowercase=True)
         chrf2 = corpus_chrf(hyps, [refs], beta=2)
-        macrof = corpus_macrof(hyps, [refs])
-        microf = corpus_microf(hyps, [refs])
-        log.info('\n\t' + '\n\t'.join(m.format() for m in (bleu, chrf2, macrof, microf)))
+        log.info('\n\t' + '\n\t'.join(m.format() for m in (bleu, chrf2)))
         metrics = {
             'loss': avg_loss,
             'bleu': bleu.score,
-            "macrof1": macrof.score,
-            "microf1": microf.score,
             'bleu_1gm_prec': bleu.precisions[0],
             'bleu_2gm_prec': bleu.precisions[1],
             'bleu_3gm_prec': bleu.precisions[2],
