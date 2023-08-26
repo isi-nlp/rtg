@@ -132,26 +132,28 @@ class HFCometClassifier(ClassifierModel):
         return self._vocab_size
 
     def forward(self, seq1, seq2, seq1_mask=None, seq2_mask=None, pad_val=-1, score='logits'):
-        # def forward(self, src, src_mask, score='logits', freeze_encoder=True):
+
         if seq1_mask is None and pad_val >= 0:
-            seq1 = self.get_padding_mask(seq1, pad_val)
+            seq1_mask = self.get_padding_mask(seq1, pad_val)
         if seq2_mask is None and pad_val >= 0:
-            seq1_mask = self.get_padding_mask(seq2, pad_val)
+            seq2_mask = self.get_padding_mask(seq2, pad_val)
 
         with torch.set_grad_enabled(not self.freeze_encoder):
             out1 = self.encoder(seq1, seq1_mask)
             out2 = self.encoder(seq2, seq2_mask)
-        seq1_repr = self.compressor(out1.last_hidden_state, seq1_mask)
-        seq2_repr = self.compressor(out2.last_hidden_state, seq2_mask)
+
+        # compressor attn is from torch.nn; it takes float or 
+        seq1_repr = self.compressor(out1.last_hidden_state, seq1_mask.bool())
+        seq2_repr = self.compressor(out2.last_hidden_state, seq2_mask.bool())
         combo_repr = self.comet_repr(seq1_repr, seq2_repr)
         return self.classifier_head(combo_repr, score=score)
 
-    def get_padding_mask(self, batch, pad_val:int):
+    def get_padding_mask(self, batch, pad_val:int, mtype='explicit'):
         # some are additive mask (0=keep, -inf=ignore)
-        # some are multiplicative mask (0=ignore, 1=keep)
-        # some are explicit mask (1=ignore, 0=keep)
-        # TODO: figure out what kind of mask the pretrained encoder uses
+        # some are multiplicative mask (1=keep, 0=ignore)
+        # some are explicit mask (0=keep, 1=ignore)  <-- here we are using this
         return (batch == pad_val).int()
+            
 
     def comet_repr(self, seq1_repr, seq2_repr):
         # [seq1, seq2, |seq1-seq2|, seq1.seq2]
@@ -202,6 +204,7 @@ class HFCometClassifier(ClassifierModel):
 
 
 class HFCometTrainer(ClassifierTrainer):
+
     def _batch_step(self, batch: Batch, take_step=False, train_mode=False):
         """Take a single step of training or validation on a batch
         :param batch: batch object

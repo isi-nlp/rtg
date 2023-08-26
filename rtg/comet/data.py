@@ -52,7 +52,8 @@ class Batch:
 
         # y is either class (int) or regression (float). it doesnt require padding
         if has_y:
-            y_dtype = torch.long if isinstance(buffer[0].y, int) else torch.float
+            y_dtype_orig = type(buffer[0].y[0])
+            y_dtype = torch.long if issubclass(y_dtype_orig, (int, np.integer)) else torch.float
             self.ys = torch.tensor([eg.y[0] for eg in buffer], dtype=y_dtype, device=device)  # [B]
         else:
             self.ys = None

@@ -28,7 +28,7 @@ criterion:
 
 prep:
   max_types: 4000
-  pieces: bpe
+  fields: [bpe, class]
   codec_lib: nlcodec
   shared_vocab: false
   src_len: 100

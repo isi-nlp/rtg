@@ -554,12 +554,8 @@ class PositionalEncoding(nn.Module):
         self.register_buffer('pe', pe)
 
     def forward(self, x):
-        try:
-            x = x + Variable(self.pe[:, : x.size(1)], requires_grad=False)
-            return self.dropout(x)
-        except:
-            breakpoint()
-            raise
+        x = x + Variable(self.pe[:, : x.size(1)], requires_grad=False)
+        return self.dropout(x)
 
 class TransformerTrainer(SteppedTrainer):
     def __init__(self, exp: Experiment, model: Optional['TransformerNMT'] = None, model_factory=None):

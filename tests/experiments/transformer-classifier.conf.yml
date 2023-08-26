@@ -1,7 +1,7 @@
 environment:
   data: tests/data/dbpedia
 model_args:
-  src_vocab: 2751
+  src_vocab: 2500
   n_classes: 14
   enc_layers: 3
   hid_size: 128
@@ -45,7 +45,7 @@ criterion:
   # no args
 
 prep:
-  max_types: 4000
+  max_types: 2500
   pieces: bpe
   codec_lib: nlcodec
   shared_vocab: false

@@ -2,7 +2,7 @@ environment:
   data: tests/data/comet
 
 model_args:
-  src_vocab: 2751
+  src_vocab: 3000
   n_classes: 2
   enc_layers: 3
   hid_size: 128
@@ -33,8 +33,8 @@ criterion:
   name: sparse_cross_entropy
 
 prep:
-  max_types: 4000
-  pieces: bpe
+  max_types: 3000
+  fields: [bpe, class]
   codec_lib: nlcodec
   shared_vocab: false
   src_len: 100
