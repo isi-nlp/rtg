@@ -11,7 +11,9 @@ debug_mode = os.environ.get('NMT_DEBUG', False)
 
 import torch
 
-device_name = 'cuda:0' if torch.cuda.is_available() else 'cpu'
+device_name = 'cpu'  # defualt
+if torch.cuda.is_available() and torch.cuda.device_count() > 0:
+    device_name = 'cuda:0'
 device = torch.device(device_name)
 cpu_device = torch.device('cpu')
 cpu_count = int(os.environ.get('RTG_CPUS', str(max(1, mp.cpu_count() - 2))))
