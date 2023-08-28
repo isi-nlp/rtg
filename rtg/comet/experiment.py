@@ -4,6 +4,7 @@ from datetime import timedelta
 from functools import partial
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional, Tuple, Union
+import multiprocessing as mp
 
 from tqdm.auto import tqdm
 import torch
@@ -135,23 +136,40 @@ class CometExperiment(ClassificationExperiment):
         batch_size: Union[int, Tuple[int, int]],
         **kwargs,
     ):
-        def read_ex_stream(src_file, tgt_file):
-            #TODO: speed up using worker pool/threads
-            bargs = dict(
-                src_len=self.config['prep']['src_len'],
-                tgt_len=self.config['prep']['tgt_len'],
-                truncate=self.config['prep']['truncate'],
-                src_tokenizer=self._input_line_encoder,
-                tgt_tokenizer=partial(self.tgt_vocab.encode_as_ids),
-            )
-            parallel_recs = TSVData.read_raw_parallel_recs(src_file, tgt_file, **bargs)
-            yield from (
-                self.ExampleFactory(idx, x1=s[0], x2=s[1], y=t) for idx, (s, t) in enumerate(parallel_recs)
-            )
+        
+        def read_ex_stream(que: mp.Queue, src_file, tgt_file):
+            try:
+                bargs = dict(
+                    src_len=self.config['prep']['src_len'],
+                    tgt_len=self.config['prep']['tgt_len'],
+                    truncate=self.config['prep']['truncate'],
+                    src_tokenizer=self._input_line_encoder,
+                    tgt_tokenizer=partial(self.tgt_vocab.encode_as_ids),
+                )
+                parallel_recs = TSVData.read_raw_parallel_recs(src_file, tgt_file, **bargs)
+                for idx, (s, t) in enumerate(parallel_recs):
+                    ex = self.ExampleFactory(idx, x1=s[0], x2=s[1], y=t)
+                    que.put(ex)
+            finally:
+                que.put(None)  # None => END
 
+
+        queue = mp.Queue()
         src_file = IO.resolve(self.config['prep']['valid_src'])
         tgt_file = IO.resolve(self.config['prep']['valid_tgt'])
-        ex_stream = read_ex_stream(src_file, tgt_file)
+        #ex_stream = read_ex_stream(src_file, tgt_file)
+        loader = mp.Process(target=read_ex_stream, args=(queue, src_file, tgt_file))
+        loader.start()
+        def queue_to_generator(que):
+            while True:
+                item = que.get()   # block until we get items
+                if item is None: # None => END
+                    break
+                else:
+                    yield item
+
+        ex_stream = queue_to_generator(queue)   # queue to generator
+
         fields = [self.src_field, self.src_field, self.tgt_vocab]
         batch_stream = self.stream_example_to_batch(
             ex_stream, batch_size, fields=fields, **self._get_batch_args()
