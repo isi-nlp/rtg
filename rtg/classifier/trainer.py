@@ -1,6 +1,7 @@
 import time
 from typing import Callable, List, Optional, Tuple, Union
-
+from pathlib import Path
+import pickle
 import torch
 
 import torch.nn.functional as F
@@ -51,6 +52,11 @@ class ClassifierTrainer(SteppedTrainer):
             'log_probs',
             'log_softmax',
         ), f'Expected probs or log_probs, but got {self.criterion.input_type}'
+    
+        self.sync_dir: Path = self.exp.work_dir / 'sync-dir'
+        if dtorch.is_distributed and dtorch.is_global_main:
+            self.sync_dir.mkdir(exist_ok=True, parents=True)
+
 
     def loss_func(self, scores, labels, train_mode=False, take_step=False):
         loss = self.criterion(scores, labels, normalizer=len(labels), mask_out=None)
@@ -124,6 +130,121 @@ class ClassifierTrainer(SteppedTrainer):
                 rec = [self.opt.curr_step] + list(metrics_dict.values())
                 out.write('\t'.join(f'{v:g}' for v in rec) + '\n')
         return loss_avg, metrics_dict
+
+    def run_valid_epoch_ddp(self, val_data):
+        """
+        Validation that uses all workers in DDP mode.  
+        Strong assumption: validation data is presented in the same order for all workers in DDP
+        :param data_iter: data iterator
+        :return: loss value
+        """
+        start = time.time()
+        total_loss = 0.0
+        num_batches = 0
+        model = self.core_model
+        assert not model.training
+        label_ids, pred_ids, pred_probs = [], [], []
+        pbar_disable = not dtorch.is_local_main
+        data_bar = tqdm.tqdm(val_data, unit='batch', dynamic_ncols=True, mininterval=2, smoothing=0.1, disable=pbar_disable)
+        for i, batch in enumerate(data_bar):
+            with autocast(enabled=dtorch.fp16):
+                if dtorch.is_distributed:
+                    if (i % dtorch.world_size != dtorch.global_rank):
+                        continue   # skip 
+                    else:
+                        pass   # belongs to this rank; continue
+                else:
+                    # if not dataparallel, then move tensors to the desired device
+                    batch = batch.to(device)
+
+                loss, scores = self._batch_step(batch, take_step=False, train_mode=False)
+                total_loss += loss
+                num_batches += 1
+                elapsed = time.time() - start
+                data_bar.set_postfix_str(f'Loss:{loss:.4f}, {int(len(batch) / elapsed)}item/s', refresh=False)
+
+                label_ids += batch.ys.tolist()
+                if self.criterion.input_type == 'logits':
+                    # softmax was not applied in batch_step. Apply here
+                    probs = F.softmax(scores, dim=1)
+                elif self.criterion.input_type in ('log_probs', 'log_softmax'):
+                    probs = scores.exp()
+                else:  # scores are already normalized
+                    assert self.criterion.input_type in ('probs', 'softmax')
+                    probs = scores
+                if self.exp.tgt_field.scheme == 'class':
+                    if self.model.n_classes == 1:  # binary classification
+                        threshold = 0.5
+                        probs = probs.squeeze(1)
+                        pred_probs += probs.tolist()
+                        pred_ids += (probs >= threshold).long().tolist()
+                    else:
+                        top1_probs, top1_idx = probs.max(dim=1)
+                        pred_ids += top1_idx.tolist()
+                        pred_probs += top1_probs.tolist()
+            start = time.time()
+        data_bar.close()
+
+        if dtorch.is_distributed:
+            # we are syncing states using file system::  write -> barrier -> read
+            if dtorch.global_rank != dtorch.local_rank:
+                log.warning("Looks like you have multi node training. Expected shared file system. Otherwise, you are in trouble.")
+            rank = dtorch.global_rank
+            state = {
+                'total_loss': total_loss,
+                'num_batches': num_batches,
+                'label_ids':  label_ids,
+                'pred_ids': pred_ids,
+                'pred_probs': pred_probs
+            }
+            out_path = self.sync_dir / f'validation.{rank}.pkl'
+            with out_path.open('wb') as f:
+                pickle.dump(state, f)
+
+            dtorch.barrier()
+            if not dtorch.is_global_main:
+                # we only need result from main
+                return None, None
+            cache_paths: List[Path] = []
+            for _rank in range(dtorch.world_size):
+                if rank == _rank:
+                    continue
+                state_file = self.sync_dir / f'validation.{_rank}.pkl'
+                assert state_file.exists()
+                with state_file.open('rb') as f:
+                    state = pickle.load(f)
+                total_loss += state['total_loss']
+                num_batches += state['num_batches']
+                label_ids.extend(state['label_ids'])
+                pred_ids.extend(state['pred_ids'])
+                pred_probs.extend(state['pred_probs'])
+                cache_paths.append(state_file)
+
+            # delete files, to cleanup for next iteration
+            log.info(f'Synchronized validation state. Clearing files: {cache_paths}')
+            for p in cache_paths:
+                p.unlink()
+
+        assert num_batches > 0, "No batches found. Please check the val data loader"
+        loss_avg = total_loss / num_batches
+        metrics_dict = dict(loss=loss_avg)
+
+        if self.exp.tgt_field.scheme == 'class':
+            cls_metrics = self.validate_cls_metrics(label_ids, pred_ids, pred_probs)
+            metrics_dict.update(cls_metrics)
+
+        self.tbd.add_scalars('val_performance', metrics_dict, self.opt.curr_step)
+        if not self.exp.read_only:
+            path = self.exp.model_dir / 'validation.metrics.tsv'
+            write_header = not path.exists()
+            with path.open('a') as out:
+                if write_header:
+                    header = ['step'] + list(metrics_dict.keys())
+                    out.write('\t'.join(header) + '\n')
+                rec = [self.opt.curr_step] + list(metrics_dict.values())
+                out.write('\t'.join(f'{v:g}' for v in rec) + '\n')
+        return loss_avg, metrics_dict
+
 
     def validate_cls_metrics(self, label_ids, pred_ids, pred_probs):
         class_names = self.exp.tgt_vocab.class_names
@@ -233,7 +354,15 @@ class ClassifierTrainer(SteppedTrainer):
         if early_stop:
             stopper = EarlyStopper(cur_step=self.start_step, **early_stop)
 
-        def _make_checkpoint(train_loss):
+        def _make_checkpoint():
+            if dtorch.is_global_main:
+                self.make_check_point(keep_models=keep_models)
+            
+            dtorch.barrier()
+            if dtorch.is_distributed:   # all workers load the same state for validation
+                last_chkpt_path =  self.exp.last_state_file
+                self.load_state(last_chkpt_path)
+
             with torch.no_grad():
                 train_state.train_mode(False)
                 val_data = self.exp.get_val_data(
@@ -243,8 +372,7 @@ class ClassifierTrainer(SteppedTrainer):
                     sort_desc=False,
                     y_is_cls=True,
                 )
-                val_loss, val_metrics = self.run_valid_epoch(val_data)
-                self.make_check_point(train_loss, val_loss=val_loss, keep_models=keep_models)
+                val_loss, val_metrics = self.run_valid_epoch_ddp(val_data)
                 return val_loss, val_metrics
 
         data_bar = tqdm.tqdm(train_data, initial=start_batch, total=batches, unit='batch',
@@ -262,7 +390,8 @@ class ClassifierTrainer(SteppedTrainer):
                 stopper.step()
             # Log
             unsaved_state = True
-            if self.opt.curr_step % log_interval == 0:
+            
+            if dtorch.is_global_main and self.opt.curr_step % log_interval == 0:
                 self.tbd.add_scalars(
                     'training', {'step_loss': loss, 'learn_rate': self.opt.curr_lr}, self.opt.curr_step
                 )
@@ -275,23 +404,20 @@ class ClassifierTrainer(SteppedTrainer):
             # Save checkpoint
             if is_check_pt:
                 train_loss = train_state.reset()
-                log.info(f"Chkpt Train loss={train_loss:.4g}; Runs validation? {dtorch.is_global_main}")
-                if dtorch.is_global_main:
-                    _, val_metrics = _make_checkpoint(train_loss)
-                    train_state.train_mode(True)
+                log.info(f"Chkpt Train loss={train_loss:.4g}")
+                _, val_metrics = _make_checkpoint()
 
-                    if stopper:
-                        score = val_metrics.get(stopper.by, None)
-                        assert (
-                            score is not None
-                        ), f'early stop by {stopper.by} is invalid; try {val_metrics.keys()}'
-                        stopper.validation(score)
-                        if stopper.is_stop():
-                            log.info(
-                                f"Stopping at {stopper.cur_step} because {stopper.by}"
-                                f" didnt improve over {stopper.patience} checkpoints"
-                            )
-                            early_stopped_flag.touch()
+                train_state.train_mode(True)
+                if stopper and dtorch.is_global_main:
+                    score = val_metrics.get(stopper.by, None)
+                    assert score is not None, f'early stop by {stopper.by} is invalid; try {val_metrics.keys()}'
+                    stopper.validation(score)
+                    if stopper.is_stop():
+                        log.info(
+                            f"Stopping at {stopper.cur_step} because {stopper.by}"
+                            f" didnt improve over {stopper.patience} checkpoints"
+                        )
+                        early_stopped_flag.touch()
 
                 dtorch.barrier()
                 unsaved_state = False
@@ -301,7 +427,7 @@ class ClassifierTrainer(SteppedTrainer):
         data_bar.close()
         # End of training
         if unsaved_state and dtorch.is_global_main:
-            _make_checkpoint(train_state.reset())
+            _make_checkpoint()
 
         dtorch.barrier()
         return early_stopped_flag.exists()

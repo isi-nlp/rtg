@@ -233,7 +233,6 @@ class SteppedTrainer:
             log.info(f"Restoring state from file {chkpt_path}")
             state = torch.load(chkpt_path, map_location=device)
         model_state = state['model_state'] if 'model_state' in state else state
-        log.info("Restoring model state")
         self.core_model.load_state_dict(model_state)
         if 'optim_state' in state:
             try:
@@ -307,7 +306,7 @@ class SteppedTrainer:
             outs = '\n'.join(outs)
             log.info(f"==={i}===\nSRC:{line}\nREF:{ref}\n{outs}")
 
-    def make_check_point(self, train_loss: float, val_loss: float, keep_models: int, log_embedding=False):
+    def make_check_point(self, keep_models:int):
         """
         Check point the model
         :param train_loss: training loss value
@@ -317,22 +316,8 @@ class SteppedTrainer:
         """
 
         step_num = self.opt.curr_step
-        if step_num == self.last_step:
-            log.warning("Ignoring checkpt request")
-            return  # calling multiple times doesnt save
-        log.info(
-            f"Checkpoint at optimizer step {step_num}. Training Loss {train_loss:g},"
-            f" Validation Loss:{val_loss:g}"
-        )
+        
         self.show_samples()
-
-        self.tbd.add_scalars(f'losses', {'train_loss': train_loss, 'valid_loss': val_loss}, step_num)
-        if log_embedding:
-            # TODO: add metadata (text) of each subword
-            # TODO: Update tag to include tie configuration
-            self.tbd.add_embedding(
-                self.model.generator.proj.weight, global_step=step_num, tag=f'Target embeddings'
-            )
 
         # Unwrap model state from DataParallel and persist
         model = self.model.module if hasattr(self.model, 'module') else self.model
@@ -340,8 +325,6 @@ class SteppedTrainer:
             'model_state': model.state_dict(),
             'optim_state': self.opt.optimizer.state_dict(),
             'step': step_num,
-            'train_loss': train_loss,
-            'val_loss': val_loss,
             'time': time.time(),
             'rtg_version': rtg.__version__,
             'model_type': self.exp.model_type,
@@ -350,7 +333,7 @@ class SteppedTrainer:
         if dtorch.fp16:
             state['amp_state'] = dtorch._scaler.state_dict()
 
-        self.exp.store_model(step_num, state, train_score=train_loss, val_score=val_loss, keep=keep_models)
+        self.exp.store_model(step_num, state, keep=keep_models)
         self.last_step = step_num
 
     @abstractmethod

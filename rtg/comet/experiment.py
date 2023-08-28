@@ -136,6 +136,7 @@ class CometExperiment(ClassificationExperiment):
         **kwargs,
     ):
         def read_ex_stream(src_file, tgt_file):
+            #TODO: speed up using worker pool/threads
             bargs = dict(
                 src_len=self.config['prep']['src_len'],
                 tgt_len=self.config['prep']['tgt_len'],

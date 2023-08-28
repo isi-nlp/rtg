@@ -135,20 +135,15 @@ class BaseExperiment:
     def store_model(
         self,
         optimizer_step: int,
-        model,
-        train_score: float,
-        val_score: float,
-        keep: int,
-        prefix='model',
-        keeper_sort='step',
+        model_state,
+        keep: int = -1,
+        prefix='model'
     ):
         """
         saves model to a given path
         :param optimizer_step: optimizer step of the model
         :param model: model object itself
-        :param train_score: score of model on training split
-        :param val_score: score of model on validation split
-        :param keep: number of good models to keep, bad models will be deleted
+        :param keep: number of good models to keep, bad models will be deleted. default: keep all
         :param prefix: prefix to store model. default is "model"
         :param keeper_sort: criteria for choosing the old or bad models for deletion.
             Choices: {'total_score', 'step'}
@@ -158,99 +153,54 @@ class BaseExperiment:
         if self.read_only:
             log.warning("Ignoring the store request; experiment is readonly")
             return
-        name = f'{prefix}_{optimizer_step:03d}_{train_score:.6f}_{val_score:.6f}.pkl'
+        name = f'{prefix}.step_{optimizer_step}.pkl'
         path = self.model_dir / name
         log.info(f"Saving optimizer step {optimizer_step} to {path}")
-        torch.save(model, str(path))
+        torch.save(model_state, str(path))
 
-        del_models = []
-        if keeper_sort == 'total_score':
-            del_models = self.list_models(sort='total_score', desc=False)[keep:]
-        elif keeper_sort == 'step':
-            del_models = self.list_models(sort='step', desc=True)[keep:]
-        else:
-            Exception(f'Sort criteria{keeper_sort} not understood')
-        for d_model in del_models:
-            log.info(f"Deleting model {d_model} . Keep={keep}, sort={keeper_sort}")
-            os.remove(str(d_model))
-
-        with IO.writer(os.path.join(self.model_dir, 'scores.tsv'), append=True) as f:
-            cols = [
-                str(optimizer_step),
-                datetime.now().isoformat(),
-                name,
-                f'{train_score:g}',
-                f'{val_score:g}',
-            ]
-            f.write('\t'.join(cols) + '\n')
+        if keep > 0:
+            del_models = []
+            del_models = self.list_models(sort_by='step', desc=True)[keep:]
+            for d_model in del_models:
+                log.info(f"Deleting model {d_model} . Keep={keep}, sort=step")
+                os.remove(str(d_model))
 
         if self.last_state_file.exists():
             self.last_state_file.unlink()
         self.last_state_file.symlink_to(name)  # in the same dir
 
-    @staticmethod
-    def _path_to_validn_score(path):
-        parts = str(path.name).replace('.pkl', '').split('_')
-        valid_score = float(parts[-1])
-        return valid_score
 
-    @staticmethod
-    def _path_to_total_score(path):
-        parts = str(path.name).replace('.pkl', '').split('_')
-        tot_score = float(parts[-2]) + float(parts[-1])
-        return tot_score
-
-    @staticmethod
-    def _path_to_step_no(path):
-        parts = str(path.name).replace('.pkl', '').split('_')
-        step_no = int(parts[-3])
-        return step_no
-
-    def list_models(self, sort: str = 'step', desc: bool = True) -> List[Path]:
+    def list_models(self, sort_by: str = 'step', desc: bool = True) -> List[Path]:
         """
         Lists models in descending order of modification time
-        :param sort: how to sort models ?
-          - valid_score: sort based on score on validation set
-          - total_score: sort based on validation_score + training_score
-          - mtime: sort by modification time
-          - step (default): sort by step number
+        :param sort_by: how to sort models ? default=step
         :param desc: True to sort in reverse (default); False to sort in ascending
         :return: list of model paths
         """
-        paths = list(self.model_dir.glob('model_*.pkl'))
-        if not paths:
-            paths = list(self.model_dir.glob('embeddings_*.gz'))
-        sorters = {
-            'valid_score': self._path_to_validn_score,
-            'total_score': self._path_to_total_score,
-            'mtime': lambda p: p.stat().st_mtime,
-            'step': self._path_to_step_no,
-        }
-        if sort not in sorters:
-            raise Exception(f'Sort {sort} not supported. valid options: {sorters.keys()}')
-        return sorted(paths, key=sorters[sort], reverse=desc)
+        paths = list(self.model_dir.glob(f'model.{sort_by}_*.pkl'))
+        paths = [(p, p.name.replace('.pkl', '').replace(f'model.{sort_by}_', '')) for p in paths]
+        if sort_by == 'step':
+            paths = [(p, int(n)) for p, n in paths]
+        else:
+            paths = [(p, float(n)) for p, n in paths]
 
-    def _get_first_model(self, sort: str, desc: bool) -> Tuple[Optional[Path], int]:
+        return list(sorted(paths, key=lambda x: x[1], reverse=desc))
+
+    def _get_first_model(self, sort_by: str, desc: bool) -> Tuple[Optional[Path], int]:
         """
         Gets the first model that matches the given sort criteria
-        :param sort: sort mechanism
+        :param sort_by: sort mechanism
         :param desc: True for descending, False for ascending
         :return: Tuple[Optional[Path], step_num:int]
         """
-        models = self.list_models(sort=sort, desc=desc)
+        models = self.list_models(sort_by=sort_by, desc=desc)
         if models:
-            name = models[0].name.replace('.pkl', '').replace('.txt.gz', '')
-            step, train_score, valid_score = name.split('_')[-3:]
-            return models[0], int(step)
+            return models[0]
         else:
             return None, 0
 
-    def get_best_known_model(self) -> Tuple[Optional[Path], int]:
-        """Gets best Known model (best on lowest scores on training and validation sets)"""
-        return self._get_first_model(sort='total_score', desc=False)
-
     def get_last_saved_model(self) -> Tuple[Optional[Path], int]:
-        return self._get_first_model(sort='step', desc=True)
+        return self._get_first_model(sort_by='step', desc=True)
 
     @property
     def model_args(self) -> Optional[Dict]:
