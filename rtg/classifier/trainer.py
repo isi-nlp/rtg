@@ -207,9 +207,10 @@ class ClassifierTrainer(SteppedTrainer):
                 return None, None
             cache_paths: List[Path] = []
             for _rank in range(dtorch.world_size):
+                state_file = self.sync_dir / f'validation.{_rank}.pkl'
+                cache_paths.append(state_file)
                 if rank == _rank:
                     continue
-                state_file = self.sync_dir / f'validation.{_rank}.pkl'
                 assert state_file.exists()
                 with state_file.open('rb') as f:
                     state = pickle.load(f)
@@ -218,7 +219,6 @@ class ClassifierTrainer(SteppedTrainer):
                 label_ids.extend(state['label_ids'])
                 pred_ids.extend(state['pred_ids'])
                 pred_probs.extend(state['pred_probs'])
-                cache_paths.append(state_file)
 
             # delete files, to cleanup for next iteration
             log.info(f'Synchronized validation state. Clearing files: {cache_paths}')
