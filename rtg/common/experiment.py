@@ -161,8 +161,8 @@ class BaseExperiment:
         if keep > 0:
             del_models = []
             del_models = self.list_models(sort_by='step', desc=True)[keep:]
-            for d_model in del_models:
-                log.info(f"Deleting model {d_model} . Keep={keep}, sort=step")
+            for d_model, _step_num in del_models:
+                log.info(f"Deleting model @ step={_step_num} :: {d_model}. Keep={keep} ")
                 os.remove(str(d_model))
 
         if self.last_state_file.exists():

@@ -13,7 +13,7 @@ from rtg import TSVData, device, line_count, log, IO
 from rtg.classifier import ClassificationExperiment
 from rtg.data.codec import Field as BaseField
 from rtg.comet import HFField, Example, Batch
-
+from rtg.common.distrib import dtorch
 
 class CometExperiment(ClassificationExperiment):
 
@@ -157,7 +157,6 @@ class CometExperiment(ClassificationExperiment):
         queue = mp.Queue()
         src_file = IO.resolve(self.config['prep']['valid_src'])
         tgt_file = IO.resolve(self.config['prep']['valid_tgt'])
-        #ex_stream = read_ex_stream(src_file, tgt_file)
         loader = mp.Process(target=read_ex_stream, args=(queue, src_file, tgt_file))
         loader.start()
         def queue_to_generator(que):
