@@ -205,7 +205,7 @@ class TfmLmTrainer(TransformerTrainer):
                     train_loss = train_state.reset()
                     train_state.train_mode(False)
                     val_loss = self.run_valid_epoch(val_data)
-                    self.make_check_point(train_loss, val_loss, keep_models=keep_models)
+                    self.make_check_point( keep_models=keep_models)
                     if check_pt_callback:
                         check_pt_callback(model=self.model, step=self.opt.curr_step, train_loss=train_loss)
                     train_state.train_mode(True)
@@ -216,4 +216,4 @@ class TfmLmTrainer(TransformerTrainer):
             train_loss = train_state.reset()
             train_state.train_mode(False)
             val_loss = self.run_valid_epoch(val_data)
-            self.make_check_point(train_loss, val_loss, keep_models=keep_models)
+            self.make_check_point(keep_models=keep_models)

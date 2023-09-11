@@ -871,12 +871,7 @@ class TransformerTrainer(SteppedTrainer):
                                 val_data, dec_bos_cut=dec_bos_cut, full_decode=valid_full_decode
                             )
                             val_loss = val_metrics['loss']
-                            self.make_check_point(
-                                train_loss,
-                                val_loss=val_loss,
-                                keep_models=keep_models,
-                                log_embedding=log_embedding,
-                            )
+                            self.make_check_point(keep_models=keep_models)
                             if check_pt_callback:
                                 check_pt_callback(
                                     model=self.model, step=self.opt.curr_step, train_loss=train_loss
@@ -907,11 +902,7 @@ class TransformerTrainer(SteppedTrainer):
 
         # End of training
         if unsaved_state and dtorch.is_global_main:
-            train_loss = train_state.reset()
-            train_state.train_mode(False)
-            val_metrics = self.run_valid_epoch(val_data, dec_bos_cut=dec_bos_cut)
-            val_loss = val_metrics['loss']
-            self.make_check_point(train_loss, val_loss=val_loss, keep_models=keep_models)
+            self.make_check_point(keep_models=keep_models)
 
         dtorch.barrier()
         return early_stopped_flag.exists()
