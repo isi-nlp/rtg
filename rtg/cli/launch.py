@@ -57,7 +57,7 @@ def parse_args(args=None):
         "--gpus-per-proc",
         metavar='INT',
         type=int,
-        default=0,
+        default=1,
         help="Number of GPUs to assign to each process. ",
     )
     parser.add_argument(
@@ -151,7 +151,7 @@ def main(args=None):
         cmd += [sys.executable, "-m"]
     cmd.append(args.script)
     cmd.extend(args.script_args)
-    cmd = ' '.join(cmd)
+    #cmd = ' '.join(cmd)
     log.info(f'RUN:: {cmd}')
     processes = []
     STDIN = subprocess.PIPE if args.stdin else subprocess.DEVNULL
@@ -181,7 +181,7 @@ def main(args=None):
         else:
             my_env['CUDA_VISIBLE_DEVICES'] = ''
             my_env['RTG_PROC_NAME'] += f'.rank{local_rank}'
-        process = subprocess.Popen(cmd, env=my_env, shell=True, stdin=STDIN, text=True, cwd=os.getcwd())
+        process = subprocess.Popen(cmd, env=my_env, shell=False, stdin=STDIN, text=True, cwd=os.getcwd())
         processes.append(process)
 
     try:
