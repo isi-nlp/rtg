@@ -17,8 +17,9 @@ import torch
 import flask
 from flask import Flask, request, send_from_directory, Blueprint
 
-from rtg import TranslationExperiment as Experiment, log
-from rtg.module.decoder import Decoder
+from rtg import log
+from rtg.nmt import TranslationExperiment as Experiment
+from rtg.nmt.decoder import Decoder
 from rtg.utils import max_RSS
 
 torch.set_grad_enabled(False)

@@ -294,8 +294,9 @@ class BaseExperiment:
         else:
             if not model_paths:
                 # Average last n models
-                model_paths = self.list_models(sort='step', desc=True)[:ensemble]
-            digest = hashlib.md5(";".join(str(p) for p in model_paths).encode('utf-8')).hexdigest()
+                model_paths = self.list_models(sort_by='step', desc=True)[:ensemble]
+                model_paths = [p for p, _ in model_paths]
+            digest = hashlib.md5(";".join(p.name for p in model_paths).encode('utf-8')).hexdigest()
             cache_file = self.model_dir / f'avg_state{len(model_paths)}_{digest}.pkl'
             lock_file = cache_file.with_suffix('.lock')
             MAX_TIMEOUT = 1 * 60 * 60  # 1 hour
@@ -305,7 +306,7 @@ class BaseExperiment:
                     log.info(f"Cache exists: reading from {cache_file}")
                     state = self._checkpt_to_model_state(cache_file)
                 else:
-                    log.info(f"Averaging {len(model_paths)} model states :: {model_paths}")
+                    log.info(f"Loading state from {len(model_paths)} model states :: {model_paths}")
                     state = self.average_states(model_paths)
                     if len(model_paths) > 1:
                         log.info(f"Caching the averaged state at {cache_file}")

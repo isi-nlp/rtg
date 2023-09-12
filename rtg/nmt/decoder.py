@@ -170,7 +170,7 @@ class Decoder:
         log.info(f"Combo mode of {len(model_paths)} models :\n {list(zip(model_paths, weights))}")
         model_paths = [Path(m) for m in model_paths]
         models = load_models(model_paths, exp)
-        from rtg.syscomb import Combo
+        from rtg.nmt.syscomb import Combo
 
         combo = Combo(models)
         return cls.new(exp, model=combo, model_type='combo')
